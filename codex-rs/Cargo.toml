@@ -25,9 +25,6 @@ members = [
     "code-mode-protocol",
     "codex-home",
     "cloud-config",
-    "cloud-tasks",
-    "cloud-tasks-client",
-    "cloud-tasks-mock-client",
     "cli",
     "collaboration-mode-templates",
     "connectors",
@@ -76,7 +73,6 @@ members = [
     "ollama",
     "process-hardening",
     "protocol",
-    "realtime-webrtc",
     "prompts",
     "rollout",
     "rollout-trace",
@@ -160,8 +156,6 @@ codex-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
 codex-collaboration-mode-templates = { path = "collaboration-mode-templates" }
 codex-cloud-config = { path = "cloud-config" }
-codex-cloud-tasks-client = { path = "cloud-tasks-client" }
-codex-cloud-tasks-mock-client = { path = "cloud-tasks-mock-client" }
 codex-code-mode = { path = "code-mode" }
 codex-code-mode-protocol = { path = "code-mode-protocol" }
 codex-home = { path = "codex-home" }
