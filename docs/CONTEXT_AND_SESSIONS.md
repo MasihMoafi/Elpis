@@ -24,9 +24,24 @@ Still requiring end-to-end acceptance:
 - related versus unrelated memory admission;
 - memory review, deletion, reset, and compaction behavior.
 
-The deterministic cleaner (Layer 1) compacts all completed tool outputs (supporting both `Text` and `ContentItems` payloads) longer than 400 characters into compact receipts containing head/tail excerpts plus a durable `rollout://tool-call/<id>` evidence pointer directly inside session history.
+The earlier deterministic cleaner (Layer 1) is disabled. Its fixed 400-character
+threshold could replace a tool result before the active agent had consumed it, violating
+the lifecycle contract below. Codex's inherited model-aware tool-output safety cap remains
+active. A replacement deterministic pass must classify only material that is eligible to
+expire after its current question has been answered.
 
-For eligible uncovered tool output, Layer 2 ("Masih's Ace in the Hole") executes background model pruning passes whenever uncovered transient content exists (`uncovered_chars >= 1,000` or `used_percent >= 1%`), classifying covered items as dead ends or compact findings. `/usage` tracks and reports live combined savings (e.g. `~34.2K tokens saved — 39 deterministic, 7 agent-authored`).
+For eligible uncovered tool output, Layer 2 ("Masih's Ace in the Hole") executes
+background model pruning passes whenever uncovered transient content exists
+(`uncovered_chars >= 1,000` or `used_percent >= 1%`). Terra runs first, then the
+active model. Ace sees the active user question and each tool invocation paired with
+its output. A strict parser rejects the entire pass if any output line is malformed,
+unknown, duplicated, or empty. If both models fail validation, working history and
+covered IDs remain unchanged.
+
+A validated kept result becomes a concise finding plus an exact rollout pointer. An
+omitted dead end removes both its invocation and output from working history. Assistant
+answers are not deletable Ace inputs. `/usage` tracks Ace's live savings and shows
+deterministic savings as zero while Layer 1 is disabled.
 
 ## Context Lifecycle
 
@@ -73,8 +88,8 @@ A compliant cleaner must:
 5. prove evicted material is absent from the next request;
 6. stop when safe checkpointing cannot be completed.
 
-The shipped deterministic and model-assisted passes are incomplete; finish the lifecycle contract
-without expanding it through arbitrary thresholds alone.
+The unsafe deterministic pass is disabled; Ace remains active. A replacement deterministic
+pass must satisfy this lifecycle contract without relying on arbitrary length thresholds alone.
 
 ## Memory And Archive Contract
 
@@ -113,6 +128,11 @@ It uses the agent's known turn outcome plus deterministic rules to classify mate
   and other exploratory traces once their useful conclusion has been retained;
 - never preserve hidden reasoning as transcript context; preserve the resulting decision and
   evidence instead.
+
+Encrypted reasoning is nevertheless live state during an active Responses tool loop.
+Elpis preserves it through every model/tool and stop-hook follow-up. After a successful
+final response, current-turn reasoning expires from working history while the durable
+rollout remains exact. Responses modes that explicitly request `all_turns` keep it.
 
 The lifecycle is:
 

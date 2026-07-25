@@ -113,7 +113,6 @@ use crate::attestation::X_OAI_ATTESTATION_HEADER;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
-use crate::context_cleaner::clean_transient_tool_outputs;
 use crate::responses_metadata::CodexResponsesMetadata;
 use crate::responses_metadata::subagent_header_value;
 use codex_login::auth::AgentIdentityAuthPolicy;
@@ -910,9 +909,6 @@ impl ModelClient {
                 item.set_id(/*new_id*/ None);
             }
         }
-
-        crate::context_cleaner::strip_reasoning_items(input);
-        clean_transient_tool_outputs(input);
 
         if self.state.item_ids_enabled || store {
             return;

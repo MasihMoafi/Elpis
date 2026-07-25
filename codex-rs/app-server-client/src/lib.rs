@@ -77,12 +77,6 @@ pub mod legacy_core {
         pub use codex_core::elpis_context::*;
     }
 
-    pub mod context_cleaner {
-        pub use codex_core::context_cleaner::eviction_count;
-        pub use codex_core::context_cleaner::latest_eviction_event;
-        pub use codex_core::context_cleaner::saved_chars;
-    }
-
     pub mod context_pruner {
         pub use codex_core::context_pruner::pass_count;
         pub use codex_core::context_pruner::saved_chars;

@@ -737,8 +737,6 @@ async fn status_model_provider_uses_bedrock_runtime_base_url_and_gates_usage_lin
         /*reasoning_effort_override*/ None,
         /*instruction_source_paths*/ &[],
         /*refreshing_rate_limits*/ false,
-        /*context_cleaner_evictions*/ 0,
-        /*context_cleaner_saved_chars*/ 0,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
     );
@@ -782,8 +780,6 @@ async fn status_model_provider_uses_bedrock_runtime_base_url_and_gates_usage_lin
         /*reasoning_effort_override*/ None,
         /*instruction_source_paths*/ &[],
         /*refreshing_rate_limits*/ false,
-        /*context_cleaner_evictions*/ 0,
-        /*context_cleaner_saved_chars*/ 0,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
     );
@@ -1596,8 +1592,6 @@ async fn status_snapshot_uses_default_reasoning_when_config_empty() {
         /*reasoning_effort_override*/ Some(Some(ReasoningEffort::Medium)),
         /*instruction_source_paths*/ &[],
         /*refreshing_rate_limits*/ false,
-        /*context_cleaner_evictions*/ 0,
-        /*context_cleaner_saved_chars*/ 0,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
     );

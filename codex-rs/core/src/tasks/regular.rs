@@ -82,6 +82,12 @@ impl SessionTask for RegularTask {
             .instrument(run_turn_span.clone())
             .await?;
             if !sess.input_queue.has_pending_input(&sess.active_turn).await {
+                // Normal Responses requests use `reasoning.context=current_turn`
+                // (the API default), so their encrypted reasoning expires here.
+                // Responses Lite explicitly requests `all_turns` and must retain it.
+                if last_agent_message.is_some() && !ctx.model_info.use_responses_lite {
+                    sess.expire_reasoning_items_for_turn(&ctx.sub_id).await;
+                }
                 return Ok(last_agent_message);
             }
             next_input = Vec::new();

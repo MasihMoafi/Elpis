@@ -116,10 +116,6 @@ struct StatusHistoryCell {
     forked_from: Option<String>,
     token_usage: StatusTokenUsageData,
     rate_limit_state: Arc<RwLock<StatusRateLimitState>>,
-    /// Layer 1: count of deterministic tool-output compactions and cumulative chars
-    /// saved by them (`context_cleaner::eviction_count`/`saved_chars`).
-    context_cleaner_evictions: usize,
-    context_cleaner_saved_chars: usize,
     /// Layer 2: count of agent-authored prune passes and cumulative chars saved by
     /// them (`context_pruner::pass_count`/`saved_chars`).
     context_pruner_passes: usize,
@@ -198,8 +194,6 @@ pub(crate) fn new_status_output_with_rate_limits(
         reasoning_effort_override,
         /*instruction_source_paths*/ &[],
         refreshing_rate_limits,
-        /*context_cleaner_evictions*/ 0,
-        /*context_cleaner_saved_chars*/ 0,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
     )
@@ -225,8 +219,6 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
     instruction_source_paths: &[std::path::PathBuf],
     refreshing_rate_limits: bool,
-    context_cleaner_evictions: usize,
-    context_cleaner_saved_chars: usize,
     context_pruner_passes: usize,
     context_pruner_saved_chars: usize,
 ) -> (CompositeHistoryCell, StatusHistoryHandle) {
@@ -249,8 +241,6 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         reasoning_effort_override,
         instruction_source_paths,
         refreshing_rate_limits,
-        context_cleaner_evictions,
-        context_cleaner_saved_chars,
         context_pruner_passes,
         context_pruner_saved_chars,
     );
@@ -281,8 +271,6 @@ impl StatusHistoryCell {
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
         instruction_source_paths: &[std::path::PathBuf],
         refreshing_rate_limits: bool,
-        context_cleaner_evictions: usize,
-        context_cleaner_saved_chars: usize,
         context_pruner_passes: usize,
         context_pruner_saved_chars: usize,
     ) -> (Self, StatusHistoryHandle) {
@@ -391,8 +379,6 @@ impl StatusHistoryCell {
                 token_usage,
                 continuity_sources,
                 rate_limit_state: rate_limit_state.clone(),
-                context_cleaner_evictions,
-                context_cleaner_saved_chars,
                 context_pruner_passes,
                 context_pruner_saved_chars,
             },
@@ -434,35 +420,28 @@ impl StatusHistoryCell {
         ])
     }
 
-    /// Combined Layer 1 (deterministic) + Layer 2 (agent-authored) savings, plus a
-    /// percentage of the context window recovered — so pruning is a number you can
-    /// watch, not a claim you have to trust.
+    /// Ace savings plus a visible zero for deterministic pruning while its unsafe
+    /// character-threshold implementation is disabled.
     fn context_pruning_spans(&self) -> Option<Vec<Span<'static>>> {
-        let det_tokens = i64::try_from(codex_utils_string::approx_tokens_from_byte_count(
-            self.context_cleaner_saved_chars,
-        ))
-        .unwrap_or(0);
         let agent_tokens = i64::try_from(codex_utils_string::approx_tokens_from_byte_count(
             self.context_pruner_saved_chars,
         ))
         .unwrap_or(0);
-        let total_saved_tokens = det_tokens + agent_tokens;
-        if total_saved_tokens == 0 && self.context_cleaner_evictions == 0 && self.context_pruner_passes == 0 {
+        if agent_tokens == 0 && self.context_pruner_passes == 0 {
             return Some(vec![
                 Span::from("~0 tokens saved"),
                 Span::from(" (0% of context window) — 0 deterministic, 0 agent-authored").dim(),
             ]);
         }
 
-        let det_fmt = format_tokens_compact(det_tokens);
         let agent_fmt = format_tokens_compact(agent_tokens);
-        let total_fmt = format_tokens_compact(total_saved_tokens);
+        let total_fmt = format_tokens_compact(agent_tokens);
 
         let mut spans = vec![
             Span::from(format!("~{total_fmt} tokens saved")),
             Span::from(format!(
-                " — {det_fmt} ({}) deterministic, {agent_fmt} ({}) agent-authored",
-                self.context_cleaner_evictions, self.context_pruner_passes
+                " — 0 (0) deterministic, {agent_fmt} ({}) agent-authored",
+                self.context_pruner_passes
             ))
             .dim(),
         ];
@@ -843,7 +822,6 @@ impl HistoryCell for StatusHistoryCell {
         let formatter = FieldFormatter::from_labels(labels.iter().map(String::as_str));
         let value_width = formatter.value_width(available_inner_width);
 
-
         if let Some(remote_connection) = self.remote_connection.as_ref() {
             let wrapped_remote = word_wrap_lines(
                 [Line::from(vec![
@@ -924,7 +902,6 @@ impl HistoryCell for StatusHistoryCell {
     fn raw_lines(&self) -> Vec<Line<'static>> {
         plain_lines(self.display_lines(u16::MAX))
     }
-
 }
 
 fn format_model_provider(config: &Config, runtime_base_url: Option<&str>) -> Option<String> {

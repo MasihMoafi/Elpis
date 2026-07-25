@@ -38,6 +38,8 @@ use codex_protocol::ThreadId;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
+use codex_protocol::models::FunctionCallOutputPayload;
+use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -109,6 +111,53 @@ fn test_model_client_with_thread_id(
         /*attestation_provider*/ None,
         HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     )
+}
+
+#[test]
+fn request_preparation_preserves_tool_output_above_old_elpis_limit() {
+    let client = test_model_client(SessionSource::Cli);
+    let original = "tool evidence ".repeat(400);
+    let mut input = vec![ResponseItem::FunctionCallOutput {
+        id: None,
+        call_id: "call-large".to_string(),
+        output: FunctionCallOutputPayload::from_text(original.clone()),
+        internal_chat_message_metadata_passthrough: None,
+    }];
+
+    client.prepare_response_items_for_request(&mut input, /*store*/ false);
+
+    let ResponseItem::FunctionCallOutput { output, .. } = &input[0] else {
+        panic!("function output");
+    };
+    assert_eq!(output.text_content(), Some(original.as_str()));
+}
+
+#[test]
+fn request_preparation_preserves_reasoning_for_active_turn_follow_up() {
+    let client = test_model_client(SessionSource::Cli);
+    let mut input = vec![ResponseItem::Reasoning {
+        id: Some(codex_protocol::ResponseItemId::with_suffix("rs", "active")),
+        summary: vec![ReasoningItemReasoningSummary::SummaryText {
+            text: "Need the tool result before deciding.".to_string(),
+        }],
+        content: None,
+        encrypted_content: Some("encrypted-active-reasoning".to_string()),
+        internal_chat_message_metadata_passthrough: None,
+    }];
+
+    client.prepare_response_items_for_request(&mut input, /*store*/ false);
+
+    assert_eq!(input.len(), 1);
+    let ResponseItem::Reasoning {
+        encrypted_content, ..
+    } = &input[0]
+    else {
+        panic!("reasoning item");
+    };
+    assert_eq!(
+        encrypted_content.as_deref(),
+        Some("encrypted-active-reasoning")
+    );
 }
 
 #[tokio::test]

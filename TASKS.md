@@ -21,9 +21,8 @@ changes priority.
 
 ## v0.1.1 — Context Ledger placement and file links (Masih-verified 2026-07-25)
 
-`v0.1.1` was tagged on 2026-07-24 but its tag CI run failed, so no release was ever
-published and `v0.1.0` stayed the latest download. The version number is therefore
-reused rather than burned; the release workflow already replaces a re-tagged release.
+`v0.1.1` was first tagged on 2026-07-24, but its tag CI run failed and no release was
+published. It was retagged and published on 2026-07-25 and is now the latest download.
 
 - **Ledger top alignment.** The ledger was bottom-anchored and sized to the whole chat
   region, so a tall panel started level with the last chat message and overhung the
@@ -42,12 +41,56 @@ reused rather than burned; the release workflow already replaces a re-tagged rel
   fully implemented inherited Codex features that Elpis's `is_visible` allow-list hid.
   `/ide` requires an IDE extension to serve its socket; decide to own or re-hide it.
 
-## Current Action — none open
+## Current Action — context-pruning correctness hardening
 
-The previous Current Action (Context Ledger, Foundational) is **done and
-Masih-verified 2026-07-23**: Tab no longer submits the draft; Alt+C toggles the
-ledger; panel bottom-anchored (commits `81d6000`, `018f965`); design accepted.
-Masih sets the next Current Action; no new feature work starts until he does.
+**Importance:** Foundational · **Status:** implemented, awaiting Masih verification
+
+Remove the unsafe fixed-length cleaner and make Ace safe enough to test as a post-turn
+deletion layer. The active agent must finish using tool output and encrypted reasoning
+before Elpis expires either one.
+
+Acceptance:
+
+1. A tool result larger than 400 characters but below Codex's native cap reaches the
+   next model request unchanged by Elpis.
+2. Encrypted reasoning remains available throughout the active turn's tool and hook
+   follow-ups. After a successful final response, current-turn reasoning expires from
+   working history but remains in the durable rollout; `all_turns` reasoning is retained.
+3. Terra is attempted first and the active model second. A failed or malformed result
+   changes no history and covers no IDs.
+4. Ace receives the active user question plus each tool invocation paired with its output.
+   Assistant answers are not part of the deletable batch.
+5. Every non-empty model-output line must contain one known, unique ID and a non-empty
+   conclusion. Any malformed, unknown, or duplicate line invalidates the whole pass.
+6. A kept result becomes a compact conclusion plus `rollout://tool-call/<id>` pointer.
+   An omitted dead end removes both the invocation and output from working history.
+7. Codex's inherited output truncation remains active, and `/usage` does not count
+   removed Layer-1 savings.
+8. Masih runs one real tool-heavy turn and confirms the agent receives the decisive
+   output before Ace prunes completed exploration.
+
+Implementation evidence:
+
+- Focused regression: `request_preparation_preserves_tool_output_above_old_elpis_limit`.
+- Focused regression: `request_preparation_preserves_reasoning_for_active_turn_follow_up`.
+- Focused tmux runs pass: 14 pruner tests, two request-preparation tests, and two
+  current-turn reasoning-expiry tests.
+- Strict manifest parsing, active-question context, invocation/output pairing,
+  zero-trace dead-end deletion, and fail-open parsing are covered.
+- Codex's inherited output-truncation suite passes 17 tests, and the focused TUI
+  context-window test passes.
+- The fast local build and install pass; the installed `elpis 0.1.1` binary is
+  byte-identical to the build output and launches/exits cleanly in tmux.
+- Core's test targets and the app-server test targets compile. Focused Guardian retry,
+  pruner, request-preparation, and reasoning-expiry tests pass. The full Core suite was
+  not run in this pass; the full TUI suite still has an inherited advanced-reasoning
+  stack overflow. Neither full suite is counted as passing.
+
+Non-goals:
+
+- Do not add another arbitrary length threshold or let Ace run exploratory tools.
+- Do not change RAG, RTK integration, pruning levels, `/goal`, or a future project
+  `VISION.md`.
 
 ## Completed — make the existing UI solid (Context Ledger)
 
@@ -102,7 +145,7 @@ Non-goals:
 
 ### F4. Release and installation baseline — shipped
 
-- `v0.1.0` is the release tag (re-tagged 2026-07-23 after history cleanup; hash deliberately not pinned here).
+- `v0.1.1` is the current release; `v0.1.0` remains the first public launch.
 - CI builds and verifies the Linux release artifact.
 - The release installer verifies the downloaded artifact before replacing the binary.
 

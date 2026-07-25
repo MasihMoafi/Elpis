@@ -3,7 +3,7 @@
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual
-//! turn. Layer 1 (`context_cleaner.rs`) keeps handling oversized output regardless.
+//! turn.
 
 use std::sync::Arc;
 
@@ -51,12 +51,20 @@ pub(super) async fn maybe_run_context_prune(
     if batch.is_empty() {
         return;
     }
+    let active_question = context_pruner::latest_user_message_text(&items);
 
-    let pass = run_prune_pass(sess, turn_context, client_session, &batch).await;
-    let record = match &pass {
-        Some((raw, _)) => context_pruner::parse_prune_output(raw, &batch)
-            .unwrap_or_else(|| context_pruner::build_fallback_prune_record(&batch)),
-        None => context_pruner::build_fallback_prune_record(&batch),
+    let Some((record, raw, model_slug)) = run_prune_pass(
+        sess,
+        turn_context,
+        client_session,
+        &batch,
+        active_question.as_deref(),
+    )
+    .await
+    else {
+        // Fail open. A failed or malformed pruning pass must not alter history or
+        // mark any item as covered; the same batch remains eligible for a later pass.
+        return;
     };
 
     let saved = {
@@ -70,17 +78,19 @@ pub(super) async fn maybe_run_context_prune(
         saved
     };
 
-    write_prune_report(&batch, &record, pass.as_ref(), saved);
+    write_prune_report(&batch, &record, &raw, &model_slug, saved);
 }
 
-/// Writes `~/.elpis/logs/prune_report.md` from what this pass actually did: every
+/// Writes `~/.elpis/logs/prune_report.md` from the last applied pass: every
 /// batch item with its real outcome (kept evidence line vs deleted dead end), the
-/// model's raw decision, and chars saved. Overwritten per pass — the durable trail
-/// is `prune_debug.log` plus the untouched rollouts in `~/.elpis/sessions/`.
+/// model's raw decision, and chars saved. Failed and malformed attempts never reach
+/// this function; their durable trail is `prune_debug.log`, and the source rollouts
+/// remain untouched in `~/.elpis/sessions/`.
 fn write_prune_report(
     batch: &[(String, String)],
     record: &crate::context_pruner::PruneRecord,
-    pass: Option<&(String, String)>,
+    raw: &str,
+    model_slug: &str,
     saved: usize,
 ) {
     let Some(home) = std::env::var_os("HOME") else {
@@ -90,10 +100,6 @@ fn write_prune_report(
     let _ = std::fs::create_dir_all(&log_dir);
 
     let ts = chrono::Utc::now().to_rfc3339();
-    let model = match pass {
-        Some((_, slug)) => format!("`{slug}`"),
-        None => "*(model pass failed — deterministic fallback applied)*".to_string(),
-    };
     let kept_count = record
         .text
         .lines()
@@ -101,7 +107,7 @@ fn write_prune_report(
         .count();
     let mut body = format!(
         "# Elpis Layer 2 Context Pruning Report\n\n\
-         **Timestamp**: `{ts}`  \n**Pruning model**: {model}  \n\
+         **Timestamp**: `{ts}`  \n**Pruning model**: `{model_slug}`  \n\
          **This pass**: {} items reviewed · {} kept as evidence lines · {} deleted as dead ends · ≈{saved} chars removed  \n\
          **Session totals**: {} passes · ≈{} chars removed\n\n\
          ---\n\n## What was deleted or kept, item by item\n\n",
@@ -117,7 +123,11 @@ fn write_prune_report(
                 .filter(|(line_id, _)| line_id.trim() == id)
                 .map(|(_, rest)| rest.trim())
         });
-        let excerpt: String = text.chars().take(120).collect::<String>().replace('\n', " ");
+        let excerpt: String = text
+            .chars()
+            .take(120)
+            .collect::<String>()
+            .replace('\n', " ");
         let chars = text.chars().count();
         match conclusion {
             Some(kept) => {
@@ -132,9 +142,6 @@ fn write_prune_report(
             }
         }
     }
-    let raw = pass
-        .map(|(raw, _)| raw.as_str())
-        .unwrap_or("*(no model output — deterministic fallback)*");
     body.push_str(&format!(
         "\n---\n\n## Model's raw decision\n\n```text\n{raw}\n```\n\n\
          Full originals remain in `~/.elpis/sessions/` and `~/.elpis/logs/prune_debug.log`.\n"
@@ -147,29 +154,69 @@ async fn run_prune_pass(
     turn_context: &Arc<TurnContext>,
     client_session: &mut ModelClientSession,
     batch: &[(String, String)],
-) -> Option<(String, String)> {
-    let primary_slug = if turn_context.config.model_provider_id
-        == codex_model_provider_info::OPENAI_PROVIDER_ID
-    {
-        context_pruner::PRUNE_MODEL_SLUG
-    } else {
-        turn_context.model_info.slug.as_str()
-    };
+    active_question: Option<&str>,
+) -> Option<(crate::context_pruner::PruneRecord, String, String)> {
+    let primary_slug =
+        if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
+            context_pruner::PRUNE_MODEL_SLUG
+        } else {
+            turn_context.model_info.slug.as_str()
+        };
 
-    if let Some(output) =
-        try_stream_prune_pass(sess, turn_context, client_session, batch, primary_slug).await
+    if let Some((record, output)) = try_validated_prune_pass(
+        sess,
+        turn_context,
+        client_session,
+        batch,
+        active_question,
+        primary_slug,
+    )
+    .await
     {
-        return Some((output, primary_slug.to_string()));
+        return Some((record, output, primary_slug.to_string()));
     }
 
     let fallback_slug = turn_context.model_info.slug.as_str();
     if primary_slug != fallback_slug {
-        return try_stream_prune_pass(sess, turn_context, client_session, batch, fallback_slug)
-            .await
-            .map(|output| (output, fallback_slug.to_string()));
+        return try_validated_prune_pass(
+            sess,
+            turn_context,
+            client_session,
+            batch,
+            active_question,
+            fallback_slug,
+        )
+        .await
+        .map(|(record, output)| (record, output, fallback_slug.to_string()));
     }
 
     None
+}
+
+async fn try_validated_prune_pass(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    client_session: &mut ModelClientSession,
+    batch: &[(String, String)],
+    active_question: Option<&str>,
+    prune_model_slug: &str,
+) -> Option<(crate::context_pruner::PruneRecord, String)> {
+    let output = try_stream_prune_pass(
+        sess,
+        turn_context,
+        client_session,
+        batch,
+        active_question,
+        prune_model_slug,
+    )
+    .await?;
+    let Some(record) = context_pruner::parse_prune_output(&output, batch) else {
+        tracing::warn!(
+            "Context prune response was malformed for model {prune_model_slug}; preserving history"
+        );
+        return None;
+    };
+    Some((record, output))
 }
 
 async fn try_stream_prune_pass(
@@ -177,6 +224,7 @@ async fn try_stream_prune_pass(
     turn_context: &Arc<TurnContext>,
     client_session: &mut ModelClientSession,
     batch: &[(String, String)],
+    active_question: Option<&str>,
     prune_model_slug: &str,
 ) -> Option<String> {
     let model_info = sess
@@ -188,7 +236,7 @@ async fn try_stream_prune_pass(
         )
         .await;
 
-    let input_text = context_pruner::build_prune_input(batch);
+    let input_text = context_pruner::build_prune_input(batch, active_question);
     let prompt = Prompt {
         input: vec![ResponseItem::Message {
             id: None,
@@ -260,11 +308,15 @@ fn log_prune_debug(model_slug: &str, input_text: &str, output_text: Option<&str>
     if let Some(home) = std::env::var_os("HOME") {
         let log_dir = std::path::PathBuf::from(home).join(".elpis").join("logs");
         let _ = std::fs::create_dir_all(&log_dir);
-        
-        // Raw debug log only; the human-readable prune_report.md is written by
-        // `write_prune_report` from the pass's actual outcome, never from canned text.
+
+        // Raw debug log only; prune_report.md describes the last successfully
+        // applied pass and is never written from a failed or malformed attempt.
         let debug_file = log_dir.join("prune_debug.log");
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(debug_file) {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(debug_file)
+        {
             use std::io::Write;
             let ts = chrono::Utc::now().to_rfc3339();
             let out_str = output_text.unwrap_or("<NO OUTPUT / FAILED>");

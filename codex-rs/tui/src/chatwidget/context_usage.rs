@@ -61,7 +61,8 @@ impl ChatWidget {
             .map(|source| source.bytes as usize)
             .sum();
 
-        let estimate = |chars: usize| codex_utils_string::approx_tokens_from_byte_count(chars) as u64;
+        let estimate =
+            |chars: usize| codex_utils_string::approx_tokens_from_byte_count(chars) as u64;
         // System prompt and Skills are fixed on-disk costs sent as-is with each
         // request — they must NEVER be scaled up to absorb unexplained usage
         // (that is what previously inflated Skills to nonsense figures).
@@ -194,15 +195,16 @@ impl ChatWidget {
             ))
             .dim(),
         ]));
-        let cleaner_saved = crate::legacy_core::context_cleaner::saved_chars();
         let pruner_saved = crate::legacy_core::context_pruner::saved_chars();
-        let saved_tokens =
-            codex_utils_string::approx_tokens_from_byte_count(cleaner_saved + pruner_saved) as u64;
+        let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(pruner_saved) as u64;
         if saved_tokens > 0 {
             legend.push(
-                format!("Pruned from the next request: ~{} tokens", fmt_tokens(saved_tokens))
-                    .dim()
-                    .into(),
+                format!(
+                    "Pruned from the next request: ~{} tokens",
+                    fmt_tokens(saved_tokens)
+                )
+                .dim()
+                .into(),
             );
         }
         if exact_used == 0 {
@@ -216,7 +218,11 @@ impl ChatWidget {
 
         lines.push(" Checkpoints · Esc Esc to backtrack".bold().into());
         if totals.checkpoints == 0 {
-            lines.push("   No backtrack points yet — send a message first.".dim().into());
+            lines.push(
+                "   No backtrack points yet — send a message first."
+                    .dim()
+                    .into(),
+            );
         } else {
             lines.push(
                 format!(
@@ -276,8 +282,7 @@ fn build_grid_with_legend(
         .collect();
     // More legend entries than grid rows: continue below, aligned with the legend column.
     for legend_line in legend_iter {
-        let mut spans: Vec<Span<'static>> =
-            vec![Span::from(" ".repeat(1 + GRID_COLUMNS * 2 + 2))];
+        let mut spans: Vec<Span<'static>> = vec![Span::from(" ".repeat(1 + GRID_COLUMNS * 2 + 2))];
         spans.extend(legend_line.spans);
         lines.push(Line::from(spans));
     }
