@@ -55,12 +55,16 @@ On first launch, Elpis asks you to choose a provider and complete sign-in or API
 
 Long coding-agent sessions accumulate transcripts, file reads, searches, command output, and failed paths. The useful state of the work can become difficult to distinguish from the history of how the agent got there. Elpis separates those things.
 
-- **Context Ledger:** Dynamically control and inspect your exact working context. You choose what files and information are admitted into the next model request.
-- **100% Transparent Context-Pruning:** Watch exactly what Elpis deletes. It features full logs including pruning the provider's long and hidden system prompts.
+- **Agent Assimilation:** You run an agent inside Elpis, and it becomes Elpis. The runtime adopts your workspace, memory, and control policy instead of you adapting to it.
+- **Context Ledger (Context Sovereignty):** Dynamically control and inspect your exact working context. You choose what files and information are admitted into the next model request instead of blindly accumulating transcripts.
+- **100% Transparent Evidence & Pruning:** Watch exactly what Elpis deletes. It features full logs including pruning the provider's long and hidden system prompts.
+- **Session Continuity:** Preserve goals, decisions, and checkpoints without replaying the whole transcript. Suspend a session and resume it seamlessly.
+- **Curated, Provenance-Backed Memory:** Memory remains selective, strictly bounded, and backed by provenance so Elpis learns without bloating context.
+- **Codex-grade Execution Controls:** Explicit permissions, sandboxing, tool execution, and patches remain first-class and heavily guarded.
 - **Privacy-First Architecture:** Complete sovereignty over your environment. Elpis has zero telemetry and completely removes user tracking.
-- **Bounded Local Memory:** Memory remains selective, strictly bounded, and backed by provenance so Elpis learns without bloating context.
-- **Portable Continuity:** Preserve goals, decisions, and checkpoints without replaying the whole transcript. Suspend a session and resume it seamlessly.
 - **Runtime Choice:** Explicit provider selection. Swap seamlessly between OpenAI, Anthropic, Gemini, or local models without losing your Elpis continuity environment.
+
+The real killer combination: **Long-running agents that can forget safely without losing the work.**
 
 The selected agent still performs the model loop. Elpis owns the environment around it.
 
