@@ -51,17 +51,16 @@ On first launch, Elpis asks you to choose a provider and complete sign-in or API
 
 ![Elpis demo](docs/assets/elpis-demo.gif)
 
-## Why Elpis exists
+## ✨ Predominant Features: Why Choose Elpis?
 
-Long coding-agent sessions accumulate transcripts, file reads, searches, command output, and failed paths. The useful state of the work can become difficult to distinguish from the history of how the agent got there.
+Long coding-agent sessions accumulate transcripts, file reads, searches, command output, and failed paths. The useful state of the work can become difficult to distinguish from the history of how the agent got there. Elpis separates those things.
 
-Elpis separates those things.
-
-- **Working context** is the small set admitted into the next model request.
-- **Evidence** stays exact and durable even when it is no longer in working context.
-- **Continuity** preserves goals and checkpoints without replaying the whole transcript.
-- **Memory** is bounded, selective, and backed by provenance.
-- **Runtime choice** stays explicit instead of silently collapsing every provider into one route.
+- **Context Ledger:** Dynamically control and inspect your exact working context. You choose what files and information are admitted into the next model request.
+- **100% Transparent Context-Pruning:** Watch exactly what Elpis deletes. It features full logs including pruning the provider's long and hidden system prompts.
+- **Privacy-First Architecture:** Complete sovereignty over your environment. Elpis has zero telemetry and completely removes user tracking.
+- **Bounded Local Memory:** Memory remains selective, strictly bounded, and backed by provenance so Elpis learns without bloating context.
+- **Portable Continuity:** Preserve goals, decisions, and checkpoints without replaying the whole transcript. Suspend a session and resume it seamlessly.
+- **Runtime Choice:** Explicit provider selection. Swap seamlessly between OpenAI, Anthropic, Gemini, or local models without losing your Elpis continuity environment.
 
 The selected agent still performs the model loop. Elpis owns the environment around it.
 
