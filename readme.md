@@ -65,6 +65,16 @@ Elpis separates those things.
 
 The selected agent still performs the model loop. Elpis owns the environment around it.
 
+### Elpises
+
+Elpis is the home, not any one agent. Put an agent inside Elpis and it becomes an Elpis: it inherits the environment around the work — context, memory, permissions, evidence, and control.
+
+Elpises can take different paths while sharing the same roots. The image below is one representation of how that model can expand: multiple Elpises working continuously to improve one shared Elpis environment.
+
+![Elpises working on different paths of one shared Elpis environment](docs/assets/elpises.svg)
+
+Elpis can grow beyond a terminal shell into a broader agent environment — potentially an agent OS. This is a direction, not a claim that multi-agent control ships in `v0.1.1`.
+
 ## Context pruning: one controlled comparison
 
 The screenshots below show Elpis and Codex running the same task. In this recorded comparison, Elpis ended with **93% free context** and Codex with **73% free context**.
