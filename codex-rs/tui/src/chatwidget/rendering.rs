@@ -4,7 +4,7 @@ use super::*;
 
 impl ChatWidget {
     pub(super) fn as_renderable(&self) -> RenderableItem<'_> {
-        let active_cell_right_reserve = self.ambient_pet_wrap_reserved_cols();
+        let active_cell_right_reserve = 0;
         let active_cell_renderable = match &self.transcript.active_cell {
             Some(cell) => RenderableItem::Owned(Box::new(TranscriptAreaRenderable {
                 child: cell.as_ref(),
@@ -158,7 +158,7 @@ impl ChatWidget {
     /// The composer is the last child of the chat flex, so this is the column's full
     /// height minus the composer's own height.
     fn composer_top_offset(&self, chat_width: u16) -> u16 {
-        let reserve = self.ambient_pet_wrap_reserved_cols();
+        let reserve = 0;
         let composer_height = self
             .bottom_pane
             .desired_height_with_composer_right_reserve(chat_width, reserve);

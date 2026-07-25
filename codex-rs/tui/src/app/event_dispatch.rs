@@ -515,30 +515,6 @@ impl App {
             AppEvent::OpenDesktopThread { thread_id } => {
                 self.open_desktop_thread(thread_id);
             }
-            AppEvent::PetSelected { pet_id } => {
-                self.handle_pet_selected(tui, pet_id);
-            }
-            AppEvent::PetDisabled => {
-                self.handle_pet_disabled(tui).await;
-            }
-            AppEvent::PetPreviewRequested { pet_id } => {
-                self.chat_widget.start_pet_picker_preview(pet_id);
-            }
-            AppEvent::PetPreviewLoaded { request_id, result } => {
-                self.handle_pet_preview_loaded(tui, request_id, result);
-            }
-            AppEvent::PetSelectionLoaded {
-                request_id,
-                pet_id,
-                result,
-            } => {
-                return self
-                    .handle_pet_selection_loaded(tui, request_id, pet_id, result)
-                    .await;
-            }
-            AppEvent::ConfiguredPetLoaded { pet_id, result } => {
-                self.handle_configured_pet_loaded(tui, pet_id, result);
-            }
             AppEvent::RefreshConnectors { force_refetch } => {
                 self.chat_widget.refresh_connectors(force_refetch);
             }

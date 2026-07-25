@@ -412,38 +412,6 @@ pub(crate) enum AppEvent {
         thread_id: ThreadId,
     },
 
-    /// Persist a pet selection and reload the ambient pet.
-    PetSelected {
-        pet_id: String,
-    },
-
-    /// Persist terminal pets as disabled and remove the ambient pet.
-    PetDisabled,
-
-    /// Start loading the side preview for the pet picker.
-    PetPreviewRequested {
-        pet_id: String,
-    },
-
-    /// Result of loading the side preview for the pet picker.
-    PetPreviewLoaded {
-        request_id: u64,
-        result: Result<crate::pets::AmbientPet, String>,
-    },
-
-    /// Result of loading the selected ambient pet before config persistence.
-    PetSelectionLoaded {
-        request_id: u64,
-        pet_id: String,
-        result: Result<Option<crate::pets::AmbientPet>, String>,
-    },
-
-    /// Result of restoring the configured ambient pet during startup.
-    ConfiguredPetLoaded {
-        pet_id: String,
-        result: Result<Option<crate::pets::AmbientPet>, String>,
-    },
-
     /// Refresh app connector state and mention bindings.
     RefreshConnectors {
         force_refetch: bool,

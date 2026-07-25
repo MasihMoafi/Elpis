@@ -59,8 +59,6 @@ pub enum SlashCommand {
     Title,
     Statusline,
     Theme,
-    #[strum(to_string = "pets", serialize = "pet")]
-    Pets,
     Mcp,
     Apps,
     Plugins,
@@ -110,7 +108,6 @@ impl SlashCommand {
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
             SlashCommand::Theme => "choose a syntax highlighting theme",
-            SlashCommand::Pets => "choose or hide the terminal pet",
             SlashCommand::Ps => "list background terminals",
             SlashCommand::Stop => "kill all background terminals",
             SlashCommand::Model => "choose a provider-aware model and reasoning effort",
@@ -162,8 +159,7 @@ impl SlashCommand {
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
                 | SlashCommand::Raw
-                | SlashCommand::Pets
-                | SlashCommand::Side
+                    | SlashCommand::Side
                 | SlashCommand::Btw
                 | SlashCommand::Resume
                 | SlashCommand::SandboxReadRoot
@@ -238,7 +234,7 @@ impl SlashCommand {
             | SlashCommand::Side
             | SlashCommand::Btw => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
-            SlashCommand::Theme | SlashCommand::Pets => false,
+            SlashCommand::Theme => false,
         }
     }
 
@@ -295,7 +291,6 @@ impl SlashCommand {
             | SlashCommand::DebugConfig
             | SlashCommand::Title
             | SlashCommand::Statusline
-            | SlashCommand::Pets
             | SlashCommand::Apps
             | SlashCommand::Plugins
             | SlashCommand::Ps
@@ -368,7 +363,6 @@ mod tests {
             "mention",
             "personality",
             "plan",
-            "pets",
             "plugins",
             "raw",
             "rename",

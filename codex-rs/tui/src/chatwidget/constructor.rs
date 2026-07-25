@@ -85,12 +85,6 @@ impl ChatWidget {
             &chat_keymap.edit_queued_message,
             current_terminal_info,
         );
-        pets::start_configured_pet_load_if_needed(
-            &config,
-            /*ambient_pet_missing*/ true,
-            frame_requester.clone(),
-            app_event_tx.clone(),
-        );
         let mut widget = Self {
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
@@ -182,14 +176,6 @@ impl ChatWidget {
             status_state: StatusState::default(),
             review: ReviewState::default(),
             active_hook_cell: None,
-            ambient_pet: None,
-            pet_picker_preview_state: crate::pets::PetPickerPreviewState::default(),
-            pet_picker_preview_pet: None,
-            pet_picker_preview_request_id: 0,
-            pet_picker_preview_image_visible: std::cell::Cell::new(/*value*/ false),
-            pet_selection_load_request_id: 0,
-            #[cfg(test)]
-            pet_image_support_override: None,
             thread_id: None,
             dismissed_plan_mode_nudge_scopes: HashSet::new(),
             thread_name: None,
