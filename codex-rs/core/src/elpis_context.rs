@@ -198,7 +198,9 @@ pub fn continuity_sources(
             .unwrap_or_default();
         let is_dev_source = path.to_string_lossy().contains("skills/dev")
             || path.to_string_lossy().contains("/dev/")
-            || path.parent().is_some_and(|dir| dir.ends_with("skills/dev") || dir.ends_with("dev"));
+            || path
+                .parent()
+                .is_some_and(|dir| dir.ends_with("skills/dev") || dir.ends_with("dev"));
         let (name, reason): (String, &'static str) = if is_dev_source {
             (
                 format!("{DEV_SOURCE_PREFIX}{file_name}"),
@@ -635,11 +637,7 @@ mod tests {
         std::fs::write(&memory, "Durable memory")?;
         add_continuity_source(Some(&memories), &cwd, &memory)?;
 
-        let instructions = vec![
-            global,
-            cwd.join("AGENTS.md"),
-            dev.join("SKILL.md"),
-        ];
+        let instructions = vec![global, cwd.join("AGENTS.md"), dev.join("SKILL.md")];
         let sources = continuity_sources(Some(&memories), &cwd, &instructions);
         for (name, category) in [
             ("GOAL.md", ContinuitySourceCategory::Files),

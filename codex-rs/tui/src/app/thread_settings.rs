@@ -18,7 +18,8 @@ impl App {
         model: String,
         model_provider: Option<String>,
     ) {
-        let Some(params) = self.active_thread_model_setting_update_params(model, model_provider) else {
+        let Some(params) = self.active_thread_model_setting_update_params(model, model_provider)
+        else {
             return;
         };
         self.send_thread_settings_update(app_server, params).await;

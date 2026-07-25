@@ -345,13 +345,6 @@ impl ContextManager {
         }
     }
 
-    pub(crate) fn estimated_tokens_after_last_model_generated_item(&self) -> i64 {
-        self.items_after_last_model_generated_item()
-            .iter()
-            .map(estimate_item_token_count)
-            .fold(0i64, i64::saturating_add)
-    }
-
     /// This function enforces a couple of invariants on the in-memory history:
     /// 1. every call (function/custom) has a corresponding output entry
     /// 2. every output has a corresponding call entry

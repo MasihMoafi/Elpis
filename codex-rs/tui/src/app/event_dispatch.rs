@@ -1011,7 +1011,8 @@ impl App {
             AppEvent::UpdateModel(model) => {
                 let provider_id = if model.contains('/')
                     || model.contains(":free")
-                    || !codex_model_provider_info::openrouter_free_fallback_candidates(&model).is_empty()
+                    || !codex_model_provider_info::openrouter_free_fallback_candidates(&model)
+                        .is_empty()
                 {
                     Some("openrouter".to_string())
                 } else {
@@ -1049,7 +1050,8 @@ impl App {
                     self.on_apply_advanced_reasoning(model.as_str(), effort.clone());
                 let provider_id = if model.contains('/')
                     || model.contains(":free")
-                    || !codex_model_provider_info::openrouter_free_fallback_candidates(&model).is_empty()
+                    || !codex_model_provider_info::openrouter_free_fallback_candidates(&model)
+                        .is_empty()
                 {
                     Some("openrouter".to_string())
                 } else {

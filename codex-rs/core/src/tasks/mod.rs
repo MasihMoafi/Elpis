@@ -34,8 +34,6 @@ use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
-use codex_analytics::TurnProfileFact;
-use codex_analytics::TurnTokenUsageFact;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
@@ -318,7 +316,6 @@ impl Session {
         task: T,
     ) {
         self.abort_all_tasks(TurnAbortReason::Replaced).await;
-        self.clear_connector_selection().await;
         self.start_task(turn_context, input, task).await;
     }
 
@@ -701,13 +698,6 @@ impl Session {
                 "codex.turn.token_usage.total_tokens",
                 turn_token_usage.total_tokens,
             );
-            self.services
-                .analytics_events_client
-                .track_turn_token_usage(TurnTokenUsageFact {
-                    turn_id: turn_context.sub_id.clone(),
-                    thread_id: self.thread_id.to_string(),
-                    token_usage: turn_token_usage.clone(),
-                });
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.total_tokens,
@@ -745,12 +735,6 @@ impl Session {
             .turn_timing_state
             .completed_at_and_duration_ms()
             .await;
-        self.services
-            .analytics_events_client
-            .track_turn_profile(TurnProfileFact {
-                turn_id: turn_context.sub_id.clone(),
-                profile: turn_context.turn_timing_state.complete_profile(),
-            });
         let event = if let Some(reason) = abort_reason {
             self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref())
                 .await;
@@ -892,12 +876,6 @@ impl Session {
             .turn_timing_state
             .completed_at_and_duration_ms()
             .await;
-        self.services
-            .analytics_events_client
-            .track_turn_profile(TurnProfileFact {
-                turn_id: task.turn_context.sub_id.clone(),
-                profile: task.turn_context.turn_timing_state.complete_profile(),
-            });
         let event = EventMsg::TurnAborted(TurnAbortedEvent {
             turn_id: Some(task.turn_context.sub_id.clone()),
             reason,

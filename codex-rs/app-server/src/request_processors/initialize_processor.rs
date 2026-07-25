@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use axum::http::HeaderValue;
-use codex_analytics::AppServerRpcTransport;
 use codex_login::default_client::SetOriginatorError;
 use codex_login::default_client::USER_AGENT_SUFFIX;
 use codex_login::default_client::get_codex_user_agent;
@@ -18,26 +17,20 @@ const NON_ORIGINATING_CLIENT_NAMES: &[&str] = &["codex_app_server_daemon", "code
 #[derive(Clone)]
 pub(crate) struct InitializeRequestProcessor {
     outgoing: Arc<OutgoingMessageSender>,
-    analytics_events_client: AnalyticsEventsClient,
     config: Arc<Config>,
     config_warnings: Arc<Vec<ConfigWarningNotification>>,
-    rpc_transport: AppServerRpcTransport,
 }
 
 impl InitializeRequestProcessor {
     pub(crate) fn new(
         outgoing: Arc<OutgoingMessageSender>,
-        analytics_events_client: AnalyticsEventsClient,
         config: Arc<Config>,
         config_warnings: Vec<ConfigWarningNotification>,
-        rpc_transport: AppServerRpcTransport,
     ) -> Self {
         Self {
             outgoing,
-            analytics_events_client,
             config,
             config_warnings: Arc::new(config_warnings),
-            rpc_transport,
         }
     }
 
@@ -66,7 +59,6 @@ impl InitializeRequestProcessor {
         // shared thread when another connected client did not opt into
         // experimental API). Proposed direction is instance-global first-write-wins
         // with initialize-time mismatch rejection.
-        let analytics_initialize_params = params.clone();
         let capabilities = params.capabilities.unwrap_or_default();
         let experimental_api_enabled = capabilities.experimental_api;
         let request_attestation = capabilities.request_attestation;
@@ -123,12 +115,6 @@ impl InitializeRequestProcessor {
                 }
             }
         }
-        self.analytics_events_client.track_initialize(
-            connection_id.0,
-            analytics_initialize_params,
-            originator,
-            self.rpc_transport,
-        );
         set_default_client_residency_requirement(self.config.enforce_residency.value());
         if mutates_global_identity && let Ok(mut suffix) = USER_AGENT_SUFFIX.lock() {
             *suffix = Some(user_agent_suffix);
@@ -174,15 +160,5 @@ impl InitializeRequestProcessor {
                 .send_server_notification(ServerNotification::ConfigWarning(notification))
                 .await;
         }
-    }
-
-    pub(crate) fn track_initialized_request(
-        &self,
-        connection_id: ConnectionId,
-        request_id: RequestId,
-        request: &ClientRequest,
-    ) {
-        self.analytics_events_client
-            .track_request(connection_id.0, request_id, request);
     }
 }

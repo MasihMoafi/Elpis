@@ -7,7 +7,6 @@ use pretty_assertions::assert_eq;
 use ratatui::backend::TestBackend;
 use serial_test::serial;
 
-
 fn take_workspace_headline_request_id(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
 ) -> u64 {
@@ -405,7 +404,6 @@ async fn completed_plan_table_tail_skips_provisional_history_insert() {
         "live plan table tail should not be inserted provisionally"
     );
 }
-
 
 #[tokio::test]
 async fn prefetch_rate_limits_is_gated_on_chatgpt_auth_provider() {
@@ -2233,11 +2231,6 @@ async fn ui_snapshots_small_heights_task_running() {
     }
 }
 
-
-
-
-
-
 fn buffer_row_containing(buffer: &ratatui::buffer::Buffer, text: &str) -> Option<String> {
     (0..buffer.area.height)
         .map(|y| {
@@ -2251,8 +2244,6 @@ fn buffer_row_containing(buffer: &ratatui::buffer::Buffer, text: &str) -> Option
 fn row_tail_is_blank(row: &str, start_col: usize) -> bool {
     row.chars().skip(start_col).all(char::is_whitespace)
 }
-
-
 
 // Snapshot test: status widget + approval modal active together
 // The modal takes precedence visually; this captures the layout with a running

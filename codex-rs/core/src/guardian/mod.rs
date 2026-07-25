@@ -16,6 +16,7 @@ mod metrics;
 mod prompt;
 mod review;
 mod review_session;
+pub(crate) mod telemetry;
 
 use std::time::Duration;
 

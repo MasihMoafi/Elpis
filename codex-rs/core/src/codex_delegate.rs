@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::guardian::telemetry::GuardianApprovalRequestSource;
 use async_channel::Receiver;
 use async_channel::Sender;
-use codex_analytics::GuardianApprovalRequestSource;
 use codex_async_utils::OrCancelExt;
 use codex_extension_api::LoadedUserInstructions;
 use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
@@ -48,7 +48,6 @@ use crate::mcp_tool_call::mcp_approvals_reviewer;
 use crate::session::SUBMISSION_CHANNEL_CAPACITY;
 use crate::session::SessionIo;
 use crate::session::SessionSpawnArgs;
-use crate::session::emit_subagent_session_started;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use codex_login::AuthManager;
@@ -127,7 +126,6 @@ pub(crate) async fn run_codex_thread_interactive(
             .services
             .supports_openai_form_elicitation
             .load(std::sync::atomic::Ordering::Relaxed),
-        analytics_events_client: Some(parent_session.services.analytics_events_client.clone()),
         thread_store: Arc::clone(&parent_session.services.thread_store),
         attestation_provider: parent_session.services.attestation_provider.clone(),
         external_time_provider: Some(Arc::clone(&parent_session.services.time_provider)),
@@ -135,17 +133,6 @@ pub(crate) async fn run_codex_thread_interactive(
     }))
     .or_cancel(&cancel_token)
     .await??;
-    let thread_config = session.thread_config_snapshot().await;
-    let client_metadata = parent_session.app_server_client_metadata().await;
-    emit_subagent_session_started(
-        &parent_session.services.analytics_events_client,
-        client_metadata,
-        session.session_id(),
-        session.thread_id(),
-        Some(parent_session.thread_id),
-        thread_config,
-        subagent_source,
-    );
     // Use a child token so parent cancel cascades but we can scope it to this task
     let cancel_token_events = cancel_token.child_token();
     let cancel_token_ops = cancel_token.child_token();

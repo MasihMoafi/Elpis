@@ -1699,6 +1699,4 @@ terminal_resize_reflow_max_rows = 9000
             Some("dracula")
         );
     }
-
-
 }

@@ -76,7 +76,6 @@ pub(crate) struct TurnRequestProcessor {
     auth_manager: Arc<AuthManager>,
     thread_manager: Arc<ThreadManager>,
     outgoing: Arc<OutgoingMessageSender>,
-    analytics_events_client: AnalyticsEventsClient,
     arg0_paths: Arg0DispatchPaths,
     config: Arc<Config>,
     config_manager: ConfigManager,
@@ -131,7 +130,6 @@ impl TurnRequestProcessor {
         auth_manager: Arc<AuthManager>,
         thread_manager: Arc<ThreadManager>,
         outgoing: Arc<OutgoingMessageSender>,
-        analytics_events_client: AnalyticsEventsClient,
         arg0_paths: Arg0DispatchPaths,
         config: Arc<Config>,
         config_manager: ConfigManager,
@@ -147,7 +145,6 @@ impl TurnRequestProcessor {
             auth_manager,
             thread_manager,
             outgoing,
-            analytics_events_client,
             arg0_paths,
             config,
             config_manager,
@@ -290,20 +287,6 @@ impl TurnRequestProcessor {
             .map(|()| None)
     }
 
-    fn track_error_response(
-        &self,
-        request_id: &ConnectionRequestId,
-        error: &JSONRPCErrorError,
-        error_type: Option<AnalyticsJsonRpcError>,
-    ) {
-        self.analytics_events_client.track_error_response(
-            request_id.connection_id.0,
-            request_id.request_id.clone(),
-            error.clone(),
-            error_type,
-        );
-    }
-
     async fn load_thread(
         &self,
         thread_id: &str,
@@ -323,7 +306,6 @@ impl TurnRequestProcessor {
 
     async fn ensure_direct_input_allowed(
         &self,
-        request_id: &ConnectionRequestId,
         thread: &CodexThread,
     ) -> Result<(), JSONRPCErrorError> {
         if thread.multi_agent_version() == Some(MultiAgentVersion::V2)
@@ -332,9 +314,9 @@ impl TurnRequestProcessor {
                 SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
             )
         {
-            let error = invalid_request(DIRECT_INPUT_TO_MULTI_AGENT_V2_SUBAGENT_ERROR);
-            self.track_error_response(request_id, &error, /*error_type*/ None);
-            return Err(error);
+            return Err(invalid_request(
+                DIRECT_INPUT_TO_MULTI_AGENT_V2_SUBAGENT_ERROR,
+            ));
         }
 
         Ok(())
@@ -467,31 +449,15 @@ impl TurnRequestProcessor {
         app_server_client_version: Option<String>,
         supports_openai_form_elicitation: bool,
     ) -> Result<TurnStartResponse, JSONRPCErrorError> {
-        let (thread_id, thread) =
-            self.load_thread(&params.thread_id)
-                .await
-                .inspect_err(|error| {
-                    self.track_error_response(&request_id, error, /*error_type*/ None);
-                })?;
-        self.ensure_direct_input_allowed(&request_id, thread.as_ref())
-            .await?;
-        if let Err(error) = Self::validate_v2_input_limit(&params.input) {
-            self.track_error_response(
-                &request_id,
-                &error,
-                Some(AnalyticsJsonRpcError::Input(InputError::TooLarge)),
-            );
-            return Err(error);
-        }
+        let (thread_id, thread) = self.load_thread(&params.thread_id).await?;
+        self.ensure_direct_input_allowed(thread.as_ref()).await?;
+        Self::validate_v2_input_limit(&params.input)?;
         Self::set_app_server_client_info(
             thread.as_ref(),
             app_server_client_name,
             app_server_client_version,
         )
-        .await
-        .inspect_err(|error| {
-            self.track_error_response(&request_id, error, /*error_type*/ None);
-        })?;
+        .await?;
         thread
             .set_openai_form_elicitation_support(supports_openai_form_elicitation)
             .await
@@ -567,11 +533,7 @@ impl TurnRequestProcessor {
                 client_user_message_id,
             )
             .await
-            .map_err(|err| {
-                let error = internal_error(format!("failed to start turn: {err}"));
-                self.track_error_response(&request_id, &error, /*error_type*/ None);
-                error
-            })?;
+            .map_err(|err| internal_error(format!("failed to start turn: {err}")))?;
 
         if turn_has_input {
             let config_snapshot = thread.config_snapshot().await;
@@ -910,14 +872,8 @@ impl TurnRequestProcessor {
         request_id: &ConnectionRequestId,
         params: TurnSteerParams,
     ) -> Result<TurnSteerResponse, JSONRPCErrorError> {
-        let (_, thread) = self
-            .load_thread(&params.thread_id)
-            .await
-            .inspect_err(|error| {
-                self.track_error_response(request_id, error, /*error_type*/ None);
-            })?;
-        self.ensure_direct_input_allowed(request_id, thread.as_ref())
-            .await?;
+        let (_, thread) = self.load_thread(&params.thread_id).await?;
+        self.ensure_direct_input_allowed(thread.as_ref()).await?;
 
         if params.expected_turn_id.is_empty() {
             return Err(invalid_request("expectedTurnId must not be empty"));
@@ -925,14 +881,7 @@ impl TurnRequestProcessor {
         self.outgoing
             .record_request_turn_id(request_id, &params.expected_turn_id)
             .await;
-        if let Err(error) = Self::validate_v2_input_limit(&params.input) {
-            self.track_error_response(
-                request_id,
-                &error,
-                Some(AnalyticsJsonRpcError::Input(InputError::TooLarge)),
-            );
-            return Err(error);
-        }
+        Self::validate_v2_input_limit(&params.input)?;
 
         let mapped_items: Vec<CoreInputItem> = params
             .input
@@ -951,31 +900,22 @@ impl TurnRequestProcessor {
             )
             .await
             .map_err(|err| {
-                let (message, data, error_type) = match err {
-                    SteerInputError::NoActiveTurn(_) => (
-                        "no active turn to steer".to_string(),
-                        None,
-                        Some(AnalyticsJsonRpcError::TurnSteer(
-                            TurnSteerRequestError::NoActiveTurn,
-                        )),
-                    ),
+                let (message, data) = match err {
+                    SteerInputError::NoActiveTurn(_) => {
+                        ("no active turn to steer".to_string(), None)
+                    }
                     SteerInputError::ExpectedTurnMismatch { expected, actual } => (
                         format!("expected active turn id `{expected}` but found `{actual}`"),
                         None,
-                        Some(AnalyticsJsonRpcError::TurnSteer(
-                            TurnSteerRequestError::ExpectedTurnMismatch,
-                        )),
                     ),
                     SteerInputError::ActiveTurnNotSteerable { turn_kind } => {
-                        let (message, turn_steer_error) = match turn_kind {
-                            codex_protocol::protocol::NonSteerableTurnKind::Review => (
-                                "cannot steer a review turn".to_string(),
-                                TurnSteerRequestError::NonSteerableReview,
-                            ),
-                            codex_protocol::protocol::NonSteerableTurnKind::Compact => (
-                                "cannot steer a compact turn".to_string(),
-                                TurnSteerRequestError::NonSteerableCompact,
-                            ),
+                        let message = match turn_kind {
+                            codex_protocol::protocol::NonSteerableTurnKind::Review => {
+                                "cannot steer a review turn".to_string()
+                            }
+                            codex_protocol::protocol::NonSteerableTurnKind::Compact => {
+                                "cannot steer a compact turn".to_string()
+                            }
                         };
                         let error = TurnError {
                             message: message.clone(),
@@ -994,21 +934,12 @@ impl TurnRequestProcessor {
                                 None
                             }
                         };
-                        (
-                            message,
-                            data,
-                            Some(AnalyticsJsonRpcError::TurnSteer(turn_steer_error)),
-                        )
+                        (message, data)
                     }
-                    SteerInputError::EmptyInput => (
-                        "input must not be empty".to_string(),
-                        None,
-                        Some(AnalyticsJsonRpcError::Input(InputError::Empty)),
-                    ),
+                    SteerInputError::EmptyInput => ("input must not be empty".to_string(), None),
                 };
                 let mut error = invalid_request(message);
                 error.data = data;
-                self.track_error_response(request_id, &error, error_type);
                 error
             })?;
         Ok(TurnSteerResponse { turn_id })

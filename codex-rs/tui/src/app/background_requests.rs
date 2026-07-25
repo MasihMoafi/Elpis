@@ -1351,5 +1351,4 @@ mod tests {
 
         assert_eq!(app.mcp_inventory_request_thread_id(Some(thread_id)), None);
     }
-
 }

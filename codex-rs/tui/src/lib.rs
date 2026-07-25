@@ -1069,7 +1069,7 @@ pub async fn run_main(
             &config,
             env!("CARGO_PKG_VERSION"),
             /*service_name_override*/ None,
-            /*default_analytics_enabled*/ true,
+            /*default_analytics_enabled*/ false,
         )
     })) {
         Ok(Ok(otel)) => otel,
@@ -1167,7 +1167,6 @@ pub async fn run_main(
     } else {
         (None, None)
     };
-
 
     if cli.oss && model_provider_override.is_some() {
         // We're in the oss section, so provider_id should be Some
@@ -1671,7 +1670,7 @@ async fn run_ratatui_app(
             loader_overrides.clone(),
             strict_config,
             cloud_config_bundle.clone(),
-                log_db.clone(),
+            log_db.clone(),
             state_db.clone(),
             environment_manager.clone(),
         )
@@ -2073,7 +2072,7 @@ mod tests {
             LoaderOverrides::default(),
             /*strict_config*/ false,
             CloudConfigBundleLoader::default(),
-                /*log_db*/ None,
+            /*log_db*/ None,
             state_db,
             Arc::new(EnvironmentManager::default_for_tests()),
         )
@@ -2814,7 +2813,7 @@ mod tests {
             LoaderOverrides::default(),
             /*strict_config*/ false,
             CloudConfigBundleLoader::default(),
-                /*log_db*/ None,
+            /*log_db*/ None,
             /*state_db*/ None,
             Arc::new(EnvironmentManager::default_for_tests()),
             |_args| async { Err(std::io::Error::other("boom")) },

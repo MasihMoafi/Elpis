@@ -4219,7 +4219,7 @@ async fn make_test_app_with_channels() -> (
             elpis_turn_items: std::collections::HashMap::new(),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
-                environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
+            environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
             app_server_target: crate::AppServerTarget::Embedded,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,
@@ -4543,7 +4543,6 @@ async fn uncapped_resize_reflow_renders_all_cells_when_row_cap_absent() {
     assert_eq!(rendered_line_text(&rendered.lines[0]), "cell 0");
     assert_eq!(rendered_line_text(&rendered.lines[38]), "cell 19");
 }
-
 
 #[tokio::test]
 async fn uncapped_resize_reflow_renders_all_cells_under_row_limit() {

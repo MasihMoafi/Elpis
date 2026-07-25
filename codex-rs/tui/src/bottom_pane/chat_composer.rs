@@ -8705,8 +8705,6 @@ mod tests {
         }
     }
 
-
-
     #[test]
     fn slash_popup_btw_for_bt_ui() {
         use ratatui::Terminal;

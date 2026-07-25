@@ -655,7 +655,12 @@ pub(crate) fn context_usage_totals(
             let chars: usize = cell
                 .raw_lines()
                 .iter()
-                .map(|line| line.spans.iter().map(|span| span.content.chars().count()).sum::<usize>())
+                .map(|line| {
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.chars().count())
+                        .sum::<usize>()
+                })
                 .sum();
             if kind == user_type {
                 totals.user_message_chars += chars;

@@ -115,7 +115,10 @@ impl ChatWidget {
             .iter()
             .enumerate()
             .filter_map(|(index, source)| {
-                (source.selectable && source.category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory).then_some(index)
+                (source.selectable
+                    && source.category
+                        != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory)
+                    .then_some(index)
             })
             .collect::<Vec<_>>();
         if selectable.is_empty() {
@@ -205,7 +208,11 @@ impl ChatWidget {
         let sources = self.continuity_sources();
         let total_tokens = sources
             .iter()
-            .filter(|source| source.admitted && source.category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory)
+            .filter(|source| {
+                source.admitted
+                    && source.category
+                        != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
+            })
             .map(|source| source.estimated_tokens)
             .sum::<u64>();
         // Plain ANSI cyan so the ledger matches the teal used by the identity line,
@@ -255,24 +262,18 @@ impl ChatWidget {
                     muted,
                 ),
             ]),
-            usage_bar_line(
-                content_width,
-                context_window,
-                &{
-                    let mut segments = vec![(conversation_tokens, messages_color)];
-                    for category in
-                        crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL
-                    {
-                        let admitted = sources
-                            .iter()
-                            .filter(|s| s.category == category && s.admitted)
-                            .map(|s| s.estimated_tokens)
-                            .sum::<u64>();
-                        segments.push((admitted, category_color(category)));
-                    }
-                    segments
-                },
-            ),
+            usage_bar_line(content_width, context_window, &{
+                let mut segments = vec![(conversation_tokens, messages_color)];
+                for category in crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL {
+                    let admitted = sources
+                        .iter()
+                        .filter(|s| s.category == category && s.admitted)
+                        .map(|s| s.estimated_tokens)
+                        .sum::<u64>();
+                    segments.push((admitted, category_color(category)));
+                }
+                segments
+            }),
             {
                 let name = "Conversation (messages)";
                 let right = format!("≈{}", format_tokens(conversation_tokens));
@@ -373,7 +374,10 @@ impl ChatWidget {
                         },
                     ),
                     Span::raw(" ".repeat(pad)),
-                    Span::styled(format!("≈{} ", format_tokens(source.estimated_tokens)), muted),
+                    Span::styled(
+                        format!("≈{} ", format_tokens(source.estimated_tokens)),
+                        muted,
+                    ),
                     Span::styled(state, state_style),
                 ]));
 
@@ -404,7 +408,13 @@ impl ChatWidget {
             lines.push(Line::from(""));
         }
 
-        while lines.last().map(|l| l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.trim().is_empty())).unwrap_or(false) {
+        while lines
+            .last()
+            .map(|l| {
+                l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.trim().is_empty())
+            })
+            .unwrap_or(false)
+        {
             lines.pop();
         }
 
@@ -451,11 +461,7 @@ impl ChatWidget {
         *self.context_ledger.last_source_ranges.borrow_mut() = tracked_ranges;
 
         Paragraph::new(lines.clone())
-            .block(
-                Block::default()
-                    .borders(Borders::LEFT)
-                    .border_style(cyan),
-            )
+            .block(Block::default().borders(Borders::LEFT).border_style(cyan))
             .wrap(Wrap { trim: true })
             .scroll((scroll_lines, 0))
             .render(area, buf);
@@ -472,12 +478,12 @@ impl ChatWidget {
                 .map(|(index, line)| {
                     let mut hyperlink_line = crate::terminal_hyperlinks::HyperlinkLine::new(line);
                     if let Some(destination) = links.get(&index) {
-                        hyperlink_line
-                            .hyperlinks
-                            .push(crate::terminal_hyperlinks::TerminalHyperlink {
+                        hyperlink_line.hyperlinks.push(
+                            crate::terminal_hyperlinks::TerminalHyperlink {
                                 columns: 0..content_width as usize,
                                 destination: destination.clone(),
-                            });
+                            },
+                        );
                     }
                     hyperlink_line
                 })
@@ -495,7 +501,8 @@ impl ChatWidget {
         let Some(area) = self.context_ledger.last_area.get() else {
             return false;
         };
-        if col < area.x || col >= area.x + area.width || row < area.y || row >= area.y + area.height {
+        if col < area.x || col >= area.x + area.width || row < area.y || row >= area.y + area.height
+        {
             return false;
         }
 
@@ -526,7 +533,9 @@ impl ChatWidget {
         false
     }
 
-    pub(super) fn continuity_sources(&self) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
+    pub(super) fn continuity_sources(
+        &self,
+    ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
         crate::legacy_core::elpis_context::continuity_sources(
             self.config
                 .memories
@@ -596,9 +605,7 @@ impl ChatWidget {
     }
 }
 
-fn category_color(
-    category: crate::legacy_core::elpis_context::ContinuitySourceCategory,
-) -> Color {
+fn category_color(category: crate::legacy_core::elpis_context::ContinuitySourceCategory) -> Color {
     use crate::legacy_core::elpis_context::ContinuitySourceCategory as C;
     match category {
         C::Files => Color::Rgb(52, 168, 83),
@@ -625,10 +632,7 @@ fn usage_bar_line(
         let cells = ((*tokens as usize * bar_width) / context_window.max(1) as usize)
             .max(1)
             .min(bar_width - cells_used);
-        spans.push(Span::styled(
-            "█".repeat(cells),
-            Style::default().fg(*color),
-        ));
+        spans.push(Span::styled("█".repeat(cells), Style::default().fg(*color)));
         cells_used += cells;
     }
     if cells_used < bar_width {

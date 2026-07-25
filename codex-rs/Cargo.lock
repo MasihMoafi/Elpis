@@ -1724,27 +1724,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-analytics"
-version = "0.0.0"
-dependencies = [
- "codex-app-server-protocol",
- "codex-git-utils",
- "codex-login",
- "codex-model-provider",
- "codex-plugin",
- "codex-protocol",
- "codex-state",
- "codex-utils-absolute-path",
- "os_info",
- "pretty_assertions",
- "serde",
- "serde_json",
- "sha1 0.10.6",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "codex-ansi-escape"
 version = "0.0.0"
 dependencies = [
@@ -1800,7 +1779,6 @@ dependencies = [
  "chrono",
  "clap",
  "codex-agent-extension",
- "codex-analytics",
  "codex-app-server-protocol",
  "codex-app-server-transport",
  "codex-arg0",
@@ -2407,7 +2385,6 @@ dependencies = [
  "chrono",
  "clap",
  "codex-agent-graph-store",
- "codex-analytics",
  "codex-api",
  "codex-app-server-protocol",
  "codex-apply-patch",
@@ -2524,7 +2501,6 @@ dependencies = [
 name = "codex-core-api"
 version = "0.0.0"
 dependencies = [
- "codex-analytics",
  "codex-app-server-protocol",
  "codex-arg0",
  "codex-config",
@@ -2547,7 +2523,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
- "codex-analytics",
  "codex-app-server-protocol",
  "codex-config",
  "codex-connectors",
@@ -2594,7 +2569,6 @@ name = "codex-core-skills"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "codex-analytics",
  "codex-config",
  "codex-context-fragments",
  "codex-exec-server",
@@ -2888,7 +2862,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
- "codex-analytics",
  "codex-core",
  "codex-extension-api",
  "codex-otel",

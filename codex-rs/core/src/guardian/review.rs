@@ -1,10 +1,9 @@
-use codex_analytics::GuardianApprovalRequestSource;
-use codex_analytics::GuardianReviewAnalyticsResult;
-use codex_analytics::GuardianReviewDecision;
-use codex_analytics::GuardianReviewFailureReason;
-use codex_analytics::GuardianReviewTerminalStatus;
-use codex_analytics::GuardianReviewTrackContext;
-use codex_analytics::GuardianReviewedAction;
+use crate::guardian::telemetry::GuardianApprovalRequestSource;
+use crate::guardian::telemetry::GuardianReviewDecision;
+use crate::guardian::telemetry::GuardianReviewFailureReason;
+use crate::guardian::telemetry::GuardianReviewMetrics;
+use crate::guardian::telemetry::GuardianReviewTerminalStatus;
+use crate::guardian::telemetry::GuardianReviewedAction;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
@@ -192,10 +191,10 @@ pub(crate) fn is_guardian_reviewer_source(
 
 fn track_guardian_review(
     session: &Session,
-    tracking: &GuardianReviewTrackContext,
+    started_at_ms: u64,
     approval_request_source: GuardianApprovalRequestSource,
-    reviewed_action: &GuardianReviewedAction,
-    result: GuardianReviewAnalyticsResult,
+    reviewed_action: GuardianReviewedAction,
+    result: GuardianReviewMetrics,
     completed_at_ms: u64,
 ) {
     emit_guardian_review_metrics(
@@ -203,12 +202,8 @@ fn track_guardian_review(
         &result,
         approval_request_source,
         reviewed_action,
-        completed_at_ms.saturating_sub(tracking.started_at_ms),
+        completed_at_ms.saturating_sub(started_at_ms),
     );
-    session
-        .services
-        .analytics_events_client
-        .track_guardian_review(tracking, result, completed_at_ms);
 }
 
 async fn record_guardian_non_denial(session: &Arc<Session>, turn_id: &str) {
@@ -290,16 +285,8 @@ async fn run_guardian_review(
     let assessment_turn_id = guardian_request_turn_id(&request, &turn.sub_id).to_string();
     let action_summary = guardian_assessment_action(&request);
     let reviewed_action = guardian_reviewed_action(&request);
-    let review_tracking = GuardianReviewTrackContext::new(
-        session.thread_id.to_string(),
-        assessment_turn_id.clone(),
-        review_id.clone(),
-        target_item_id.clone(),
-        approval_request_source,
-        reviewed_action.clone(),
-        GUARDIAN_REVIEW_TIMEOUT.as_millis() as u64,
-    );
-    let started_at_ms = review_tracking.started_at_ms.try_into().unwrap_or_default();
+    let started_at_ms = now_unix_timestamp_ms();
+    let review_started_at_ms: u64 = started_at_ms.try_into().unwrap_or_default();
     session
         .send_event(
             turn.as_ref(),
@@ -326,14 +313,14 @@ async fn run_guardian_review(
         let completed_at_ms = now_unix_timestamp_ms();
         track_guardian_review(
             session.as_ref(),
-            &review_tracking,
+            review_started_at_ms,
             approval_request_source,
-            &reviewed_action,
-            GuardianReviewAnalyticsResult {
+            reviewed_action,
+            GuardianReviewMetrics {
                 decision: GuardianReviewDecision::Aborted,
                 terminal_status: GuardianReviewTerminalStatus::Aborted,
                 failure_reason: Some(GuardianReviewFailureReason::Cancelled),
-                ..GuardianReviewAnalyticsResult::without_session()
+                ..GuardianReviewMetrics::without_session()
             },
             completed_at_ms.try_into().unwrap_or_default(),
         );
@@ -361,7 +348,7 @@ async fn run_guardian_review(
 
     let schema = guardian_output_schema();
     let terminal_action = action_summary.clone();
-    let (outcome, analytics_result) = Box::pin(run_guardian_review_session_with_retry(
+    let (outcome, review_metrics) = Box::pin(run_guardian_review_session_with_retry(
         session.clone(),
         turn.clone(),
         request,
@@ -378,10 +365,10 @@ async fn run_guardian_review(
             let approved = matches!(assessment.outcome, GuardianAssessmentOutcome::Allow);
             track_guardian_review(
                 session.as_ref(),
-                &review_tracking,
+                review_started_at_ms,
                 approval_request_source,
-                &reviewed_action,
-                GuardianReviewAnalyticsResult {
+                reviewed_action,
+                GuardianReviewMetrics {
                     decision: if approved {
                         GuardianReviewDecision::Approved
                     } else {
@@ -396,7 +383,7 @@ async fn run_guardian_review(
                     risk_level: Some(assessment.risk_level),
                     user_authorization: Some(assessment.user_authorization),
                     outcome: Some(assessment.outcome),
-                    ..analytics_result
+                    ..review_metrics
                 },
                 completed_at_ms.try_into().unwrap_or_default(),
             );
@@ -411,14 +398,14 @@ async fn run_guardian_review(
                         .to_string();
                 track_guardian_review(
                     session.as_ref(),
-                    &review_tracking,
+                    review_started_at_ms,
                     approval_request_source,
-                    &reviewed_action,
-                    GuardianReviewAnalyticsResult {
+                    reviewed_action,
+                    GuardianReviewMetrics {
                         decision: GuardianReviewDecision::Denied,
                         terminal_status: GuardianReviewTerminalStatus::TimedOut,
                         failure_reason: Some(error.failure_reason()),
-                        ..analytics_result
+                        ..review_metrics
                     },
                     completed_at_ms.try_into().unwrap_or_default(),
                 );
@@ -454,14 +441,14 @@ async fn run_guardian_review(
             GuardianReviewError::Cancelled => {
                 track_guardian_review(
                     session.as_ref(),
-                    &review_tracking,
+                    review_started_at_ms,
                     approval_request_source,
-                    &reviewed_action,
-                    GuardianReviewAnalyticsResult {
+                    reviewed_action,
+                    GuardianReviewMetrics {
                         decision: GuardianReviewDecision::Aborted,
                         terminal_status: GuardianReviewTerminalStatus::Aborted,
                         failure_reason: Some(error.failure_reason()),
-                        ..analytics_result
+                        ..review_metrics
                     },
                     completed_at_ms.try_into().unwrap_or_default(),
                 );
@@ -500,14 +487,14 @@ async fn run_guardian_review(
                 let rationale = format!("Automatic approval review failed: {message}");
                 track_guardian_review(
                     session.as_ref(),
-                    &review_tracking,
+                    review_started_at_ms,
                     approval_request_source,
-                    &reviewed_action,
-                    GuardianReviewAnalyticsResult {
+                    reviewed_action,
+                    GuardianReviewMetrics {
                         decision: GuardianReviewDecision::Denied,
                         terminal_status: GuardianReviewTerminalStatus::FailedClosed,
                         failure_reason: Some(error.failure_reason()),
-                        ..analytics_result
+                        ..review_metrics
                     },
                     completed_at_ms.try_into().unwrap_or_default(),
                 );
@@ -790,18 +777,18 @@ async fn run_guardian_review_session_before_deadline(
     schema: serde_json::Value,
     external_cancel: Option<CancellationToken>,
     deadline: Instant,
-) -> (GuardianReviewOutcome, GuardianReviewAnalyticsResult) {
+) -> (GuardianReviewOutcome, GuardianReviewMetrics) {
     let session_config = match guardian_review_session_config(session.as_ref(), turn.as_ref()).await
     {
         Ok(session_config) => session_config,
         Err(err) => {
             return (
                 GuardianReviewOutcome::Error(GuardianReviewError::prompt_build(err)),
-                GuardianReviewAnalyticsResult::without_session(),
+                GuardianReviewMetrics::without_session(),
             );
         }
     };
-    let (session_outcome, session_analytics_result) = Box::pin(
+    let (session_outcome, session_review_metrics) = Box::pin(
         session
             .guardian_review_session
             .run_review(GuardianReviewSessionParams {
@@ -832,11 +819,11 @@ async fn run_guardian_review_session_before_deadline(
                 match parse_guardian_assessment(Some(&last_agent_message)) {
                     Ok(assessment) => (
                         GuardianReviewOutcome::Completed(assessment),
-                        session_analytics_result,
+                        session_review_metrics,
                     ),
                     Err(err) => (
                         GuardianReviewOutcome::Error(GuardianReviewError::parse(err)),
-                        session_analytics_result,
+                        session_review_metrics,
                     ),
                 }
             }
@@ -844,34 +831,31 @@ async fn run_guardian_review_session_before_deadline(
                 GuardianReviewOutcome::Error(GuardianReviewError::session(anyhow::anyhow!(
                     "guardian review completed without an assessment payload"
                 ))),
-                session_analytics_result,
+                session_review_metrics,
             ),
         },
         GuardianReviewSessionOutcome::Completed(Err(err)) => (
             GuardianReviewOutcome::Error(GuardianReviewError::session(err)),
-            session_analytics_result,
+            session_review_metrics,
         ),
         GuardianReviewSessionOutcome::PromptBuildFailed(err) => (
             GuardianReviewOutcome::Error(GuardianReviewError::prompt_build(err)),
-            session_analytics_result,
+            session_review_metrics,
         ),
         GuardianReviewSessionOutcome::SessionFailed { error, error_info } => {
             let error = match error_info {
                 Some(error_info) => GuardianReviewError::session_with_error_info(error, error_info),
                 None => GuardianReviewError::session(error),
             };
-            (
-                GuardianReviewOutcome::Error(error),
-                session_analytics_result,
-            )
+            (GuardianReviewOutcome::Error(error), session_review_metrics)
         }
         GuardianReviewSessionOutcome::TimedOut => (
             GuardianReviewOutcome::Error(GuardianReviewError::Timeout),
-            session_analytics_result,
+            session_review_metrics,
         ),
         GuardianReviewSessionOutcome::Aborted => (
             GuardianReviewOutcome::Error(GuardianReviewError::Cancelled),
-            session_analytics_result,
+            session_review_metrics,
         ),
     }
 }
@@ -884,12 +868,12 @@ pub(super) async fn run_guardian_review_session_with_retry(
     schema: serde_json::Value,
     external_cancel: Option<CancellationToken>,
     max_attempts: i64,
-) -> (GuardianReviewOutcome, GuardianReviewAnalyticsResult) {
+) -> (GuardianReviewOutcome, GuardianReviewMetrics) {
     assert!(max_attempts > 0, "guardian review must run at least once");
     let deadline = Instant::now() + GUARDIAN_REVIEW_TIMEOUT;
     let mut attempt_count = 1;
     loop {
-        let (outcome, mut analytics_result) = run_guardian_review_session_before_deadline(
+        let (outcome, mut review_metrics) = run_guardian_review_session_before_deadline(
             Arc::clone(&session),
             Arc::clone(&turn),
             request.clone(),
@@ -899,14 +883,14 @@ pub(super) async fn run_guardian_review_session_with_retry(
             deadline,
         )
         .await;
-        analytics_result.attempt_count = attempt_count;
+        review_metrics.attempt_count = attempt_count;
         if attempt_count >= max_attempts || !should_retry_guardian_review(&outcome) {
-            return (outcome, analytics_result);
+            return (outcome, review_metrics);
         }
         if let Some(error) =
             wait_before_guardian_retry(attempt_count, deadline, external_cancel.as_ref()).await
         {
-            return (GuardianReviewOutcome::Error(error), analytics_result);
+            return (GuardianReviewOutcome::Error(error), review_metrics);
         }
         attempt_count += 1;
     }

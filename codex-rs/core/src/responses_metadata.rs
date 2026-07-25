@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use codex_analytics::CompactionImplementation;
-use codex_analytics::CompactionPhase;
-use codex_analytics::CompactionReason;
-use codex_analytics::CompactionStrategy;
-use codex_analytics::CompactionTrigger;
+use crate::compaction_kinds::CompactionImplementation;
+use crate::compaction_kinds::CompactionPhase;
+use crate::compaction_kinds::CompactionReason;
+use crate::compaction_kinds::CompactionStrategy;
+use crate::compaction_kinds::CompactionTrigger;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::SessionSource;
@@ -104,10 +104,6 @@ impl CompactionTurnMetadata {
 
     pub(crate) fn implementation(self) -> CompactionImplementation {
         self.implementation
-    }
-
-    pub(crate) fn phase(self) -> CompactionPhase {
-        self.phase
     }
 }
 

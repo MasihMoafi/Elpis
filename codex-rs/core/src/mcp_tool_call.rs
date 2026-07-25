@@ -23,9 +23,6 @@ use crate::session::turn_context::TurnContext;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::sandboxing::PermissionRequestPayload;
 use crate::turn_metadata::McpTurnMetadataContext;
-use codex_analytics::AppInvocation;
-use codex_analytics::InvocationType;
-use codex_analytics::build_track_events_context;
 use codex_config::ConfigLayerSource;
 use codex_config::types::AppToolApproval;
 use codex_config::types::ApprovalsReviewer;
@@ -455,7 +452,6 @@ async fn handle_approved_mcp_tool_call(
         truncate_mcp_tool_result_for_event(&result),
     )
     .await;
-    maybe_track_codex_app_used(sess, turn_context, manager, &server, &tool_name).await;
 
     let outcome = mcp_call_metric_outcome(&result);
     emit_mcp_call_metrics(
@@ -965,52 +961,6 @@ async fn notify_mcp_tool_call_completed(
         duration: Some(duration),
     });
     sess.emit_turn_item_completed(turn_context, item).await;
-}
-
-struct McpAppUsageMetadata {
-    connector_id: Option<String>,
-    app_name: Option<String>,
-}
-
-async fn maybe_track_codex_app_used(
-    sess: &Session,
-    turn_context: &TurnContext,
-    manager: &McpConnectionManager,
-    server: &str,
-    tool_name: &str,
-) {
-    if server != CODEX_APPS_MCP_SERVER_NAME {
-        return;
-    }
-    let metadata = lookup_mcp_app_usage_metadata(manager, server, tool_name).await;
-    let (connector_id, app_name) = metadata
-        .map(|metadata| (metadata.connector_id, metadata.app_name))
-        .unwrap_or((None, None));
-    let invocation_type = if let Some(connector_id) = connector_id.as_deref() {
-        let mentioned_connector_ids = sess.get_connector_selection().await;
-        if mentioned_connector_ids.contains(connector_id) {
-            InvocationType::Explicit
-        } else {
-            InvocationType::Implicit
-        }
-    } else {
-        InvocationType::Implicit
-    };
-
-    let tracking = build_track_events_context(
-        turn_context.model_info.slug.clone(),
-        sess.thread_id.to_string(),
-        turn_context.sub_id.clone(),
-        turn_context.originator.clone(),
-    );
-    sess.services.analytics_events_client.track_app_used(
-        tracking,
-        AppInvocation {
-            connector_id,
-            app_name,
-            invocation_type: Some(invocation_type),
-        },
-    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1608,18 +1558,6 @@ fn get_mcp_app_resource_uri(
                     .and_then(serde_json::Value::as_str)
             })
             .map(str::to_string)
-    })
-}
-
-async fn lookup_mcp_app_usage_metadata(
-    manager: &McpConnectionManager,
-    server: &str,
-    tool_name: &str,
-) -> Option<McpAppUsageMetadata> {
-    let tool_info = manager.tool_info(server, tool_name).await?;
-    Some(McpAppUsageMetadata {
-        connector_id: tool_info.connector_id,
-        app_name: tool_info.connector_name,
     })
 }
 

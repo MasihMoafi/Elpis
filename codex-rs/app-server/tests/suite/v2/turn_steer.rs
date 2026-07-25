@@ -32,9 +32,6 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 use tokio::time::timeout;
 
-use super::analytics::mount_analytics_capture;
-use super::analytics::wait_for_analytics_event;
-
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[tokio::test]
@@ -49,7 +46,6 @@ async fn turn_steer_requires_active_turn() -> Result<()> {
         &server.uri(),
         &server.uri(),
     )?;
-    mount_analytics_capture(&server, &codex_home).await?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)
@@ -91,21 +87,6 @@ async fn turn_steer_requires_active_turn() -> Result<()> {
     .await??;
     assert_eq!(steer_err.error.code, -32600);
 
-    let event =
-        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_turn_steer_event").await?;
-    assert_eq!(event["event_params"]["thread_id"], thread.id);
-    assert_eq!(event["event_params"]["result"], "rejected");
-    assert_eq!(event["event_params"]["num_input_images"], 0);
-    assert_eq!(
-        event["event_params"]["expected_turn_id"],
-        "turn-does-not-exist"
-    );
-    assert_eq!(
-        event["event_params"]["accepted_turn_id"],
-        serde_json::Value::Null
-    );
-    assert_eq!(event["event_params"]["rejection_reason"], "no_active_turn");
-
     Ok(())
 }
 
@@ -145,7 +126,6 @@ async fn turn_steer_rejects_oversized_text_input() -> Result<()> {
         &server.uri(),
         &server.uri(),
     )?;
-    mount_analytics_capture(&server, &codex_home).await?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)
@@ -269,7 +249,6 @@ async fn turn_steer_returns_active_turn_id() -> Result<()> {
         &server.uri(),
         &server.uri(),
     )?;
-    mount_analytics_capture(&server, &codex_home).await?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)
@@ -365,19 +344,6 @@ async fn turn_steer_returns_active_turn_id() -> Result<()> {
     })
     .await??;
 
-    let event =
-        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_turn_steer_event").await?;
-    assert_eq!(event["event_params"]["thread_id"], thread.id);
-    assert_eq!(event["event_params"]["session_id"], thread.session_id);
-    assert_eq!(event["event_params"]["result"], "accepted");
-    assert_eq!(event["event_params"]["num_input_images"], 0);
-    assert_eq!(event["event_params"]["expected_turn_id"], turn.id);
-    assert_eq!(event["event_params"]["accepted_turn_id"], turn.id);
-    assert_eq!(
-        event["event_params"]["rejection_reason"],
-        serde_json::Value::Null
-    );
-
     timeout(
         DEFAULT_READ_TIMEOUT,
         mcp.read_stream_until_notification_message("turn/completed"),
@@ -416,7 +382,6 @@ async fn turn_steer_rejects_context_only_input_without_merging_context() -> Resu
         &server.uri(),
         &server.uri(),
     )?;
-    mount_analytics_capture(&server, &codex_home).await?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)

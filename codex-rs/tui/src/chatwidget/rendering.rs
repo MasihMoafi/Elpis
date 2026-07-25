@@ -48,10 +48,11 @@ impl ChatWidget {
         }
         flex.push(
             /*flex*/ 0,
-            RenderableItem::Owned(Box::new(IdentityLineRenderable { chat_widget: self }))
-                .inset(Insets::tlbr(
+            RenderableItem::Owned(Box::new(IdentityLineRenderable { chat_widget: self })).inset(
+                Insets::tlbr(
                     /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
-                )),
+                ),
+            ),
         );
         flex.push(
             /*flex*/ 0,
@@ -186,9 +187,11 @@ impl Renderable for ChatWidget {
             let ledger_top = area
                 .y
                 .saturating_add(self.composer_top_offset(chat_area.width));
-            let ledger_height = self
-                .context_ledger_desired_height(ledger_width)
-                .min(area.y.saturating_add(area.height).saturating_sub(ledger_top));
+            let ledger_height = self.context_ledger_desired_height(ledger_width).min(
+                area.y
+                    .saturating_add(area.height)
+                    .saturating_sub(ledger_top),
+            );
             self.render_context_ledger(
                 Rect::new(
                     chat_area.x.saturating_add(chat_area.width),

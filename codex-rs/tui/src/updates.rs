@@ -60,7 +60,10 @@ struct ReleaseInfo {
     tag_name: String,
 }
 
-async fn check_for_update(version_file: &Path, _action: Option<UpdateAction>) -> anyhow::Result<()> {
+async fn check_for_update(
+    version_file: &Path,
+    _action: Option<UpdateAction>,
+) -> anyhow::Result<()> {
     let latest_version = fetch_latest_github_release_version().await?;
 
     if !is_newer(&latest_version, CODEX_CLI_VERSION).unwrap_or(false) {

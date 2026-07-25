@@ -12,21 +12,8 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::RolloutItem;
-
-pub(crate) fn initial_history_has_prior_user_turns(conversation_history: &InitialHistory) -> bool {
-    conversation_history.scan_rollout_items(rollout_item_is_user_turn_boundary)
-}
-
-fn rollout_item_is_user_turn_boundary(item: &RolloutItem) -> bool {
-    match item {
-        RolloutItem::ResponseItem(item) => is_user_turn_boundary(item),
-        RolloutItem::InterAgentCommunication(_) => true,
-        _ => false,
-    }
-}
 
 /// Return the indices of user message boundaries in a rollout.
 ///

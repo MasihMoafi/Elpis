@@ -24,6 +24,7 @@ mod compact_model_fallback;
 mod compact_remote;
 mod compact_remote_v2;
 mod compact_token_budget;
+mod compaction_kinds;
 mod config_lock;
 pub use codex_thread::BackgroundTerminalInfo;
 pub use codex_thread::CodexThread;
@@ -85,10 +86,7 @@ pub(crate) mod prompt_debug;
 pub use prompt_debug::build_prompt_input;
 pub(crate) mod mentions {
     pub(crate) use crate::plugins::build_connector_slug_counts;
-    pub(crate) use crate::plugins::build_skill_name_counts;
-    pub(crate) use crate::plugins::collect_explicit_app_ids;
     pub(crate) use crate::plugins::collect_explicit_plugin_mentions;
-    pub(crate) use crate::plugins::collect_tool_mentions_from_messages;
 }
 mod sandbox_tags;
 pub mod sandboxing;
@@ -100,7 +98,6 @@ pub(crate) use skills::SkillMetadata;
 pub(crate) use skills::SkillsService;
 pub(crate) use skills::build_available_skills;
 pub(crate) use skills::build_skill_injections;
-pub(crate) use skills::build_skill_name_counts;
 pub(crate) use skills::collect_explicit_skill_mentions;
 pub(crate) use skills::default_skill_metadata_budget;
 pub(crate) use skills::injection;

@@ -2,8 +2,6 @@ mod source;
 mod source_cla;
 mod utils;
 
-use codex_analytics::AnalyticsEventsClient;
-use codex_analytics::PluginInstallSource;
 use codex_config::types::PluginConfig;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
@@ -189,18 +187,16 @@ pub(crate) struct ExternalAgentConfigMigrationItem {
 pub(crate) struct ExternalAgentConfigService {
     codex_home: PathBuf,
     external_agent_home: PathBuf,
-    analytics_events_client: Option<AnalyticsEventsClient>,
     source: ExternalAgentSource,
 }
 
 impl ExternalAgentConfigService {
-    pub(crate) fn new(codex_home: PathBuf, analytics_events_client: AnalyticsEventsClient) -> Self {
+    pub(crate) fn new(codex_home: PathBuf) -> Self {
         let source = ExternalAgentSource::default();
         let external_agent_home = default_external_agent_home(source);
         Self {
             codex_home,
             external_agent_home,
-            analytics_events_client: Some(analytics_events_client),
             source,
         }
     }
@@ -210,7 +206,6 @@ impl ExternalAgentConfigService {
         Self {
             codex_home,
             external_agent_home,
-            analytics_events_client: None,
             source: ExternalAgentSource::default(),
         }
     }
@@ -958,11 +953,7 @@ impl ExternalAgentConfigService {
             .map_err(|err| io::Error::other(format!("failed to load config: {err}")))?;
         let requirements = config.config_layer_stack.requirements().clone();
         let mut outcome = PluginImportOutcome::default();
-        let plugins_manager = PluginsManager::new(self.codex_home.clone())
-            .with_plugin_install_source(PluginInstallSource::ExternalAgentMigration);
-        if let Some(analytics_events_client) = self.analytics_events_client.clone() {
-            plugins_manager.set_analytics_events_client(analytics_events_client);
-        }
+        let plugins_manager = PluginsManager::new(self.codex_home.clone());
         let import_sources = self.marketplace_import_sources(cwd)?;
         for plugin_group in plugins {
             let marketplace_name = plugin_group.marketplace_name.clone();

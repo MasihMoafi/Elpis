@@ -64,11 +64,7 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
     let rendered = render_ledger(&chat, 80);
 
-    for heading in [
-        "ACTIVE FILES",
-        "INSTRUCTIONS",
-        "TOOL EVIDENCE",
-    ] {
+    for heading in ["ACTIVE FILES", "INSTRUCTIONS", "TOOL EVIDENCE"] {
         assert!(rendered.contains(heading), "missing {heading}:\n{rendered}");
     }
     assert!(rendered.contains("≈"), "token estimates must be labeled");

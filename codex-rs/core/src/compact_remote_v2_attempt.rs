@@ -4,7 +4,6 @@ use super::RemoteCompactionV2Output;
 use super::run_remote_compaction_request_v2;
 use crate::Prompt;
 use crate::client::ModelClientSession;
-use crate::compact::CompactionAnalyticsDetails;
 use crate::compact_remote::trim_function_call_history_to_fit_context_window;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::responses_metadata::CompactionTurnMetadata;
@@ -33,12 +32,11 @@ pub(super) async fn run_remote_compact_v2_attempt(
     client_session: Option<&mut ModelClientSession>,
     compaction_trace: &CompactionTraceContext,
     compaction_metadata: CompactionTurnMetadata,
-    analytics_details: &mut CompactionAnalyticsDetails,
 ) -> CodexResult<RemoteCompactV2Attempt> {
     let turn_context = &step_context.turn;
     let mut history = sess.clone_history().await;
     let base_instructions = sess.get_base_instructions().await;
-    let (rewritten_outputs, estimated_deleted_tokens) =
+    let (rewritten_outputs, _estimated_deleted_tokens) =
         trim_function_call_history_to_fit_context_window(
             &mut history,
             turn_context.as_ref(),
@@ -50,17 +48,6 @@ pub(super) async fn run_remote_compact_v2_attempt(
             rewritten_outputs,
             "rewrote history outputs before remote compaction v2"
         );
-    }
-    if estimated_deleted_tokens > 0 {
-        let max_local_deleted_tokens = sess
-            .estimated_tokens_after_last_model_generated_item()
-            .await;
-        analytics_details.active_context_tokens_before = analytics_details
-            .active_context_tokens_before
-            .map(|active_context_tokens_before| {
-                active_context_tokens_before
-                    .saturating_sub(estimated_deleted_tokens.min(max_local_deleted_tokens))
-            });
     }
 
     let trace_input_history = history.raw_items().to_vec();

@@ -1273,19 +1273,20 @@ See the Elpis keymap documentation for supported actions and examples."
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, app_server, key_event).await;
                 }
-                TuiEvent::Mouse(mouse_event) => {
-                    match mouse_event.kind {
-                        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
-                            self.chat_widget.handle_context_ledger_mouse_click(mouse_event.row, mouse_event.column);
-                        }
-                        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Middle) => {
-                            if let Some(pasted) = crate::clipboard_paste::read_primary_selection() {
-                                self.chat_widget.handle_paste(pasted.replace('\r', "\n"));
-                            }
-                        }
-                        _ => {}
+                TuiEvent::Mouse(mouse_event) => match mouse_event.kind {
+                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                        self.chat_widget
+                            .handle_context_ledger_mouse_click(mouse_event.row, mouse_event.column);
                     }
-                }
+                    crossterm::event::MouseEventKind::Down(
+                        crossterm::event::MouseButton::Middle,
+                    ) => {
+                        if let Some(pasted) = crate::clipboard_paste::read_primary_selection() {
+                            self.chat_widget.handle_paste(pasted.replace('\r', "\n"));
+                        }
+                    }
+                    _ => {}
+                },
                 TuiEvent::Paste(pasted) => {
                     // Many terminals convert newlines to \r when pasting (e.g., iTerm2),
                     // but tui-textarea expects \n. Normalize CR to LF.

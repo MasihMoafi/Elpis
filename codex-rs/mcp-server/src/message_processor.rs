@@ -81,7 +81,6 @@ impl MessageProcessor {
             environment_manager,
             Arc::new(extensions.build()),
             user_instructions_provider,
-            /*analytics_events_client*/ None,
             codex_core::thread_store_from_config(config.as_ref(), state_db.clone()),
             codex_core::local_agent_graph_store_from_state_db(state_db.as_ref()),
             installation_id,

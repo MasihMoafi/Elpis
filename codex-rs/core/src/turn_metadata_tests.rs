@@ -1,14 +1,14 @@
 use super::*;
 
+use crate::compaction_kinds::CompactionImplementation;
+use crate::compaction_kinds::CompactionPhase;
+use crate::compaction_kinds::CompactionReason;
+use crate::compaction_kinds::CompactionTrigger;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::responses_metadata::CompactionTurnMetadata;
 use crate::responses_metadata::INSTALLATION_ID_KEY;
 use crate::responses_metadata::WINDOW_ID_KEY;
 use crate::sandbox_tags::permission_profile_sandbox_tag;
-use codex_analytics::CompactionImplementation;
-use codex_analytics::CompactionPhase;
-use codex_analytics::CompactionReason;
-use codex_analytics::CompactionTrigger;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::SessionSource;
@@ -680,7 +680,6 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
     assert_eq!(meta["model"].as_str(), Some("gpt-5.4"));
     assert_eq!(meta["reasoning_effort"].as_str(), Some("high"));
     assert!(meta.get(WINDOW_ID_KEY).is_none());
-    assert_eq!(state.workspace_kind().as_deref(), Some("projectless"));
 }
 
 #[test]

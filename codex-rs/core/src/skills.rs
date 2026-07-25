@@ -1,9 +1,6 @@
 use crate::config::Config;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use codex_analytics::InvocationType;
-use codex_analytics::SkillInvocation;
-use codex_analytics::build_track_events_context;
 use codex_extension_api::SkillInvocationInput;
 use codex_extension_api::SkillInvocationKind;
 use codex_protocol::protocol::SkillScope;
@@ -60,21 +57,15 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
     ) else {
         return;
     };
-    let invocation = SkillInvocation {
-        skill_name: candidate.name,
-        skill_scope: candidate.scope,
-        skill_path: candidate.path_to_skills_md.to_path_buf(),
-        plugin_id: candidate.plugin_id,
-        invocation_type: InvocationType::Implicit,
-    };
-    let skill_scope = match invocation.skill_scope {
+    let skill_scope = match candidate.scope {
         SkillScope::User => "user",
         SkillScope::Repo => "repo",
         SkillScope::System => "system",
         SkillScope::Admin => "admin",
     };
-    let skill_path = invocation.skill_path.to_string_lossy();
-    let skill_name = invocation.skill_name.clone();
+    let skill_path_buf = candidate.path_to_skills_md.to_path_buf();
+    let skill_path = skill_path_buf.to_string_lossy();
+    let skill_name = candidate.name;
     let seen_key = format!("{skill_scope}:{skill_path}:{skill_name}");
     let inserted = {
         let mut seen_skills = turn_context
@@ -110,15 +101,4 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
             ("invoke_type", "implicit"),
         ],
     );
-    sess.services
-        .analytics_events_client
-        .track_skill_invocations(
-            build_track_events_context(
-                turn_context.model_info.slug.clone(),
-                sess.thread_id.to_string(),
-                turn_context.sub_id.clone(),
-                turn_context.originator.clone(),
-            ),
-            vec![invocation],
-        );
 }

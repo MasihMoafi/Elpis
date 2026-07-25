@@ -17,17 +17,17 @@ use crossterm::Command;
 use crossterm::SynchronizedUpdate;
 use crossterm::cursor::SetCursorStyle;
 use crossterm::event::DisableBracketedPaste;
-use ratatui::crossterm::event::DisableFocusChange;
-use ratatui::crossterm::event::EnableBracketedPaste;
-use ratatui::crossterm::event::EnableFocusChange;
-use ratatui::crossterm::event::KeyEvent;
-pub use ratatui::crossterm::event::MouseEvent;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
 #[cfg(not(unix))]
 use crossterm::terminal::supports_keyboard_enhancement;
 use ratatui::backend::Backend;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::DisableFocusChange;
+use ratatui::crossterm::event::EnableBracketedPaste;
+use ratatui::crossterm::event::EnableFocusChange;
+use ratatui::crossterm::event::KeyEvent;
+pub use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::disable_raw_mode;
 use ratatui::crossterm::terminal::enable_raw_mode;
@@ -88,8 +88,7 @@ fn should_emit_notification(condition: NotificationCondition, terminal_focused: 
 }
 
 impl Drop for Tui {
-    fn drop(&mut self) {
-    }
+    fn drop(&mut self) {}
 }
 
 #[cfg(test)]
@@ -946,9 +945,6 @@ impl Tui {
             })
         })?
     }
-
-
-
 
     /// Draw a frame using the resize-reflow viewport and history insertion rules.
     ///

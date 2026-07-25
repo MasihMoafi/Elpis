@@ -315,8 +315,9 @@ impl GoalService {
         drop(goal_state_permit);
         drop(runtime);
 
-        if let (Some(runtime), Some(goal)) = (self.runtime_for_thread(thread_id), cleared_goal)
-            && let Err(err) = runtime.apply_external_goal_clear(goal).await
+        if let Some(runtime) = self.runtime_for_thread(thread_id)
+            && cleared
+            && let Err(err) = runtime.apply_external_goal_clear().await
         {
             tracing::warn!("failed to apply external goal clear runtime effects: {err}");
         }

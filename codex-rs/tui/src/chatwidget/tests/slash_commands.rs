@@ -3,10 +3,6 @@ use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use pretty_assertions::assert_eq;
 use serial_test::serial;
 
-
-
-
-
 fn fast_tier_command() -> ServiceTierCommand {
     ServiceTierCommand {
         id: ServiceTier::Fast.request_value().to_string(),
@@ -2391,14 +2387,6 @@ async fn slash_resume_with_arg_requests_named_session_while_mcp_startup_is_runni
     );
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
-
-
-
-
-
-
-
-
 
 #[tokio::test]
 async fn slash_fork_requests_current_fork() {

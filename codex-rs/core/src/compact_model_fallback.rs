@@ -1,5 +1,5 @@
-use codex_analytics::CompactionImplementation;
-use codex_analytics::CompactionReason;
+use crate::compaction_kinds::CompactionImplementation;
+use crate::compaction_kinds::CompactionReason;
 use codex_otel::SessionTelemetry;
 use codex_protocol::error::CodexErr;
 use tracing::warn;

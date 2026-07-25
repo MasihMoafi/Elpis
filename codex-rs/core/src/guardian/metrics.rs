@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use codex_analytics::GuardianApprovalRequestSource;
-use codex_analytics::GuardianReviewAnalyticsResult;
-use codex_analytics::GuardianReviewDecision;
-use codex_analytics::GuardianReviewFailureReason;
-use codex_analytics::GuardianReviewSessionKind;
-use codex_analytics::GuardianReviewTerminalStatus;
-use codex_analytics::GuardianReviewedAction;
+use crate::guardian::telemetry::GuardianApprovalRequestSource;
+use crate::guardian::telemetry::GuardianReviewDecision;
+use crate::guardian::telemetry::GuardianReviewFailureReason;
+use crate::guardian::telemetry::GuardianReviewMetrics;
+use crate::guardian::telemetry::GuardianReviewSessionKind;
+use crate::guardian::telemetry::GuardianReviewTerminalStatus;
+use crate::guardian::telemetry::GuardianReviewedAction;
 use codex_otel::GUARDIAN_REVIEW_COUNT_METRIC;
 use codex_otel::GUARDIAN_REVIEW_DURATION_METRIC;
 use codex_otel::GUARDIAN_REVIEW_TOKEN_USAGE_METRIC;
@@ -20,9 +20,9 @@ use codex_protocol::protocol::TokenUsage;
 
 pub(crate) fn emit_guardian_review_metrics(
     session_telemetry: &SessionTelemetry,
-    result: &GuardianReviewAnalyticsResult,
+    result: &GuardianReviewMetrics,
     approval_request_source: GuardianApprovalRequestSource,
-    reviewed_action: &GuardianReviewedAction,
+    reviewed_action: GuardianReviewedAction,
     completion_latency_ms: u64,
 ) {
     let tags = guardian_review_metric_tags(result, approval_request_source, reviewed_action);
@@ -78,9 +78,9 @@ fn emit_guardian_token_usage_histograms(
 }
 
 fn guardian_review_metric_tags(
-    result: &GuardianReviewAnalyticsResult,
+    result: &GuardianReviewMetrics,
     approval_request_source: GuardianApprovalRequestSource,
-    reviewed_action: &GuardianReviewedAction,
+    reviewed_action: GuardianReviewedAction,
 ) -> Vec<(&'static str, String)> {
     vec![
         ("decision", decision_tag(result.decision).to_string()),
@@ -170,15 +170,15 @@ fn approval_request_source_tag(source: GuardianApprovalRequestSource) -> &'stati
     }
 }
 
-fn reviewed_action_tag(action: &GuardianReviewedAction) -> &'static str {
+fn reviewed_action_tag(action: GuardianReviewedAction) -> &'static str {
     match action {
-        GuardianReviewedAction::Shell { .. } => "shell",
-        GuardianReviewedAction::UnifiedExec { .. } => "unified_exec",
-        GuardianReviewedAction::Execve { .. } => "execve",
-        GuardianReviewedAction::ApplyPatch {} => "apply_patch",
-        GuardianReviewedAction::NetworkAccess { .. } => "network_access",
-        GuardianReviewedAction::McpToolCall { .. } => "mcp_tool_call",
-        GuardianReviewedAction::RequestPermissions {} => "request_permissions",
+        GuardianReviewedAction::Shell => "shell",
+        GuardianReviewedAction::UnifiedExec => "unified_exec",
+        GuardianReviewedAction::Execve => "execve",
+        GuardianReviewedAction::ApplyPatch => "apply_patch",
+        GuardianReviewedAction::NetworkAccess => "network_access",
+        GuardianReviewedAction::McpToolCall => "mcp_tool_call",
+        GuardianReviewedAction::RequestPermissions => "request_permissions",
     }
 }
 
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn guardian_review_metrics_record_counts_durations_and_token_usage() {
         let session_telemetry = test_session_telemetry();
-        let result = GuardianReviewAnalyticsResult {
+        let result = GuardianReviewMetrics {
             decision: GuardianReviewDecision::Approved,
             terminal_status: GuardianReviewTerminalStatus::Approved,
             risk_level: Some(GuardianRiskLevel::Low),
@@ -353,17 +353,14 @@ mod tests {
                 total_tokens: 15,
             }),
             time_to_first_token_ms: Some(123),
-            ..GuardianReviewAnalyticsResult::without_session()
+            ..GuardianReviewMetrics::without_session()
         };
 
         emit_guardian_review_metrics(
             &session_telemetry,
             &result,
             GuardianApprovalRequestSource::DelegatedSubagent,
-            &GuardianReviewedAction::NetworkAccess {
-                protocol: codex_protocol::approvals::NetworkApprovalProtocol::Https,
-                port: 443,
-            },
+            GuardianReviewedAction::NetworkAccess,
             /*completion_latency_ms*/ 456,
         );
 

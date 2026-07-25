@@ -31,7 +31,6 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 const MODEL_KEY: &str = "model";
 const REASONING_EFFORT_KEY: &str = "reasoning_effort";
 const USER_INPUT_REQUESTED_DURING_TURN_KEY: &str = "user_input_requested_during_turn";
-const WORKSPACE_KIND_KEY: &str = "workspace_kind";
 
 pub(crate) struct McpTurnMetadataContext<'a> {
     pub(crate) model: &'a str,
@@ -212,14 +211,6 @@ impl TurnMetadataState {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
             filter_extra_metadata(responsesapi_client_metadata);
-    }
-
-    pub(crate) fn workspace_kind(&self) -> Option<String> {
-        self.responsesapi_client_metadata
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(WORKSPACE_KIND_KEY)
-            .cloned()
     }
 
     fn responses_metadata_template(&self) -> CodexResponsesMetadata {

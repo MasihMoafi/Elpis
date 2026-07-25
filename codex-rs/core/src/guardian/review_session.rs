@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::guardian::telemetry::GuardianReviewMetrics;
+use crate::guardian::telemetry::GuardianReviewSessionKind;
+use crate::guardian::telemetry::GuardianReviewSessionMetricsParams;
 use anyhow::anyhow;
-use codex_analytics::GuardianReviewAnalyticsResult;
-use codex_analytics::GuardianReviewSessionAnalyticsParams;
-use codex_analytics::GuardianReviewSessionKind;
 use codex_extension_api::UserInstructions;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
@@ -367,7 +367,7 @@ impl GuardianReviewSessionManager {
     pub(super) async fn run_review(
         &self,
         params: GuardianReviewSessionParams,
-    ) -> (GuardianReviewSessionOutcome, GuardianReviewAnalyticsResult) {
+    ) -> (GuardianReviewSessionOutcome, GuardianReviewMetrics) {
         let deadline = params.deadline;
         let next_reuse_key = GuardianReviewSessionReuseKey::from_spawn_config(
             &params.spawn_config,
@@ -411,11 +411,11 @@ impl GuardianReviewSessionManager {
                         Ok(Err(err)) => {
                             return (
                                 GuardianReviewSessionOutcome::PromptBuildFailed(err),
-                                GuardianReviewAnalyticsResult::without_session(),
+                                GuardianReviewMetrics::without_session(),
                             );
                         }
                         Err(outcome) => {
-                            return (outcome, GuardianReviewAnalyticsResult::without_session());
+                            return (outcome, GuardianReviewMetrics::without_session());
                         }
                     };
                     state.trunk = Some(Arc::clone(&review_session));
@@ -425,7 +425,7 @@ impl GuardianReviewSessionManager {
                 state.trunk.as_ref().cloned()
             }
             Err(outcome) => {
-                return (outcome, GuardianReviewAnalyticsResult::without_session());
+                return (outcome, GuardianReviewMetrics::without_session());
             }
         };
 
@@ -438,7 +438,7 @@ impl GuardianReviewSessionManager {
                 GuardianReviewSessionOutcome::Completed(Err(anyhow!(
                     "guardian review session was not available after spawn"
                 ))),
-                GuardianReviewAnalyticsResult::without_session(),
+                GuardianReviewMetrics::without_session(),
             );
         };
 
@@ -470,7 +470,7 @@ impl GuardianReviewSessionManager {
         } else {
             GuardianReviewSessionKind::TrunkReused
         };
-        let (outcome, keep_review_session, analytics_result) = Box::pin(run_review_on_session(
+        let (outcome, keep_review_session, review_metrics) = Box::pin(run_review_on_session(
             trunk.as_ref(),
             &params,
             guardian_session_kind,
@@ -483,12 +483,12 @@ impl GuardianReviewSessionManager {
         drop(trunk_guard);
 
         if keep_review_session {
-            (outcome, analytics_result)
+            (outcome, review_metrics)
         } else {
             if let Some(review_session) = self.remove_trunk_if_current(&trunk).await {
                 review_session.shutdown_in_background();
             }
-            (outcome, analytics_result)
+            (outcome, review_metrics)
         }
     }
 
@@ -601,7 +601,7 @@ impl GuardianReviewSessionManager {
         reuse_key: GuardianReviewSessionReuseKey,
         deadline: tokio::time::Instant,
         fork_snapshot: Option<GuardianReviewForkSnapshot>,
-    ) -> (GuardianReviewSessionOutcome, GuardianReviewAnalyticsResult) {
+    ) -> (GuardianReviewSessionOutcome, GuardianReviewMetrics) {
         let spawn_cancel_token = self.cancellation_token.child_token();
         let mut fork_config = params.spawn_config.clone();
         fork_config.ephemeral = true;
@@ -624,11 +624,11 @@ impl GuardianReviewSessionManager {
             Ok(Err(err)) => {
                 return (
                     GuardianReviewSessionOutcome::PromptBuildFailed(err),
-                    GuardianReviewAnalyticsResult::without_session(),
+                    GuardianReviewMetrics::without_session(),
                 );
             }
             Err(outcome) => {
-                return (outcome, GuardianReviewAnalyticsResult::without_session());
+                return (outcome, GuardianReviewMetrics::without_session());
             }
         };
         self.register_active_ephemeral(Arc::clone(&review_session))
@@ -636,7 +636,7 @@ impl GuardianReviewSessionManager {
         let mut cleanup =
             EphemeralReviewCleanup::new(Arc::clone(&self.state), Arc::clone(&review_session));
 
-        let (outcome, _, analytics_result) = Box::pin(run_review_on_session(
+        let (outcome, _, review_metrics) = Box::pin(run_review_on_session(
             review_session.as_ref(),
             &params,
             GuardianReviewSessionKind::EphemeralForked,
@@ -647,7 +647,7 @@ impl GuardianReviewSessionManager {
             cleanup.disarm();
             review_session.shutdown_in_background();
         }
-        (outcome, analytics_result)
+        (outcome, review_metrics)
     }
 }
 
@@ -698,11 +698,7 @@ async fn run_review_on_session(
     params: &GuardianReviewSessionParams,
     guardian_session_kind: GuardianReviewSessionKind,
     deadline: tokio::time::Instant,
-) -> (
-    GuardianReviewSessionOutcome,
-    bool,
-    GuardianReviewAnalyticsResult,
-) {
+) -> (GuardianReviewSessionOutcome, bool, GuardianReviewMetrics) {
     let (send_followup_reminder, prompt_mode) = {
         let state = review_session.state.lock().await;
 
@@ -730,8 +726,8 @@ async fn run_review_on_session(
         .reasoning_effort
         .clone()
         .or_else(|| model_info.default_reasoning_level.clone());
-    let mut analytics_result =
-        GuardianReviewAnalyticsResult::from_session(GuardianReviewSessionAnalyticsParams {
+    let mut review_metrics =
+        GuardianReviewMetrics::from_session(GuardianReviewSessionMetricsParams {
             guardian_thread_id: review_session.session.thread_id().to_string(),
             guardian_session_kind,
             guardian_model: params.model.clone(),
@@ -771,7 +767,7 @@ async fn run_review_on_session(
     .await;
     let prompt_items = match prompt_items {
         Ok(prompt_items) => prompt_items,
-        Err(outcome) => return (outcome, false, analytics_result),
+        Err(outcome) => return (outcome, false, review_metrics),
     };
     let prompt_items = match prompt_items {
         Ok(prompt_items) => prompt_items,
@@ -779,7 +775,7 @@ async fn run_review_on_session(
             return (
                 GuardianReviewSessionOutcome::PromptBuildFailed(err.into()),
                 false,
-                analytics_result,
+                review_metrics,
             );
         }
     };
@@ -841,26 +837,26 @@ async fn run_review_on_session(
                     error_info: None,
                 },
                 false,
-                analytics_result,
+                review_metrics,
             );
         }
-        Err(outcome) => return (outcome, false, analytics_result),
+        Err(outcome) => return (outcome, false, review_metrics),
     };
-    analytics_result.reviewed_action_truncated = reviewed_action_truncated;
+    review_metrics.reviewed_action_truncated = reviewed_action_truncated;
 
     let outcome = wait_for_guardian_review(
         review_session,
         child_turn_id.as_str(),
         deadline,
         params.external_cancel.as_ref(),
-        &mut analytics_result,
+        &mut review_metrics,
     )
     .await;
     if matches!(outcome.0, GuardianReviewSessionOutcome::Completed(_)) {
         if outcome.2
             && let Some(total_token_usage) = review_session.session.total_token_usage().await
         {
-            analytics_result.token_usage = Some(token_usage_delta(
+            review_metrics.token_usage = Some(token_usage_delta(
                 &token_usage_at_review_start,
                 &total_token_usage,
             ));
@@ -869,7 +865,7 @@ async fn run_review_on_session(
         state.prior_review_count = state.prior_review_count.saturating_add(1);
         state.last_reviewed_transcript_cursor = Some(transcript_cursor);
     }
-    (outcome.0, outcome.1, analytics_result)
+    (outcome.0, outcome.1, review_metrics)
 }
 
 async fn append_guardian_followup_reminder(review_session: &GuardianReviewSession) {
@@ -895,7 +891,7 @@ async fn wait_for_guardian_review(
     expected_turn_id: &str,
     deadline: tokio::time::Instant,
     external_cancel: Option<&CancellationToken>,
-    analytics_result: &mut GuardianReviewAnalyticsResult,
+    review_metrics: &mut GuardianReviewMetrics,
 ) -> (GuardianReviewSessionOutcome, bool, bool) {
     let timeout = tokio::time::sleep_until(deadline);
     tokio::pin!(timeout);
@@ -932,7 +928,7 @@ async fn wait_for_guardian_review(
                     Ok(event) if !event_matches_turn(&event, expected_turn_id) => {}
                     Ok(event) => match event.msg {
                         EventMsg::TurnComplete(turn_complete) => {
-                            analytics_result.time_to_first_token_ms = turn_complete
+                            review_metrics.time_to_first_token_ms = turn_complete
                                 .time_to_first_token_ms
                                 .and_then(|ms| u64::try_from(ms).ok());
                             if turn_complete.last_agent_message.is_none()
@@ -1696,13 +1692,13 @@ mod tests {
             .await
             .expect("queue submitted turn completion");
 
-        let (outcome, keep_review_session, analytics_result) =
+        let (outcome, keep_review_session, review_metrics) =
             review.await.expect("review task should complete");
         let GuardianReviewSessionOutcome::Completed(Ok(last_agent_message)) = outcome else {
             panic!("expected submitted turn completion");
         };
         assert_eq!(last_agent_message.as_deref(), Some("fresh"));
-        assert_eq!(analytics_result.time_to_first_token_ms, Some(42));
+        assert_eq!(review_metrics.time_to_first_token_ms, Some(42));
         assert!(keep_review_session);
     }
 
@@ -1744,13 +1740,13 @@ mod tests {
             .await
             .expect("queue current turn completion");
 
-        let mut analytics_result = GuardianReviewAnalyticsResult::without_session();
+        let mut review_metrics = GuardianReviewMetrics::without_session();
         let (outcome, keep_review_session, capture_token_usage) = wait_for_guardian_review(
             &review_session,
             "current-turn",
             tokio::time::Instant::now() + Duration::from_secs(1),
             /*external_cancel*/ None,
-            &mut analytics_result,
+            &mut review_metrics,
         )
         .await;
 
@@ -1758,7 +1754,7 @@ mod tests {
             panic!("expected current turn completion");
         };
         assert_eq!(last_agent_message.as_deref(), Some("fresh"));
-        assert_eq!(analytics_result.time_to_first_token_ms, Some(42));
+        assert_eq!(review_metrics.time_to_first_token_ms, Some(42));
         assert!(keep_review_session);
         assert!(capture_token_usage);
     }
@@ -1785,13 +1781,13 @@ mod tests {
             .await
             .expect("queue current turn completion");
 
-        let mut analytics_result = GuardianReviewAnalyticsResult::without_session();
+        let mut review_metrics = GuardianReviewMetrics::without_session();
         let (outcome, keep_review_session, capture_token_usage) = wait_for_guardian_review(
             &review_session,
             "current-turn",
             tokio::time::Instant::now() + Duration::from_secs(1),
             /*external_cancel*/ None,
-            &mut analytics_result,
+            &mut review_metrics,
         )
         .await;
 
@@ -1799,7 +1795,7 @@ mod tests {
             panic!("expected current turn completion");
         };
         assert_eq!(last_agent_message, None);
-        assert_eq!(analytics_result.time_to_first_token_ms, Some(42));
+        assert_eq!(review_metrics.time_to_first_token_ms, Some(42));
         assert!(keep_review_session);
         assert!(capture_token_usage);
     }
@@ -1826,13 +1822,13 @@ mod tests {
             .await
             .expect("queue current turn completion");
 
-        let mut analytics_result = GuardianReviewAnalyticsResult::without_session();
+        let mut review_metrics = GuardianReviewMetrics::without_session();
         let (outcome, keep_review_session, capture_token_usage) = wait_for_guardian_review(
             &review_session,
             "current-turn",
             tokio::time::Instant::now() + Duration::from_secs(1),
             /*external_cancel*/ None,
-            &mut analytics_result,
+            &mut review_metrics,
         )
         .await;
 
@@ -1857,13 +1853,13 @@ mod tests {
             .await
             .expect("queue current turn completion");
 
-        let mut analytics_result = GuardianReviewAnalyticsResult::without_session();
+        let mut review_metrics = GuardianReviewMetrics::without_session();
         let (outcome, keep_review_session, capture_token_usage) = wait_for_guardian_review(
             &review_session,
             "current-turn",
             tokio::time::Instant::now() + Duration::from_secs(1),
             /*external_cancel*/ None,
-            &mut analytics_result,
+            &mut review_metrics,
         )
         .await;
 
@@ -1871,7 +1867,7 @@ mod tests {
             panic!("expected current turn completion");
         };
         assert_eq!(last_agent_message.as_deref(), Some("fresh"));
-        assert_eq!(analytics_result.time_to_first_token_ms, Some(42));
+        assert_eq!(review_metrics.time_to_first_token_ms, Some(42));
         assert!(keep_review_session);
         assert!(capture_token_usage);
     }
@@ -1893,13 +1889,13 @@ mod tests {
                 .expect("queue current turn abort");
         });
 
-        let mut analytics_result = GuardianReviewAnalyticsResult::without_session();
+        let mut review_metrics = GuardianReviewMetrics::without_session();
         let (outcome, keep_review_session, capture_token_usage) = wait_for_guardian_review(
             &review_session,
             "current-turn",
             tokio::time::Instant::now() + Duration::from_millis(10),
             /*external_cancel*/ None,
-            &mut analytics_result,
+            &mut review_metrics,
         )
         .await;
 
@@ -1930,13 +1926,13 @@ mod tests {
         let external_cancel = CancellationToken::new();
         external_cancel.cancel();
 
-        let mut analytics_result = GuardianReviewAnalyticsResult::without_session();
+        let mut review_metrics = GuardianReviewMetrics::without_session();
         let (outcome, keep_review_session, capture_token_usage) = wait_for_guardian_review(
             &review_session,
             "current-turn",
             tokio::time::Instant::now() + Duration::from_secs(1),
             Some(&external_cancel),
-            &mut analytics_result,
+            &mut review_metrics,
         )
         .await;
 

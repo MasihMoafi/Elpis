@@ -1,7 +1,6 @@
 use super::ConnectionSessionState;
 use super::MessageProcessor;
 use super::MessageProcessorArgs;
-use crate::analytics_utils::analytics_events_client_from_config;
 use crate::config_manager::ConfigManager;
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::OutgoingMessageSender;
@@ -9,7 +8,6 @@ use crate::transport::AppServerTransport;
 use anyhow::Result;
 use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::write_mock_responses_config_toml;
-use codex_analytics::AppServerRpcTransport;
 use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::InitializeCapabilities;
@@ -243,15 +241,9 @@ async fn build_test_processor(
         Arg0DispatchPaths::default(),
         Arc::new(codex_config::NoopThreadConfigLoader),
     );
-    let analytics_events_client =
-        analytics_events_client_from_config(Arc::clone(&auth_manager), config.as_ref());
-    let outgoing = Arc::new(OutgoingMessageSender::new(
-        outgoing_tx,
-        analytics_events_client.clone(),
-    ));
+    let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
     let processor = Arc::new(MessageProcessor::new(MessageProcessorArgs {
         outgoing,
-        analytics_events_client,
         arg0_paths: Arg0DispatchPaths::default(),
         config,
         config_manager,
@@ -262,7 +254,6 @@ async fn build_test_processor(
         session_source: SessionSource::VSCode,
         auth_manager,
         installation_id: "11111111-1111-4111-8111-111111111111".to_string(),
-        rpc_transport: AppServerRpcTransport::Stdio,
         remote_control_handle: None,
         plugin_startup_tasks: crate::PluginStartupTasks::Start,
     }));
