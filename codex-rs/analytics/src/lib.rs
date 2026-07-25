@@ -1,10 +1,20 @@
+//! Inert analytics types.
+//!
+//! Upstream Codex used this crate to POST usage facts to
+//! `{chatgpt_base_url}/codex/analytics-events/events`, enabled by default. Elpis
+//! removed the delivery path — the reducer, the queue, the HTTP transport, and the
+//! debug capture file are all gone, and `AnalyticsEventsClient` is a unit struct
+//! whose `track_*` methods drop their input.
+//!
+//! What remains is the event/fact type surface that ~90 inherited call sites still
+//! reference. Those call sites are being excised; until they are, the payload types
+//! are constructed and dropped, so most of their fields are legitimately never read.
+#![allow(dead_code)]
+
 mod accepted_lines;
-#[cfg(debug_assertions)]
-mod analytics_capture;
 mod client;
 mod events;
 mod facts;
-mod reducer;
 
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -61,8 +71,6 @@ pub use facts::TurnSteerResult;
 pub use facts::TurnTokenUsageFact;
 pub use facts::build_track_events_context;
 
-#[cfg(test)]
-mod analytics_client_tests;
 
 pub fn now_unix_seconds() -> u64 {
     SystemTime::now()
