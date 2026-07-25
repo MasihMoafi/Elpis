@@ -3,41 +3,99 @@
 [![Linux verification](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml/badge.svg)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**You run an agent inside Elpis, and it becomes Elpis.**
+## Quickstart
 
-Elpis is a terminal shell for coding agents. It keeps one local control environment around the agent: context, memory, continuity. 
+Linux x86_64:
 
-Elpis actively prunes its context which allows more headroom and higher qulity.
+```bash
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash
+elpis
+```
 
-**Current release:** `v0.1.1` for Linux x86_64. Technical details: [TASKS.md](TASKS.md).
+On first launch, choose a provider and sign in or enter its API key.
 
-**One controlled comparison:** same task, same prompt — Elpis finished with **93% free context**, Codex with **73%**. Screenshots: [proof below](#context-pruning-one-controlled-comparison).
+## What is Elpis
 
-## Quick Start
+Elpis is a terminal environment for coding agents. You put an agent into Elpis, and it becomes Elpis.
 
-### Install
+The agent runs the model loop. Elpis owns the environment around it: context, continuity, memory, permissions, evidence, and explicit provider choice.
+
+### Elpises
+
+Elpis is the shared environment, not any one agent. Put an agent inside it and the agent inherits the same context, memory, permissions, evidence, and control.
+
+![Elpises working on different paths of one shared Elpis environment](docs/assets/elpises.svg)
+
+Multiple Elpises working from those shared roots is a direction for the project, not a claim that multi-agent control ships in `v0.1.1`.
+
+## Why Elpis
+
+Long agent sessions accumulate transcripts, file reads, searches, command output, and dead ends. The useful state gets buried in the history of how the agent reached it, while every request pays for more context.
+
+Elpis separates working context from durable evidence. The next request receives a small, inspectable working set; the exact record stays on disk and is retrieved only when needed.
+
+**One controlled comparison** — same task, same prompt:
+
+| | Free context at end |
+| --- | --- |
+| **Elpis** | **93%** |
+| Codex | 73% |
+
+<details>
+<summary>Screenshots</summary>
+
+Start:
+
+![Starting Elpis](docs/demo/starting-elpis.png)
+![Starting Codex with the same prompt](docs/demo/starting-codex.png)
+
+End — Elpis, 93% free:
+
+![Elpis end state](docs/demo/elpis-end-state.png)
+
+End — Codex, 73% free:
+
+![Codex end state](docs/demo/codex-end-state.png)
+
+This is one recorded workflow, not a claim that every task reduces the same amount.
+
+</details>
+
+## Core Features
+
+- **Managed context** — Ace performs meaning-aware post-turn pruning while Codex's inherited safety cap bounds exceptionally large tool output. Inspect pruning with `/prune`.
+- **Portable continuity** — goal and checkpoint state survive compaction and restarts, so work resumes without replaying the full transcript.
+- **Visible context** — the Context Ledger shows exactly which files are in the working set, with ctrl+clickable paths for inspection.
+- **Durable evidence and bounded memory** — exact conversations, terminal events, and artifacts remain on disk; reusable memory stays selective, size-capped, and attributable.
+- **Explicit provider choice** — use OpenAI, Anthropic, Gemini, or OpenRouter without silently routing one provider through another.
+- **Visible safety controls** — Read Only, Default, and Full Access modes keep file changes, commands, approvals, and results inspectable.
+- **No analytics by default** — Elpis does not upload usage analytics, and all OpenTelemetry exporters default to off. Telemetry is sent only if you explicitly configure an OTEL exporter.
+- **Local read-only RAG** — from a source checkout, `scripts/setup-rag.sh` adds semantic search over local knowledge without granting write access.
+
+## Demo
+
+![Elpis demo](docs/assets/elpis-demo.gif)
+
+## Current state
+
+`v0.1.1`, Linux x86_64. Not in this release: macOS, Windows, `/auto` routing, multi-agent control, voice input, LSP integration.
+
+Full status and backlog: [TASKS.md](TASKS.md).
+
+The execution foundation — terminal UI, patches, permissions, sandboxing, sessions — derives from OpenAI's Apache-2.0 Codex CLI. Elpis adds the context, continuity, memory, retrieval, and provider-control layer around it.
+
+<details>
+<summary>Other install methods</summary>
+
+**Direct binary download**
 
 ```bash
 mkdir -p "$HOME/.local/bin"
 curl -fL --progress-bar -o "$HOME/.local/bin/elpis" https://github.com/MasihMoafi/Elpis/releases/latest/download/elpis-linux-x86_64
 chmod 755 "$HOME/.local/bin/elpis"
-elpis
 ```
 
-This assumes `~/.local/bin` is on your `PATH`.
-
-### Clone the repository
-
-```bash
-git clone https://github.com/MasihMoafi/Elpis.git
-cd Elpis
-./scripts/install-elpis.sh
-elpis
-```
-
-The installer downloads the latest checksummed Linux x86_64 release and installs it atomically into `~/.local/bin`.
-
-### Debian / Ubuntu
+**Debian / Ubuntu**
 
 ```bash
 deb_url=$(curl -s https://api.github.com/repos/MasihMoafi/Elpis/releases/latest | grep -oE '"browser_download_url": *"[^"]*\.deb"' | grep -v sha256 | cut -d '"' -f4)
@@ -45,82 +103,9 @@ curl -fL --progress-bar -o elpis.deb "$deb_url"
 sudo dpkg -i elpis.deb
 ```
 
-On first launch, Elpis asks you to choose a provider and complete sign-in or API-key setup.
+Both methods install to `~/.local/bin`, which must be on your `PATH`.
 
-## Demo
-
-![Elpis demo](docs/assets/elpis-demo.gif)
-
-## What's Elpis?
-
-Long coding-agent sessions accumulate transcripts, file reads, searches, command output, and failed paths. The useful state of the work can become difficult to distinguish from the history of how the agent got there.
-
-Elpis separates those things.
-
-- **Working context** is the small set admitted into the next model request.
-- **Evidence** stays exact and durable even when it is no longer in working context.
-- **Continuity** preserves goals and checkpoints without replaying the whole transcript.
-- **Memory** is bounded, selective, and backed by provenance.
-- **Runtime choice** stays explicit instead of silently collapsing every provider into one route.
-
-The selected agent still performs the model loop. Elpis owns the environment around it.
-
-### Elpises
-
-Elpis is the home, not any one agent. Put an agent inside Elpis and it becomes an Elpis: it inherits the environment around the work — context, memory, permissions, evidence, and control.
-
-Elpises can take different paths while sharing the same roots. The image below is one representation of how that model can expand: multiple Elpises working continuously to improve one shared Elpis environment.
-
-![Elpises working on different paths of one shared Elpis environment](docs/assets/elpises.svg)
-
-Elpis can grow beyond a terminal shell into a broader agent environment — potentially an agent OS. This is a direction, not a claim that multi-agent control ships in `v0.1.1`.
-
-## Context pruning: one controlled comparison
-
-The screenshots below show Elpis and Codex running the same task. In this recorded comparison, Elpis ended with **93% free context** and Codex with **73% free context**.
-
-This demonstrates one controlled workflow, not a claim that every task will produce the same reduction.
-
-### Start
-
-![Starting Elpis](docs/demo/starting-elpis.png)
-![Starting Codex with the same prompt](docs/demo/starting-codex.png)
-
-### End
-
-**Elpis: 93% free context remaining**
-
-![Elpis end state](docs/demo/elpis-end-state.png)
-
-**Codex: 73% free context remaining**
-
-![Codex end state](docs/demo/codex-end-state.png)
-
-## How it works
-
-Elpis uses three context-reduction layers:
-
-| Layer | What happens | Inspection |
-| --- | --- | --- |
-| Tool cleanup | Oversized stdout/stderr becomes compact head/tail receipts | `/status`, evidence pointers |
-| Model pruning | Transient conversation material is removed while useful decisions are retained | `/prune`, pruning report |
-| Session compaction | Older history becomes portable goal/checkpoint state | Context Ledger, `/usage`, rollout logs |
-
-Full conversations, terminal events, and artifacts remain on disk. Elpis can retrieve exact evidence later instead of attaching the full history to every request.
-
-The execution foundation — terminal UI, patches, permissions, sandboxing, and sessions — is derived from OpenAI's Apache-2.0 Codex CLI. Elpis adds its context, continuity, memory, retrieval, and provider-control layer around that execution loop.
-
-## Current state
-
-`v0.1.1` ships a Linux x86_64 release with a checksummed installer, the Ratatui
-terminal UI, dual-layer pruning (deterministic tool receipts plus Ace message
-pruning), the Context Ledger with ctrl+clickable context files, portable session
-continuity, bounded local memory, local read-only RAG, and
-OpenAI/Anthropic/Gemini/OpenRouter provider support. macOS, Windows, `/auto`
-routing, multi-agent control, voice input, and LSP integration are not in
-`v0.1.1`.
-
-Full status, in-progress work, and the backlog: [TASKS.md](TASKS.md).
+</details>
 
 ## Documentation
 
@@ -129,8 +114,7 @@ Full status, in-progress work, and the backlog: [TASKS.md](TASKS.md).
 - [Providers](https://masihmoafi.github.io/Elpis/providers/)
 - [`GUIDE.md`](GUIDE.md) — product vision and architecture
 - [`TASKS.md`](TASKS.md) — release state and backlog
-- [`docs/BUILD_AND_REDUCTION_AUDIT.md`](docs/BUILD_AND_REDUCTION_AUDIT.md) — measured build and reduction work
 
 ## License
 
-Elpis is MIT licensed. Codex-derived source retains its upstream Apache-2.0 notices and attribution.
+MIT. Codex-derived source retains its upstream Apache-2.0 notices and attribution.
