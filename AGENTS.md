@@ -9,6 +9,8 @@
 - Read `docs/SHIPPING_RULES.md` before a release, and before any change that reads the
   filesystem, environment, or network. Nothing machine-specific ships in the binary.
 - Verify the repository state before editing; preserve unrelated user changes.
+- Read `docs/LOCAL_BUILD_RULES.md` before running `cargo` here. `target/` reached 246 GB
+  on a 451 GB disk; every command needs `CODEX_SKIP_BWRAP_BUILD=1`; never `cargo fmt --all`.
 - **Local incremental build & install command:** For fast local binary verification (~15s), run `CODEX_SKIP_BWRAP_BUILD=1 cargo build --manifest-path codex-rs/Cargo.toml --bin elpis && install -m 755 codex-rs/target/debug/elpis /home/masih/.local/bin/elpis`. Full workspace release compilations remain reserved for CI.
 - Challenge unclear or solution-first requirements with `$challenge-requirements`
   before planning implementation.
