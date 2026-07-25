@@ -5,17 +5,17 @@
 
 **You run an agent inside Elpis, and it becomes Elpis.**
 
-Elpis is a terminal shell for coding agents. It keeps one local control environment around the active agent: context, memory, continuity, permissions, evidence, and provider/runtime choice.
+Elpis is a terminal shell for coding agents. It keeps one local control environment around the agent: context, memory, continuity. 
 
-Instead of treating the full transcript as the agent's state, Elpis keeps the current working set small and inspectable while preserving exact conversations, tool output, and artifacts on disk.
+Elpis actively prunes its context which allows more headroom and higher qulity.
 
-**Current release:** `v0.1.1` for Linux x86_64. Release acceptance and live development state are tracked in [TASKS.md](TASKS.md).
+**Current release:** `v0.1.1` for Linux x86_64. Technical details: [TASKS.md](TASKS.md).
 
 **One controlled comparison:** same task, same prompt — Elpis finished with **93% free context**, Codex with **73%**. Screenshots: [proof below](#context-pruning-one-controlled-comparison).
 
-## Install
+## Quick Start
 
-### Latest release
+### Install
 
 ```bash
 mkdir -p "$HOME/.local/bin"
@@ -51,7 +51,7 @@ On first launch, Elpis asks you to choose a provider and complete sign-in or API
 
 ![Elpis demo](docs/assets/elpis-demo.gif)
 
-## Why Elpis exists
+## What's Elpis?
 
 Long coding-agent sessions accumulate transcripts, file reads, searches, command output, and failed paths. The useful state of the work can become difficult to distinguish from the history of how the agent got there.
 
