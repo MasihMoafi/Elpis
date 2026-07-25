@@ -8,6 +8,15 @@ use ratatui::widgets::Borders;
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
 
+/// The ledger's rendered content: the lines themselves, the line range each source
+/// occupies (for selection scrolling), and `(line index, file:// destination)` for
+/// every source row that maps to a real file on disk.
+pub(super) struct LedgerLines {
+    lines: Vec<Line<'static>>,
+    source_line_ranges: Vec<std::ops::Range<usize>>,
+    source_links: Vec<(usize, String)>,
+}
+
 pub(super) struct ContextLedgerState {
     visible: bool,
     focused: bool,
@@ -54,22 +63,17 @@ impl ChatWidget {
         if !self.context_ledger.visible || ledger_width == 0 {
             return 0;
         }
-        let sources = self.continuity_sources();
-        // Mirrors render_context_ledger exactly: 3 header rows + 4 context-window
-        // rows, then per NON-empty category (empty ones are skipped by the renderer,
-        // counting them anchored the panel too high) a header, a blank, 2 rows per
-        // source, and a trailing blank; the renderer pops the last 2 trailing blanks.
-        let mut count: u16 = 7;
-        if sources.is_empty() {
-            count += 1;
-        }
-        for category in crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL {
-            let cat_len = sources.iter().filter(|s| s.category == category).count() as u16;
-            if cat_len > 0 {
-                count += 3 + cat_len * 2;
-            }
-        }
-        count.saturating_sub(2)
+        // Build the real lines and measure them with the same wrap settings the
+        // renderer uses. Hand-counting rows here is what mis-anchored the panel: the
+        // estimate had to mirror the renderer by hand, and it silently missed wrapped
+        // rows and the expanded "WHY INCLUDED" block.
+        let content_width = ledger_width.saturating_sub(1).max(1);
+        u16::try_from(
+            Paragraph::new(self.ledger_lines(content_width as usize).lines)
+                .wrap(Wrap { trim: true })
+                .line_count(content_width),
+        )
+        .unwrap_or(u16::MAX)
     }
 
     pub(super) fn handle_context_ledger_key_event(&mut self, key_event: KeyEvent) -> bool {
@@ -189,10 +193,15 @@ impl ChatWidget {
         true
     }
 
-    pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
-        // Content width inside the left border, used to right-align each row's
-        // tokens/state against the same edge instead of stacking them on their own line.
-        let content_width = area.width.saturating_sub(1).max(1) as usize;
+    /// Builds the ledger's lines for a given content width, plus the line range each
+    /// source occupies. Single source of truth: both `context_ledger_desired_height`
+    /// and `render_context_ledger` call this, so the height used to bottom-anchor the
+    /// panel can never disagree with what is actually drawn.
+    ///
+    /// `content_width` is the width inside the left border, used to right-align each
+    /// row's tokens/state against the same edge instead of stacking them on their own line.
+    fn ledger_lines(&self, content_width: usize) -> LedgerLines {
+        let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
         let total_tokens = sources
             .iter()
@@ -345,6 +354,12 @@ impl ChatWidget {
                     .saturating_sub(fixed + shown_name.chars().count())
                     .saturating_sub(right.chars().count())
                     .max(1);
+                // The whole row opens the file: ctrl+click anywhere on it, the same
+                // affordance /usage gives. Blank padding cells are skipped by
+                // mark_buffer_hyperlinks, so only the visible text is clickable.
+                if source.path.is_absolute() {
+                    source_links.push((lines.len(), format!("file://{}", source.path.display())));
+                }
                 lines.push(Line::from(vec![
                     Span::styled(prefix, cyan),
                     Span::styled(marker, marker_style),
@@ -352,9 +367,9 @@ impl ChatWidget {
                     Span::styled(
                         shown_name,
                         if selected {
-                            cyan.bold()
+                            cyan.bold().underlined()
                         } else {
-                            Style::default()
+                            Style::default().underlined()
                         },
                     ),
                     Span::raw(" ".repeat(pad)),
@@ -389,6 +404,26 @@ impl ChatWidget {
             lines.push(Line::from(""));
         }
 
+        while lines.last().map(|l| l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.trim().is_empty())).unwrap_or(false) {
+            lines.pop();
+        }
+
+        LedgerLines {
+            lines,
+            source_line_ranges,
+            source_links,
+        }
+    }
+
+    pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
+        let content_width = area.width.saturating_sub(1).max(1);
+        let LedgerLines {
+            lines,
+            source_line_ranges,
+            source_links,
+        } = self.ledger_lines(content_width as usize);
+        let cyan = Style::default().fg(Color::Cyan);
+
         let scroll_lines = self
             .context_ledger
             .focused
@@ -399,8 +434,8 @@ impl ChatWidget {
                         selected_source_scroll_offset(
                             &lines,
                             range.clone(),
-                            area.width.saturating_sub(1).max(1),
-                            area.height.saturating_sub(2).max(1),
+                            content_width,
+                            area.height.max(1),
                         )
                     })
                     .unwrap_or(0)
@@ -415,14 +450,7 @@ impl ChatWidget {
             .collect();
         *self.context_ledger.last_source_ranges.borrow_mut() = tracked_ranges;
 
-        while lines.last().map(|l| l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.trim().is_empty())).unwrap_or(false) {
-            lines.pop();
-        }
-
-        let needed_height = u16::try_from(lines.len()).unwrap_or(area.height);
-        let render_area = Rect::new(area.x, area.y, area.width, needed_height.min(area.height));
-
-        Paragraph::new(lines)
+        Paragraph::new(lines.clone())
             .block(
                 Block::default()
                     .borders(Borders::LEFT)
@@ -430,7 +458,37 @@ impl ChatWidget {
             )
             .wrap(Wrap { trim: true })
             .scroll((scroll_lines, 0))
-            .render(render_area, buf);
+            .render(area, buf);
+
+        // Attach OSC 8 destinations to the already-drawn cells. Done against the inner
+        // area (past the left border) so columns line up with the rendered text.
+        if !source_links.is_empty() && area.width > 1 {
+            let inner = Rect::new(area.x + 1, area.y, content_width, area.height);
+            let links: std::collections::HashMap<usize, String> =
+                source_links.into_iter().collect();
+            let hyperlink_lines = lines
+                .into_iter()
+                .enumerate()
+                .map(|(index, line)| {
+                    let mut hyperlink_line = crate::terminal_hyperlinks::HyperlinkLine::new(line);
+                    if let Some(destination) = links.get(&index) {
+                        hyperlink_line
+                            .hyperlinks
+                            .push(crate::terminal_hyperlinks::TerminalHyperlink {
+                                columns: 0..content_width as usize,
+                                destination: destination.clone(),
+                            });
+                    }
+                    hyperlink_line
+                })
+                .collect::<Vec<_>>();
+            crate::terminal_hyperlinks::mark_buffer_hyperlinks(
+                buf,
+                inner,
+                &hyperlink_lines,
+                scroll_lines as usize,
+            );
+        }
     }
 
     pub(crate) fn handle_context_ledger_mouse_click(&mut self, row: u16, col: u16) -> bool {

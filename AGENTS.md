@@ -6,6 +6,8 @@
 - Read `TASKS.md`; work only on its Current Action unless Masih changes priority.
 - Read `docs/CONTEXT_AND_SESSIONS.md` before touching context, session, or pruning
   behavior; read `docs/BUILD_AND_REDUCTION_AUDIT.md` before build or dependency work.
+- Read `docs/SHIPPING_RULES.md` before a release, and before any change that reads the
+  filesystem, environment, or network. Nothing machine-specific ships in the binary.
 - Verify the repository state before editing; preserve unrelated user changes.
 - **Local incremental build & install command:** For fast local binary verification (~15s), run `CODEX_SKIP_BWRAP_BUILD=1 cargo build --manifest-path codex-rs/Cargo.toml --bin elpis && install -m 755 codex-rs/target/debug/elpis /home/masih/.local/bin/elpis`. Full workspace release compilations remain reserved for CI.
 - Challenge unclear or solution-first requirements with `$challenge-requirements`

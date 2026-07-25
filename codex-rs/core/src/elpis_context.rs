@@ -157,18 +157,22 @@ pub fn continuity_sources(
         }
     }
 
-    let dev_dirs = vec![
-        cwd.parent().map(|parent| parent.join("skills/dev")),
-        dirs::home_dir().map(|home| home.join("Desktop/p/skills/dev")),
-        dirs::home_dir().map(|home| home.join("Desktop/f/p/skills/dev")),
-    ];
+    // Only a `skills/dev` sibling of the workspace is discovered by default. Absolute
+    // paths tied to one developer's home layout must never be baked into the binary:
+    // they scan directories on every user's machine and silently admit whatever they
+    // find into that user's context. Extra directories are opt-in per machine through
+    // ELPIS_DEV_SKILLS_DIRS (platform-separated, like PATH).
+    let mut dev_dirs: Vec<PathBuf> = std::env::var_os("ELPIS_DEV_SKILLS_DIRS")
+        .map(|value| std::env::split_paths(&value).collect())
+        .unwrap_or_default();
+    dev_dirs.extend(cwd.parent().map(|parent| parent.join("skills/dev")));
 
     let mut already_listed: std::collections::HashSet<PathBuf> = instruction_paths
         .iter()
         .filter_map(|path| path.canonicalize().ok())
         .collect();
 
-    for dev_dir in dev_dirs.into_iter().flatten() {
+    for dev_dir in dev_dirs {
         if let Ok(entries) = std::fs::read_dir(&dev_dir) {
             let mut dev_files: Vec<PathBuf> = entries
                 .filter_map(|entry| entry.ok())

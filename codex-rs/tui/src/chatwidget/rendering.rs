@@ -153,6 +153,21 @@ impl TranscriptAreaRenderable<'_> {
     }
 }
 
+impl ChatWidget {
+    /// Rows from the top of the chat column down to the top edge of the composer box.
+    /// The composer is the last child of the chat flex, so this is the column's full
+    /// height minus the composer's own height.
+    fn composer_top_offset(&self, chat_width: u16) -> u16 {
+        let reserve = self.ambient_pet_wrap_reserved_cols();
+        let composer_height = self
+            .bottom_pane
+            .desired_height_with_composer_right_reserve(chat_width, reserve);
+        self.as_renderable()
+            .desired_height(chat_width)
+            .saturating_sub(composer_height)
+    }
+}
+
 impl Renderable for ChatWidget {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         let ledger_width = self.context_ledger_width(area.width);
@@ -164,15 +179,20 @@ impl Renderable for ChatWidget {
         );
         self.as_renderable().render(chat_area, buf);
         if ledger_width > 0 {
-            // Bottom-anchor the ledger against the composer instead of the top of the
-            // screen, so a short ledger doesn't sit alongside the chat transcript.
+            // Top-align the ledger with the composer box and let it run downward. It is
+            // never trimmed to fit: `desired_height` reserves the rows it needs below
+            // that point. Bottom-anchoring it instead (the previous behavior) made a tall
+            // ledger start level with the last chat message and overhang the status line.
+            let ledger_top = area
+                .y
+                .saturating_add(self.composer_top_offset(chat_area.width));
             let ledger_height = self
                 .context_ledger_desired_height(ledger_width)
-                .min(area.height);
+                .min(area.y.saturating_add(area.height).saturating_sub(ledger_top));
             self.render_context_ledger(
                 Rect::new(
                     chat_area.x.saturating_add(chat_area.width),
-                    area.y.saturating_add(area.height.saturating_sub(ledger_height)),
+                    ledger_top,
                     ledger_width,
                     ledger_height,
                 ),
@@ -184,11 +204,13 @@ impl Renderable for ChatWidget {
 
     fn desired_height(&self, width: u16) -> u16 {
         let ledger_width = self.context_ledger_width(width);
-        let chat_height = self
-            .as_renderable()
-            .desired_height(width.saturating_sub(ledger_width));
+        let chat_width = width.saturating_sub(ledger_width);
+        let chat_height = self.as_renderable().desired_height(chat_width);
+        // The ledger starts at the composer's top edge, so the widget needs that offset
+        // plus the ledger's full height -- otherwise the panel would be clipped instead
+        // of the layout growing to hold it.
         let ledger_height = self.context_ledger_desired_height(ledger_width);
-        chat_height.max(ledger_height)
+        chat_height.max(self.composer_top_offset(chat_width) + ledger_height)
     }
 
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {

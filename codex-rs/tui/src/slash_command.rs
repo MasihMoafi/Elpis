@@ -267,18 +267,21 @@ impl SlashCommand {
             | SlashCommand::Theme
             | SlashCommand::Fork
             | SlashCommand::Goal
+            // Inherited Codex features being re-evaluated for the Elpis contract:
+            // multi-agent threads (I6 /multi-task) and IDE context.
+            | SlashCommand::Agent
+            | SlashCommand::MultiAgents
+            | SlashCommand::Ide
             | SlashCommand::Clear => true,
             SlashCommand::Hooks
             | SlashCommand::Keymap
             | SlashCommand::Rename
             | SlashCommand::Delete
-            | SlashCommand::Agent
             | SlashCommand::Side
             | SlashCommand::Btw
             | SlashCommand::Copy
             | SlashCommand::Logout
             | SlashCommand::Feedback
-            | SlashCommand::Ide
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental
@@ -298,8 +301,7 @@ impl SlashCommand {
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::Personality
-            | SlashCommand::Vim
-            | SlashCommand::MultiAgents => false,
+            | SlashCommand::Vim => false,
         }
     }
 }

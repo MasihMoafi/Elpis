@@ -19,6 +19,29 @@ levels above.
 No new feature work starts while the Current Action is open unless Masih explicitly
 changes priority.
 
+## v0.1.1 — Context Ledger placement and file links (Masih-verified 2026-07-25)
+
+`v0.1.1` was tagged on 2026-07-24 but its tag CI run failed, so no release was ever
+published and `v0.1.0` stayed the latest download. The version number is therefore
+reused rather than burned; the release workflow already replaces a re-tagged release.
+
+- **Ledger top alignment.** The ledger was bottom-anchored and sized to the whole chat
+  region, so a tall panel started level with the last chat message and overhung the
+  status line. It now top-aligns with the composer box and runs downward, and
+  `desired_height` reserves the rows below that point so the panel is never trimmed.
+  Three earlier attempts failed by keeping the bottom anchor and shrinking the panel,
+  which ate its bottom instead of moving its top.
+- **Ledger height is measured, not counted.** `context_ledger_desired_height` built the
+  real lines and measures them with `Paragraph::line_count`. The previous hand-counted
+  arithmetic had to mirror the renderer by hand and silently missed wrapped rows and the
+  expanded WHY INCLUDED block.
+- **Ledger rows are ctrl+clickable.** Each source row emits `file://<abs path>` through
+  the existing `mark_buffer_hyperlinks` helper, so context files open for editing the
+  way `/usage` paths do.
+- **`/agent`, `/multi-agents`, `/ide` unhidden** for evaluation against I6. They are
+  fully implemented inherited Codex features that Elpis's `is_visible` allow-list hid.
+  `/ide` requires an IDE extension to serve its socket; decide to own or re-hide it.
+
 ## Current Action — none open
 
 The previous Current Action (Context Ledger, Foundational) is **done and
