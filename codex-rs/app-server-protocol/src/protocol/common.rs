@@ -1054,12 +1054,6 @@ client_request_definitions! {
         response: v2::SendAddCreditsNudgeEmailResponse,
     },
 
-    FeedbackUpload => "feedback/upload" {
-        params: v2::FeedbackUploadParams,
-        serialization: None,
-        response: v2::FeedbackUploadResponse,
-    },
-
     /// Execute a standalone command (argv vector) under the server's sandbox.
     OneOffCommandExec => "command/exec" {
         params: v2::CommandExecParams,

@@ -299,7 +299,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         check_for_update_on_startup: false,
         disable_paste_burst: false,
         analytics_enabled: Some(false),
-        feedback_enabled: false,
         tool_suggest: ToolSuggestConfig::default(),
         otel: OtelConfig::default(),
     };

@@ -236,7 +236,6 @@ async fn start_embedded_app_server(
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
@@ -248,7 +247,6 @@ async fn start_embedded_app_server(
         loader_overrides,
         strict_config,
         cloud_config_bundle,
-        feedback,
         log_db,
         state_db,
         environment_manager,
@@ -451,7 +449,6 @@ async fn start_app_server(
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
@@ -464,7 +461,6 @@ async fn start_app_server(
             loader_overrides,
             strict_config,
             cloud_config_bundle,
-            feedback,
             log_db,
             state_db,
             environment_manager,
@@ -491,7 +487,6 @@ pub(crate) async fn start_app_server_for_picker(
         LoaderOverrides::default(),
         /*strict_config*/ false,
         CloudConfigBundleLoader::default(),
-        codex_feedback::CodexFeedback::new(),
         /*log_db*/ None,
         state_db,
         environment_manager,
@@ -525,7 +520,6 @@ async fn start_embedded_app_server_with<F, Fut>(
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
@@ -552,7 +546,6 @@ where
         loader_overrides,
         strict_config,
         cloud_config_bundle,
-        feedback,
         log_db,
         state_db,
         environment_manager,
@@ -1175,9 +1168,6 @@ pub async fn run_main(
         (None, None)
     };
 
-    let feedback = codex_feedback::CodexFeedback::new();
-    let feedback_layer = feedback.logger_layer();
-    let feedback_metadata_layer = feedback.metadata_layer();
 
     if cli.oss && model_provider_override.is_some() {
         // We're in the oss section, so provider_id should be Some
@@ -1205,8 +1195,6 @@ pub async fn run_main(
 
     let _ = tracing_subscriber::registry()
         .with(tui_file_layer)
-        .with(feedback_layer)
-        .with(feedback_metadata_layer)
         .with(log_db_layer)
         .with(otel_logger_layer)
         .with(otel_tracing_layer)
@@ -1224,7 +1212,6 @@ pub async fn run_main(
         overrides,
         cli_kv_overrides,
         cloud_config_bundle,
-        feedback,
         log_db,
         state_db,
         environment_manager,
@@ -1246,7 +1233,6 @@ async fn run_ratatui_app(
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
     mut cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
@@ -1306,7 +1292,6 @@ async fn run_ratatui_app(
         loader_overrides.clone(),
         strict_config,
         cloud_config_bundle.clone(),
-        feedback.clone(),
         log_db.clone(),
         state_db.clone(),
         environment_manager.clone(),
@@ -1686,8 +1671,7 @@ async fn run_ratatui_app(
             loader_overrides.clone(),
             strict_config,
             cloud_config_bundle.clone(),
-            feedback.clone(),
-            log_db.clone(),
+                log_db.clone(),
             state_db.clone(),
             environment_manager.clone(),
         )
@@ -1746,7 +1730,6 @@ async fn run_ratatui_app(
         prompt,
         images,
         session_selection,
-        feedback,
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
         should_prompt_windows_sandbox_nux_at_startup,
         app_server_target,
@@ -2090,8 +2073,7 @@ mod tests {
             LoaderOverrides::default(),
             /*strict_config*/ false,
             CloudConfigBundleLoader::default(),
-            codex_feedback::CodexFeedback::new(),
-            /*log_db*/ None,
+                /*log_db*/ None,
             state_db,
             Arc::new(EnvironmentManager::default_for_tests()),
         )
@@ -2832,8 +2814,7 @@ mod tests {
             LoaderOverrides::default(),
             /*strict_config*/ false,
             CloudConfigBundleLoader::default(),
-            codex_feedback::CodexFeedback::new(),
-            /*log_db*/ None,
+                /*log_db*/ None,
             /*state_db*/ None,
             Arc::new(EnvironmentManager::default_for_tests()),
             |_args| async { Err(std::io::Error::other("boom")) },

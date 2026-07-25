@@ -888,50 +888,6 @@
       ],
       "type": "string"
     },
-    "FeedbackUploadParams": {
-      "properties": {
-        "classification": {
-          "type": "string"
-        },
-        "extraLogFiles": {
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "includeLogs": {
-          "type": "boolean"
-        },
-        "reason": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "tags": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "classification"
-      ],
-      "type": "object"
-    },
     "FsCopyParams": {
       "description": "Copy a file or directory tree on the host filesystem.",
       "properties": {
@@ -6624,30 +6580,6 @@
         "params"
       ],
       "title": "Account/sendAddCreditsNudgeEmailRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "feedback/upload"
-          ],
-          "title": "Feedback/uploadRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/FeedbackUploadParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "Feedback/uploadRequest",
       "type": "object"
     },
     {

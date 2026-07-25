@@ -44,7 +44,6 @@ async fn experimental_mode_plan_is_ignored_on_startup() {
         has_chatgpt_account: false,
         has_codex_backend_auth: false,
         model_catalog: test_model_catalog(&cfg),
-        feedback: codex_feedback::CodexFeedback::new(),
         is_first_run: true,
         status_account_display: None,
         runtime_model_provider_base_url: None,
@@ -3702,59 +3701,6 @@ async fn auto_model_advertising_advanced_effort_opens_reasoning_picker() {
             .iter()
             .any(|event| matches!(event, AppEvent::OpenReasoningPopup { .. }))
     );
-}
-
-#[tokio::test]
-async fn feedback_selection_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    // Open the feedback category selection popup via slash command.
-    chat.dispatch_command(SlashCommand::Feedback);
-
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("feedback_selection_popup", popup);
-}
-
-#[tokio::test]
-async fn feedback_upload_consent_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.show_selection_view(crate::bottom_pane::feedback_upload_consent_params(
-        chat.app_event_tx.clone(),
-        crate::app_event::FeedbackCategory::Bug,
-        chat.current_rollout_path.clone(),
-        Some("auto-review-rollout-thread-1.jsonl".to_string()),
-        /*include_windows_sandbox_log*/ true,
-        &codex_feedback::FeedbackDiagnostics::new(vec![codex_feedback::FeedbackDiagnostic {
-            headline: "Proxy environment variables are set and may affect connectivity."
-                .to_string(),
-            details: vec!["HTTPS_PROXY = hello".to_string()],
-        }]),
-    ));
-
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("feedback_upload_consent_popup", popup);
-}
-
-#[tokio::test]
-async fn feedback_good_result_consent_popup_includes_connectivity_diagnostics_filename() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.show_selection_view(crate::bottom_pane::feedback_upload_consent_params(
-        chat.app_event_tx.clone(),
-        crate::app_event::FeedbackCategory::GoodResult,
-        chat.current_rollout_path.clone(),
-        Some("auto-review-rollout-thread-1.jsonl".to_string()),
-        /*include_windows_sandbox_log*/ false,
-        &codex_feedback::FeedbackDiagnostics::new(vec![codex_feedback::FeedbackDiagnostic {
-            headline: "Proxy environment variables are set and may affect connectivity."
-                .to_string(),
-            details: vec!["HTTPS_PROXY = hello".to_string()],
-        }]),
-    ));
-
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("feedback_good_result_consent_popup", popup);
 }
 
 #[tokio::test]

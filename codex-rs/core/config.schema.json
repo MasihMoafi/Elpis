@@ -1006,16 +1006,6 @@
         }
       ]
     },
-    "FeedbackConfigToml": {
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "description": "When `false`, disables the feedback flow across Codex product surfaces.",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
     "FileSystemAccessMode": {
       "description": "Access mode for a filesystem entry.\n\nWhen two equally specific entries target the same path, we compare these by conflict precedence rather than by capability breadth: `deny` beats `write`, and `write` beats `read`.",
       "oneOf": [
@@ -1544,12 +1534,20 @@
           "type": "integer"
         },
         "root": {
-          "description": "Directory containing durable memory artifacts. When omitted, memory remains under `CODEX_HOME`.",
-          "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            }
+          ],
+          "description": "Directory containing durable memory artifacts. When omitted, memory remains under `CODEX_HOME`."
         },
         "state_root": {
-          "description": "Directory containing the durable memory SQLite database. When omitted, the database remains under `CODEX_SQLITE_HOME`.",
-          "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            }
+          ],
+          "description": "Directory containing the durable memory SQLite database. When omitted, the database remains under `CODEX_SQLITE_HOME`."
         },
         "use_memories": {
           "description": "When `false`, skip injecting memory usage instructions into developer prompts.",
@@ -1646,7 +1644,7 @@
           "description": "AWS SigV4 auth configuration for this provider."
         },
         "base_url": {
-          "description": "Base URL for the provider's OpenAI-compatible API.",
+          "description": "Base URL for the provider API selected by `wire_api`.",
           "type": "string"
         },
         "env_http_headers": {
@@ -5140,14 +5138,6 @@
         }
       },
       "type": "object"
-    },
-    "feedback": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/FeedbackConfigToml"
-        }
-      ],
-      "description": "When `false`, disables feedback collection across Codex product surfaces. Defaults to `true`."
     },
     "file_opener": {
       "allOf": [
