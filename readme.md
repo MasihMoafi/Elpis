@@ -9,7 +9,7 @@ Elpis is a terminal shell for coding agents. It keeps one local control environm
 
 Instead of treating the full transcript as the agent's state, Elpis keeps the current working set small and inspectable while preserving exact conversations, tool output, and artifacts on disk.
 
-**Current release:** `v0.1.0` for Linux x86_64. Release acceptance and live development state are tracked in [TASKS.md](TASKS.md).
+**Current release:** `v0.1.1` for Linux x86_64. Release acceptance and live development state are tracked in [TASKS.md](TASKS.md).
 
 **One controlled comparison:** same task, same prompt — Elpis finished with **93% free context**, Codex with **73%**. Screenshots: [proof below](#context-pruning-one-controlled-comparison).
 
@@ -102,12 +102,13 @@ The execution foundation — terminal UI, patches, permissions, sandboxing, and 
 
 ## Current state
 
-`v0.1.0` ships a Linux x86_64 release with a checksummed installer, the Ratatui
+`v0.1.1` ships a Linux x86_64 release with a checksummed installer, the Ratatui
 terminal UI, dual-layer pruning (deterministic tool receipts plus Ace message
-pruning), the Context Ledger, portable session continuity, bounded local memory,
-local read-only RAG, and OpenAI/Anthropic/Gemini/OpenRouter provider support.
-macOS, Windows, `/auto` routing, multi-agent control, voice input, and LSP
-integration are not in `v0.1.0`.
+pruning), the Context Ledger with ctrl+clickable context files, portable session
+continuity, bounded local memory, local read-only RAG, and
+OpenAI/Anthropic/Gemini/OpenRouter provider support. macOS, Windows, `/auto`
+routing, multi-agent control, voice input, and LSP integration are not in
+`v0.1.1`.
 
 Full status, in-progress work, and the backlog: [TASKS.md](TASKS.md).
 
