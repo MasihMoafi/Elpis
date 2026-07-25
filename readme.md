@@ -59,8 +59,7 @@ Long coding-agent sessions accumulate transcripts, file reads, searches, command
 - **Context Ledger (Context Sovereignty):** Dynamically control and inspect your exact working context. You choose what files and information are admitted into the next model request instead of blindly accumulating transcripts.
 - **100% Transparent Evidence & Pruning:** Watch exactly what Elpis deletes. It features full logs including pruning the provider's long and hidden system prompts.
 - **Session Continuity:** Preserve goals, decisions, and checkpoints without replaying the whole transcript. Suspend a session and resume it seamlessly.
-- **Curated, Provenance-Backed Memory:** Memory remains selective, strictly bounded, and backed by provenance so Elpis learns without bloating context.
-- **Codex-grade Execution Controls:** Explicit permissions, sandboxing, tool execution, and patches remain first-class and heavily guarded.
+- **Memory:** Memory remains selective, strictly bounded, and backed by provenance so Elpis learns without bloating context.
 - **Privacy-First Architecture:** Complete sovereignty over your environment. Elpis has zero telemetry and completely removes user tracking.
 - **Runtime Choice:** Explicit provider selection. Swap seamlessly between OpenAI, Anthropic, Gemini, or local models without losing your Elpis continuity environment.
 
