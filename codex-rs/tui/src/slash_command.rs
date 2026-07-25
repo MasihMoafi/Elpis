@@ -345,7 +345,6 @@ mod tests {
             .collect::<Vec<_>>();
         for removed in [
             "archive",
-            "agent",
             "btw",
             "copy",
             "del",
@@ -379,6 +378,13 @@ mod tests {
         assert!(visible.contains(&"usage"));
         assert!(visible.contains(&"fork"));
         assert!(visible.contains(&"goal"));
+        // Unhidden 2026-07-25 for evaluation against the multi-agent backlog (I6) and
+        // the IDE-extension decision. Re-hide these here if either is dropped.
+        assert!(visible.contains(&"agent"));
+        assert!(visible.contains(&"subagents"));
+        assert!(visible.contains(&"ide"));
+        // The terminal pets feature was deleted outright, not hidden.
+        assert!(SlashCommand::from_str("pets").is_err());
         assert!(SlashCommand::from_str("debug-m-drop").is_err());
         assert!(SlashCommand::from_str("debug-m-update").is_err());
     }
