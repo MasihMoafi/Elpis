@@ -64,6 +64,8 @@ src/fix_cuda.sh
 *.jpg
 *.jpeg
 *.gif
+!docs/assets/demo-linkedin.gif
+!docs/assets/evidence.gif
 *.svg
 *.mp4
 *.mp3
