@@ -2,7 +2,7 @@
 
 <img src="docs/assets/elpis.png" alt="Elpis" width="500">
 
-**Terminal environment for coding agents that keeps the working context small and the exact record on disk**
+**Terminal environment for coding agents that keeps the working context small.**
 
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![Release](https://img.shields.io/github/v/release/MasihMoafi/Elpis?style=flat-square&color=orange)](https://github.com/MasihMoafi/Elpis/releases/latest)
