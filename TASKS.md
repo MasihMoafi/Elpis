@@ -119,6 +119,22 @@ Non-goals:
    and exclude obsolete state from future requests. Prefer extending the validated
    Ace record pipeline over adding an unconstrained third agent. Native compaction
    remains the fail-safe; failure changes nothing.
+6. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
+   several agents and none of them recorded it, so it has never been built. When a chat
+   opens, Elpis silently has Terra inspect the project and write or refresh a project
+   `VISION.md`. That file is the agent's eyes on the project: what this project is, where
+   things live, what is built versus aspirational, and what is out of scope. It is not
+   the readme and not `GUIDE.md`, which describe Elpis itself to humans; this is a
+   per-project orientation file the agent generates for whatever repository it is
+   pointed at. It happens under the hood on the first message, not as a visible step.
+   Open questions for Masih: refresh on every chat or only when the project changed,
+   and whether a human-edited `VISION.md` may be overwritten.
+
+## Ordering Masih set on 2026-07-26
+
+`elpis --update` first, then the corrected public release once the current code is
+near-perfect, branded as the first real version. Lowest priority, in no particular
+order: `/remote`, UI tweaks, RAG, and condensing the documentation set.
 
 ## Completed — make the existing UI solid (Context Ledger)
 
@@ -205,8 +221,14 @@ clear supported path and verify it in a clean environment.
 
 ### I3. Careful Rust subtraction — ongoing maintenance
 
-Continue deleting inherited Codex code only when reachability and behavior checks prove
-Elpis does not need it. Small, measured removals are preferred over broad deletion.
+Masih's rule, 2026-07-26: **if a whole drawer can be thrown out cheaply, throw out the
+whole drawer. If it is tangled up with things that matter, leave it alone.** Prefer
+removing an entire unreachable unit over picking dead statements out from between live
+ones. A tangled removal must justify its cost with a result, not with tidiness. Nothing
+is ever lost — the upstream Codex repository sits beside this one, so anything deleted
+can be brought back instead of rewritten.
+
+Reachability and behavior checks still gate every removal.
 
 **Analytics subtraction is finished (2026-07-26).** The crate and its upload path went
 earlier; the surviving knobs, flags, and generated schema entries are now gone too, and
@@ -248,11 +270,22 @@ Run and inspect several agents, potentially as a visible task graph.
 
 ### I8. LSP-backed code intelligence — planned
 
+Structural, always-current answers from the same service an editor uses: where a symbol
+is defined, what type it has, what breaks if it is renamed. This is not retrieval and
+does not overlap RAG; it is exact where RAG is approximate.
+
 ## Nice-to-have
 
 These are wanted ideas, but they are optional until the current product is polished:
 
 - Remote messaging, scheduling, mobile control, and opt-in telemetry.
+- `/remote`.
+- UI tweaks.
+- RAG. Two known defects gate it: it is unreachable from a binary install, and it
+  hard-imports torch even when the provider is Ollama. The intended fix is openclaw's
+  engine / store / embedding-provider split.
+- Condense `docs/`. Eleven files plus a blog directory, several of which restate the
+  readme or point at it. Merge or delete rather than adding more.
 
 Old-data cleanup is not active work. It would mean previewing and then removing stale
 caches, duplicate evidence, old checkpoints, and other data that is no longer needed,
