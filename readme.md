@@ -23,7 +23,7 @@ The agent runs the model loop. Elpis owns everything around it — context, cont
 
 ### Elpises
 
-An Elpis is an agent working inside that environment. Different Elpises can research, build, test, or review along different paths while staying rooted in the same project.
+You are not managing a fleet. You talk to one agent; behind it, Elpises run out of sight — researching, building, testing, reviewing along their own paths — and only their conclusions come back. Each one starts from the same context, memory, and permissions, so none of them has to be briefed and none of their dead ends reach your screen.
 
 <img src="docs/assets/elpises.png" alt="Elpises working on different paths of one shared Elpis environment" width="720">
 
