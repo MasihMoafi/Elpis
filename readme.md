@@ -6,7 +6,7 @@
 
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![Release](https://img.shields.io/github/v/release/MasihMoafi/Elpis?style=flat-square&color=orange)](https://github.com/MasihMoafi/Elpis/releases/latest)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
 
 [Install](#quickstart) • [Features](#core-features) • [Docs](https://masihmoafi.github.io/Elpis/) • [Roadmap](TASKS.md)
@@ -151,6 +151,6 @@ Full roadmap: [TASKS.md](TASKS.md).
 
 ## License
 
-MIT.
+Apache-2.0.
 
-The execution foundation — terminal UI, patches, permissions, sandboxing, sessions — derives from OpenAI's Apache-2.0 Codex CLI. Elpis adds the context, continuity, memory, retrieval, and provider-control layer around it. Codex-derived source retains its upstream Apache-2.0 license and notices under `codex-rs/`.
+The execution foundation — terminal UI, patches, permissions, sandboxing, sessions — derives from OpenAI's Apache-2.0 Codex CLI. Elpis adds the context, continuity, memory, retrieval, and provider-control layer around it. Codex-derived source retains its upstream notices under `codex-rs/`.
