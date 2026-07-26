@@ -77,7 +77,7 @@ Implementation evidence:
   current-turn reasoning-expiry tests.
 - Strict manifest parsing, active-question context, invocation/output pairing,
   zero-trace dead-end deletion, and fail-open parsing are covered.
-- Codex's inherited output-truncation suite passes 17 tests, and the focused TUI
+- Codex's inherited output-truncation suite passes 16 tests, and the focused TUI
   context-window test passes.
 - The fast local build and install pass; the installed `elpis 0.1.1` binary is
   byte-identical to the build output and launches/exits cleanly in tmux.
