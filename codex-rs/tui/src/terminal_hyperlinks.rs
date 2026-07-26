@@ -319,8 +319,21 @@ pub(crate) fn web_destination(destination: &str) -> Option<String> {
     Some(safe_destination)
 }
 
+fn terminal_destination(destination: &str) -> Option<String> {
+    let safe_destination = destination
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .collect::<String>();
+    let parsed = Url::parse(&safe_destination).ok()?;
+    match parsed.scheme() {
+        "http" | "https" => parsed.host_str().map(|_| safe_destination),
+        "file" => parsed.to_file_path().ok().map(|_| safe_destination),
+        _ => None,
+    }
+}
+
 pub(crate) fn osc8_hyperlink(destination: &str, text: &str) -> String {
-    let Some(safe_destination) = web_destination(destination) else {
+    let Some(safe_destination) = terminal_destination(destination) else {
         return text.to_string();
     };
     format!("\x1b]8;;{safe_destination}\x07{text}\x1b]8;;\x07")
@@ -388,7 +401,7 @@ pub(crate) fn decorate_spans(line: &HyperlinkLine) -> Vec<Span<'static>> {
                     append_to_last_span(&mut out, "\x1b]8;;\x07");
                 }
                 active_destination = selected_link_index
-                    .and_then(|index| web_destination(&line.hyperlinks[index].destination));
+                    .and_then(|index| terminal_destination(&line.hyperlinks[index].destination));
                 if let Some(destination) = active_destination.as_ref() {
                     push_styled_content(
                         &mut out,
@@ -501,7 +514,7 @@ fn mark_matching_cells(
     destination: &str,
     matches: impl Fn(&ratatui::buffer::Cell) -> bool,
 ) {
-    if web_destination(destination).is_none() {
+    if terminal_destination(destination).is_none() {
         return;
     }
     for position in area.positions() {
@@ -519,8 +532,12 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn only_web_destinations_receive_osc8() {
+    fn only_supported_terminal_destinations_receive_osc8() {
         assert!(osc8_hyperlink("https://example.com/a", "a").contains("\x1b]8;;"));
+        let file_url = Url::from_file_path(std::env::temp_dir().join("ledger.md"))
+            .expect("absolute temporary file URL")
+            .to_string();
+        assert!(osc8_hyperlink(&file_url, "ledger.md").contains("\x1b]8;;"));
         assert_eq!(osc8_hyperlink("mailto:a@example.com", "a"), "a");
         assert_eq!(
             osc8_hyperlink("https://example.com/\u{7}safe", "a"),

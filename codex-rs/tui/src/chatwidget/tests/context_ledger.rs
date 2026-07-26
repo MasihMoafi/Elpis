@@ -8,12 +8,21 @@ fn render_ledger(chat: &ChatWidget, height: u16) -> String {
     (0..area.height)
         .map(|y| {
             (0..area.width).fold(String::new(), |mut line, x| {
-                line.push_str(buf[(x, y)].symbol());
+                line.push_str(&crate::terminal_hyperlinks::strip_osc8(
+                    buf[(x, y)].symbol(),
+                ));
                 line
             })
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn render_ledger_buffer(chat: &ChatWidget, height: u16) -> ratatui::buffer::Buffer {
+    let area = ratatui::layout::Rect::new(0, 0, 52, height);
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    chat.render_context_ledger(area, &mut buf);
+    buf
 }
 
 fn configure_ledger_sources(
@@ -79,6 +88,24 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     assert!(short.contains("Global AGENTS.md"));
     assert!(short.contains("WHY INCLUDED"));
     assert!(short.contains("applicable global rules"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_file_rows_emit_real_file_hyperlinks() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+
+    let rendered = render_ledger_buffer(&chat, 80);
+    let hyperlink_prefix = format!("\u{1b}]8;;file://{}", root.path().display());
+    assert!(
+        rendered
+            .content()
+            .iter()
+            .any(|cell| cell.symbol().contains(&hyperlink_prefix)),
+        "underlining alone is not clickable; expected an OSC 8 file link"
+    );
     Ok(())
 }
 

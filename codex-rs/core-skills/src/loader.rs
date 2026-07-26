@@ -17,6 +17,7 @@ use crate::system::system_cache_root_dir;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStack;
 use codex_config::ConfigLayerStackOrdering;
+use codex_config::SkillsConfig;
 use codex_config::default_project_root_markers;
 use codex_config::merge_toml_values;
 use codex_config::project_root_markers_from_config;
@@ -51,6 +52,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use toml::Value as TomlValue;
 use tracing::error;
+use tracing::warn;
 
 #[derive(Debug, Deserialize)]
 struct SkillFrontmatter {
@@ -354,6 +356,22 @@ fn skill_roots_from_layer_stack_inner(
                     plugin_namespace: None,
                     plugin_root: None,
                 });
+
+                if let Some(skills_value) = layer.config.get("skills") {
+                    match SkillsConfig::try_from(skills_value.clone()) {
+                        Ok(skills) => {
+                            roots.extend(skills.extra_roots.into_iter().map(|path| SkillRoot {
+                                path,
+                                scope: SkillScope::User,
+                                file_system: Arc::clone(&LOCAL_FS),
+                                plugin_id: None,
+                                plugin_namespace: None,
+                                plugin_root: None,
+                            }));
+                        }
+                        Err(err) => warn!("invalid skills config: {err}"),
+                    }
+                }
             }
             ConfigLayerSource::System { .. } => {
                 // The system config layer lives under `/etc/codex/` on Unix, so treat

@@ -15,8 +15,8 @@ The governing question is always: **what does this do on a machine that is not M
   and it also broke the tests that gate releases, because tests build a clean tempdir
   and got the developer's real files back.
 - **Machine-specific locations are opt-in through configuration**, never a default:
-  an env var, `config.toml`, or a CLI flag. Elpis's own convention is an env var read
-  with `std::env::split_paths` (see `ELPIS_DEV_SKILLS_DIRS`).
+  an env var, `config.toml`, or a CLI flag. External skill libraries use
+  `skills.extra_roots` in the user's Elpis configuration.
 - Paths derived from the user's own workspace (`cwd`, `CODEX_HOME`, `dirs::home_dir()`
   joined with an Elpis-owned directory) are fine. Paths derived from *our* workspace
   layout are not.

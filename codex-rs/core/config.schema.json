@@ -2888,6 +2888,13 @@
           },
           "type": "array"
         },
+        "extra_roots": {
+          "description": "Additional directories whose immediate children contain `SKILL.md` files.",
+          "items": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          },
+          "type": "array"
+        },
         "include_instructions": {
           "description": "Whether turns receive the automatic skills instructions block.",
           "type": "boolean"

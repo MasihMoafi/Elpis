@@ -304,6 +304,41 @@ async fn set_extra_roots_replaces_runtime_roots_and_clears_cache() {
 }
 
 #[tokio::test]
+async fn user_config_extra_roots_are_discoverable() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let cwd = tempfile::tempdir().expect("tempdir");
+    let extra_root = tempfile::tempdir().expect("tempdir");
+    let skill_dir = extra_root.path().join("configured-skill");
+    fs::create_dir_all(&skill_dir).expect("create configured skill dir");
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: configured-skill\ndescription: configured skill\n---\n\n# Body\n",
+    )
+    .expect("write configured skill");
+    let config_layer_stack = config_stack(
+        &codex_home,
+        &format!(
+            "[skills]\nextra_roots = [\"{}\"]\n",
+            extra_root.path().display()
+        ),
+    );
+    let skills_service = SkillsService::new(
+        codex_home.path().abs(),
+        /*bundled_skills_enabled*/ true,
+    );
+
+    let outcome =
+        skills_for_config_with_stack(&skills_service, &cwd, &config_layer_stack, &[]).await;
+
+    assert!(
+        outcome
+            .skills
+            .iter()
+            .any(|skill| skill.name == "configured-skill")
+    );
+}
+
+#[tokio::test]
 async fn set_extra_roots_applies_to_config_loads_and_empty_clears() {
     let codex_home = tempfile::tempdir().expect("tempdir");
     let cwd = tempfile::tempdir().expect("tempdir");

@@ -97,9 +97,9 @@ pub async fn build_continuity_prompt(memories_root: Option<&Path>, cwd: &Path) -
     // double-sent every rule file on every turn. `continuity_sources` still auto-discovers
     // them on disk when given an empty instruction list (other callers, like the Context
     // Ledger, rely on that fallback), so they're skipped explicitly by name here instead.
-    // `skills/dev/*.md` rows, by contrast, come from `continuity_sources`'s own on-disk
-    // discovery (the server never reports them), so they DO get read and injected below —
-    // that discovery is the only way they reach the model at all.
+    // Skill-library files are intentionally absent here. The skills service advertises
+    // compact metadata and loads a selected skill through its native skill path instead
+    // of admitting an entire development folder as always-on context.
     for source in continuity_sources(memories_root, cwd, &[]) {
         if !source.admitted || source.name == GLOBAL_RULES || source.name == PROJECT_RULES {
             continue;
@@ -154,40 +154,6 @@ pub fn continuity_sources(
         let proj_agents = cwd.join("AGENTS.md");
         if proj_agents.exists() {
             instruction_paths.push(proj_agents);
-        }
-    }
-
-    // Only a `skills/dev` sibling of the workspace is discovered by default. Absolute
-    // paths tied to one developer's home layout must never be baked into the binary:
-    // they scan directories on every user's machine and silently admit whatever they
-    // find into that user's context. Extra directories are opt-in per machine through
-    // ELPIS_DEV_SKILLS_DIRS (platform-separated, like PATH).
-    let mut dev_dirs: Vec<PathBuf> = std::env::var_os("ELPIS_DEV_SKILLS_DIRS")
-        .map(|value| std::env::split_paths(&value).collect())
-        .unwrap_or_default();
-    dev_dirs.extend(cwd.parent().map(|parent| parent.join("skills/dev")));
-
-    let mut already_listed: std::collections::HashSet<PathBuf> = instruction_paths
-        .iter()
-        .filter_map(|path| path.canonicalize().ok())
-        .collect();
-
-    for dev_dir in dev_dirs {
-        if let Ok(entries) = std::fs::read_dir(&dev_dir) {
-            let mut dev_files: Vec<PathBuf> = entries
-                .filter_map(|entry| entry.ok())
-                .map(|entry| entry.path())
-                .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
-                .filter(|path| {
-                    if let Ok(canonical) = path.canonicalize() {
-                        already_listed.insert(canonical)
-                    } else {
-                        false
-                    }
-                })
-                .collect();
-            dev_files.sort();
-            instruction_paths.extend(dev_files);
         }
     }
 
@@ -792,26 +758,22 @@ mod tests {
                 .any(|source| source.name == "dev/AGENTS.md" && source.admitted)
         );
 
-        // Global/project AGENTS.md ride the server's native instruction channel; the
-        // continuity prompt must not re-inject them (that was the double-send). Dev
-        // rules are never sent by the server at all, so admitted ones DO get injected —
-        // except dev/SKILL.md, excluded just above.
-        let prompt = build_continuity_prompt(Some(&memories), &cwd)
-            .await
-            .expect("dev/AGENTS.md is still admitted, so a prompt is built");
-        assert!(prompt.contains("Dev rule"));
-        assert!(!prompt.contains("Skill rule"));
-        assert!(!prompt.contains("Global rule"));
-        assert!(!prompt.contains("Project rule"));
+        // Native instruction and skill channels own these files. The portable
+        // continuity prompt must not re-inject any of them.
+        assert!(
+            !build_continuity_prompt(Some(&memories), &cwd)
+                .await
+                .is_some_and(|prompt| {
+                    ["Dev rule", "Skill rule", "Global rule", "Project rule"]
+                        .iter()
+                        .any(|needle| prompt.contains(needle))
+                })
+        );
         Ok(())
     }
 
-    /// The regression this guards: the app server's `instruction_source_paths` only ever
-    /// contains global/project AGENTS.md, never `skills/dev/*.md` — so passing the
-    /// server's real (dev-less) list must still surface dev rules, both in the ledger and
-    /// in the injected prompt.
     #[tokio::test]
-    async fn dev_rules_are_discovered_even_when_server_omits_them() -> anyhow::Result<()> {
+    async fn sibling_skill_library_is_not_implicitly_admitted() -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("projects/Elpis");
@@ -820,20 +782,20 @@ mod tests {
         tokio::fs::create_dir_all(&dev).await?;
         tokio::fs::write(dev.join("AGENTS.md"), "Dev rule").await?;
 
-        // Simulates the real server response: no dev paths in the list at all.
         let server_reported: Vec<PathBuf> = vec![];
         let sources = continuity_sources(Some(&memories), &cwd, &server_reported);
         assert!(
             sources
                 .iter()
-                .any(|source| source.name == "dev/AGENTS.md" && source.admitted),
-            "dev file missing from ledger sources: {sources:?}"
+                .all(|source| source.path != dev.join("AGENTS.md")),
+            "an unselected skill library must not enter the ledger: {sources:?}"
         );
 
-        let prompt = build_continuity_prompt(Some(&memories), &cwd)
-            .await
-            .expect("dev rule should be injected since the server never sends it");
-        assert!(prompt.contains("Dev rule"));
+        assert!(
+            !build_continuity_prompt(Some(&memories), &cwd)
+                .await
+                .is_some_and(|prompt| prompt.contains("Dev rule"))
+        );
         Ok(())
     }
 

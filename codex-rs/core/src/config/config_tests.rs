@@ -428,6 +428,7 @@ enabled = false
         Some(SkillsConfig {
             bundled: Some(BundledSkillsConfig { enabled: false }),
             include_instructions: Some(false),
+            extra_roots: Vec::new(),
             config: Vec::new(),
         })
     );

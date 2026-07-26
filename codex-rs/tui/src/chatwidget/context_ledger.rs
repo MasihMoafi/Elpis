@@ -358,8 +358,8 @@ impl ChatWidget {
                 // The whole row opens the file: ctrl+click anywhere on it, the same
                 // affordance /usage gives. Blank padding cells are skipped by
                 // mark_buffer_hyperlinks, so only the visible text is clickable.
-                if source.path.is_absolute() {
-                    source_links.push((lines.len(), format!("file://{}", source.path.display())));
+                if let Ok(destination) = url::Url::from_file_path(&source.path) {
+                    source_links.push((lines.len(), destination.to_string()));
                 }
                 lines.push(Line::from(vec![
                     Span::styled(prefix, cyan),
