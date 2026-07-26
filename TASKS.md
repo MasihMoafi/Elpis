@@ -151,9 +151,9 @@ Evidence:
 - `elpis --update` checked GitHub's live latest release, reported `0.1.1` already
   current, exited without opening the TUI, and was confirmed by Masih.
 
-## Current Action — Pruning evidence inspector
+## Masih-verified — Pruning evidence inspector
 
-**Importance:** Foundational · **Difficulty:** Hard · **Status:** implemented, awaiting Masih
+**Importance:** Foundational · **Difficulty:** Hard · **Status:** verified by Masih 2026-07-26
 
 Preserve one immutable audit record per Ace pass showing the actual model-visible items
 before pruning, Ace's exact input and raw response, the validated keep/delete decision
@@ -186,29 +186,58 @@ Implementation evidence:
   finding, removed about 1,764 characters, wrote the exact before/after audit, and did
   not append the successful pass to the old multi-megabyte debug log.
 
+## Current Action — Separate Elpis from Codex state
+
+**Importance:** Foundational · **Difficulty:** Hard · **Status:** implementing
+
+Give Elpis its own `ELPIS_HOME`/`~/.elpis` for configuration, sessions, history, logs,
+hooks, skills, plugins, caches, and mutable runtime state. Elpis and Codex must not
+silently alter each other. Existing users need an explicit one-time migration;
+authentication must be handled as a separate, deliberate choice rather than silently
+sharing every Codex file.
+
+Acceptance approved by Masih:
+
+1. `ELPIS_HOME` is Elpis's only global mutable-state root and defaults to `~/.elpis`.
+   Elpis establishes it before argument dispatch and does not inherit `CODEX_HOME` or
+   `CODEX_SQLITE_HOME`.
+2. Elpis launches with `~/.codex` absent and can complete a provider-key turn, resume
+   it, and run its hooks. ChatGPT subscription login is the explicit exception in item
+   6. Exact rollouts and resume history live under `$ELPIS_HOME/sessions`.
+3. User configuration, history, logs, databases, hooks, rules, skills, plugins, caches,
+   shell snapshots, and temporary runtime files remain under `$ELPIS_HOME`. Changing
+   one of these through Elpis cannot change Codex state, and the reverse is also true.
+4. Project-local Elpis configuration, hooks, and rules use `.elpis/`; Elpis does not
+   load the project's `.codex/`. Shared project instructions such as `AGENTS.md` and
+   ecosystem-level `.agents/skills` remain shared because they are not Codex-owned
+   mutable state.
+5. `elpis --migrate-from-codex` first shows exactly which categories and paths would be
+   copied. Applying a migration is a separate explicit action, copies only selected
+   categories, never moves or deletes the source, never overwrites existing Elpis
+   state, and rewrites migrated paths that still point inside the old Codex home.
+   Mixed historical sessions are copied only when the user explicitly selects them.
+6. ChatGPT subscription authentication is the sole Codex-owned exception: Elpis reuses
+   the existing Codex login instead of requiring a second login. Other providers remain
+   API-key based. General configuration and runtime state never come from `~/.codex`.
+7. Tests use temporary homes and prove both directions of isolation. The installed
+   binary is then handed to Masih with checks for subscription-login reuse, RTK hook
+   discovery, one real turn, and resume.
+
 ## Queued next — do not start until the Current Action is closed
 
-1. **Separate Elpis from Codex state — Foundational · Hard.** Give Elpis its own
-   `ELPIS_HOME`/`~/.elpis` for configuration, sessions, history, logs, hooks, skills,
-   plugins, caches, and mutable runtime state. Elpis and Codex must not silently alter
-   each other. Existing users need an explicit one-time migration; authentication must
-   be handled as a separate, deliberate choice rather than silently sharing every
-   Codex file. Acceptance: Elpis launches without `~/.codex`, changing an Elpis hook or
-   config does not affect Codex, migrated state is preserved, and exact Elpis rollouts
-   live under `~/.elpis/sessions`.
-2. **Corrected public release — Foundational · Medium.** After the evidence inspector,
+1. **Corrected public release — Foundational · Medium.** After the evidence inspector,
    updater, and state separation are verified, publish the fixed build as the first
    recommended public preview. Masih prefers deleting the old `v0.1.0` and `v0.1.1`
    GitHub releases and tags rather than preserving them as deprecated history. That
    destructive remote action is explicitly deferred and requires fresh confirmation
    after the successor release is live, so `releases/latest` and the installer never
    lose their target.
-3. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
+2. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
    compact conclusions across completed turns, mark superseded findings explicitly,
    and exclude obsolete state from future requests. Prefer extending the validated
    Ace record pipeline over adding an unconstrained third agent. Native compaction
    remains the fail-safe; failure changes nothing.
-4. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
+3. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
    several agents and none of them recorded it, so it has never been built. When a chat
    opens, Elpis silently has Terra inspect the project and write or refresh a project
    `VISION.md`. That file is the agent's eyes on the project: what this project is, where
