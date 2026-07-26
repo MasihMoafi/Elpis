@@ -459,7 +459,7 @@ impl AccountRequestProcessor {
             codex_streamlined_login,
             login_success_page,
             ..LoginServerOptions::new(
-                config.codex_home.to_path_buf(),
+                config.auth_home(),
                 oauth_client_id(),
                 config.forced_chatgpt_workspace_id.clone(),
                 config.cli_auth_credentials_store_mode,

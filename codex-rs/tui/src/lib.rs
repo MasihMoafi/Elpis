@@ -961,8 +961,9 @@ pub async fn run_main(
             .feature_requirements
             .as_ref(),
     )?;
+    let auth_home = legacy_core::config::auth_home_override().unwrap_or_else(|| codex_home.clone());
     let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        codex_home.to_path_buf(),
+        auth_home,
         /*enable_codex_api_key_env*/ false,
         bootstrap_config_toml
             .cli_auth_credentials_store
@@ -1118,7 +1119,7 @@ pub async fn run_main(
         let auth_route_config = config.auth_route_config();
         #[allow(clippy::print_stderr)]
         if let Err(err) = enforce_login_restrictions(&AuthConfig {
-            codex_home: config.codex_home.to_path_buf(),
+            codex_home: config.auth_home(),
             auth_credentials_store_mode: config.cli_auth_credentials_store_mode,
             keyring_backend_kind: config.auth_keyring_backend_kind(),
             forced_login_method: config.forced_login_method,
@@ -1376,7 +1377,7 @@ async fn run_ratatui_app(
         // status detection edge cases.
         if show_login_screen && !uses_remote_workspace {
             cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-                initial_config.codex_home.to_path_buf(),
+                initial_config.auth_home(),
                 /*enable_codex_api_key_env*/ false,
                 initial_config.cli_auth_credentials_store_mode,
                 initial_config.auth_keyring_backend_kind(),

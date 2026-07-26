@@ -24,6 +24,15 @@ where
 {
     let mut env_map = populate_env(vars, policy, thread_id);
 
+    // Branded clients can keep their internal runtime state elsewhere while
+    // deliberately reusing Codex authentication. Never expose that internal
+    // override to tool subprocesses; a nested `codex` should use the real
+    // Codex home, not the parent's branded state directory.
+    if let Some(codex_auth_home) = env_map.remove("CODEX_AUTH_HOME") {
+        env_map.insert("CODEX_HOME".to_string(), codex_auth_home);
+    }
+    env_map.remove("CODEX_PROJECT_CONFIG_DIR_NAME");
+
     if cfg!(target_os = "windows") {
         // This is a workaround to address the failures we are seeing in the
         // following tests when run via Bazel on Windows:
@@ -147,6 +156,36 @@ pub const WINDOWS_CORE_ENV_VARS: &[&str] = &[
     "POWERSHELL",
     "PWSH",
 ];
+
+#[cfg(test)]
+mod branded_home_tests {
+    use super::*;
+
+    #[test]
+    fn auth_home_is_hidden_and_restores_codex_home_for_subprocesses() {
+        let vars = vec![
+            ("CODEX_HOME".to_string(), "/state/elpis".to_string()),
+            ("CODEX_AUTH_HOME".to_string(), "/state/codex".to_string()),
+            (
+                "CODEX_PROJECT_CONFIG_DIR_NAME".to_string(),
+                ".elpis".to_string(),
+            ),
+        ];
+        let policy = ShellEnvironmentPolicy {
+            ignore_default_excludes: true,
+            ..Default::default()
+        };
+
+        let result = create_env_from_vars(vars, &policy, /*thread_id*/ None);
+
+        assert_eq!(
+            result.get("CODEX_HOME").map(String::as_str),
+            Some("/state/codex")
+        );
+        assert!(!result.contains_key("CODEX_AUTH_HOME"));
+        assert!(!result.contains_key("CODEX_PROJECT_CONFIG_DIR_NAME"));
+    }
+}
 
 #[cfg(all(test, target_os = "windows"))]
 mod windows_tests {

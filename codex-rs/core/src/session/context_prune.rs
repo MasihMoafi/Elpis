@@ -78,11 +78,7 @@ pub(super) async fn maybe_run_context_prune(
     after_history.replace(after_items.clone());
     let after_model_items = after_history.for_prompt(&turn_context.model_info.input_modalities);
     let ace_input = context_pruner::build_prune_input(&batch, active_question.as_deref());
-    let Some(home) = dirs::home_dir() else {
-        tracing::warn!("Context prune audit has no home directory; preserving history");
-        return;
-    };
-    let log_dir = home.join(".elpis").join("logs");
+    let log_dir = sess.codex_home().await.join("logs");
     let audit = match context_prune_audit::write_applied_pass(
         &log_dir,
         context_prune_audit::PruneAuditInput {
@@ -186,7 +182,7 @@ async fn try_validated_prune_pass(
             "Context prune response was malformed for model {prune_model_slug}; preserving history"
         );
         let input_text = context_pruner::build_prune_input(batch, active_question);
-        log_prune_debug(prune_model_slug, &input_text, Some(&output));
+        log_prune_debug(sess, prune_model_slug, &input_text, Some(&output)).await;
         return None;
     };
     Some((record, output))
@@ -248,7 +244,7 @@ async fn try_stream_prune_pass(
         Ok(stream) => stream,
         Err(err) => {
             tracing::warn!("Context prune stream failed for model {prune_model_slug}: {err}");
-            log_prune_debug(prune_model_slug, &input_text, None);
+            log_prune_debug(sess, prune_model_slug, &input_text, None).await;
             return None;
         }
     };
@@ -261,7 +257,7 @@ async fn try_stream_prune_pass(
             Some(Ok(_)) => continue,
             Some(Err(err)) => {
                 tracing::warn!("Context prune stream error for model {prune_model_slug}: {err}");
-                log_prune_debug(prune_model_slug, &input_text, None);
+                log_prune_debug(sess, prune_model_slug, &input_text, None).await;
                 return None;
             }
             None => break,
@@ -272,31 +268,34 @@ async fn try_stream_prune_pass(
         tracing::info!("Context prune LLM response received ({prune_model_slug}): {text}");
     } else {
         tracing::warn!("Context prune LLM stream returned no assistant text ({prune_model_slug})");
-        log_prune_debug(prune_model_slug, &input_text, None);
+        log_prune_debug(sess, prune_model_slug, &input_text, None).await;
     }
     result
 }
 
-fn log_prune_debug(model_slug: &str, input_text: &str, output_text: Option<&str>) {
-    if let Some(home) = std::env::var_os("HOME") {
-        let log_dir = std::path::PathBuf::from(home).join(".elpis").join("logs");
-        let _ = std::fs::create_dir_all(&log_dir);
+async fn log_prune_debug(
+    sess: &Arc<Session>,
+    model_slug: &str,
+    input_text: &str,
+    output_text: Option<&str>,
+) {
+    let log_dir = sess.codex_home().await.join("logs");
+    let _ = std::fs::create_dir_all(&log_dir);
 
-        // Raw debug log only; prune_report.md describes the last successfully
-        // applied pass and is never written from a failed or malformed attempt.
-        let debug_file = log_dir.join("prune_debug.log");
-        if let Ok(mut file) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(debug_file)
-        {
-            use std::io::Write;
-            let ts = chrono::Utc::now().to_rfc3339();
-            let out_str = output_text.unwrap_or("<NO OUTPUT / FAILED>");
-            let _ = writeln!(
-                file,
-                "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {model_slug}\n--- INPUT BATCH SENT TO LLM ---\n{input_text}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n"
-            );
-        }
+    // Raw debug log only; prune_report.md describes the last successfully
+    // applied pass and is never written from a failed or malformed attempt.
+    let debug_file = log_dir.join("prune_debug.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(debug_file)
+    {
+        use std::io::Write;
+        let ts = chrono::Utc::now().to_rfc3339();
+        let out_str = output_text.unwrap_or("<NO OUTPUT / FAILED>");
+        let _ = writeln!(
+            file,
+            "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {model_slug}\n--- INPUT BATCH SENT TO LLM ---\n{input_text}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n"
+        );
     }
 }

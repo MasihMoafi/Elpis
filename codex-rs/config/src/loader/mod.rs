@@ -127,6 +127,11 @@ pub async fn load_config_layers_state(
         cloud_config_bundle,
     } = options.into();
     let active_user_profile = overrides.user_config_profile.clone();
+    let project_config_dir_name = overrides
+        .project_config_dir_name
+        .as_deref()
+        .unwrap_or(".codex");
+    validate_project_config_dir_name(project_config_dir_name)?;
     let ignore_managed_requirements = overrides.ignore_managed_requirements;
     let ignore_user_config = overrides.ignore_user_config;
     let ignore_user_and_project_exec_policy_rules =
@@ -343,6 +348,7 @@ pub async fn load_config_layers_state(
             &project_trust_context.project_root,
             &project_trust_context,
             codex_home,
+            project_config_dir_name,
             strict_config,
         )
         .await?;
@@ -903,7 +909,11 @@ impl ProjectTrustContext {
         }
     }
 
-    fn root_checkout_hooks_folder_for_dir(&self, dir: &AbsolutePathBuf) -> Option<AbsolutePathBuf> {
+    fn root_checkout_hooks_folder_for_dir(
+        &self,
+        dir: &AbsolutePathBuf,
+        project_config_dir_name: &str,
+    ) -> Option<AbsolutePathBuf> {
         let checkout_root = self.checkout_root.as_ref()?;
         let repo_root = self.repo_root.as_ref()?;
         // Regular checkouts resolve both paths to the same root; linked worktrees do not.
@@ -912,8 +922,26 @@ impl ProjectTrustContext {
         }
 
         let relative_dir = dir.as_path().strip_prefix(checkout_root.as_path()).ok()?;
-        Some(repo_root.join(relative_dir).join(".codex"))
+        Some(repo_root.join(relative_dir).join(project_config_dir_name))
     }
+}
+
+fn validate_project_config_dir_name(name: &str) -> io::Result<()> {
+    let path = Path::new(name);
+    if name.is_empty()
+        || path.is_absolute()
+        || path.components().count() != 1
+        || matches!(
+            path.components().next(),
+            Some(std::path::Component::CurDir | std::path::Component::ParentDir)
+        )
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "project config directory name must be one relative path component",
+        ));
+    }
+    Ok(())
 }
 
 fn project_layer_entry(
@@ -1198,6 +1226,7 @@ async fn load_project_layers(
     project_root: &AbsolutePathBuf,
     trust_context: &ProjectTrustContext,
     codex_home: &Path,
+    project_config_dir_name: &str,
     strict_config: bool,
 ) -> io::Result<LoadedProjectLayers> {
     let codex_home_abs = AbsolutePathBuf::from_absolute_path(codex_home)?;
@@ -1221,7 +1250,7 @@ async fn load_project_layers(
     let mut layers = Vec::new();
     let mut startup_warnings = Vec::new();
     for dir in dirs {
-        let dot_codex_abs = dir.join(".codex");
+        let dot_codex_abs = dir.join(project_config_dir_name);
         let dot_codex_uri = PathUri::from_abs_path(&dot_codex_abs);
         if !fs
             .get_metadata(&dot_codex_uri, /*sandbox*/ None)
@@ -1234,7 +1263,8 @@ async fn load_project_layers(
 
         let decision = trust_context.decision_for_dir(&dir);
         let disabled_reason = trust_context.disabled_reason_for_decision(&decision);
-        let hooks_config_folder_override = trust_context.root_checkout_hooks_folder_for_dir(&dir);
+        let hooks_config_folder_override =
+            trust_context.root_checkout_hooks_folder_for_dir(&dir, project_config_dir_name);
         let dot_codex_normalized =
             normalize_path(dot_codex_abs.as_path()).unwrap_or_else(|_| dot_codex_abs.to_path_buf());
         if dot_codex_abs == codex_home_abs || dot_codex_normalized == codex_home_normalized {

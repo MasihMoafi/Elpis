@@ -40,6 +40,9 @@ impl From<LoaderOverrides> for ConfigLoadOptions {
 pub struct LoaderOverrides {
     pub user_config_path: Option<AbsolutePathBuf>,
     pub user_config_profile: Option<ProfileV2Name>,
+    /// Name of the repository-local configuration directory. Codex defaults to
+    /// `.codex`; branded clients can select their own namespace.
+    pub project_config_dir_name: Option<String>,
     pub managed_config_path: Option<PathBuf>,
     pub system_config_path: Option<PathBuf>,
     pub system_requirements_path: Option<PathBuf>,
@@ -61,6 +64,7 @@ impl LoaderOverrides {
         Self {
             user_config_path: None,
             user_config_profile: None,
+            project_config_dir_name: None,
             managed_config_path: Some(base.join("managed_config.toml")),
             system_config_path: Some(base.join("config.toml")),
             system_requirements_path: Some(base.join("requirements.toml")),

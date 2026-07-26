@@ -339,8 +339,10 @@ async fn start_app_server_for_archive_command(
             .feature_requirements
             .as_ref(),
     )?;
+    let auth_home = crate::legacy_core::config::auth_home_override()
+        .unwrap_or_else(|| codex_home.to_path_buf());
     let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        codex_home.to_path_buf(),
+        auth_home,
         /*enable_codex_api_key_env*/ false,
         config_toml.cli_auth_credentials_store.unwrap_or_default(),
         resolve_bootstrap_auth_keyring_backend_kind(&bootstrap_config)?,

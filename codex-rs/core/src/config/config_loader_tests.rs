@@ -2322,6 +2322,65 @@ async fn project_layers_prefer_closest_cwd() -> std::io::Result<()> {
 }
 
 #[tokio::test]
+async fn branded_project_config_directory_does_not_load_dot_codex() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    tokio::fs::create_dir_all(project_root.join(".codex")).await?;
+    tokio::fs::create_dir_all(project_root.join(".elpis")).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    tokio::fs::write(
+        project_root.join(".codex").join(CONFIG_TOML_FILE),
+        "foo = \"codex\"\n",
+    )
+    .await?;
+    tokio::fs::write(
+        project_root.join(".elpis").join(CONFIG_TOML_FILE),
+        "foo = \"elpis\"\n",
+    )
+    .await?;
+
+    let codex_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    make_config_for_test(
+        &codex_home,
+        &project_root,
+        TrustLevel::Trusted,
+        /*project_root_markers*/ None,
+    )
+    .await?;
+    let layers = load_config_layers_state(
+        LOCAL_FS.as_ref(),
+        &codex_home,
+        Some(AbsolutePathBuf::from_absolute_path(&project_root)?),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides {
+            project_config_dir_name: Some(".elpis".to_string()),
+            ..LoaderOverrides::default()
+        },
+        &codex_config::NoopThreadConfigLoader,
+    )
+    .await?;
+
+    assert_eq!(
+        layers
+            .effective_config()
+            .get("foo")
+            .and_then(TomlValue::as_str),
+        Some("elpis")
+    );
+    let project_paths: Vec<_> = layers
+        .layers_high_to_low()
+        .into_iter()
+        .filter_map(|layer| match &layer.name {
+            ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder.to_path_buf()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(project_paths, vec![project_root.join(".elpis")]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn linked_worktree_project_layers_keep_worktree_config_but_use_root_repo_hooks()
 -> std::io::Result<()> {
     let tmp = tempdir()?;

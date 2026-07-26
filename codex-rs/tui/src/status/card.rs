@@ -120,6 +120,7 @@ struct StatusHistoryCell {
     /// them (`context_pruner::pass_count`/`saved_chars`).
     context_pruner_passes: usize,
     context_pruner_saved_chars: usize,
+    prune_report_path: PathBuf,
 }
 
 #[cfg(test)]
@@ -381,6 +382,7 @@ impl StatusHistoryCell {
                 rate_limit_state: rate_limit_state.clone(),
                 context_pruner_passes,
                 context_pruner_saved_chars,
+                prune_report_path: config.codex_home.join("logs/prune_report.md").to_path_buf(),
             },
             StatusHistoryHandle { rate_limit_state },
         )
@@ -448,12 +450,10 @@ impl StatusHistoryCell {
             ))
             .dim(),
         ];
-        if let Some(home_dir) = std::env::var_os("HOME") {
-            spans.push(Span::from(format!(
-                " | file://{}/.elpis/logs/prune_report.md",
-                home_dir.to_string_lossy()
-            )));
-        }
+        spans.push(Span::from(format!(
+            " | file://{}",
+            self.prune_report_path.display()
+        )));
         Some(spans)
     }
 

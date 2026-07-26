@@ -1266,7 +1266,7 @@ pub struct TerminalResizeReflowConfig {
 
 impl AuthManagerConfig for Config {
     fn codex_home(&self) -> PathBuf {
-        self.codex_home.to_path_buf()
+        auth_home_override().unwrap_or_else(|| self.codex_home.to_path_buf())
     }
 
     fn cli_auth_credentials_store_mode(&self) -> AuthCredentialsStoreMode {
@@ -1287,6 +1287,20 @@ impl AuthManagerConfig for Config {
 
     fn auth_route_config(&self) -> Option<AuthRouteConfig> {
         Config::auth_route_config(self)
+    }
+}
+
+/// Elpis keeps runtime state in its own home while deliberately reusing the
+/// existing ChatGPT subscription credential. Other binaries do not set this.
+pub fn auth_home_override() -> Option<PathBuf> {
+    std::env::var_os("CODEX_AUTH_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+impl Config {
+    pub fn auth_home(&self) -> PathBuf {
+        auth_home_override().unwrap_or_else(|| self.codex_home.to_path_buf())
     }
 }
 

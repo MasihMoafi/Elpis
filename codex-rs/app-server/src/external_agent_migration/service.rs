@@ -48,6 +48,15 @@ use self::utils::rewrite_external_agent_terms;
 
 const EXTERNAL_AGENT_CONFIG_DETECT_METRIC: &str = "codex.external_agent_config.detect";
 const EXTERNAL_AGENT_CONFIG_IMPORT_METRIC: &str = "codex.external_agent_config.import";
+const PROJECT_CONFIG_DIR_NAME_ENV: &str = "CODEX_PROJECT_CONFIG_DIR_NAME";
+
+fn project_config_dir(repo_root: &Path) -> PathBuf {
+    let name = std::env::var(PROJECT_CONFIG_DIR_NAME_ENV)
+        .ok()
+        .filter(|name| name == ".elpis")
+        .unwrap_or_else(|| ".codex".to_string());
+    repo_root.join(name)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExternalAgentConfigDetectOptions {
@@ -471,7 +480,7 @@ impl ExternalAgentConfigService {
         };
         let target_config = repo_root.map_or_else(
             || self.codex_home.join("config.toml"),
-            |repo_root| repo_root.join(".codex").join("config.toml"),
+            |repo_root| project_config_dir(repo_root).join("config.toml"),
         );
         if let Some(settings) = settings.as_ref() {
             let migrated = build_config_from_external(settings, self.source)?;
@@ -550,7 +559,7 @@ impl ExternalAgentConfigService {
         let source_external_agent_dir = self.source_config_dir(repo_root);
         let target_hooks = repo_root.map_or_else(
             || self.codex_home.join("hooks.json"),
-            |repo_root| repo_root.join(".codex").join("hooks.json"),
+            |repo_root| project_config_dir(repo_root).join("hooks.json"),
         );
         let hook_event_names = self
             .source
@@ -642,7 +651,7 @@ impl ExternalAgentConfigService {
         let source_subagents = source_external_agent_dir.join("agents");
         let target_subagents = repo_root.map_or_else(
             || self.codex_home.join("agents"),
-            |repo_root| repo_root.join(".codex").join("agents"),
+            |repo_root| project_config_dir(repo_root).join("agents"),
         );
         let subagents_count = count_missing_subagents(&source_subagents, &target_subagents)?;
         if subagents_count > 0 {
@@ -1094,7 +1103,7 @@ impl ExternalAgentConfigService {
         let (source_settings, target_config) = if let Some(repo_root) = repo_root.as_ref() {
             (
                 self.source_settings(Some(repo_root)),
-                repo_root.join(".codex").join("config.toml"),
+                project_config_dir(repo_root).join("config.toml"),
             )
         } else if cwd.is_some_and(|cwd| !cwd.as_os_str().is_empty()) {
             return Ok(None);
@@ -1147,7 +1156,7 @@ impl ExternalAgentConfigService {
     fn import_mcp_server_config(&self, cwd: Option<&Path>) -> io::Result<Vec<String>> {
         let repo_root = find_repo_root(cwd)?;
         let target_config = if let Some(repo_root) = repo_root.as_ref() {
-            repo_root.join(".codex").join("config.toml")
+            project_config_dir(repo_root).join("config.toml")
         } else if cwd.is_some_and(|cwd| !cwd.as_os_str().is_empty()) {
             return Ok(Vec::new());
         } else {
@@ -1191,7 +1200,7 @@ impl ExternalAgentConfigService {
         let (source_agents, target_agents) = if let Some(repo_root) = find_repo_root(cwd)? {
             (
                 repo_root.join(self.source.config_dir()).join("agents"),
-                repo_root.join(".codex").join("agents"),
+                project_config_dir(&repo_root).join("agents"),
             )
         } else if cwd.is_some_and(|cwd| !cwd.as_os_str().is_empty()) {
             return Ok(Vec::new());
@@ -1210,7 +1219,7 @@ impl ExternalAgentConfigService {
             if let Some(repo_root) = find_repo_root(cwd)? {
                 (
                     self.source_config_dir(Some(repo_root.as_path())),
-                    repo_root.join(".codex").join("hooks.json"),
+                    project_config_dir(&repo_root).join("hooks.json"),
                 )
             } else if cwd.is_some_and(|cwd| !cwd.as_os_str().is_empty()) {
                 return Ok(Vec::new());

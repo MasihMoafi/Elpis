@@ -14,9 +14,11 @@ use codex_tui::ExitReason;
 use codex_tui::run_main;
 use codex_utils_cli::CliConfigOverrides;
 use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 use supports_color::Stream;
 
+mod elpis_migrate;
 mod elpis_update;
 
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
@@ -54,6 +56,23 @@ struct TopCli {
     #[arg(long)]
     update: bool,
 
+    /// Preview a selective, non-destructive migration from Codex state.
+    #[arg(long)]
+    migrate_from_codex: bool,
+
+    /// Categories to copy when applying a Codex-state migration.
+    #[arg(
+        long = "migration-include",
+        value_enum,
+        value_delimiter = ',',
+        requires = "migrate_from_codex"
+    )]
+    migration_categories: Vec<elpis_migrate::MigrationCategory>,
+
+    /// Apply the selected migration categories after showing the preview.
+    #[arg(long, requires = "migrate_from_codex")]
+    apply_migration: bool,
+
     /// Select a direct Elpis provider or a curated OpenRouter compatibility route.
     #[arg(
         long,
@@ -79,15 +98,9 @@ struct TopCli {
     inner: Cli,
 }
 
-fn prepend_elpis_memories_defaults(
-    config_overrides: &mut CliConfigOverrides,
-    home_dir: Option<PathBuf>,
-) {
-    let Some(home_dir) = home_dir else {
-        return;
-    };
-    let memories_root = home_dir.join(".elpis/memories");
-    let state_root = home_dir.join(".elpis/state");
+fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, elpis_home: &Path) {
+    let memories_root = elpis_home.join("memories");
+    let state_root = elpis_home.join("state");
     let memories_value = toml::Value::String(memories_root.to_string_lossy().into_owned());
     let state_value = toml::Value::String(state_root.to_string_lossy().into_owned());
     config_overrides.raw_overrides.splice(
@@ -97,6 +110,50 @@ fn prepend_elpis_memories_defaults(
             format!("memories.state_root={state_value}"),
         ],
     );
+}
+
+fn resolve_elpis_home() -> anyhow::Result<PathBuf> {
+    let path = match std::env::var_os("ELPIS_HOME").filter(|value| !value.is_empty()) {
+        Some(value) => PathBuf::from(value),
+        None => dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("could not determine the home directory"))?
+            .join(".elpis"),
+    };
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    std::fs::create_dir_all(&path)?;
+    Ok(path.canonicalize()?)
+}
+
+fn existing_codex_auth_home() -> anyhow::Result<PathBuf> {
+    if let Some(value) = std::env::var_os("CODEX_HOME").filter(|value| !value.is_empty()) {
+        let path = PathBuf::from(value);
+        return Ok(if path.is_absolute() {
+            path
+        } else {
+            std::env::current_dir()?.join(path)
+        });
+    }
+    Ok(dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("could not determine the home directory"))?
+        .join(".codex"))
+}
+
+fn prepare_elpis_environment() -> anyhow::Result<(PathBuf, PathBuf)> {
+    let auth_home = existing_codex_auth_home()?;
+    let elpis_home = resolve_elpis_home()?;
+    // This runs before arg0 dispatch creates a Tokio runtime or any threads.
+    unsafe {
+        std::env::set_var("CODEX_AUTH_HOME", &auth_home);
+        std::env::set_var("CODEX_HOME", &elpis_home);
+        std::env::set_var("CODEX_PROJECT_CONFIG_DIR_NAME", ".elpis");
+        std::env::remove_var("CODEX_SQLITE_HOME");
+        std::env::remove_var("CODEX_TUI_SESSION_LOG_PATH");
+    }
+    Ok((elpis_home, auth_home))
 }
 
 fn push_string_override(config_overrides: &mut CliConfigOverrides, key: &str, value: &str) {
@@ -145,7 +202,7 @@ mod tests {
             ],
         };
 
-        prepend_elpis_memories_defaults(&mut overrides, Some(PathBuf::from("/tmp/home")));
+        prepend_elpis_memories_defaults(&mut overrides, Path::new("/tmp/home/.elpis"));
 
         assert_eq!(
             overrides.raw_overrides,
@@ -244,10 +301,21 @@ mod tests {
 }
 
 fn main() -> anyhow::Result<()> {
-    arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
+    let (elpis_home, codex_auth_home) = prepare_elpis_environment()?;
+    arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
         let mut top_cli = TopCli::parse();
         if top_cli.update {
             println!("{}", elpis_update::run().await?);
+            return Ok(());
+        }
+        if top_cli.migrate_from_codex {
+            let report = elpis_migrate::run(
+                &codex_auth_home,
+                &elpis_home,
+                &top_cli.migration_categories,
+                top_cli.apply_migration,
+            )?;
+            print!("{report}");
             return Ok(());
         }
         let provider = top_cli.provider.clone();
@@ -257,11 +325,15 @@ fn main() -> anyhow::Result<()> {
             .config_overrides
             .raw_overrides
             .splice(0..0, top_cli.config_overrides.raw_overrides);
-        prepend_elpis_memories_defaults(&mut inner.config_overrides, dirs::home_dir());
+        prepend_elpis_memories_defaults(&mut inner.config_overrides, &elpis_home);
+        let loader_overrides = LoaderOverrides {
+            project_config_dir_name: Some(".elpis".to_string()),
+            ..LoaderOverrides::default()
+        };
         let exit_info = run_main(
             inner,
             arg0_paths,
-            LoaderOverrides::default(),
+            loader_overrides,
             /*explicit_remote_endpoint*/ None,
         )
         .await?;
