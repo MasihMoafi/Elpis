@@ -238,16 +238,21 @@ Implementation evidence:
 - Preview/apply migration was exercised against the existing RTK hook. It copied only
   the selected hook, left its source byte-identical, and skipped the existing
   destination on a second application.
+- Masih confirmed on 2026-07-26 that ChatGPT subscription login was reused, the RTK
+  hook was discovered, and the turn resumed correctly. One real-turn completion and
+  bidirectional Elpis/Codex state isolation remain awaiting Masih's verification.
 
 ## Queued next — do not start until the Current Action is closed
 
 1. **Corrected public release — Foundational · Medium.** After the evidence inspector,
    updater, and state separation are verified, publish the fixed build as the first
-   recommended public preview. Masih prefers deleting the old `v0.1.0` and `v0.1.1`
-   GitHub releases and tags rather than preserving them as deprecated history. That
-   destructive remote action is explicitly deferred and requires fresh confirmation
-   after the successor release is live, so `releases/latest` and the installer never
-   lose their target.
+   recommended public preview. Masih selected a clean public release surface on
+   2026-07-26: after the successor is live, delete the old `v0.1.0` and `v0.1.1`
+   GitHub releases and tags so the corrected build is the first and only release new
+   visitors see. Preserve all commits, source history, and local work; do not rewrite
+   repository history. The destructive remote action remains explicitly deferred and
+   requires fresh confirmation after the successor release is live, so
+   `releases/latest` and the installer never lose their target.
 2. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
    compact conclusions across completed turns, mark superseded findings explicitly,
    and exclude obsolete state from future requests. Prefer extending the validated
