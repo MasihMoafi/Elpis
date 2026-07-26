@@ -3819,7 +3819,7 @@ dependencies = [
 
 [[package]]
 name = "codex-tui"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "app_test_support",
