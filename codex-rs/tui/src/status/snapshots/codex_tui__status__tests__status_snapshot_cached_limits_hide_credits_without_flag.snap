@@ -4,15 +4,15 @@ expression: sanitized
 ---
 /usage
 
-╭──────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.0)                                                           │
-│  Model          : gpt-5.1-codex (reasoning none, summaries auto)             │
-│  Directory      : /workspace/tests                                           │
-│  Permissions    : Custom (workspace with network access, Ask for approval)   │
-│  Token usage    : 1.05K total  (700 input + 350 output)                      │
-│  Context window : 99% left (1.45K used / 272K)                               │
-│  Context pruning: ~0 tokens saved (0% of context window) — 0 deterministic,  │
-│  5h limit       : [████████░░░░░░░░░░░░] 40% left (resets 11:32)             │
-│  Weekly limit   : [█████████████░░░░░░░] 65% left (resets 11:52)             │
-│  Warning        : limits may be stale - start new turn to refresh.           │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────────────────────────────────╮
+│  >_ Elpis (v0.1.1)                                                         │
+│  Model          : gpt-5.1-codex (reasoning none, summaries auto)           │
+│  Directory      : /workspace/tests                                         │
+│  Permissions    : Custom (workspace with network access, Ask for approval) │
+│  Token usage    : 1.05K total  (700 input + 350 output)                    │
+│  Context window : 100% left (1.45K used / 272K)                            │
+│  Context pruning: ~0 tokens saved — 0 Ace passes                           │
+│  5h limit       : [████████░░░░░░░░░░░░] 40% left (resets 11:32)           │
+│  Weekly limit   : [█████████████░░░░░░░] 65% left (resets 11:52)           │
+│  Warning        : limits may be stale - start new turn to refresh.         │
+╰────────────────────────────────────────────────────────────────────────────╯

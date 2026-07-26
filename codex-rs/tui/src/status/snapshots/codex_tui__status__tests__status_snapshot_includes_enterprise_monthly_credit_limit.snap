@@ -4,14 +4,14 @@ expression: sanitized
 ---
 /usage
 
-╭──────────────────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.0)                                                                       │
-│  Model               : gpt-5.1-codex-max (reasoning none, summaries auto)                │
-│  Directory           : /workspace/tests                                                  │
-│  Permissions         : Custom (workspace with network access, Ask for approval)          │
-│  Token usage         : 1.2K total  (800 input + 400 output)                              │
-│  Context window      : 100% left (1.2K used / 272K)                                      │
-│  Context pruning     : ~0 tokens saved (0% of context window) — 0 deterministic, 0 agent │
-│  Monthly credit limit: [██████████████░░░░░░] 68% left (resets 07:08 on 7 May)           │
-│                        8,000 of 25,000 credits used                                      │
-╰──────────────────────────────────────────────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────────────────────────────────╮
+│  >_ Elpis (v0.1.1)                                                              │
+│  Model               : gpt-5.1-codex-max (reasoning none, summaries auto)       │
+│  Directory           : /workspace/tests                                         │
+│  Permissions         : Custom (workspace with network access, Ask for approval) │
+│  Token usage         : 1.2K total  (800 input + 400 output)                     │
+│  Context window      : 100% left (1.2K used / 272K)                             │
+│  Context pruning     : ~0 tokens saved — 0 Ace passes                           │
+│  Monthly credit limit: [██████████████░░░░░░] 68% left (resets 07:08 on 7 May)  │
+│                        8,000 of 25,000 credits used                             │
+╰─────────────────────────────────────────────────────────────────────────────────╯

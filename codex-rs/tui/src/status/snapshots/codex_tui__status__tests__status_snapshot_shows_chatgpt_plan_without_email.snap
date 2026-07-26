@@ -10,6 +10,6 @@ expression: sanitized
 │  Directory      : /workspace/tests                                           │
 │  Permissions    : Custom (workspace with network access, Ask for approval)   │
 │  Account        : Enterprise                                                 │
-│  Context pruning: ~0 tokens saved (0% of context window) — 0 deterministic,  │
+│  Context pruning: ~0 tokens saved — 0 Ace passes                             │
 │  Limits         : data not available yet                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯

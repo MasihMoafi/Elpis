@@ -4,13 +4,13 @@ expression: sanitized
 ---
 /usage
 
-╭──────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.0)                                                           │
-│  Model          : gpt-5.1-codex-max (reasoning none, summaries auto)         │
-│  Directory      : /workspace/tests                                           │
-│  Permissions    : Workspace (Approve for me)                                 │
-│  Token usage    : 0 total  (0 input + 0 output)                              │
-│  Context window : 100% left (0 used / 272K)                                  │
-│  Context pruning: ~0 tokens saved (0% of context window) — 0 deterministic,  │
-│  Limits         : data not available yet                                     │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────╮
+│  >_ Elpis (v0.1.1)                                                   │
+│  Model          : gpt-5.1-codex-max (reasoning none, summaries auto) │
+│  Directory      : /workspace/tests                                   │
+│  Permissions    : Workspace (Approve for me)                         │
+│  Token usage    : 0 total  (0 input + 0 output)                      │
+│  Context window : 100% left (0 used / 272K)                          │
+│  Context pruning: ~0 tokens saved — 0 Ace passes                     │
+│  Limits         : data not available yet                             │
+╰──────────────────────────────────────────────────────────────────────╯

@@ -245,6 +245,7 @@ impl SlashCommand {
             | SlashCommand::Add
             | SlashCommand::Skills
             | SlashCommand::Rag
+            | SlashCommand::Hooks
             | SlashCommand::Review
             | SlashCommand::New
             | SlashCommand::Resume
@@ -266,8 +267,7 @@ impl SlashCommand {
             | SlashCommand::MultiAgents
             | SlashCommand::Ide
             | SlashCommand::Clear => true,
-            SlashCommand::Hooks
-            | SlashCommand::Keymap
+            SlashCommand::Keymap
             | SlashCommand::Rename
             | SlashCommand::Delete
             | SlashCommand::Side
@@ -348,7 +348,6 @@ mod tests {
             "debug-m-update",
             "exit",
             "feedback",
-            "hooks",
             "hotkeys",
             "apps",
             "app",
@@ -374,6 +373,7 @@ mod tests {
         assert!(visible.contains(&"usage"));
         assert!(visible.contains(&"fork"));
         assert!(visible.contains(&"goal"));
+        assert!(visible.contains(&"hooks"));
         // Unhidden 2026-07-25 for evaluation against the multi-agent backlog (I6) and
         // the IDE-extension decision. Re-hide these here if either is dropped.
         assert!(visible.contains(&"agent"));

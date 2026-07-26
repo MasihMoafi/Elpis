@@ -5,12 +5,12 @@ expression: sanitized
 /usage
 
 ╭────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.0)                                                 │
+│  >_ Elpis (v0.1.1)                                                 │
 │  Model          : gpt-5.1-codex-max (reasoning high, summaries det │
 │  Directory      : /workspace/tests                                 │
 │  Permissions    : Custom (workspace with network access, Ask for a │
 │  Token usage    : 1.9K total  (1K input + 900 output)              │
-│  Context window : 99% left (2.25K used / 272K)                     │
-│  Context pruning: ~0 tokens saved (0% of context window) — 0 deter │
+│  Context window : 100% left (2.25K used / 272K)                    │
+│  Context pruning: ~0 tokens saved — 0 Ace passes                   │
 │  5h limit       : [██████░░░░░░░░░░░░░░] 28% left (resets 03:14)   │
 ╰────────────────────────────────────────────────────────────────────╯

@@ -420,28 +420,31 @@ impl StatusHistoryCell {
         ])
     }
 
-    /// Ace savings plus a visible zero for deterministic pruning while its unsafe
-    /// character-threshold implementation is disabled.
+    /// Savings from applied Ace pruning passes.
     fn context_pruning_spans(&self) -> Option<Vec<Span<'static>>> {
-        let agent_tokens = i64::try_from(codex_utils_string::approx_tokens_from_byte_count(
+        let ace_tokens = i64::try_from(codex_utils_string::approx_tokens_from_byte_count(
             self.context_pruner_saved_chars,
         ))
         .unwrap_or(0);
-        if agent_tokens == 0 && self.context_pruner_passes == 0 {
+        if ace_tokens == 0 && self.context_pruner_passes == 0 {
             return Some(vec![
                 Span::from("~0 tokens saved"),
-                Span::from(" (0% of context window) — 0 deterministic, 0 agent-authored").dim(),
+                Span::from(" — 0 Ace passes").dim(),
             ]);
         }
 
-        let agent_fmt = format_tokens_compact(agent_tokens);
-        let total_fmt = format_tokens_compact(agent_tokens);
+        let total_fmt = format_tokens_compact(ace_tokens);
 
         let mut spans = vec![
             Span::from(format!("~{total_fmt} tokens saved")),
             Span::from(format!(
-                " — 0 (0) deterministic, {agent_fmt} ({}) agent-authored",
-                self.context_pruner_passes
+                " — {} Ace pass{}",
+                self.context_pruner_passes,
+                if self.context_pruner_passes == 1 {
+                    ""
+                } else {
+                    "es"
+                }
             ))
             .dim(),
         ];

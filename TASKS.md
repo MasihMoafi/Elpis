@@ -103,8 +103,8 @@ Non-goals:
 2. **`elpis --update` — Important · Medium.** Add an update flag to the shipped
    `codex-tui` Elpis binary. It must use Elpis's GitHub release and checksum, replace
    the supported user-local installation atomically, and leave the existing binary
-   unchanged on any failure. The bounded worker prompt is
-   `agents/elpis-update/PROMPT.md`.
+   unchanged on any failure. Its bounded worker prompt is prepared in the sibling
+   `Elpis-wt-elpis-update` worktree.
 3. **Corrected public release — Foundational · Medium.** After the evidence inspector
    and updater are verified, publish the fixed build as the first recommended public
    preview. Masih prefers deleting the old `v0.1.0` and `v0.1.1` GitHub releases and

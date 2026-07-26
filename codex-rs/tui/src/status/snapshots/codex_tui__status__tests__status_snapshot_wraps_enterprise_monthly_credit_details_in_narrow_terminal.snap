@@ -5,13 +5,13 @@ expression: sanitized
 /usage
 
 ╭────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.0)                         │
+│  >_ Elpis (v0.1.1)                         │
 │  Model               : gpt-5.1-codex-max ( │
 │  Directory           : /workspace/tests    │
 │  Permissions         : Custom (workspace w │
 │  Token usage         : 1.2K total  (800 in │
 │  Context window      : 100% left (1.2K use │
-│  Context pruning     : ~0 tokens saved (0% │
+│  Context pruning     : ~0 tokens saved — 0 │
 │  Monthly credit limit: 68% left            │
 │                        (resets 07:08 on    │
 │                        7 May)              │

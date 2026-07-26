@@ -4,15 +4,15 @@ expression: sanitized
 ---
 /usage
 
-╭──────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.0)                                                           │
-│  Remote         : unix:///tmp/codex-home/app-server-control/app-server-      │
-│                   control.sock (v0.133.0)                                    │
-│  Model          : gpt-5.1-codex-max (reasoning medium, summaries auto)       │
-│  Directory      : /workspace/tests                                           │
-│  Permissions    : Custom (workspace with network access, Ask for approval)   │
-│  Token usage    : 750 total  (500 input + 250 output)                        │
-│  Context window : 100% left (750 used / 272K)                                │
-│  Context pruning: ~0 tokens saved (0% of context window) — 0 deterministic,  │
-│  Limits         : data not available yet                                     │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────────────────────────────────╮
+│  >_ Elpis (v0.1.1)                                                         │
+│  Remote         : unix:///tmp/codex-home/app-server-control/app-server-    │
+│                   control.sock (v0.133.0)                                  │
+│  Model          : gpt-5.1-codex-max (reasoning medium, summaries auto)     │
+│  Directory      : /workspace/tests                                         │
+│  Permissions    : Custom (workspace with network access, Ask for approval) │
+│  Token usage    : 750 total  (500 input + 250 output)                      │
+│  Context window : 100% left (750 used / 272K)                              │
+│  Context pruning: ~0 tokens saved — 0 Ace passes                           │
+│  Limits         : data not available yet                                   │
+╰────────────────────────────────────────────────────────────────────────────╯
