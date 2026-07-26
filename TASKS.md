@@ -153,7 +153,7 @@ Evidence:
 
 ## Current Action — Pruning evidence inspector
 
-**Importance:** Foundational · **Difficulty:** Hard · **Status:** planned
+**Importance:** Foundational · **Difficulty:** Hard · **Status:** implemented, awaiting Masih
 
 Preserve one immutable audit record per Ace pass showing the actual model-visible items
 before pruning, Ace's exact input and raw response, the validated keep/delete decision
@@ -161,6 +161,30 @@ for every call ID, and the actual model-visible items after pruning. Exact IDs m
 open the original tool invocation/output without loading the full rollout, system
 prompt, or skills. RAG may help discovery, but it is not the source of truth for exact
 evidence.
+
+Acceptance:
+
+1. Each applied pass creates a new directory under
+   `~/.elpis/logs/pruning/passes/<pass-id>/`; earlier passes are not overwritten.
+2. `ace.json` shows Ace's exact instructions, input, and raw response.
+3. Each reviewed call has a focused JSON file showing its exact model-visible before
+   and after items, decision, conclusion, and evidence pointer—without unrelated system
+   prompts, skills, or transcript content.
+4. If the immutable audit cannot be written, Elpis preserves working history and does
+   not count the pass as applied.
+
+Implementation evidence:
+
+- All 17 focused pruning/audit tests pass, including kept and deleted calls, immutable
+  pass directories, focused artifacts, and write-failure handling.
+- The broad Core run passed 2,031 tests; one machine-proxy test passes with inherited
+  proxy variables removed, and one feedback-ID test fails identically on untouched
+  `main`.
+- The fast local build and install pass; installed `elpis 0.1.1` is byte-identical to
+  the build output.
+- A real tmux turn produced a 1,996-character tool result. Ace retained its decisive
+  finding, removed about 1,764 characters, wrote the exact before/after audit, and did
+  not append the successful pass to the old multi-megabyte debug log.
 
 ## Queued next — do not start until the Current Action is closed
 
