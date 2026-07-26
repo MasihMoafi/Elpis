@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;

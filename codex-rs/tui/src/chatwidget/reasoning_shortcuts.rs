@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Keyboard shortcuts for stepping the active model's reasoning effort.
 //!
 //! The main chat surface treats `Alt+,` and `Alt+.` as small adjustments to the

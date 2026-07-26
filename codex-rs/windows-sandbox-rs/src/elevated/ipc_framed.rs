@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Framed IPC protocol used between the parent (CLI) and the elevated command runner.
 //!
 //! This module defines the JSON message schema (spawn request/ready, output, stdin,

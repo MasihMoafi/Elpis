@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::remote::RemotePluginServiceConfig;
 use codex_login::CodexAuth;
 use codex_login::default_client::build_reqwest_client;

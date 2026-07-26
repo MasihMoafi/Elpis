@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_app_server_protocol::AppBranding as ApiAppBranding;
 use codex_app_server_protocol::AppInfo as ApiAppInfo;
 use codex_app_server_protocol::AppMetadata as ApiAppMetadata;

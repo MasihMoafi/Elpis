@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::TruncationPolicy;
 use crate::approx_token_count;
 use crate::approx_tokens_from_byte_count_i64;

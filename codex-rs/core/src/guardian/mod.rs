@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Guardian review decides whether an `on-request` approval should be granted
 //! automatically instead of shown to the user.
 //!

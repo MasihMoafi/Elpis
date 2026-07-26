@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::future::Future;
 use std::io::ErrorKind;
 use std::mem::swap;

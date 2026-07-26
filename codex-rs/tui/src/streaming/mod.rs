@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Streaming primitives used by the TUI transcript pipeline.
 //!
 //! `StreamState` owns newline-gated markdown collection and a FIFO queue of committed render lines.

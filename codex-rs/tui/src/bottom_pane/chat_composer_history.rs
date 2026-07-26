@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! The chat composer history module owns shell-style recall and incremental search traversal.
 //!
 //! It combines persistent cross-session entries with local in-session entries into one offset

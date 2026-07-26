@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! MCP elicitation request tracking and policy handling.
 //!
 //! RMCP clients call into this module when a server asks Codex to elicit data

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 // - In the default output mode, it is paramount that the only thing written to
 //   stdout is the final message (if any).
 // - In --json mode, stdout must be valid JSONL, one event per line.

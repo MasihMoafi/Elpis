@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Migration helpers for importing external-agent configuration into Codex.
 
 mod hooks_cla;

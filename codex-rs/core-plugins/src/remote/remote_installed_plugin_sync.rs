@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::REMOTE_CREATED_BY_ME_MARKETPLACE_NAME;
 use super::REMOTE_GLOBAL_MARKETPLACE_NAME;
 use super::REMOTE_WORKSPACE_MARKETPLACE_NAME;

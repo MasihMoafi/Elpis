@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![allow(clippy::unwrap_used)]
 
 use codex_config::CONFIG_TOML_FILE;

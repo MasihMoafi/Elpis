@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::test_codex::TestCodexBuilder;
 use crate::test_codex::test_codex;
 use anyhow::Result;

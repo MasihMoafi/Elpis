@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Overlay UIs rendered in an alternate screen.
 //!
 //! This module implements the pager-style overlays used by the TUI, including the transcript

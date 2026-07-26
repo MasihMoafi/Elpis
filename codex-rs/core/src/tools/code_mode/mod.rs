@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod delegate;
 mod execute_handler;
 pub(crate) mod execute_spec;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Result;
 use anyhow::anyhow;
 use codex_core::compact::SUMMARIZATION_PROMPT;

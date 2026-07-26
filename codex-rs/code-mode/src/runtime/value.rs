@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use serde_json::Value as JsonValue;
 
 use codex_code_mode_protocol::DEFAULT_IMAGE_DETAIL;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::fs::File;
 use std::io;
 use std::io::BufRead;

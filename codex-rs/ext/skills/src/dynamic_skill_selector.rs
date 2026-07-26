@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod weighted_lexical;
 pub(crate) use weighted_lexical::WeightedLexicalSkillSelector;
 

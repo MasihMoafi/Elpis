@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::CompletedExternalAgentSessionImport;
 use super::ImportedExternalAgentSessionLedger;
 use super::record_completed_session_imports;

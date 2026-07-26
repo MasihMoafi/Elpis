@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Safety-buffered turn retries that preserve the source thread.
 
 use super::session_lifecycle::ThreadAttachPresentation;

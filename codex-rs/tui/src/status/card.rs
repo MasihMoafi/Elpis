@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::branding::CODEX_RUNTIME_TITLE;
 use crate::history_cell::CompositeHistoryCell;
 use crate::history_cell::HistoryCell;

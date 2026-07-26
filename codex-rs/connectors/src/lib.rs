@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::LazyLock;

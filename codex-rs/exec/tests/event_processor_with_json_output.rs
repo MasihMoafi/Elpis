@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_app_server_protocol::CollabAgentState as ApiCollabAgentState;
 use codex_app_server_protocol::CollabAgentStatus as ApiCollabAgentStatus;
 use codex_app_server_protocol::CollabAgentTool;

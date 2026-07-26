@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::client::ModelClient;
 use crate::client::add_originator_header;
 use crate::realtime_context::build_realtime_startup_context;

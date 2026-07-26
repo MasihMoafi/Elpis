@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use crate::context::UserInstructions;
 use crate::context::world_state::WorldState;

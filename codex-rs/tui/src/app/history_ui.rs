@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Terminal history, desktop handoff, and clear-screen UI helpers for the TUI app.
 //!
 //! This module owns rendering the fresh session header, clearing inline or alternate-screen UI

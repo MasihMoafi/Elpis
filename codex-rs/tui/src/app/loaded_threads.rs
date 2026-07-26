@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Discovers subagent threads that belong to a primary thread by walking spawn-tree edges.
 //!
 //! When the TUI resumes or switches to an existing thread, it needs to populate

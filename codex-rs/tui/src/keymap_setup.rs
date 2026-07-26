@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Guided keymap remapping UI for `/hotkeys`.
 //!
 //! This module owns the interactive editing flow that starts from a resolved

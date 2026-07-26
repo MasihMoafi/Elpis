@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 
 const REMOTE_CONTROL_APP_SERVER_CLIENT_NAME_NONE: &str = "";

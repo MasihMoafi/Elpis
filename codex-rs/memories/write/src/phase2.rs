@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::build_consolidation_prompt;
 use crate::memory_root;
 use crate::metrics::MEMORY_PHASE_TWO_E2E_MS;

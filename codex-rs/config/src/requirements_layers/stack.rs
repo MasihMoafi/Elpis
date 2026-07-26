@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Requirements layers are composed in the same order as config layers: lowest
 //! precedence first, highest precedence last. Most fields use the same
 //! TOML-level merge policy as config: lower-priority layers provide defaults,

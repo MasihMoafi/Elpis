@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Authentication step UI and state transitions used by onboarding.
 //!
 //! This module owns the auth-step state machine (ChatGPT login/device-code/API

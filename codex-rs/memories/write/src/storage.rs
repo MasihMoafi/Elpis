@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_state::Stage1Output;
 use std::collections::HashSet;
 use std::fmt::Write as _;

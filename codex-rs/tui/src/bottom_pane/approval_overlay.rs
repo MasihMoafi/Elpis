@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Approval modal rendering and decision routing for high-risk operations.
 //!
 //! This module converts agent approval requests (exec/apply-patch/MCP

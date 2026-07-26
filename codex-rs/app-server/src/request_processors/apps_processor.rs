@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use crate::app_info::app_info_to_api;
 

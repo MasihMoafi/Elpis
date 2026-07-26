@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Bubblewrap-based filesystem sandboxing for Linux.
 //!
 //! This module mirrors the semantics used by the macOS Seatbelt sandbox:

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared App fixtures for app submodule unit tests.
 //!
 //! This module keeps heavyweight `App` construction and config-inspection helpers available to

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Context;
 use codex_core::exec::ExecCapturePolicy;
 use codex_core::exec::ExecParams;

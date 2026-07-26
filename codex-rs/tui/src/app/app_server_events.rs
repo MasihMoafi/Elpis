@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! App-server event stream handling for the TUI app.
 
 use super::App;

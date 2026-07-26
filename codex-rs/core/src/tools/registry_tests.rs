@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use crate::session::step_context::StepContext;
 use pretty_assertions::assert_eq;

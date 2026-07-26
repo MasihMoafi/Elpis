@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Replays persisted token usage snapshots when a client attaches to an existing thread.
 //!
 //! The message processor decides when replay is allowed and preserves JSON-RPC response

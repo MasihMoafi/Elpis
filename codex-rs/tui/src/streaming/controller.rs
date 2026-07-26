@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Two-region streaming controllers for agent messages and proposed plans.
 //!
 //! Each stream partitions rendered markdown into a *stable region* (committed

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::auth::RemoteControlConnectionAuth;
 use super::auth::load_remote_control_auth;
 use super::auth::recover_remote_control_auth;

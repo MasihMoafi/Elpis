@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_http_client::HttpClient;
 use http::StatusCode;
 use serde::Deserialize;

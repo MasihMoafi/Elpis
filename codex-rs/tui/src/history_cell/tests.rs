@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Coverage for history-cell rendering, wrapping, and transcript behavior.
 
 use super::*;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! ConPTY helpers for spawning sandboxed processes with a PTY on Windows.
 //!
 //! This module encapsulates ConPTY creation and process spawn with the required

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_core::config::Constrained;
 use codex_features::Feature;
 use codex_otel::SessionTelemetry;

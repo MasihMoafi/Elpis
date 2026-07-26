@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Typed, immutable `file:` URIs with cross-platform path inspection.
 //!
 //! See [`PathUri`] for scheme, normalization, and serialization behavior.

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Public facade for thread management APIs built on `codex-core`.
 
 #![deny(private_bounds, private_interfaces, unreachable_pub)]

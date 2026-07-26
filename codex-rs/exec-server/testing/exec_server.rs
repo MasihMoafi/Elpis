@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Minimal exec-server fixture for Bazel-only integration tests.
 //!
 //! Linking only exec-server avoids depending on the full Codex CLI binary

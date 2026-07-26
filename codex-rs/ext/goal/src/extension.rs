@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::sync::Arc;
 use std::sync::Weak;
 

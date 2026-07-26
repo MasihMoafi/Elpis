@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Runtime configuration persistence helpers for the TUI app.
 //!
 //! This module owns the app-level glue between config.toml edits, in-memory `Config` refreshes,

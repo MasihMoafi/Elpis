@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Agent turn lifecycle and runtime bookkeeping for `ChatWidget`.
 //!
 //! This module owns task start/completion state, runtime metrics, plan updates,

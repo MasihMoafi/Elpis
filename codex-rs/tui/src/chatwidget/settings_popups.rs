@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Settings-adjacent popup surfaces for `ChatWidget`.
 //!
 //! This keeps theme, personality, and settings UI out of the main

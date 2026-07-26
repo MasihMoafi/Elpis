@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! History cell for hook execution.
 //!
 //! Hooks are intentionally quieter than normal tool calls. A hook that starts and finishes

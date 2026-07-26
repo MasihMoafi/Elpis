@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::ContextualUserFragment;
 use codex_prompts::END_INSTRUCTIONS;
 use codex_protocol::protocol::REALTIME_CONVERSATION_CLOSE_TAG;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Launch MCP stdio servers and return the transport rmcp should use.
 //!
 //! This module owns the "where does the server process run?" decision:

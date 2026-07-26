@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #[cfg(unix)]
 use std::io::BufRead as _;
 #[cfg(unix)]

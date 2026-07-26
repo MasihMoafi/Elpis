@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared formatting for user-facing `elpis resume` command hints.
 
 use codex_protocol::ThreadId;

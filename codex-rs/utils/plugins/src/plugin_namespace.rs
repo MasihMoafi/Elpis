@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Resolve plugin namespace from skill file paths by walking ancestors for `plugin.json`.
 
 use codex_exec_server::ExecutorFileSystem;

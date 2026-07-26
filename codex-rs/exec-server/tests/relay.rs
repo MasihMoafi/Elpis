@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod common;
 
 #[path = "../src/proto/codex.exec_server.relay.v1.rs"]

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Default Codex HTTP client: shared `User-Agent`, `originator`, optional residency header, and
 //! reqwest/`HttpClient` construction.
 //!

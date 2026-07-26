@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! In-process app-server runtime host for local embedders.
 //!
 //! This module runs the existing [`MessageProcessor`] and outbound routing logic

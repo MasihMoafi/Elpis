@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared model metadata types exchanged between Codex services and clients.
 //!
 //! These types are serialized across core, TUI, app-server, and SDK boundaries, so field defaults

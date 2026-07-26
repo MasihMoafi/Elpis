@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::residency::is_v2_resident_session_source;
 use super::*;
 use codex_extension_api::ExtensionDataInit;

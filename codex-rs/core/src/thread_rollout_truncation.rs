@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Helpers for truncating rollouts based on "user turn" boundaries.
 //!
 //! In core, "user turns" are detected by scanning `ResponseItem::Message` items and

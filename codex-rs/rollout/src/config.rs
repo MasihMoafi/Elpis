@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;

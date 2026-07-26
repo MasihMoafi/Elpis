@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::config::Config;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Background app-server requests launched by the TUI app.
 //!
 //! This module owns fire-and-forget fetch/write helpers for MCP inventory, skills, plugins, rate

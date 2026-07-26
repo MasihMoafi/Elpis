@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::exec_command::relativize_to_home;
 use crate::status::StatusAccountDisplay;
 use crate::text_formatting;

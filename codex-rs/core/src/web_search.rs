@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_protocol::models::WebSearchAction;
 
 fn search_action_detail(query: &Option<String>, queries: &Option<Vec<String>>) -> String {

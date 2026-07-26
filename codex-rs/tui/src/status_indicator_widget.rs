@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! A live task status row rendered above the composer while the agent is busy.
 //!
 //! The row owns spinner timing, the optional interrupt hint, and short inline

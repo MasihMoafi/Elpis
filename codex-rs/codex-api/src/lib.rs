@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub(crate) mod api_bridge;
 pub(crate) mod auth;
 pub(crate) mod common;

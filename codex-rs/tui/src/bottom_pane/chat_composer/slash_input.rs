@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Slash-command input parsing, cursor detection, and completion helpers.
 
 use std::ops::Range;

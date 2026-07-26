@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::ContextualUserFragment;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::protocol::MULTI_AGENT_MODE_CLOSE_TAG;

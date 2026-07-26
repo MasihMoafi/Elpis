@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::RunnerTransportRequest;
 use super::spawn_runner_transport_with_retry;
 use crate::WindowsSandboxProxySettingsMode;

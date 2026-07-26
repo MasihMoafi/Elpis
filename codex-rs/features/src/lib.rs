@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Centralized feature flags and metadata.
 //!
 //! This crate defines the feature registry plus the logic used to resolve an

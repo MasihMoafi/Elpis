@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::RealtimeHandoffState;
 use super::RealtimeSessionKind;
 use super::realtime_delegation_from_handoff;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Internal `codex.exe --run-as-windows-sandbox` wrapper.
 //!
 //! This gives direct-spawn callers an argv-shaped Windows sandbox launcher,

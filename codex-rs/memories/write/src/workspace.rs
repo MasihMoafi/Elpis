@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Context;
 use codex_git_utils::GitBaselineDiff;
 use codex_git_utils::diff_since_latest_init;

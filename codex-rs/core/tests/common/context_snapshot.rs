@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use regex_lite::Regex;
 use serde_json::Value;
 use similar::ChangeTag;

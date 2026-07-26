@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_code_mode::ToolDefinition as CodeModeToolDefinition;
 use codex_tools::FreeformTool;
 use codex_tools::FreeformToolFormat;

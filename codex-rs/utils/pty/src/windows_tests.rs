@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::collect_output_until_exit;
 use super::combine_spawned_output;
 use super::find_python;

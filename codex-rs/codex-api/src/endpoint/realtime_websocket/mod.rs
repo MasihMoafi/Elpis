@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub(crate) mod methods;
 mod methods_common;
 mod methods_frameless_bidi;

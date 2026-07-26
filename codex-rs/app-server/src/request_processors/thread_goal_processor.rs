@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use codex_goal_extension::GoalObjectiveUpdate;
 use codex_goal_extension::GoalService;

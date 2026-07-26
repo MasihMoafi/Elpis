@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;

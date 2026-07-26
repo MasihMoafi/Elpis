@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub use codex_backend_openapi_models::models::ConfigBundleResponse;
 pub use codex_backend_openapi_models::models::CreditStatusDetails;
 pub use codex_backend_openapi_models::models::DeliveredConfigToml;

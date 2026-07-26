@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Permission and approval popup flows for `ChatWidget`.
 //!
 //! This module owns the generic permission pickers and confirmation surfaces;

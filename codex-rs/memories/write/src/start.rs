@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::extensions::seed_extension_instructions;
 use crate::guard;
 use crate::memory_root;

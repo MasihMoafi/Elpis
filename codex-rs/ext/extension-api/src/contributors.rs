@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

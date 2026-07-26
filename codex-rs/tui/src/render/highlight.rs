@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Syntax highlighting engine for the TUI.
 //!
 //! Wraps [syntect] with the [two_face] grammar and theme bundles to provide

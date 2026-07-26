@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::process::UnifiedExecProcess;
 use crate::unified_exec::UnifiedExecError;
 use codex_exec_server::ExecProcess;

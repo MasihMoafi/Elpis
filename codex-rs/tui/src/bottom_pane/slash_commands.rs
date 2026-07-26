@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared helpers for filtering and matching built-in and model service-tier slash commands.
 //!
 //! The same sandbox- and feature-gating rules are used by both the composer

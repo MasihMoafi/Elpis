@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Streaming transcript updates for `ChatWidget`.
 //!
 //! This module owns assistant, plan, and reasoning deltas, including stream-tail

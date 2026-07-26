@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Renders and formats unified-exec background session summary text.
 //!
 //! This module provides one canonical summary string so the bottom pane can

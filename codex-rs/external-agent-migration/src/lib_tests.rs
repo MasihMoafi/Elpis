@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::hooks_cla::append_convertible_hook_groups_cla;
 use super::hooks_cla::hook_migration_cla;
 use super::hooks_cla::rewrite_hook_command_cla;

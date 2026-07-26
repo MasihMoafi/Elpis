@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Storage-neutral thread persistence interfaces.
 //!
 //! Application code should treat [`codex_protocol::ThreadId`] as the only durable thread handle.

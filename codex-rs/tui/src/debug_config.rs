@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::history_cell::PlainHistoryCell;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::Permissions;

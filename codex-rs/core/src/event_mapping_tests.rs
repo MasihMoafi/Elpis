@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::has_non_contextual_dev_message_content;
 use super::is_contextual_dev_message_content;
 use super::parse_turn_item;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Local hard-delete support for persisted threads.
 //!
 //! Existing rollout files are deleted before this operation reports success. A rollout file that

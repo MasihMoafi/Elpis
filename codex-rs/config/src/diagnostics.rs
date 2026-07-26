@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Helpers for mapping config parse/validation failures to file locations and
 //! rendering them in a user-friendly way.
 

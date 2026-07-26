@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::manifest::PluginManifest;
 use crate::manifest::load_plugin_manifest;
 use crate::manifest::parse_plugin_manifest;

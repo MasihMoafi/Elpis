@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![recursion_limit = "256"]
 #![allow(clippy::expect_used)]
 

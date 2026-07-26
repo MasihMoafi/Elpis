@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Frame draw scheduling utilities for the TUI.
 //!
 //! This module exposes [`FrameRequester`], a lightweight handle that widgets and

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! `ChatWidget` integration points for the `/hotkeys` picker flow.
 //!
 //! The picker model, capture view, and edit semantics live in [`crate::keymap_setup`]. This module

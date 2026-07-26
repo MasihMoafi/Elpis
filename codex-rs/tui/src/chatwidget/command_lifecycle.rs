@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Command execution lifecycle handlers for `ChatWidget`.
 //!
 //! This module owns command start/output/completion rendering, including active

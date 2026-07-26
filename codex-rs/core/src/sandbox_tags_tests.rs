@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::permission_profile_policy_tag;
 use super::permission_profile_sandbox_tag;
 use codex_protocol::config_types::WindowsSandboxLevel;

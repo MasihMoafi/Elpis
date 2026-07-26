@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::split_valid_utf8_prefix_with_max;
 
 use pretty_assertions::assert_eq;

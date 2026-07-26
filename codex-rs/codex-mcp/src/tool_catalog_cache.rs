@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hash;

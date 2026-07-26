@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Exercises `ChatWidget` event handling and rendering invariants.
 //!
 //! These tests cover both app-server-native inputs and focused widget helpers. Many assertions are

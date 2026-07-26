@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Plugin path resolution, plaintext mention sigils, and MCP connector helpers shared across Codex
 //! crates.
 

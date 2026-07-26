@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Applies agent-role configuration layers on top of an existing session config.
 //!
 //! Roles are selected at spawn time and are loaded with the same config machinery as

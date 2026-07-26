@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::input_queue::InputQueue;
 use super::*;
 use crate::agents_md_manager::AgentsMdManager;

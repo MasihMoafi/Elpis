@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use codex_git_utils::GitBaselineChange;
 use codex_git_utils::GitBaselineChangeStatus;

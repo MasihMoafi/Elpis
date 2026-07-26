@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Non-command tool lifecycle rendering for `ChatWidget`.
 //!
 //! This module handles patch, MCP, web search, image, and collaborator tool

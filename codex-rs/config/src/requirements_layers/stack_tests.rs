@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::super::RequirementsLayerEntry;
 use super::super::hooks::HookDirectoryField;
 use super::RequirementsCompositionError;

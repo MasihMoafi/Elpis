@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![cfg(not(target_os = "windows"))]
 #![allow(clippy::unwrap_used)]
 
@@ -481,4 +482,3 @@ async fn explicit_plugin_mentions_use_mcp_for_api_key_dual_surface_plugins() -> 
 
     Ok(())
 }
-

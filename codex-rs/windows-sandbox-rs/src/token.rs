@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::winutil::to_wide;
 use anyhow::Result;
 use anyhow::anyhow;

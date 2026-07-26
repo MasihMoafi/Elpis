@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use codex_models_manager::model_info::model_info_from_slug;
 use tempfile::tempdir;

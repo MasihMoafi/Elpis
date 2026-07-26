@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::TelemetryAuthMode;
 use crate::ToolDecisionSource;
 use crate::events::shared::log_and_trace_event;

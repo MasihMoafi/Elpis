@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Context fragments injected into model input.
 
 mod approved_command_prefix_saved;

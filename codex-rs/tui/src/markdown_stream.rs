@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Collects markdown stream source at newline boundaries.
 //!
 //! `MarkdownStreamCollector` buffers incoming token deltas and exposes a commit boundary at each

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Catalog and accessors for keymap actions shown by `/hotkeys`.
 //!
 //! The descriptor table is the single UI-facing inventory of configurable

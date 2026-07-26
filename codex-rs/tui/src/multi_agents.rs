@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Helpers for rendering and navigating multi-agent state in the TUI.
 //!
 //! This module owns the shared presentation contracts for multi-agent history rows, `/agent` picker

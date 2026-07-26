@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;

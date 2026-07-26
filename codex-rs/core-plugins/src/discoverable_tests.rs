@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::ToolSuggestDiscoverablePlugin;
 use super::ToolSuggestPluginDiscoveryInput;
 use crate::OPENAI_BUNDLED_MARKETPLACE_NAME;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Read-path helpers for Codex memories.
 //!
 //! This crate owns memory injection, memory citation parsing, and telemetry

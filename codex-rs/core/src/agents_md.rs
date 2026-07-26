@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! AGENTS.md discovery and user instruction assembly.
 //!
 //! Project-level documentation is primarily stored in files named `AGENTS.md`.

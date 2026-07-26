@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Support for `-c key=value` overrides shared across Codex CLI tools.
 //!
 //! This module provides a [`CliConfigOverrides`] struct that can be embedded

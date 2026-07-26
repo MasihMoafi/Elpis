@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Compatibility projections from the canonical permission profile model into
 //! legacy shapes still required by older or remote app-server APIs.
 

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_config::NetworkConstraints;
 use codex_execpolicy::Policy;
 use codex_network_proxy::BlockedRequestObserver;

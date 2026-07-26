@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Schema-heavy configuration TOML types used by Codex.
 
 use std::collections::BTreeMap;

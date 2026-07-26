@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![cfg(not(target_os = "windows"))]
 #![allow(clippy::unwrap_used)]
 

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 mod cloud_config_bundle;
 mod cloud_config_layers;
 mod config_layer_source;

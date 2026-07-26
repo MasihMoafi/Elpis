@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::windows_common::finish_driver_spawn;
 use crate::conpty::ConptyInstance;
 use crate::conpty::spawn_conpty_process_as_user;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Status output and setup controls for `ChatWidget`.
 //!
 //! Rendering details live in `status_surfaces`; this module owns the mutable

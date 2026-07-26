@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Markdown-to-ratatui rendering entry points.
 //!
 //! This module provides the public API surface that the rest of the TUI uses

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::AgentPath;
 use crate::ResponseItemId;
 use crate::ThreadId;

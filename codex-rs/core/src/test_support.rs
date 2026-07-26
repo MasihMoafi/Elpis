@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Test-only helpers exposed for cross-crate integration tests.
 //!
 //! Production code should not depend on this module.

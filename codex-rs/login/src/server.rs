@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Local OAuth callback server for CLI login.
 //!
 //! This module runs the short-lived localhost server used by interactive sign-in.

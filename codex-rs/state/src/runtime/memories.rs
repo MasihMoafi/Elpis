@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::threads::ThreadFilterOptions;
 use super::threads::push_thread_filters;
 use super::*;

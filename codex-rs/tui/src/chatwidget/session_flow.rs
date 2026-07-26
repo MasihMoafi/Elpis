@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Session configuration and thread-header orchestration for `ChatWidget`.
 
 use super::*;

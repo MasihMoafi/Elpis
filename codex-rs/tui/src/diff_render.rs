@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Renders unified diffs with line numbers, gutter signs, and optional syntax
 //! highlighting.
 //!

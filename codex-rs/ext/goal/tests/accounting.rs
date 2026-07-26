@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![allow(dead_code)]
 
 #[path = "../src/accounting.rs"]

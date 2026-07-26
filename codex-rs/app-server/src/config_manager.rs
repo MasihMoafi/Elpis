@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_arg0::Arg0DispatchPaths;
 use codex_cloud_config::cloud_config_bundle_loader;
 use codex_config::CloudConfigBundleLoader;

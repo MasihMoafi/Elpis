@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Aggregates MCP server connections for Codex.
 //!
 //! [`McpConnectionManager`] owns the set of running async RMCP clients keyed by

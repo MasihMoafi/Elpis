@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::AgentJob;
 use crate::AgentJobCreateParams;
 use crate::AgentJobItem;

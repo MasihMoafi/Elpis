@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Noise channel used by the remote exec-server relay.
 //!
 //! The harness initiates hybrid IK and pins the exec-server static key returned

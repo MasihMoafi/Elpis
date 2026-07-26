@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Transient side-conversation threads.
 //!
 //! A side conversation is an ephemeral fork used for a quick /side question while keeping the

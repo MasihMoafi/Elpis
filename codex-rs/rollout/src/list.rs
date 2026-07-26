@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 #![allow(warnings, clippy::all)]
 
 use codex_utils_path as path_utils;

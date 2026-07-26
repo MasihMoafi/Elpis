@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub(crate) mod common;
 pub mod compact;
 pub mod permission_request;

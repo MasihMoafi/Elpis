@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Event stream plumbing for the TUI.
 //!
 //! - [`EventBroker`] holds the shared crossterm stream so multiple callers reuse the same

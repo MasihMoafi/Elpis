@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! RMCP client lifecycle for MCP server connections.
 //!
 //! This module owns startup of individual RMCP clients: building the transport,

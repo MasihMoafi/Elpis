@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Resolve saved-session state needed before resuming or forking a thread.
 //!
 //! The app-server API owns normal thread lifecycle data. This module coordinates

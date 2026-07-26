@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Status indicator and terminal-title state for `ChatWidget`.
 
 use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;

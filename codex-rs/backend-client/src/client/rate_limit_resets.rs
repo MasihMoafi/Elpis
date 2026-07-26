@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Backend client operations for reading available rate-limit reset credits and consuming one.
 
 use super::Client;

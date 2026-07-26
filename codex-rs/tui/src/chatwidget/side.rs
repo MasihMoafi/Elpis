@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Chat widget hooks for side-conversation mode.
 //!
 //! App-level side-thread lifecycle lives in `app::side`; this module owns the

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::RewriteProfile;
 use super::external_agent_config_dir;
 use super::invalid_data_error;

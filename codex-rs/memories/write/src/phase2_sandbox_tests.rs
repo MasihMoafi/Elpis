@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::agent;
 use codex_model_provider::create_model_provider;
 use codex_protocol::models::ManagedFileSystemPermissions;

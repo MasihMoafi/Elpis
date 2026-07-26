@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::plugin_bundle_archive::PluginBundleUnpackError;
 use crate::plugin_bundle_archive::unpack_plugin_bundle_tar_gz;
 use crate::remote::REMOTE_GLOBAL_MARKETPLACE_NAME;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::super::clients::list_remote_control_clients;
 use super::super::clients::revoke_remote_control_client;
 use super::*;

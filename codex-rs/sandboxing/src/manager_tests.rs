@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::SandboxCommand;
 #[cfg(target_os = "windows")]
 use super::SandboxDirectSpawnTransformRequest;

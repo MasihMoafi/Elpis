@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Backtracking and transcript overlay event routing.
 //!
 //! This file owns backtrack mode (Esc/Enter navigation in the transcript overlay) and also

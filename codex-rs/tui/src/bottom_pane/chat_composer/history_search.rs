@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Composer-side Ctrl+R reverse history search state and rendering helpers.
 //!
 //! The persistent and local history stores live in `chat_composer_history`, but the composer owns

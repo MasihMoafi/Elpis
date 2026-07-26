@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Transcript/history cells for the Codex TUI.
 //!
 //! A `HistoryCell` is the unit of display in the conversation UI, representing both committed

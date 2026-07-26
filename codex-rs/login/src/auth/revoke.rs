@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Best-effort OAuth token revocation used during logout.
 //!
 //! Managed ChatGPT auth stores OAuth tokens locally. Logout attempts to revoke the

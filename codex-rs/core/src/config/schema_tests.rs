@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::canonicalize;
 use super::config_schema_json;
 use super::write_config_schema;

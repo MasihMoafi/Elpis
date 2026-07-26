@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::manifest::PluginManifestInterface;
 use crate::manifest::load_plugin_manifest;
 use codex_app_server_protocol::PluginAuthPolicy;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::effective_file_system_sandbox_policy;
 use super::intersect_permission_profiles;
 use super::merge_file_system_policy_with_additional_permissions;

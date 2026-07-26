@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Parsing and export helpers for external-agent session histories.
 
 mod detect_cla;

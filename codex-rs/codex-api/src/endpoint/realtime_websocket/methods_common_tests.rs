@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::conversation_function_call_output_message;
 use super::conversation_handoff_append_message;
 use super::standalone_handoff_message;

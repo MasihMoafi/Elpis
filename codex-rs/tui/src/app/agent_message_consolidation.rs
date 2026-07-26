@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Transcript consolidation for finalized streaming agent messages.
 //!
 //! During streaming, the chat widget emits transient `AgentMessageCell`s so it

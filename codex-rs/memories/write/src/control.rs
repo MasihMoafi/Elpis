@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::path::Path;
 
 pub async fn clear_memory_roots_contents(memory_root: &Path) -> std::io::Result<()> {

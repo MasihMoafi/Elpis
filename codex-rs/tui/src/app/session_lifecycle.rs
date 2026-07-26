@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Session, resume, fork, and subagent selection lifecycle for the TUI app.
 //!
 //! This module owns the high-level transitions between app-server threads: starting fresh sessions,

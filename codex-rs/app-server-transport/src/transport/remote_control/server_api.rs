@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::auth::RemoteControlConnectionAuth;
 use super::enroll::RemoteControlEnrollment;
 use super::enroll::RemoteControlServerTokenRefreshRequirement;

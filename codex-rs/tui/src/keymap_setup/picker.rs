@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shortcut picker construction for `/hotkeys`.
 
 use codex_config::types::TuiKeymap;

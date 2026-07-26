@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Hot-path helpers for recording upstream remote compaction attempts.
 //!
 //! Remote compaction is a model-facing request with a different semantic role

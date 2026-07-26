@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use codex_config::McpServerTransportConfig;
 use codex_core::config::ConfigBuilder;

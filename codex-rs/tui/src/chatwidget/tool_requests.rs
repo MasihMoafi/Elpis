@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Interactive tool request surfaces for `ChatWidget`.
 //!
 //! This module owns approval, permission, elicitation, and user-input prompts

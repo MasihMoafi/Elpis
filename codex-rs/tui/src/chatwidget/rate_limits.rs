@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Rate-limit warning, prompt, and notice surfaces for `ChatWidget`.
 
 use super::*;

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::diff_render::display_path_for;
 use crate::external_agent_config_migration_model::ExternalAgentConfigMigrationGroupModel;
 use crate::external_agent_config_migration_model::external_agent_config_migration_count_summary;

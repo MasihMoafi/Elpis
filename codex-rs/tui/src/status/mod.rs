@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Status output formatting and display adapters for the TUI.
 //!
 //! This module turns protocol-level snapshots into stable display structures used by `/usage`

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared builders for app-server [`ThreadItem`] values derived from compatibility events.
 //!
 //! Most live tool items now come from first-class core `ItemStarted` / `ItemCompleted` events.

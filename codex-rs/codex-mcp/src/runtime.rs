@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Runtime support for Model Context Protocol (MCP) servers.
 //!
 //! This module contains data that describes the runtime environment in which MCP

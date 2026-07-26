@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use crate::connect_policy::TargetCheckedTcpConnector;
 use crate::state::NetworkProxyState;
 use codex_utils_rustls_provider::ensure_rustls_crypto_provider;

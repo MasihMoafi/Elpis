@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! User input submission, queue draining, and draft restore flow for `ChatWidget`.
 //!
 //! The queue data itself lives in `input_queue`; this module owns the app-level

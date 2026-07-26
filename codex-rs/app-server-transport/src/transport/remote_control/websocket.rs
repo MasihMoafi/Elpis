@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::CurrentRemoteControlEnrollment;
 use super::RemoteControlEnrollmentSelection;
 use super::RemoteControlPairingPersistenceKey;

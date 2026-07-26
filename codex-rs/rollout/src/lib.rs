@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Rollout persistence and discovery for Codex session files.
 
 use std::sync::LazyLock;

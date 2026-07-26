@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! The bottom-pane footer renders transient hints and context indicators.
 //!
 //! The footer is pure rendering: it formats `FooterProps` into `Line`s without mutating any state.

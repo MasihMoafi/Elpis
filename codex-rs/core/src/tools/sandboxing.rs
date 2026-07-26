@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Shared approvals and sandboxing traits used by tool runtimes.
 //!
 //! Consolidates the approval flow primitives (`ApprovalDecision`, `ApprovalStore`,

@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use std::ffi::OsStr;
 use std::fs::FileTimes;
 use std::fs::OpenOptions;

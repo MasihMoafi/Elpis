@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub use connection_manager::McpConnectionManager;
 pub use connection_manager::tool_is_model_visible;
 pub use elicitation::ElicitationLifecycle;

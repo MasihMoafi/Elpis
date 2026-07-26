@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! User-message models and helpers for the chat widget.
 //!
 //! The app-server preserves user input as structured chunks, while chat history

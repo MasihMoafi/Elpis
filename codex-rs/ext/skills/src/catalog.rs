@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use codex_core_skills::model::SkillDependencies;
 use codex_utils_path_uri::PathUri;
 

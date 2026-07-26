@@ -1,3 +1,4 @@
+// Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! MCP tool-call, inventory, and output history cells.
 
 use super::*;
