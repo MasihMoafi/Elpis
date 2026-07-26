@@ -66,6 +66,10 @@ src/fix_cuda.sh
 *.gif
 !docs/assets/demo-linkedin.gif
 !docs/assets/evidence.gif
+!docs/assets/Elpis Context Management.png
+!docs/assets/Elpis Operating Model.png
+!docs/assets/elpis.png
+!docs/assets/elpises.png
 *.svg
 *.mp4
 *.mp3

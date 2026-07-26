@@ -3,6 +3,8 @@
 [![Linux verification](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml/badge.svg)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+![Elpis, a shared environment for coding agents](docs/assets/elpis.png)
+
 ## Quickstart
 
 Linux x86_64:
@@ -24,7 +26,7 @@ The agent runs the model loop. Elpis owns the environment around it: context, co
 
 Elpis is the shared environment, not any one agent. Put an agent inside it and the agent inherits the same context, memory, permissions, evidence, and control.
 
-![Elpises working on different paths of one shared Elpis environment](docs/assets/elpises.svg)
+![Elpises working on different paths of one shared Elpis environment](docs/assets/elpises.png)
 
 Multiple Elpises working from those shared roots is a direction for the project, not a claim that multi-agent control ships in `v0.1.1`.
 

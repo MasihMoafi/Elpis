@@ -1,5 +1,7 @@
 # Visual walkthrough
 
+![Elpises working on different paths of one shared Elpis environment](assets/elpises.png)
+
 ![Elpis demo](assets/demo-linkedin.gif)
 
 The repository README contains the step-by-step screenshots for the first Elpis run.

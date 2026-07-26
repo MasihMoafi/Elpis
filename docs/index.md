@@ -4,6 +4,8 @@ Elpis gives terminal coding agents portable context, bounded local memory, and a
 continuity model that survives long sessions without blindly resending an expanding
 conversation history.
 
+![Elpis, a shared environment for coding agents](assets/elpis.png)
+
 ![Elpis demo](assets/demo-linkedin.gif)
 
 ## Evidence — full context-management session

@@ -140,10 +140,11 @@ failure block baseline reset rather than silently losing deleted memory.
 
 Not complete at the time of this audit: user-visible exact-resume, lean-continuation,
 related/unrelated recall, review, reset, and compaction acceptance still must run
-locally. The context cleaner described here (1,000-character, no focused test, no
-age/turn distinction) was later replaced by a lifecycle-aware cleaner with focused tests
-(`core/src/context_cleaner.rs`, currently a 1,200-character threshold); it still does not
-satisfy the full context-cleaner contract in `docs/CONTEXT_AND_SESSIONS.md`.
+locally. The fixed-length cleaner described here was later retired. Layer 1 no longer
+truncates tool output; `core/src/context_cleaner.rs` now expires only completed-turn
+reasoning. Ace performs strict, fail-open post-turn pruning, while Codex's inherited
+model-aware output cap remains the deterministic safety bound. See
+`docs/CONTEXT_AND_SESSIONS.md` and `TASKS.md` for the current acceptance status.
 
 ### Providers
 
