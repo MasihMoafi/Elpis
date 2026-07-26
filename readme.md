@@ -1,5 +1,7 @@
 # Elpis
 
+Elpis's entire thesis is context economy.
+
 ## Quickstart
 
 ```bash

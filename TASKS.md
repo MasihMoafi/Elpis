@@ -92,6 +92,34 @@ Non-goals:
 - Do not change RAG, RTK integration, pruning levels, `/goal`, or a future project
   `VISION.md`.
 
+## Queued next — do not start until the Current Action is closed
+
+1. **Pruning evidence inspector — Foundational · Hard.** Preserve one immutable audit
+   record per Ace pass showing the actual model-visible items before pruning, Ace's
+   exact input and raw response, the validated keep/delete decision for every call ID,
+   and the actual model-visible items after pruning. Exact IDs must open the original
+   tool invocation/output without loading the full rollout, system prompt, or skills.
+   RAG may help discovery, but it is not the source of truth for exact evidence.
+2. **`elpis --update` — Important · Medium.** Add an update flag to the shipped
+   `codex-tui` Elpis binary. It must use Elpis's GitHub release and checksum, replace
+   the supported user-local installation atomically, and leave the existing binary
+   unchanged on any failure. The bounded worker prompt is
+   `agents/elpis-update/PROMPT.md`.
+3. **Corrected public release — Foundational · Medium.** After the evidence inspector
+   and updater are verified, publish the fixed build as the first recommended public
+   preview. Masih prefers deleting the old `v0.1.0` and `v0.1.1` GitHub releases and
+   tags rather than preserving them as deprecated history. That destructive remote
+   action is explicitly deferred and requires fresh confirmation after the successor
+   release is live, so `releases/latest` and the installer never lose their target.
+4. **Deterministic/RTK cleaning — Foundational · Hard.** Benchmark Codex's retained
+   output handling and RTK, then add only deterministic cleanup that preserves exact
+   evidence and never expires material before the active question is answered.
+5. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
+   compact conclusions across completed turns, mark superseded findings explicitly,
+   and exclude obsolete state from future requests. Prefer extending the validated
+   Ace record pipeline over adding an unconstrained third agent. Native compaction
+   remains the fail-safe; failure changes nothing.
+
 ## Completed — make the existing UI solid (Context Ledger)
 
 **Importance:** Foundational · **Status:** done, Masih-verified 2026-07-23
@@ -179,6 +207,25 @@ clear supported path and verify it in a clean environment.
 
 Continue deleting inherited Codex code only when reachability and behavior checks prove
 Elpis does not need it. Small, measured removals are preferred over broad deletion.
+
+**Analytics subtraction is finished (2026-07-26).** The crate and its upload path went
+earlier; the surviving knobs, flags, and generated schema entries are now gone too, and
+with them a stale second gate that discarded OTEL metrics even when a user had explicitly
+configured a metrics exporter — which contradicted the README's telemetry promise. Two
+dead tests that waited on a deleted network endpoint were removed, and two write-only
+telemetry fields the compiler exposed afterwards. No analytics debt remains. This pass
+did not measurably change speed, build time, or package size, and was not expected to.
+
+Two defects it surfaced, both still open and both separate from analytics:
+
+- `readme.md` ships two literal "Diagram placeholder" lines, which the no-placeholders
+  rule forbids in released material.
+- The shipped binary links `app-server-test-client` for one hidden debug subcommand, and
+  that crate carries a command that mutates the live account's installed plugins.
+
+Next candidate, cheap and compiler-proven: the dead TUI methods and constants rustc
+already reports as never used. Rejected as not worth its cost: deleting `thread_source`,
+a pure classification label spread over 205 sites with a persisted-store migration.
 
 ### I4. Performance guardrails — monitor
 
