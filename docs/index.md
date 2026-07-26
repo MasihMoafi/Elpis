@@ -34,10 +34,9 @@ reappear later, and every session after that shows the persistent identity heade
 (`Elpis · model <model> · location <cwd>`) instead. Use the sections below when you
 need the implementation and operating model behind the interface.
 
-- [Context and sessions](context-and-sessions.md) explains what Elpis admits,
-  retains, and prunes.
-- [Memory](memory.md) explains bounded local memory, recall provenance, and the
-  fail-closed archive.
-- [Providers](providers.md) explains provider selection and credentials.
-- [Visual walkthrough](visual-walkthrough.md) points to the screenshot-led guide in
-  the repository README.
+- [Context and pruning](context.md) — the three pruning layers (optional RTK filter, safety cap, Ace pass) and the Context Ledger.
+- [Sessions and continuity](sessions.md) — exact resume versus lean continuation, and the `GOAL.md` / `ES.md` checkpoints.
+- [Memory](memory.md) — the two-stage SQLite pipeline, `MEMORY.md`, the fail-closed archive, and what you control.
+- [Providers](providers.md) — every supported route, including native Anthropic and Gemini adapters and local inference.
+- [Workspace RAG](rag.md) — read-only semantic search over your own documents; needs a source checkout.
+- [Visual Walkthrough](visual-walkthrough.md) — Screenshot-led guide to onboarding and TUI identity line.

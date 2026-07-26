@@ -424,6 +424,8 @@ terminal interface. The selected provider owns inference. Provider changes must 
 discard the Elpis state around them, and a native-provider selection must never be
 redirected through another provider.
 
+> For full technical details on native wire protocol translation, headers, and credential isolation, see [docs/providers.md](docs/providers.md).
+
 ### Built-in hosted routes
 
 | Provider ID | API base URL | Credential environment variable | Wire protocol | Default model |
@@ -540,6 +542,8 @@ Rust workflow instead (see Verification below).
 
 Context is a budgeted working set, not the session archive.
 
+> For deep-dive technical details on the 3-layer pruning pipeline, context lifetimes, and the Context Ledger (`Tab` / `Alt+C`), see [docs/context.md](docs/context.md).
+
 ### 1. Durable prefix
 
 Load the smallest stable routing layer: applicable `AGENTS.md`, this guide, and a
@@ -594,6 +598,8 @@ Memory is curated cross-session knowledge, not a transcript mirror. Store stable
 preferences, project facts, decisions, and proven procedures. Retrieve only relevant
 entries for the current task and make provenance visible.
 
+> For full technical architecture on 2-stage SQLite extraction/consolidation and live workspace re-verification, see [docs/memory.md](docs/memory.md).
+
 ### 7. Measurement
 
 Prefer runtime-reported token usage and context-window size. Character division is a
@@ -607,6 +613,8 @@ working context, or a provider stores a thread and reconstructs it. Elpis must k
 own provider-neutral session record and context list even when a provider also offers
 thread IDs. Resume, fork, rollback, and compaction must therefore have Elpis semantics,
 with provider thread IDs treated as adapter-specific state rather than the project truth.
+
+> For technical details on Tier 1 Native Resume vs. Tier 2 Lean Continuation and `GOAL.md` / `ES.md` checkpoints, see [docs/sessions.md](docs/sessions.md).
 
 Reasoning tokens count toward usage, but hidden reasoning is not a useful transcript
 to carry forward verbatim. Preserve decisions and evidence. Streamed tool events and
@@ -634,15 +642,18 @@ improved or the ledger should be removed. Do not assume that decision.
   ships; the actual title is the bare product name and version.
 - A persistent cyan identity header (`render_identity_line`,
   `codex-rs/tui/src/chatwidget/rendering.rs`) that always renders above the chat
-  surface: `Elpis · model {model} · context {used}% · location {cwd} · Shift+Tab
-  Context Ledger`. The inherited footer status line is deliberately suppressed
+  surface: `Elpis · model {model} · location {cwd}`. The context percentage is not
+  on this header — it is reported inside the Context Ledger, which computes it as
+  used tokens over the model context window
+  (`codex-rs/tui/src/chatwidget/context_ledger.rs`).
+  The inherited footer status line is deliberately suppressed
   (`set_status_line_enabled(false)`) so this header is the one context-percent
   source, per the Context Accounting Contract in `docs/CONTEXT_AND_SESSIONS.md`.
   This shipped design accents with cyan and shows model/context/location; an earlier
   design note proposed amber and a `runtime:`/`memory:`/`mode:` layout instead — that
   earlier layout was not carried into the implementation.
-- The Context Ledger (`Shift+Tab`, `codex-rs/tui/src/chatwidget/context_ledger.rs`):
-  a toggleable side panel (52 columns, hidden below 100-column terminals) listing
+- The Context Ledger (`Tab` or `Alt+C`, `codex-rs/tui/src/chatwidget/context_ledger.rs`):
+  a side panel shown by default (52 columns, hidden below 100-column terminals) listing
   every admitted portable-context source with its admitted state and byte size, and
   a total for currently admitted bytes. Selecting a row toggles its admission and
   writes the workspace `admission.toml` (`codex-rs/core/src/elpis_context.rs`), which

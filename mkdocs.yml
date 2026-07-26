@@ -12,9 +12,11 @@ theme:
 nav:
   - Home: index.md
   - Using Elpis:
-      - Context and sessions: context-and-sessions.md
+      - Context and pruning: context.md
+      - Sessions and continuity: sessions.md
       - Memory: memory.md
       - Providers: providers.md
+      - Workspace RAG: rag.md
       - Visual walkthrough: visual-walkthrough.md
   - Reference:
       - Context and sessions in depth: CONTEXT_AND_SESSIONS.md

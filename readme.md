@@ -113,7 +113,7 @@ Goal and checkpoint state survive compaction, model switches, and restarts, so w
 
 ### Memory with provenance
 
-Reusable memory is selective, size-capped, and attributable — every entry records where it came from, and entries are promoted or archived rather than accumulating forever.
+Reusable memory is selective, size-capped, and attributable — every entry records where it came from, and entries are promoted or archived rather than accumulating forever. It is on by default; `/memories` turns recall and writing off independently, and the agent you talk to has no memory-write tool of its own.
 
 ### Local knowledge base
 
@@ -145,9 +145,11 @@ Full roadmap: [TASKS.md](TASKS.md).
 
 ## Documentation
 
-- [Context and sessions](https://masihmoafi.github.io/Elpis/context-and-sessions/)
+- [Context and pruning](https://masihmoafi.github.io/Elpis/context/)
+- [Sessions and continuity](https://masihmoafi.github.io/Elpis/sessions/)
 - [Memory](https://masihmoafi.github.io/Elpis/memory/)
 - [Providers](https://masihmoafi.github.io/Elpis/providers/)
+- [Workspace RAG](https://masihmoafi.github.io/Elpis/rag/)
 - [`GUIDE.md`](GUIDE.md) — product vision and architecture
 - [`TASKS.md`](TASKS.md) — release state and backlog
 
