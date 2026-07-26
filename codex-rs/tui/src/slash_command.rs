@@ -263,10 +263,12 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Goal
             // Inherited Codex features being re-evaluated for the Elpis contract:
-            // multi-agent threads (I6 /multi-task) and IDE context.
+            // multi-agent threads (I6 /multi-task), IDE context, and Plan mode
+            // (evaluated against I5 structured interactive clarification).
             | SlashCommand::Agent
             | SlashCommand::MultiAgents
             | SlashCommand::Ide
+            | SlashCommand::Plan
             | SlashCommand::Clear => true,
             SlashCommand::Keymap
             | SlashCommand::Rename
@@ -282,7 +284,6 @@ impl SlashCommand {
             | SlashCommand::Import
             | SlashCommand::Archive
             | SlashCommand::App
-            | SlashCommand::Plan
             | SlashCommand::Mention
             | SlashCommand::Raw
             | SlashCommand::DebugConfig
@@ -357,7 +358,6 @@ mod tests {
             "import",
             "mention",
             "personality",
-            "plan",
             "plugins",
             "raw",
             "rename",
@@ -380,6 +380,9 @@ mod tests {
         assert!(visible.contains(&"agent"));
         assert!(visible.contains(&"subagents"));
         assert!(visible.contains(&"ide"));
+        // Unhidden 2026-07-26 so Masih can evaluate inherited Plan mode before any I5
+        // structured-clarification work starts. Re-hide here if I5 supersedes it.
+        assert!(visible.contains(&"plan"));
         // The terminal pets feature was deleted outright, not hidden.
         assert!(SlashCommand::from_str("pets").is_err());
         assert!(SlashCommand::from_str("debug-m-drop").is_err());

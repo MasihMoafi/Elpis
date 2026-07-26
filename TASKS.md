@@ -253,6 +253,14 @@ Implementation evidence:
    repository history. The destructive remote action remains explicitly deferred and
    requires fresh confirmation after the successor release is live, so
    `releases/latest` and the installer never lose their target.
+
+   **Release-blocking bug found and fixed 2026-07-26.** The "Verify executable identity"
+   step in `.github/workflows/embedded-elpis-linux.yml` pinned the literal string
+   `elpis 0.1.1`, while `tui/Cargo.toml` is now `0.1.0`. The next tag build would have
+   failed that assertion and — per the known trap — published nothing, silently. The step
+   now reads the expected version out of the manifest, so a version bump can no longer
+   turn the release build red. Verified locally: the extraction yields `0.1.0` and matches
+   `elpis --version`.
 2. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
    compact conclusions across completed turns, mark superseded findings explicitly,
    and exclude obsolete state from future requests. Prefer extending the validated
@@ -377,29 +385,67 @@ dead tests that waited on a deleted network endpoint were removed, and two write
 telemetry fields the compiler exposed afterwards. No analytics debt remains. This pass
 did not measurably change speed, build time, or package size, and was not expected to.
 
-Two defects it surfaced, both still open and both separate from analytics:
+One defect it surfaced, still open and separate from analytics:
 
-- `readme.md` ships two literal "Diagram placeholder" lines, which the no-placeholders
-  rule forbids in released material.
-- The shipped binary links `app-server-test-client` for one hidden debug subcommand, and
-  that crate carries a command that mutates the live account's installed plugins.
+- `readme.md` ships two literal "Diagram placeholder" lines. **Not a defect — Masih's own
+  work in progress**; the diagrams are being drawn. Leave them alone.
+
+Corrected 2026-07-26. This entry previously claimed "the shipped binary links
+`app-server-test-client` for one hidden debug subcommand, and that crate carries a command
+that mutates the live account's installed plugins." Both halves are wrong:
+
+- `codex-cli` is a **dev-dependency** of `tui` (`tui/Cargo.toml`, `[dev-dependencies]`), so
+  it is not in the shipped binary's link graph. `cargo tree -p codex-tui -e normal` contains
+  neither `codex-cli` nor `codex-app-server-test-client`. The crate reached only the `codex`
+  multitool binary built from `cli/`, which Elpis does not ship.
+- `plugin-remote-uninstall` was never reachable through `cli/`. The only call site was
+  `codex_app_server_test_client::send_message_v2`; the clap subcommand tree carrying the
+  plugin command lives in that crate's own separate `main.rs`.
+
+The dependency and the `debug app-server` subcommand were removed from `cli/` anyway as
+cheap subtraction under I3, not as a shipping fix.
 
 Next candidate, cheap and compiler-proven: the dead TUI methods and constants rustc
 already reports as never used. Rejected as not worth its cost: deleting `thread_source`,
 a pure classification label spread over 205 sites with a persisted-store migration.
 
-### I4. Performance guardrails — monitor
+### I4. Startup time — open, unmeasured
 
-Startup already feels fast in current daily use, so there is no active startup project.
-Binary-size reduction is also not an active feature. Measure release builds in CI and
-open focused work only if startup time or release size regresses.
+Corrected 2026-07-26. This entry previously read "startup already feels fast in current
+daily use, so there is no active startup project." Masih reports the opposite: Elpis starts
+no faster than Codex, if at all. That claim was never backed by a measurement, and nothing
+in the repository measures startup today.
 
-### I5. Structured interactive clarification — planned
+The work, in order:
+
+1. Profile where the milliseconds actually go — config load, skills injection, history/DB
+   open, hook discovery, provider probe — before changing anything. No speculative trimming.
+2. Only then open focused work against whatever dominates.
+
+Binary-size reduction remains inactive.
+
+### I5. Structured interactive clarification — closed 2026-07-26
+
+Closed by Masih on 2026-07-26 after trying the unhidden inherited Plan mode: "it's not
+what I wanted, but it's not a high priority at the moment; `/plan` works for now." Elpis
+does not grow a second feature doing the same job. Reopen only if `/plan` proves
+insufficient in real use, and scope it then to the actual gap rather than the whole idea.
+
+Original goal, kept for reference:
 
 Elpis turns Masih's request into an explicit acceptance harness (criteria list) and
 confirms it with him before implementation on important or difficult tasks. This is
 the product form of the arbiter-of-truth rule in `AGENTS.md`: passing CI and cargo
 builds is never "done"; only Masih's verification against the confirmed criteria is.
+
+What shipped instead: inherited Plan mode, unhidden. Masih pointed out it likely already
+did most of this, and he was right. It is substantial — 196 references across 28 files in
+`core/` and `tui/`, a 1,698-line test file at `tui/src/chatwidget/tests/plan_mode.rs`, a
+`plan_mode_reasoning_effort` config knob, and a streaming state machine in
+`core/src/session/turn.rs`. It was hidden only by `is_visible`; the second gate
+(`collaboration_modes_enabled`) was already unconditionally `true` in
+`tui/src/chatwidget/constructor.rs`, and `Feature::CollaborationModes` is
+`Stage::Removed, default_enabled: true`. One line of visibility replaced a Medium feature.
 
 ### I6. Multi-agent controls and `/multi-task` — planned
 

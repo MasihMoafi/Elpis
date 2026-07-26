@@ -236,7 +236,11 @@ jobs:
       - name: Verify executable identity
         run: |
           target/release/elpis --help
-          test "$(target/release/elpis --version)" = "elpis 0.1.1"
+          # Read the expected version from the manifest instead of pinning a literal:
+          # a hardcoded string turns every version bump into a red build.
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' tui/Cargo.toml | head -1)"
+          test -n "$expected"
+          test "$(target/release/elpis --version)" = "elpis $expected"
 
       - name: Commit verified integration source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/product-integration' && hashFiles('.github/finalizer/chunk-00') != ''
