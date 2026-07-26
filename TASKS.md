@@ -41,9 +41,9 @@ published. It was retagged and published on 2026-07-25 and is now the latest dow
   fully implemented inherited Codex features that Elpis's `is_visible` allow-list hid.
   `/ide` requires an IDE extension to serve its socket; decide to own or re-hide it.
 
-## Current Action — context-pruning correctness hardening
+## Masih-verified — context-pruning correctness hardening
 
-**Importance:** Foundational · **Status:** implemented, awaiting Masih verification
+**Importance:** Foundational · **Status:** verified by Masih 2026-07-26
 
 Remove the unsafe fixed-length cleaner and make Ace safe enough to test as a post-turn
 deletion layer. The active agent must finish using tool output and encrypted reasoning
@@ -92,6 +92,28 @@ Non-goals:
 - Do not change RAG, RTK integration, pruning levels, `/goal`, or a future project
   `VISION.md`.
 
+## Current Action — RTK shell-output hook
+
+**Importance:** Foundational · **Status:** implemented, awaiting Masih verification
+
+Elpis accepts RTK's native `PreToolUse` rewrite response, so supported Bash commands
+run through RTK before their compact output enters model context. Unsupported commands
+and hook failures continue unchanged.
+
+Acceptance:
+
+1. `/hooks` shows one active `PreToolUse` hook after the user installs and trusts
+   `rtk hook claude`.
+2. A model-requested `git status` is visibly executed as `rtk git status`.
+3. RTK's rewrite shape is accepted without weakening deny or malformed-output handling.
+4. `RTK_DISABLED=1 <command>` bypasses filtering for exact raw output.
+
+Evidence:
+
+- All 121 `codex-hooks` tests pass.
+- The fast local build and install pass.
+- A tmux turn visibly ran `rtk git status` and returned compact output.
+
 ## Queued next — do not start until the Current Action is closed
 
 1. **Pruning evidence inspector — Foundational · Hard.** Preserve one immutable audit
@@ -111,15 +133,12 @@ Non-goals:
    tags rather than preserving them as deprecated history. That destructive remote
    action is explicitly deferred and requires fresh confirmation after the successor
    release is live, so `releases/latest` and the installer never lose their target.
-4. **Deterministic/RTK cleaning — Foundational · Hard.** Benchmark Codex's retained
-   output handling and RTK, then add only deterministic cleanup that preserves exact
-   evidence and never expires material before the active question is answered.
-5. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
+4. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
    compact conclusions across completed turns, mark superseded findings explicitly,
    and exclude obsolete state from future requests. Prefer extending the validated
    Ace record pipeline over adding an unconstrained third agent. Native compaction
    remains the fail-safe; failure changes nothing.
-6. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
+5. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
    several agents and none of them recorded it, so it has never been built. When a chat
    opens, Elpis silently has Terra inspect the project and write or refresh a project
    `VISION.md`. That file is the agent's eyes on the project: what this project is, where
