@@ -17,6 +17,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use supports_color::Stream;
 
+mod elpis_update;
+
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
     let is_fatal = matches!(&exit_info.exit_reason, ExitReason::Fatal(_));
     let AppExitInfo {
@@ -48,6 +50,10 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 #[derive(Parser, Debug)]
 #[command(name = "elpis")]
 struct TopCli {
+    /// Update the user-local Elpis installation and exit.
+    #[arg(long)]
+    update: bool,
+
     /// Select a direct Elpis provider or a curated OpenRouter compatibility route.
     #[arg(
         long,
@@ -165,6 +171,12 @@ mod tests {
     }
 
     #[test]
+    fn update_flag_is_exposed_by_the_shipped_binary() {
+        let parsed = TopCli::try_parse_from(["elpis", "--update"]).expect("update flag");
+        assert!(parsed.update);
+    }
+
+    #[test]
     fn model_family_aliases_select_openrouter_and_a_model() {
         for (provider, model) in [
             (
@@ -234,6 +246,10 @@ mod tests {
 fn main() -> anyhow::Result<()> {
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         let mut top_cli = TopCli::parse();
+        if top_cli.update {
+            println!("{}", elpis_update::run().await?);
+            return Ok(());
+        }
         let provider = top_cli.provider.clone();
         append_provider_override(&mut top_cli.config_overrides, provider.as_deref());
         let mut inner = top_cli.inner;
