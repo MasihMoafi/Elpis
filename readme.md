@@ -1,6 +1,8 @@
 <div align="center">
 
-<img src="docs/assets/elpis.png" alt="Elpis" width="500">
+<img src="docs/assets/elpis.png" alt="Elpis" width="450">
+
+<br>
 
 **Terminal environment for coding agents that keeps the working context small.**
 
