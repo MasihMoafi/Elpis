@@ -11,10 +11,18 @@ theme:
     - content.action.edit
 nav:
   - Home: index.md
-  - Context and sessions: context-and-sessions.md
-  - Memory: memory.md
-  - Providers: providers.md
-  - Visual walkthrough: visual-walkthrough.md
+  - Using Elpis:
+      - Context and sessions: context-and-sessions.md
+      - Memory: memory.md
+      - Providers: providers.md
+      - Visual walkthrough: visual-walkthrough.md
+  - Reference:
+      - Context and sessions in depth: CONTEXT_AND_SESSIONS.md
+      - Build and reduction audit: BUILD_AND_REDUCTION_AUDIT.md
+      - Shipping rules: SHIPPING_RULES.md
+      - Local build rules: LOCAL_BUILD_RULES.md
+  - Release history:
+      - v0.1 archive: TASKS_V0_1_ARCHIVE.md
   - Blog:
       - The one-line sabotage: blog/the-one-line-sabotage.md
 markdown_extensions:
