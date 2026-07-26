@@ -929,7 +929,14 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::MemoryTool,
         key: "memories",
         stage: Stage::Stable,
-        default_enabled: false,
+        // Elpis ships durable memory as a core surface (readme "Memory with
+        // provenance", TASKS.md F2, and `/memories` in the visible command
+        // contract), so it is enabled by default here. Upstream Codex defaulted
+        // this off; that default was inherited by the initial import and never
+        // reflected an Elpis decision. Recall and writing remain independently
+        // controllable via `memories.use_memories` / `memories.generate_memories`,
+        // and `/memories` is the in-session off switch.
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::LocalThreadStoreCompression,
