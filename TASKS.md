@@ -188,7 +188,7 @@ Implementation evidence:
 
 ## Current Action — Separate Elpis from Codex state
 
-**Importance:** Foundational · **Difficulty:** Hard · **Status:** implementing
+**Importance:** Foundational · **Difficulty:** Hard · **Status:** implemented, awaiting Masih
 
 Give Elpis its own `ELPIS_HOME`/`~/.elpis` for configuration, sessions, history, logs,
 hooks, skills, plugins, caches, and mutable runtime state. Elpis and Codex must not
@@ -222,6 +222,22 @@ Acceptance approved by Masih:
 7. Tests use temporary homes and prove both directions of isolation. The installed
    binary is then handed to Masih with checks for subscription-login reuse, RTK hook
    discovery, one real turn, and resume.
+
+Implementation evidence:
+
+- The 17 shipped-binary tests pass. Focused tests also prove that project `.elpis`
+  loads without project `.codex`, and tool subprocesses cannot inherit Elpis's private
+  authentication routing.
+- Core, TUI, app-server, and Linux-sandbox changes compile together. The fast local
+  build and install pass; installed `elpis 0.1.1` is byte-identical to the build.
+- A temporary-home tmux run reused the existing ChatGPT subscription login, discovered
+  the migrated RTK hook, completed an exact-response turn, and loaded that turn through
+  `/resume`.
+- That live run wrote its rollout under the temporary `ELPIS_HOME`; Codex's real
+  session count and history file were unchanged.
+- Preview/apply migration was exercised against the existing RTK hook. It copied only
+  the selected hook, left its source byte-identical, and skipped the existing
+  destination on a second application.
 
 ## Queued next — do not start until the Current Action is closed
 
