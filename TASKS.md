@@ -92,9 +92,9 @@ Non-goals:
 - Do not change RAG, RTK integration, pruning levels, `/goal`, or a future project
   `VISION.md`.
 
-## Current Action — RTK shell-output hook
+## Masih-verified — RTK shell-output hook
 
-**Importance:** Foundational · **Status:** implemented, awaiting Masih verification
+**Importance:** Foundational · **Status:** verified by Masih 2026-07-26
 
 Elpis accepts RTK's native `PreToolUse` rewrite response, so supported Bash commands
 run through RTK before their compact output enters model context. Unsupported commands
@@ -107,12 +107,39 @@ Acceptance:
 2. A model-requested `git status` is visibly executed as `rtk git status`.
 3. RTK's rewrite shape is accepted without weakening deny or malformed-output handling.
 4. `RTK_DISABLED=1 <command>` bypasses filtering for exact raw output.
+5. Supported commands use RTK's maintained filters, including searches and file
+   discovery. Exact raw output remains available through `RTK_DISABLED=1` and RTK's
+   failure-output recovery.
 
 Evidence:
 
 - All 121 `codex-hooks` tests pass.
 - The fast local build and install pass.
 - A tmux turn visibly ran `rtk git status` and returned compact output.
+- In one real RAG investigation, RTK removed 72–97% of three broad `rg` outputs before
+  the active agent saw them. Masih reviewed the tradeoff and selected RTK's maintained
+  defaults based on its published tests and benchmarks.
+- Masih completed the installed-binary acceptance test and confirmed the integration.
+
+## Current Action — `elpis --update`
+
+**Importance:** Important · **Difficulty:** Medium · **Status:** planned
+
+Add an update flag to the shipped Elpis binary. It must use Elpis's GitHub release and
+checksum, replace only the supported user-local installation atomically, and leave the
+existing binary unchanged on any failure.
+
+Acceptance:
+
+1. `elpis --help` lists `--update`.
+2. `elpis --update` exits without launching the TUI.
+3. A controlled fixture update verifies SHA-256 and atomically replaces a temporary
+   user-local test binary.
+4. Checksum mismatch, download failure, unsupported platform, or replacement failure
+   returns a clear error and leaves the existing binary byte-for-byte unchanged.
+5. An already-current version reports that clearly and performs no replacement.
+6. Automated tests use a temporary install location and controlled fixture endpoint;
+   they never overwrite the developer's installed binary or depend on a live release.
 
 ## Queued next — do not start until the Current Action is closed
 
@@ -122,17 +149,21 @@ Evidence:
    and the actual model-visible items after pruning. Exact IDs must open the original
    tool invocation/output without loading the full rollout, system prompt, or skills.
    RAG may help discovery, but it is not the source of truth for exact evidence.
-2. **`elpis --update` — Important · Medium.** Add an update flag to the shipped
-   `codex-tui` Elpis binary. It must use Elpis's GitHub release and checksum, replace
-   the supported user-local installation atomically, and leave the existing binary
-   unchanged on any failure. Its bounded worker prompt is prepared in the sibling
-   `Elpis-wt-elpis-update` worktree.
-3. **Corrected public release — Foundational · Medium.** After the evidence inspector
-   and updater are verified, publish the fixed build as the first recommended public
-   preview. Masih prefers deleting the old `v0.1.0` and `v0.1.1` GitHub releases and
-   tags rather than preserving them as deprecated history. That destructive remote
-   action is explicitly deferred and requires fresh confirmation after the successor
-   release is live, so `releases/latest` and the installer never lose their target.
+2. **Separate Elpis from Codex state — Foundational · Hard.** Give Elpis its own
+   `ELPIS_HOME`/`~/.elpis` for configuration, sessions, history, logs, hooks, skills,
+   plugins, caches, and mutable runtime state. Elpis and Codex must not silently alter
+   each other. Existing users need an explicit one-time migration; authentication must
+   be handled as a separate, deliberate choice rather than silently sharing every
+   Codex file. Acceptance: Elpis launches without `~/.codex`, changing an Elpis hook or
+   config does not affect Codex, migrated state is preserved, and exact Elpis rollouts
+   live under `~/.elpis/sessions`.
+3. **Corrected public release — Foundational · Medium.** After the evidence inspector,
+   updater, and state separation are verified, publish the fixed build as the first
+   recommended public preview. Masih prefers deleting the old `v0.1.0` and `v0.1.1`
+   GitHub releases and tags rather than preserving them as deprecated history. That
+   destructive remote action is explicitly deferred and requires fresh confirmation
+   after the successor release is live, so `releases/latest` and the installer never
+   lose their target.
 4. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
    compact conclusions across completed turns, mark superseded findings explicitly,
    and exclude obsolete state from future requests. Prefer extending the validated
