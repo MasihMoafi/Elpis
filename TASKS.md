@@ -425,6 +425,12 @@ These are wanted ideas, but they are optional until the current product is polis
   engine / store / embedding-provider split.
 - Condense `docs/`. Eleven files plus a blog directory, several of which restate the
   readme or point at it. Merge or delete rather than adding more.
+- **Endurance run — targeted at v0.3.** Run one uninterrupted Elpis session for a very
+  long stretch (Masih's target: 48 hours) doing real work, and record what actually
+  happens to context, memory, continuity, and evidence across it. This is a test, not a
+  feature: the deliverable is measured evidence — free context over time, compaction
+  events survived, memory growth, and any failure — that can be published in the readme.
+  Do not claim a record before the run has been completed and reviewed by Masih.
 
 Old-data cleanup is not active work. It would mean previewing and then removing stale
 caches, duplicate evidence, old checkpoints, and other data that is no longer needed,
