@@ -121,9 +121,9 @@ Evidence:
   defaults based on its published tests and benchmarks.
 - Masih completed the installed-binary acceptance test and confirmed the integration.
 
-## Current Action — `elpis --update`
+## Masih-verified — `elpis --update`
 
-**Importance:** Important · **Difficulty:** Medium · **Status:** planned
+**Importance:** Important · **Difficulty:** Medium · **Status:** verified by Masih 2026-07-26
 
 Add an update flag to the shipped Elpis binary. It must use Elpis's GitHub release and
 checksum, replace only the supported user-local installation atomically, and leave the
@@ -141,15 +141,30 @@ Acceptance:
 6. Automated tests use a temporary install location and controlled fixture endpoint;
    they never overwrite the developer's installed binary or depend on a live release.
 
+Evidence:
+
+- All 13 shipped-binary tests pass, including successful replacement, checksum
+  mismatch, download failure, replacement failure, unsupported platform, and
+  already-current behavior.
+- The fast local build and install pass; the installed binary is byte-identical to the
+  build output.
+- `elpis --update` checked GitHub's live latest release, reported `0.1.1` already
+  current, exited without opening the TUI, and was confirmed by Masih.
+
+## Current Action — Pruning evidence inspector
+
+**Importance:** Foundational · **Difficulty:** Hard · **Status:** planned
+
+Preserve one immutable audit record per Ace pass showing the actual model-visible items
+before pruning, Ace's exact input and raw response, the validated keep/delete decision
+for every call ID, and the actual model-visible items after pruning. Exact IDs must
+open the original tool invocation/output without loading the full rollout, system
+prompt, or skills. RAG may help discovery, but it is not the source of truth for exact
+evidence.
+
 ## Queued next — do not start until the Current Action is closed
 
-1. **Pruning evidence inspector — Foundational · Hard.** Preserve one immutable audit
-   record per Ace pass showing the actual model-visible items before pruning, Ace's
-   exact input and raw response, the validated keep/delete decision for every call ID,
-   and the actual model-visible items after pruning. Exact IDs must open the original
-   tool invocation/output without loading the full rollout, system prompt, or skills.
-   RAG may help discovery, but it is not the source of truth for exact evidence.
-2. **Separate Elpis from Codex state — Foundational · Hard.** Give Elpis its own
+1. **Separate Elpis from Codex state — Foundational · Hard.** Give Elpis its own
    `ELPIS_HOME`/`~/.elpis` for configuration, sessions, history, logs, hooks, skills,
    plugins, caches, and mutable runtime state. Elpis and Codex must not silently alter
    each other. Existing users need an explicit one-time migration; authentication must
@@ -157,19 +172,19 @@ Acceptance:
    Codex file. Acceptance: Elpis launches without `~/.codex`, changing an Elpis hook or
    config does not affect Codex, migrated state is preserved, and exact Elpis rollouts
    live under `~/.elpis/sessions`.
-3. **Corrected public release — Foundational · Medium.** After the evidence inspector,
+2. **Corrected public release — Foundational · Medium.** After the evidence inspector,
    updater, and state separation are verified, publish the fixed build as the first
    recommended public preview. Masih prefers deleting the old `v0.1.0` and `v0.1.1`
    GitHub releases and tags rather than preserving them as deprecated history. That
    destructive remote action is explicitly deferred and requires fresh confirmation
    after the successor release is live, so `releases/latest` and the installer never
    lose their target.
-4. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
+3. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
    compact conclusions across completed turns, mark superseded findings explicitly,
    and exclude obsolete state from future requests. Prefer extending the validated
    Ace record pipeline over adding an unconstrained third agent. Native compaction
    remains the fail-safe; failure changes nothing.
-5. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
+4. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
    several agents and none of them recorded it, so it has never been built. When a chat
    opens, Elpis silently has Terra inspect the project and write or refresh a project
    `VISION.md`. That file is the agent's eyes on the project: what this project is, where
