@@ -1,20 +1,21 @@
 # Elpis
 
-[![Linux verification](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml/badge.svg)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-![Elpis, a shared environment for coding agents](docs/assets/elpis.png)
-
 ## Quickstart
 
-Linux x86_64:
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash
-elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
-On first launch, choose a provider and sign in or enter its API key.
+## Demo
+
+![Elpis demo](docs/assets/demo-linkedin.gif)
+
+<details>
+<summary>Full evidence session</summary>
+
+![Elpis evidence — full context-management session](docs/assets/evidence.gif)
+
+</details>
 
 ## What is Elpis
 
@@ -26,7 +27,7 @@ receives the same context, memory, permissions, evidence, and continuity.
 An Elpis is an agent working inside that environment. Different Elpises can research,
 build, test, or review along different paths while staying rooted in the same project.
 
-![Elpises working on different paths of one shared Elpis environment](docs/assets/elpises.png)
+<img src="docs/assets/elpises.png" alt="Elpises working on different paths of one shared Elpis environment" width="720">
 
 Different paths. Same roots. One shared project.
 
@@ -74,46 +75,44 @@ This is one recorded workflow, not a claim that every task reduces the same amou
 - **No analytics by default** — Elpis does not upload usage analytics, and all OpenTelemetry exporters default to off. Telemetry is sent only if you explicitly configure an OTEL exporter.
 - **Local read-only RAG** — from a source checkout, `scripts/setup-rag.sh` adds semantic search over local knowledge without granting write access.
 
-## Demo
+## How context moves
 
-![Elpis demo](docs/assets/demo-linkedin.gif)
+```text
+[1. Tool output]
+        |
+        v
+[2. Codex safety cap]       deterministic; only exceptionally large output
+        |
+        v
+[3. Active agent turn]      result remains available while the agent works
+        |
+        v
+[4. Ace post-turn pass]     meaning-aware; runs after the work is complete
+        |
+        +-- useful --------> compact conclusion + rollout evidence pointer
+        +-- dead end ------> removed from the next working context
+        +-- failure -------> original history remains unchanged
 
-### Evidence — full context-management session
+Reasoning state:
+active turn -> retained
+completed turn -> expired deterministically from working history
+```
 
-The clip above is a 25-second highlight. The recording below captures an uncut agent session showing Elpis's context loop in action: how working state is pruned post-turn, how the Context Ledger tracks the live file set, and how goal and checkpoint state survive across compaction events. Watch it to see the 93 vs 73% numbers produced in real time.
+> **Diagram placeholder — operating model.** Awaiting approved replacement artwork.
 
-![Elpis evidence — full session](docs/assets/evidence.gif)
-
-## Current state
-
-`v0.1.1`, Linux x86_64. Not in this release: macOS, Windows, `/auto` routing, multi-agent control, voice input, LSP integration.
-
-Full status and backlog: [TASKS.md](TASKS.md).
+> **Diagram placeholder — context lifecycle.** Awaiting approved replacement artwork.
 
 The execution foundation — terminal UI, patches, permissions, sandboxing, sessions — derives from OpenAI's Apache-2.0 Codex CLI. Elpis adds the context, continuity, memory, retrieval, and provider-control layer around it.
 
-<details>
-<summary>Other install methods</summary>
+## Future development
 
-**Direct binary download**
+- Apple Silicon macOS support, followed by Windows.
+- Structured clarification and acceptance checks before difficult work.
+- Multi-agent controls and visible task coordination.
+- `/auto` model routing after it proves a real cost benefit.
+- Voice input and LSP-backed code intelligence.
 
-```bash
-mkdir -p "$HOME/.local/bin"
-curl -fL --progress-bar -o "$HOME/.local/bin/elpis" https://github.com/MasihMoafi/Elpis/releases/latest/download/elpis-linux-x86_64
-chmod 755 "$HOME/.local/bin/elpis"
-```
-
-**Debian / Ubuntu**
-
-```bash
-deb_url=$(curl -s https://api.github.com/repos/MasihMoafi/Elpis/releases/latest | grep -oE '"browser_download_url": *"[^"]*\.deb"' | grep -v sha256 | cut -d '"' -f4)
-curl -fL --progress-bar -o elpis.deb "$deb_url"
-sudo dpkg -i elpis.deb
-```
-
-Both methods install to `~/.local/bin`, which must be on your `PATH`.
-
-</details>
+Full roadmap: [TASKS.md](TASKS.md).
 
 ## Documentation
 
@@ -124,5 +123,8 @@ Both methods install to `~/.local/bin`, which must be on your `PATH`.
 - [`TASKS.md`](TASKS.md) — release state and backlog
 
 ## License
+
+[![Linux verification](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml/badge.svg)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 MIT. Codex-derived source retains its upstream Apache-2.0 notices and attribution.
