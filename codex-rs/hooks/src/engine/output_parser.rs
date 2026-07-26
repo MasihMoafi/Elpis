@@ -161,10 +161,11 @@ pub(crate) fn parse_pre_tool_use(stdout: &str) -> Option<PreToolUseOutput> {
     };
     let updated_input = if invalid_reason.is_none() {
         hook_specific_output.and_then(|output| {
-            matches!(
-                output.permission_decision,
-                Some(PreToolUsePermissionDecisionWire::Allow)
-            )
+            (output.permission_decision.is_none()
+                || matches!(
+                    output.permission_decision,
+                    Some(PreToolUsePermissionDecisionWire::Allow)
+                ))
             .then(|| output.updated_input.clone())
             .flatten()
         })
@@ -435,12 +436,14 @@ fn unsupported_pre_tool_use_hook_specific_output(
     output: &crate::schema::PreToolUseHookSpecificOutputWire,
 ) -> Option<String> {
     if output.updated_input.is_some()
-        && !matches!(
+        && matches!(
             output.permission_decision,
-            Some(PreToolUsePermissionDecisionWire::Allow)
+            Some(PreToolUsePermissionDecisionWire::Ask | PreToolUsePermissionDecisionWire::Deny)
         )
     {
-        Some("PreToolUse hook returned updatedInput without permissionDecision:allow".to_string())
+        Some(
+            "PreToolUse hook returned updatedInput with a non-allow permissionDecision".to_string(),
+        )
     } else {
         match output.permission_decision {
             Some(PreToolUsePermissionDecisionWire::Allow) => {
@@ -464,7 +467,7 @@ fn unsupported_pre_tool_use_hook_specific_output(
                 }
             }
             None => {
-                if output.permission_decision_reason.is_some() {
+                if output.permission_decision_reason.is_some() && output.updated_input.is_none() {
                     Some("PreToolUse hook returned permissionDecisionReason without permissionDecision".to_string())
                 } else {
                     None

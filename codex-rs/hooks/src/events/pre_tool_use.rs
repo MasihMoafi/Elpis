@@ -401,6 +401,31 @@ mod tests {
     }
 
     #[test]
+    fn updated_input_without_permission_decision_can_update_input() {
+        let parsed = parse_completed(
+            &handler(),
+            run_result(
+                Some(0),
+                r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecisionReason":"RTK auto-rewrite","updatedInput":{"command":"rtk git status"}}}"#,
+                "",
+            ),
+            Some("turn-1".to_string()),
+        );
+
+        assert_eq!(
+            parsed.data,
+            PreToolUseHandlerData {
+                should_block: false,
+                block_reason: None,
+                additional_contexts_for_model: Vec::new(),
+                updated_input: Some(serde_json::json!({ "command": "rtk git status" })),
+            }
+        );
+        assert_eq!(parsed.completed.run.status, HookRunStatus::Completed);
+        assert_eq!(parsed.completed.run.entries, vec![]);
+    }
+
+    #[test]
     fn last_completed_updated_input_wins() {
         let mut later_configured = parse_completed(
             &handler(),
