@@ -74,7 +74,13 @@ This is one recorded workflow, not a claim that every task reduces the same amou
 
 ## Demo
 
-![Elpis demo](docs/assets/elpis-demo.gif)
+<video src="https://github.com/MasihMoafi/Elpis/raw/main/docs/assets/demo-linkedin.mp4" controls width="100%" style="border-radius:8px"></video>
+
+### Evidence — full context-management session
+
+The clip above is a 25-second highlight. The recording below captures an uncut agent session showing Elpis's context loop in action: how working state is pruned post-turn, how the Context Ledger tracks the live file set, and how goal and checkpoint state survive across compaction events. Watch it to see the numbers in the table above produced in real time.
+
+<video src="https://github.com/MasihMoafi/Elpis/raw/main/docs/assets/evidence.mp4" controls width="100%" style="border-radius:8px"></video>
 
 ## Current state
 
