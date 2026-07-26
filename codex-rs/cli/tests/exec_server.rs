@@ -88,9 +88,6 @@ async fn local_exec_server_flushes_telemetry_on_stdio_disconnect() -> Result<()>
         codex_home.path().join("config.toml"),
         format!(
             r#"
-[analytics]
-enabled = true
-
 [otel]
 environment = "test"
 metrics_exporter = {{ otlp-http = {{ endpoint = "{base_url}/v1/metrics", protocol = "json" }} }}

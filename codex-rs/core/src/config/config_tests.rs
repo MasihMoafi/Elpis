@@ -8583,9 +8583,6 @@ fn create_test_fixture() -> std::io::Result<PrecedenceTestFixture> {
 model = "o3"
 approval_policy = "untrusted"
 
-[analytics]
-enabled = true
-
 [model_providers.openai-custom]
 name = "OpenAI custom"
 base_url = "https://api.openai.com/v1"
@@ -8611,9 +8608,6 @@ model_provider = "openai-custom"
 model = "o3"
 model_provider = "openai"
 approval_policy = "on-request"
-
-[profiles.zdr.analytics]
-enabled = false
 
 [profiles.gpt5]
 model = "gpt-5.4"

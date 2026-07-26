@@ -386,18 +386,6 @@
       ],
       "type": "string"
     },
-    "AnalyticsConfig": {
-      "additionalProperties": true,
-      "properties": {
-        "enabled": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
     "AppBranding": {
       "description": "EXPERIMENTAL - app metadata returned by app-list APIs.",
       "properties": {
@@ -4018,16 +4006,6 @@
     "Config": {
       "additionalProperties": true,
       "properties": {
-        "analytics": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AnalyticsConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "approval_policy": {
           "anyOf": [
             {

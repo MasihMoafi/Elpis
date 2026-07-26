@@ -2,8 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
 use anyhow::Result;
 use codex_features::Feature;
@@ -114,24 +112,6 @@ fn write_plugin_app_plugin_with_name(home: &TempDir, app_name: &str) {
         ),
     )
     .expect("write plugin app config");
-}
-
-async fn build_analytics_plugin_test_codex(
-    server: &MockServer,
-    codex_home: Arc<TempDir>,
-) -> Result<TestCodex> {
-    let chatgpt_base_url = server.uri();
-    let mut builder = test_codex()
-        .with_home(codex_home)
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
-        .with_model("gpt-5.2")
-        .with_config(move |config| {
-            config.chatgpt_base_url = chatgpt_base_url;
-        });
-    Ok(builder
-        .build(server)
-        .await
-        .expect("create new conversation"))
 }
 
 async fn build_apps_enabled_plugin_test_codex(
@@ -502,80 +482,3 @@ async fn explicit_plugin_mentions_use_mcp_for_api_key_dual_surface_plugins() -> 
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn explicit_plugin_mentions_track_plugin_used_analytics() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    let server = start_mock_server().await;
-    let _resp_mock = mount_sse_once(
-        &server,
-        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
-    )
-    .await;
-
-    let codex_home = Arc::new(TempDir::new()?);
-    write_plugin_skill_plugin(codex_home.as_ref());
-    let test_codex = build_analytics_plugin_test_codex(&server, codex_home).await?;
-    let codex = Arc::clone(&test_codex.codex);
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![codex_protocol::user_input::UserInput::Mention {
-                name: "sample".into(),
-                path: format!("plugin://{SAMPLE_PLUGIN_CONFIG_NAME}"),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let plugin_event = loop {
-        let requests = server.received_requests().await.unwrap_or_default();
-        if let Some(event) = requests
-            .into_iter()
-            .filter(|request| request.url.path() == "/codex/analytics-events/events")
-            .find_map(|request| {
-                let payload: serde_json::Value = serde_json::from_slice(&request.body).ok()?;
-                payload["events"].as_array().and_then(|events| {
-                    events
-                        .iter()
-                        .find(|event| event["event_type"] == "codex_plugin_used")
-                        .cloned()
-                })
-            })
-        {
-            break event;
-        }
-        if Instant::now() >= deadline {
-            panic!("timed out waiting for plugin analytics request");
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    };
-
-    let event = plugin_event;
-    assert_eq!(event["event_params"]["plugin_id"], "sample@test");
-    assert_eq!(event["event_params"]["plugin_name"], "sample");
-    assert_eq!(event["event_params"]["marketplace_name"], "test");
-    assert_eq!(event["event_params"]["has_skills"], true);
-    assert_eq!(event["event_params"]["mcp_server_count"], 0);
-    assert_eq!(
-        event["event_params"]["mcp_server_names"],
-        serde_json::json!([])
-    );
-    assert_eq!(
-        event["event_params"]["connector_ids"],
-        serde_json::json!([])
-    );
-    assert_eq!(
-        event["event_params"]["product_client_id"],
-        serde_json::json!(codex_login::default_client::originator().value)
-    );
-    assert_eq!(event["event_params"]["model_slug"], "gpt-5.2");
-    assert!(event["event_params"]["thread_id"].as_str().is_some());
-    assert!(event["event_params"]["turn_id"].as_str().is_some());
-
-    Ok(())
-}

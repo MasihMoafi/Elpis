@@ -810,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn hook_run_metric_tags_match_analytics_shape() {
+    fn hook_run_metric_tags_match_expected_shape() {
         let run = sample_hook_run(HookRunStatus::Blocked, HookSource::Project);
 
         assert_eq!(

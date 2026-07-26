@@ -1576,7 +1576,7 @@ async fn guardian_review_uses_preferred_review_model_without_model_catalog_overr
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn guardian_review_records_missing_auto_review_model_in_analytics_metadata()
+async fn guardian_review_records_missing_auto_review_model_in_turn_metadata()
 -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 

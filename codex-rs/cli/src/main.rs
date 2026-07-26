@@ -533,24 +533,6 @@ struct AppServerCommand {
     #[arg(long = "remote-control", hide = true)]
     remote_control: bool,
 
-    /// Controls whether analytics are enabled by default.
-    ///
-    /// Analytics are disabled by default for app-server. Users have to explicitly opt in
-    /// via the `analytics` section in the config.toml file.
-    ///
-    /// However, for first-party use cases like the VSCode IDE extension, we default analytics
-    /// to be enabled by default by setting this flag. Users can still opt out by setting this
-    /// in their config.toml:
-    ///
-    /// ```toml
-    /// [analytics]
-    /// enabled = false
-    /// ```
-    ///
-    /// See https://developers.openai.com/codex/config-advanced/#metrics for more details.
-    #[arg(long = "analytics-default-enabled")]
-    analytics_default_enabled: bool,
-
     #[command(flatten)]
     auth: codex_app_server::AppServerWebsocketAuthArgs,
 }
@@ -1099,7 +1081,6 @@ async fn cli_main(
                 listen,
                 stdio,
                 remote_control,
-                analytics_default_enabled,
                 auth,
             } = app_server_cli;
             let strict_config = app_server_strict_config || root_strict_config;
@@ -1137,7 +1118,6 @@ async fn cli_main(
                         root_config_overrides,
                         LoaderOverrides::default(),
                         strict_config,
-                        analytics_default_enabled,
                         transport,
                         codex_protocol::protocol::SessionSource::VSCode,
                         auth,
@@ -3451,9 +3431,8 @@ mod tests {
     }
 
     #[test]
-    fn app_server_analytics_default_disabled_without_flag() {
+    fn app_server_defaults_to_stdio_without_flags() {
         let app_server = app_server_from_args(["codex", "app-server"].as_ref());
-        assert!(!app_server.analytics_default_enabled);
         assert!(!app_server.remote_control);
         assert_eq!(
             app_server.listen,
@@ -3465,13 +3444,6 @@ mod tests {
     fn app_server_remote_control_startup_flag_enables_remote_control() {
         let enabled = app_server_from_args(["codex", "app-server", "--remote-control"].as_ref());
         assert!(enabled.remote_control);
-    }
-
-    #[test]
-    fn app_server_analytics_default_enabled_with_flag() {
-        let app_server =
-            app_server_from_args(["codex", "app-server", "--analytics-default-enabled"].as_ref());
-        assert!(app_server.analytics_default_enabled);
     }
 
     #[test]

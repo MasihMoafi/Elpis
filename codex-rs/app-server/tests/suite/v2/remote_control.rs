@@ -234,7 +234,6 @@ async fn explicit_remote_control_startup_fails_when_disabled_by_requirements() -
             CliConfigOverrides::default(),
             LoaderOverrides::with_managed_config_path_for_tests(managed_config_path),
             /*strict_config*/ false,
-            /*default_analytics_enabled*/ false,
             transport,
             SessionSource::VSCode,
             AppServerWebsocketAuthSettings::default(),

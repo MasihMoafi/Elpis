@@ -35,7 +35,6 @@ use codex_model_provider_info::WireApi;
 use codex_model_provider_info::create_oss_provider_with_base_url;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
-use codex_protocol::auth::AuthMode;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
@@ -790,7 +789,6 @@ async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
 #[test]
 fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
     let auth_context = AuthRequestTelemetryContext::new(
-        Some(AuthMode::Chatgpt),
         &BearerAuthProvider::for_test(Some("access-token"), Some("workspace-123")),
         /*agent_identity_telemetry*/ None,
         PendingUnauthorizedRetry::from_recovery(UnauthorizedRecoveryExecution {
@@ -799,7 +797,6 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
         }),
     );
 
-    assert_eq!(auth_context.auth_mode, Some("Chatgpt"));
     assert!(auth_context.auth_header_attached);
     assert_eq!(auth_context.auth_header_name, Some("authorization"));
     assert!(auth_context.retry_after_unauthorized);
@@ -810,7 +807,6 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
 #[test]
 fn auth_request_telemetry_context_tracks_agent_identity_ids() {
     let auth_context = AuthRequestTelemetryContext::new(
-        Some(AuthMode::Chatgpt),
         &BearerAuthProvider::for_test(/*token*/ None, /*account_id*/ None),
         Some(AgentIdentityTelemetry {
             agent_id: "agent-runtime-context".to_string(),

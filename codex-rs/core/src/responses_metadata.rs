@@ -67,8 +67,7 @@ const RESERVED_METADATA_KEYS: &[&str] = &[
 ///
 /// This covers both local compaction requests sent through the normal `/responses` path and remote
 /// compaction requests sent through `/responses/compact`. These fields describe the operation at
-/// dispatch time. Post-response outcomes such as status, error, duration, and token deltas remain
-/// in compaction analytics events.
+/// dispatch time.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub(crate) struct CompactionTurnMetadata {
     trigger: CompactionTrigger,

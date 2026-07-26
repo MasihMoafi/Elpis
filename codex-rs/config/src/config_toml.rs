@@ -7,7 +7,6 @@ use std::path::Path;
 use crate::HooksToml;
 use crate::permissions_toml::PermissionsToml;
 use crate::profile_toml::ConfigProfile;
-use crate::types::AnalyticsConfigToml;
 use crate::types::ApprovalsReviewer;
 use crate::types::AppsConfigToml;
 use crate::types::AuthCredentialsStoreMode;
@@ -482,10 +481,6 @@ pub struct ConfigToml {
     /// All characters are inserted as they are received, and no buffering
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: Option<bool>,
-
-    /// When `false`, disables analytics across Codex product surfaces in this machine.
-    /// Defaults to `true`.
-    pub analytics: Option<AnalyticsConfigToml>,
 
     /// Settings for app-specific controls.
     #[serde(default)]

@@ -409,14 +409,12 @@ pub async fn run_main(
     cli_config_overrides: CliConfigOverrides,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
-    default_analytics_enabled: bool,
 ) -> IoResult<()> {
     run_main_with_transport_options(
         arg0_paths,
         cli_config_overrides,
         loader_overrides,
         strict_config,
-        default_analytics_enabled,
         AppServerTransport::Stdio,
         SessionSource::VSCode,
         AppServerWebsocketAuthSettings::default(),
@@ -454,7 +452,6 @@ pub async fn run_main_with_transport_options(
     cli_config_overrides: CliConfigOverrides,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
-    default_analytics_enabled: bool,
     transport: AppServerTransport,
     session_source: SessionSource,
     auth: AppServerWebsocketAuthSettings,
@@ -545,7 +542,6 @@ pub async fn run_main_with_transport_options(
         &config,
         env!("CARGO_PKG_VERSION"),
         Some(OTEL_SERVICE_NAME),
-        default_analytics_enabled,
     )
     .map_err(|e| {
         std::io::Error::new(

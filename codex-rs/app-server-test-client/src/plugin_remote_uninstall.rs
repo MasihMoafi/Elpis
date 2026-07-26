@@ -27,7 +27,6 @@ pub(super) fn run_cleanup(
     require_confirmation(confirmation)?;
     let mut overrides = config_overrides.to_vec();
     overrides.extend([
-        "analytics.enabled=false".to_string(),
         "features.plugins=true".to_string(),
     ]);
     let mut client = CodexClient::spawn_stdio(codex_bin, &overrides)?;

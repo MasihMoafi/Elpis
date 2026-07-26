@@ -51,7 +51,6 @@ pub use crate::patch_approval::PatchApprovalResponse;
 /// is a balance between throughput and memory usage – 128 messages should be
 /// plenty for an interactive CLI.
 const CHANNEL_CAPACITY: usize = 128;
-const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const OTEL_SERVICE_NAME: &str = "codex_mcp_server";
 
 type IncomingMessage = JsonRpcMessage<ClientRequest, Value, ClientNotification>;
@@ -82,7 +81,6 @@ pub async fn run_main(
         &config,
         env!("CARGO_PKG_VERSION"),
         Some(OTEL_SERVICE_NAME),
-        DEFAULT_ANALYTICS_ENABLED,
     )
     .map_err(|e| {
         std::io::Error::new(
@@ -207,14 +205,8 @@ mod tests {
     use super::*;
     use codex_config::types::OtelExporterKind;
     use codex_core::config::ConfigBuilder;
-    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
     use tempfile::TempDir;
-
-    #[test]
-    fn mcp_server_defaults_analytics_to_enabled() {
-        assert_eq!(DEFAULT_ANALYTICS_ENABLED, true);
-    }
 
     #[tokio::test]
     async fn mcp_server_builds_otel_provider_with_logs_traces_and_metrics() -> anyhow::Result<()> {
@@ -231,13 +223,11 @@ mod tests {
         config.otel.exporter = exporter.clone();
         config.otel.trace_exporter = exporter.clone();
         config.otel.metrics_exporter = exporter;
-        config.analytics_enabled = None;
 
         let provider = codex_core::otel_init::build_provider(
             &config,
             "0.0.0-test",
             Some(OTEL_SERVICE_NAME),
-            DEFAULT_ANALYTICS_ENABLED,
         )
         .map_err(|err| anyhow::anyhow!(err.to_string()))?
         .expect("otel provider");

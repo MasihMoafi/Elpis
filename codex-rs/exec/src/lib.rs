@@ -159,7 +159,6 @@ use uuid::Uuid;
 use crate::cli::Command as ExecCommand;
 use crate::event_processor::EventProcessor;
 
-const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const EXEC_DEFAULT_LOG_FILTER: &str = "error,opentelemetry_sdk=off,opentelemetry_otlp=off";
 
 enum InitialOperation {
@@ -503,7 +502,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
             &config,
             env!("CARGO_PKG_VERSION"),
             /*service_name_override*/ None,
-            DEFAULT_ANALYTICS_ENABLED,
         )
     })) {
         Ok(Ok(otel)) => otel,

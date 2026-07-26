@@ -1116,10 +1116,6 @@ pub struct Config {
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: bool,
 
-    /// When `false`, disables analytics across Codex product surfaces in this machine.
-    /// Voluntarily left as Optional because the default value might depend on the client.
-    pub analytics_enabled: Option<bool>,
-
     /// When `false`, disables feedback collection across Codex product surfaces.
     /// Defaults to `true`.
 
@@ -4121,7 +4117,6 @@ impl Config {
             notices,
             check_for_update_on_startup,
             disable_paste_burst: cfg.disable_paste_burst.unwrap_or(false),
-            analytics_enabled: cfg.analytics.as_ref().and_then(|a| a.enabled),
             tool_suggest,
             tui_notifications: cfg
                 .tui

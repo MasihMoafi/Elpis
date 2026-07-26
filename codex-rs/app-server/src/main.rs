@@ -97,7 +97,6 @@ fn main() -> anyhow::Result<()> {
             config_overrides,
             loader_overrides,
             strict_config,
-            /*default_analytics_enabled*/ false,
             transport,
             session_source,
             auth,

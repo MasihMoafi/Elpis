@@ -134,7 +134,6 @@ async fn run_foreground_remote_control(
         root_config_overrides,
         LoaderOverrides::default(),
         /*strict_config*/ false,
-        /*default_analytics_enabled*/ false,
         transport,
         SessionSource::VSCode,
         AppServerWebsocketAuthSettings::default(),

@@ -102,7 +102,6 @@ const NOTIFICATIONS_TO_OPT_OUT: &[&str] = &[
 ];
 const APP_SERVER_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const APP_SERVER_GRACEFUL_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const OTEL_SERVICE_NAME: &str = "codex-app-server-test-client";
 const TRACE_DISABLED_MESSAGE: &str =
     "Not enabled - enable tracing in $CODEX_HOME/config.toml to get a trace URL!";
@@ -2304,7 +2303,6 @@ impl TestClientTracing {
             &config,
             env!("CARGO_PKG_VERSION"),
             Some(OTEL_SERVICE_NAME),
-            DEFAULT_ANALYTICS_ENABLED,
         )
         .map_err(|e| anyhow::anyhow!("error loading otel config: {e}"))?;
         let traces_enabled = otel_provider
