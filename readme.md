@@ -18,17 +18,17 @@ On first launch, choose a provider and sign in or enter its API key.
 
 ## What is Elpis
 
-Elpis is a terminal environment for coding agents. You put an agent into Elpis, and it becomes Elpis.
-
-The agent runs the model loop. Elpis owns the environment around it: context, continuity, memory, permissions, evidence, and explicit provider choice.
+Elpis is a shared working environment for coding agents. Whichever agent you choose
+receives the same context, memory, permissions, evidence, and continuity.
 
 ### Elpises
 
-Elpis is the shared environment, not any one agent. Put an agent inside it and the agent inherits the same context, memory, permissions, evidence, and control.
+An Elpis is an agent working inside that environment. Different Elpises can research,
+build, test, or review along different paths while staying rooted in the same project.
 
 ![Elpises working on different paths of one shared Elpis environment](docs/assets/elpises.png)
 
-Multiple Elpises working from those shared roots is a direction for the project, not a claim that multi-agent control ships in `v0.1.1`.
+Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
