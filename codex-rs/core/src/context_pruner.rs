@@ -262,7 +262,10 @@ fn conclusions_by_call_id(record_text: &str) -> HashMap<&str, &str> {
 /// rollout pointer; its paired invocation remains so the operation is still legible.
 /// A covered item with no conclusion is a dead end, so both invocation and output are
 /// removed entirely. Exact originals remain in the durable rollout.
-pub(crate) fn apply_prune_record(input: &mut Vec<ResponseItem>, record: &PruneRecord) -> usize {
+pub(crate) fn apply_prune_record_untracked(
+    input: &mut Vec<ResponseItem>,
+    record: &PruneRecord,
+) -> usize {
     if record.is_empty() {
         return 0;
     }
@@ -327,9 +330,12 @@ pub(crate) fn apply_prune_record(input: &mut Vec<ResponseItem>, record: &PruneRe
         }
     }
     *input = rewritten;
+    saved
+}
+
+pub(crate) fn record_applied_prune(saved: usize) {
     PRUNE_PASSES.fetch_add(1, Ordering::Relaxed);
     PRUNE_SAVED_CHARS.fetch_add(saved, Ordering::Relaxed);
-    saved
 }
 
 #[cfg(test)]
@@ -508,7 +514,7 @@ mod tests {
             text: "a: found X at foo.rs:1 — mattered because Y".to_string(),
         };
 
-        let saved = apply_prune_record(&mut input, &record);
+        let saved = apply_prune_record_untracked(&mut input, &record);
         assert!(saved > 0);
 
         let ResponseItem::FunctionCallOutput { output, .. } = &input[1] else {
@@ -540,7 +546,7 @@ mod tests {
             text: "a: found X at foo.rs:1 — mattered because Y".to_string(),
         };
 
-        apply_prune_record(&mut input, &record);
+        apply_prune_record_untracked(&mut input, &record);
 
         assert_eq!(input.len(), 2);
         assert!(matches!(
@@ -556,7 +562,10 @@ mod tests {
     #[test]
     fn apply_prune_record_is_a_no_op_for_empty_record() {
         let mut input = vec![tool_output("a", "aaaa")];
-        assert_eq!(apply_prune_record(&mut input, &PruneRecord::default()), 0);
+        assert_eq!(
+            apply_prune_record_untracked(&mut input, &PruneRecord::default()),
+            0
+        );
         let ResponseItem::FunctionCallOutput { output, .. } = &input[0] else {
             panic!("function output");
         };
@@ -570,7 +579,7 @@ mod tests {
             covered_call_ids: vec!["a".to_string()],
             text: "a: trivial".to_string(),
         };
-        assert_eq!(apply_prune_record(&mut input, &record), 0);
+        assert_eq!(apply_prune_record_untracked(&mut input, &record), 0);
         let ResponseItem::FunctionCallOutput { output, .. } = &input[0] else {
             panic!("function output");
         };

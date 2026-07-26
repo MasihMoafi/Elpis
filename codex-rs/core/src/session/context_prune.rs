@@ -19,6 +19,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
 
+use super::context_prune_audit;
 use super::session::Session;
 use super::turn_context::TurnContext;
 
@@ -42,7 +43,11 @@ pub(super) async fn maybe_run_context_prune(
         state.context_prune_covered.clone()
     };
 
-    let items = sess.clone_history().await.into_raw_items();
+    let history = sess.clone_history().await;
+    let items = history.raw_items().to_vec();
+    let before_model_items = history
+        .clone()
+        .for_prompt(&turn_context.model_info.input_modalities);
     let uncovered = context_pruner::uncovered_transient_chars(&items, &covered_call_ids);
     if !context_pruner::should_prune(active_context_tokens, uncovered, context_window) {
         return;
@@ -67,86 +72,52 @@ pub(super) async fn maybe_run_context_prune(
         return;
     };
 
-    let saved = {
+    let mut after_items = items;
+    let saved = context_pruner::apply_prune_record_untracked(&mut after_items, &record);
+    let mut after_history = history;
+    after_history.replace(after_items.clone());
+    let after_model_items = after_history.for_prompt(&turn_context.model_info.input_modalities);
+    let ace_input = context_pruner::build_prune_input(&batch, active_question.as_deref());
+    let Some(home) = dirs::home_dir() else {
+        tracing::warn!("Context prune audit has no home directory; preserving history");
+        return;
+    };
+    let log_dir = home.join(".elpis").join("logs");
+    let audit = match context_prune_audit::write_applied_pass(
+        &log_dir,
+        context_prune_audit::PruneAuditInput {
+            model_slug: &model_slug,
+            ace_instructions: codex_prompts::CONTEXT_PRUNE_PROMPT,
+            ace_input: &ace_input,
+            raw_response: &raw,
+            batch: &batch,
+            record: &record,
+            before_model_items: &before_model_items,
+            after_model_items: &after_model_items,
+            saved_chars: saved,
+        },
+    ) {
+        Ok(audit) => audit,
+        Err(err) => {
+            tracing::warn!("Context prune audit failed; preserving history: {err:#}");
+            return;
+        }
+    };
+
+    {
         let mut state = sess.state.lock().await;
-        let mut items = state.history.raw_items().to_vec();
-        let saved = context_pruner::apply_prune_record(&mut items, &record);
-        state.history.replace(items);
+        state.history.replace(after_items);
         state
             .context_prune_covered
             .extend(record.covered_call_ids.iter().cloned());
-        saved
-    };
-
-    write_prune_report(&batch, &record, &raw, &model_slug, saved);
-}
-
-/// Writes `~/.elpis/logs/prune_report.md` from the last applied pass: every
-/// batch item with its real outcome (kept evidence line vs deleted dead end), the
-/// model's raw decision, and chars saved. Failed and malformed attempts never reach
-/// this function; their durable trail is `prune_debug.log`, and the source rollouts
-/// remain untouched in `~/.elpis/sessions/`.
-fn write_prune_report(
-    batch: &[(String, String)],
-    record: &crate::context_pruner::PruneRecord,
-    raw: &str,
-    model_slug: &str,
-    saved: usize,
-) {
-    let Some(home) = std::env::var_os("HOME") else {
-        return;
-    };
-    let log_dir = std::path::PathBuf::from(home).join(".elpis").join("logs");
-    let _ = std::fs::create_dir_all(&log_dir);
-
-    let ts = chrono::Utc::now().to_rfc3339();
-    let kept_count = record
-        .text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .count();
-    let mut body = format!(
-        "# Elpis Layer 2 Context Pruning Report\n\n\
-         **Timestamp**: `{ts}`  \n**Pruning model**: `{model_slug}`  \n\
-         **This pass**: {} items reviewed · {} kept as evidence lines · {} deleted as dead ends · ≈{saved} chars removed  \n\
-         **Session totals**: {} passes · ≈{} chars removed\n\n\
-         ---\n\n## What was deleted or kept, item by item\n\n",
-        batch.len(),
-        kept_count,
-        batch.len().saturating_sub(kept_count),
-        crate::context_pruner::pass_count(),
-        crate::context_pruner::saved_chars(),
-    );
-    for (id, text) in batch {
-        let conclusion = record.text.lines().find_map(|line| {
-            line.split_once(':')
-                .filter(|(line_id, _)| line_id.trim() == id)
-                .map(|(_, rest)| rest.trim())
-        });
-        let excerpt: String = text
-            .chars()
-            .take(120)
-            .collect::<String>()
-            .replace('\n', " ");
-        let chars = text.chars().count();
-        match conclusion {
-            Some(kept) => {
-                body.push_str(&format!(
-                    "- `{id}` ({chars} chars) — **KEPT** as: {kept}\n  - was: “{excerpt}…”\n"
-                ));
-            }
-            None => {
-                body.push_str(&format!(
-                    "- `{id}` ({chars} chars) — **DELETED** (dead end, no evidence line earned)\n  - was: “{excerpt}…”\n"
-                ));
-            }
-        }
     }
-    body.push_str(&format!(
-        "\n---\n\n## Model's raw decision\n\n```text\n{raw}\n```\n\n\
-         Full originals remain in `~/.elpis/sessions/` and `~/.elpis/logs/prune_debug.log`.\n"
-    ));
-    let _ = std::fs::write(log_dir.join("prune_report.md"), body);
+    context_pruner::record_applied_prune(saved);
+    if let Err(err) = context_prune_audit::write_latest_report(&log_dir, &audit.report) {
+        tracing::warn!(
+            "Immutable pruning audit was saved at {}, but the latest report could not be updated: {err:#}",
+            audit.pass_dir.display()
+        );
+    }
 }
 
 async fn run_prune_pass(
@@ -214,6 +185,8 @@ async fn try_validated_prune_pass(
         tracing::warn!(
             "Context prune response was malformed for model {prune_model_slug}; preserving history"
         );
+        let input_text = context_pruner::build_prune_input(batch, active_question);
+        log_prune_debug(prune_model_slug, &input_text, Some(&output));
         return None;
     };
     Some((record, output))
@@ -295,11 +268,11 @@ async fn try_stream_prune_pass(
         }
     }
     let result = super::turn::get_last_assistant_message_from_turn(&collected);
-    log_prune_debug(prune_model_slug, &input_text, result.as_deref());
     if let Some(ref text) = result {
         tracing::info!("Context prune LLM response received ({prune_model_slug}): {text}");
     } else {
         tracing::warn!("Context prune LLM stream returned no assistant text ({prune_model_slug})");
+        log_prune_debug(prune_model_slug, &input_text, None);
     }
     result
 }

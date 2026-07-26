@@ -43,6 +43,17 @@ omitted dead end removes both its invocation and output from working history. As
 answers are not deletable Ace inputs. `/usage` tracks Ace's live savings and shows
 deterministic savings as zero while Layer 1 is disabled.
 
+Each applied Ace pass first writes an immutable audit under
+`~/.elpis/logs/pruning/passes/<pass-id>/`:
+
+- `ace.json` contains Ace's exact instructions, input, and raw response;
+- `manifest.json` lists every reviewed call ID and its kept/deleted decision;
+- `items/*.json` contains the exact model-visible before and after items for one call.
+
+`~/.elpis/logs/prune_report.md` points to the latest pass. These focused artifacts omit
+the unrelated system prompt, skills, and transcript. If the immutable audit cannot be
+written, Elpis preserves the working history and does not record the pass as applied.
+
 ## Context Lifecycle
 
 Every admitted item has a lifetime:
