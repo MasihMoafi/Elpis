@@ -185,6 +185,10 @@ impl ChatWidget {
                 let source = &sources[self.context_ledger.selected];
                 self.set_context_source_admitted(source, !source.admitted);
             }
+            KeyCode::Backspace | KeyCode::Delete => {
+                let source = sources[self.context_ledger.selected].clone();
+                self.remove_context_source(&source, &selectable);
+            }
             _ => {
                 if matches!(key_event.code, KeyCode::Char(_)) {
                     self.context_ledger.focused = false;
@@ -248,7 +252,10 @@ impl ChatWidget {
                     cyan,
                 ),
             ]),
-            Line::from(Span::styled("i = select/deselect all", muted)),
+            Line::from(Span::styled(
+                "i = select/deselect all · backspace = remove added file",
+                muted,
+            )),
             Line::from(""),
             Line::from(vec![
                 Span::styled("CONTEXT WINDOW", cyan.bold()),
@@ -574,6 +581,45 @@ impl ChatWidget {
         for source in sources.iter().filter(|source| source.selectable) {
             if !self.set_context_source_admitted(source, admitted) {
                 break;
+            }
+        }
+    }
+
+    /// Backspace/Delete on a manually added row drops it from the ledger for good.
+    /// Discovered rows (project rules, goal, checkpoint) are rediscovered on the next
+    /// scan, so deleting them would silently reappear — those stay toggle-only.
+    fn remove_context_source(
+        &mut self,
+        source: &crate::legacy_core::elpis_context::ContinuitySource,
+        selectable: &[usize],
+    ) {
+        match crate::legacy_core::elpis_context::remove_continuity_source(
+            self.config
+                .memories
+                .root
+                .as_ref()
+                .map(|root| root.as_path()),
+            self.config.cwd.as_path(),
+            &source.name,
+        ) {
+            Ok(true) => {
+                // The removed row is gone, so keep the cursor inside the shorter list.
+                if self.context_ledger.selected >= selectable.len() {
+                    self.move_context_ledger_selection(selectable, -1);
+                }
+                self.refresh_context_window_display();
+            }
+            Ok(false) => {
+                self.add_info_message(
+                    format!(
+                        "{} is discovered automatically — press space to exclude it instead.",
+                        source.name
+                    ),
+                    None,
+                );
+            }
+            Err(error) => {
+                self.add_error_message(format!("Could not remove context source: {error}"));
             }
         }
     }

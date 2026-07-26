@@ -336,6 +336,36 @@ pub fn set_continuity_source_admitted(
     write_admission(&workspace_dir, &selection)
 }
 
+/// Drops a manually added file from the ledger entirely, rather than merely
+/// excluding it. Only custom sources can be removed: discovered rules, the goal, and
+/// the checkpoint come back on the next scan, so removing them would be a lie.
+/// Returns whether an entry was actually removed.
+pub fn remove_continuity_source(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+    source_name: &str,
+) -> std::io::Result<bool> {
+    let Some(workspace_dir) = workspace_context_dir(memories_root, cwd) else {
+        return Ok(false);
+    };
+    let mut selection = read_admission(&workspace_dir);
+    // Match the stored key directly first: a deleted file can no longer be
+    // canonicalized, and those are exactly the rows a user most wants gone.
+    let key = if selection.custom_sources.contains_key(source_name) {
+        source_name.to_string()
+    } else {
+        let Ok(canonical) = PathBuf::from(source_name).canonicalize() else {
+            return Ok(false);
+        };
+        canonical.to_string_lossy().to_string()
+    };
+    if selection.custom_sources.remove(&key).is_none() {
+        return Ok(false);
+    }
+    write_admission(&workspace_dir, &selection)?;
+    Ok(true)
+}
+
 pub fn add_continuity_source(
     memories_root: Option<&Path>,
     cwd: &Path,
@@ -704,6 +734,26 @@ mod tests {
                 .await
                 .is_some_and(|prompt| prompt.contains("Keep this visible"))
         );
+
+        // Excluding leaves the row on the list; removing takes it off entirely.
+        let name = added.display().to_string();
+        assert!(continuity_sources(Some(&memories), &cwd, &[])
+            .iter()
+            .any(|source| source.path == added));
+        assert!(remove_continuity_source(Some(&memories), &cwd, &name)?);
+        assert!(
+            continuity_sources(Some(&memories), &cwd, &[])
+                .iter()
+                .all(|source| source.path != added),
+            "removed file must not come back on the next scan"
+        );
+        // Removing twice is not an error, and discovered rows refuse removal.
+        assert!(!remove_continuity_source(Some(&memories), &cwd, &name)?);
+        assert!(!remove_continuity_source(
+            Some(&memories),
+            &cwd,
+            PROJECT_RULES
+        )?);
         Ok(())
     }
 
