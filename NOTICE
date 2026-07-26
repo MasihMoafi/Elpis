@@ -4,10 +4,16 @@ Copyright 2026 Masih Moafi
 This distribution contains modified source derived from OpenAI Codex,
 Copyright 2025 OpenAI, licensed under the Apache License, Version 2.0.
 The Apache-licensed source, license text, and upstream notices are retained
-under codex-rs/.
+under codex-rs/. Every Codex-derived file that Elpis changed carries a notice
+on its first line stating that it was modified.
 
-Elpis-specific source outside the contained Codex-derived subtree is licensed
-under the repository's MIT License unless a file or subtree states otherwise.
+Elpis is licensed under the Apache License, Version 2.0, the same terms as the
+Codex-derived source it builds on, unless a file or subtree states otherwise.
+
+The sandbox helper vendored at codex-rs/vendor/bubblewrap is bubblewrap,
+licensed under the GNU Lesser General Public License. Its license text is
+retained at codex-rs/vendor/bubblewrap/COPYING, and its complete corresponding
+source is present in this repository.
 
 Elpis is an independent project and is not endorsed by or affiliated with
 OpenAI, Anthropic, Google, or OpenRouter. Product names and trademarks belong

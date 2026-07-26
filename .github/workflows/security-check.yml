@@ -1,0 +1,29 @@
+name: Security Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Advisories land after a build passes, so re-check on a fixed tree weekly.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: security-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit dependencies
+        working-directory: codex-rs
+        # Fails on advisories only. Vendored bubblewrap is C, not a crate, and is
+        # excluded by construction.
+        run: cargo audit
