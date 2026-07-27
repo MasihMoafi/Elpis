@@ -42,13 +42,28 @@ aside, one launch recreated it byte-identical to the known-good hook and `/hooks
 `PreToolUse  Installed 1  Active 1`. The first-run trust prompt on a machine that has
 never trusted this hook is not yet exercised.
 
+## Ready to dispatch
+
+Worktree and worker prompt exist; none is running yet. Prompts live in
+`~/Desktop/tmp/elpis-worker-prompts/`. Masih is not needed while these run.
+
+| #   | Task                                             | Worktree / branch                   |
+| --- | ------------------------------------------------ | ----------------------------------- |
+| 13  | Clean-install verification in a container        | `Elpis-wt-clean-install-check` / `agent/clean-install-check` |
+| 5   | macOS build (Apple Silicon)                      | `Elpis-wt-macos-build` / `agent/macos-build` |
+| 3   | Startup — cold start unmeasured; 168 MB binary   | `Elpis-wt-startup-size` / `agent/startup-size` |
+
 ## First
 
 | #   | Task                                                          | Type         | Parallel |
 | --- | ------------------------------------------------------------- | ------------ | -------- |
+| 13  | Clean-install check — the only way task 12 stops being blind  | Bug          | yes      |
 | 3   | Startup — cold start is still unmeasured; 168 MB binary       | Optimization | yes      |
 
 ## Second
+
+Needs Masih at the wheel: 4 and 6 need his direction throughout, 7 needs him only to set
+the plan and instructions at the start.
 
 | #   | Task                                                                 | Type     | Parallel |
 | --- | -------------------------------------------------------------------- | -------- | -------- |
