@@ -186,9 +186,9 @@ Implementation evidence:
   finding, removed about 1,764 characters, wrote the exact before/after audit, and did
   not append the successful pass to the old multi-megabyte debug log.
 
-## Current Action — Separate Elpis from Codex state
+## Masih-verified — Separate Elpis from Codex state
 
-**Importance:** Foundational · **Difficulty:** Hard · **Status:** implemented, awaiting Masih
+**Importance:** Foundational · **Difficulty:** Hard · **Status:** verified by Masih 2026-07-27
 
 Give Elpis its own `ELPIS_HOME`/`~/.elpis` for configuration, sessions, history, logs,
 hooks, skills, plugins, caches, and mutable runtime state. Elpis and Codex must not
@@ -239,8 +239,11 @@ Implementation evidence:
   the selected hook, left its source byte-identical, and skipped the existing
   destination on a second application.
 - Masih confirmed on 2026-07-26 that ChatGPT subscription login was reused, the RTK
-  hook was discovered, and the turn resumed correctly. One real-turn completion and
-  bidirectional Elpis/Codex state isolation remain awaiting Masih's verification.
+  hook was discovered, and the turn resumed correctly. He confirmed on 2026-07-27 that
+  he had already tested it and that sessions resume; the item is closed.
+- Isolation measured mechanically on 2026-07-27: `~/.codex` was snapshotted (11,805
+  files), Elpis was launched, and the file list plus every top-level file including
+  `auth.json` were byte-identical afterwards.
 
 ## Queued next — do not start until the Current Action is closed
 
@@ -270,16 +273,18 @@ Implementation evidence:
    and exclude obsolete state from future requests. Prefer extending the validated
    Ace record pipeline over adding an unconstrained third agent. Native compaction
    remains the fail-safe; failure changes nothing.
-3. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
-   several agents and none of them recorded it, so it has never been built. When a chat
-   opens, Elpis silently has Terra inspect the project and write or refresh a project
-   `VISION.md`. That file is the agent's eyes on the project: what this project is, where
-   things live, what is built versus aspirational, and what is out of scope. It is not
-   the readme and not `GUIDE.md`, which describe Elpis itself to humans; this is a
-   per-project orientation file the agent generates for whatever repository it is
-   pointed at. It happens under the hood on the first message, not as a visible step.
-   Open questions for Masih: refresh on every chat or only when the project changed,
-   and whether a human-edited `VISION.md` may be overwritten.
+3. ~~**Automatic project `VISION.md` — Foundational · Hard.**~~ **Done 2026-07-27.**
+   Masih reclassified this as not hard and closed it at the prompt layer rather than as
+   an Elpis feature: the behavior now lives as an always-on `## Vision` rule in the dev
+   skill's `AGENTS.md`, alongside the existing `vision` skill. On arrival at a project
+   the agent finds the orientation file (`VISION.md` → `AGENTS.md` → `CLAUDE.md` →
+   `readme.md`), extracts identity, directory map, built-versus-aspirational state, and
+   non-goals, drafts a `VISION.md` when none exists — shown before saving — and reports
+   drift instead of silently reconciling it.
+
+   The two open questions are answered by that placement: nothing refreshes on a timer,
+   and a human-edited `VISION.md` is never overwritten without being shown first. Reopen
+   only if the prompt-layer rule proves insufficient in real use.
 
 ## Ordering Masih set on 2026-07-26
 
@@ -411,24 +416,58 @@ that mutates the live account's installed plugins." Both halves are wrong:
 The dependency and the `debug app-server` subcommand were removed from `cli/` anyway as
 cheap subtraction under I3, not as a shipping fix.
 
+**Binary size, measured 2026-07-27.** The shipped Linux binary is 168 MB: 93 MB of
+machine code, 32 MB of constants, 18 MB of unwind tables. It is already stripped and
+already built with `opt-level = "z"`, thin LTO, and `strip = "symbols"`, so no build
+setting is left to change. The size is real code from 896 crates.
+
+Two whole drawers account for a large share of it, and both are confirmed present in the
+shipped binary by string inspection:
+
+- **V8, the JavaScript engine, including its WebAssembly engine and TurboFan JIT.** It
+  arrives through `codex-code-mode` -> `codex-core`. Its rlib is 183 MB, the largest in
+  the build. `Feature::CodeMode` is `Stage::UnderDevelopment` with `default_enabled:
+  false`, so **no user has ever run it** -- Elpis ships a JavaScript engine that cannot
+  execute.
+- **Starlark**, an 81 MB rlib, through `codex-execpolicy` -> `codex-config`.
+
+Cost of removal: `code_mode` is referenced by 33 files in `core/src/` outside its own
+module, so this is a tangled drawer, not a cheap one. Under Masih's own I3 rule that
+means it needs a result to justify it -- but the result here is a feature that is off by
+default and unfinished, which is as close to free weight as this codebase has. The clean
+route is making `codex-code-mode` an optional Cargo feature, default off, rather than
+deleting the module. **Decision pending: Masih has not approved this removal.**
+
 Next candidate, cheap and compiler-proven: the dead TUI methods and constants rustc
 already reports as never used. Rejected as not worth its cost: deleting `thread_source`,
 a pure classification label spread over 205 sites with a persisted-store migration.
 
-### I4. Startup time — open, unmeasured
+### I4. Startup time — measured 2026-07-27
 
-Corrected 2026-07-26. This entry previously read "startup already feels fast in current
-daily use, so there is no active startup project." Masih reports the opposite: Elpis starts
-no faster than Codex, if at all. That claim was never backed by a measurement, and nothing
-in the repository measures startup today.
+Elpis had never measured startup, so no claim about it could be checked. It now does.
 
-The work, in order:
+**Measured.** The window appears in ~270 ms on a warm release build (~300 ms debug).
+Phase timings are recorded from the first statement in `main` and written as one JSON
+record per launch under `$ELPIS_HOME/logs/startup/`. The session header shows the total
+and the build profile. Process load and argument parsing are ~18 ms and are not a factor.
 
-1. Profile where the milliseconds actually go — config load, skills injection, history/DB
-   open, hook discovery, provider probe — before changing anything. No speculative trimming.
-2. Only then open focused work against whatever dominates.
+**The visible wait was the `codex_apps` connector**, not startup. It is a remote ChatGPT
+app server that was booted over the network on every launch whenever subscription login
+was in use, costing 2-3 seconds after the frame was already drawn. `Feature::Apps` now
+defaults to disabled; users who want ChatGPT connectors opt in with `apps = true`.
+Verified: the connector boot no longer appears on launch.
 
-Binary-size reduction remains inactive.
+**Debug builds are now labelled.** An unoptimized binary shows a red `DEBUG BUILD` badge
+in the session header so it cannot be mistaken for a release one.
+
+Still open:
+
+1. The measurement stops when the window appears. It does not yet cover the time until
+   Elpis is genuinely ready to work. That is the number worth capturing next.
+2. Cold start is untested. The release binary is 167 MB, and Masih reports the first
+   launch after installing was noticeably slower than later ones, which is consistent
+   with paging that binary in from disk. Binary size is the lever there, and it is
+   unmeasured.
 
 ### I5. Structured interactive clarification — closed 2026-07-26
 
