@@ -19,13 +19,11 @@
 
 > *You run an agent inside Elpis, and it becomes Elpis.*
 
-The agent runs the model loop. Elpis owns everything around it — context, continuity, memory, retrieval, permissions, evidence, and explicit provider choice. Swap the agent and it inherits the same environment; nothing about your project has to be re-explained.
+The agent runs the model loop. Elpis owns everything around it: context, memory, continuity, retrieval, permissions, and provider choice.
 
-### Elpises
+Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
 
-You are not managing a fleet. You talk to one agent; behind it, Elpises run out of sight — researching, building, testing, reviewing along their own paths — and only their conclusions come back. Each one starts from the same context, memory, and permissions, so none of them has to be briefed and none of their dead ends reach your screen.
-
-<img src="docs/assets/elpises.png" alt="Elpises working on different paths of one shared Elpis environment" width="720">
+<img src="docs/assets/elpises.png" alt="One Elpis environment, many paths of work running through it" width="720">
 
 Different paths. Same roots. One shared project.
 
@@ -40,9 +38,9 @@ Different paths. Same roots. One shared project.
 
 </details>
 
-Long agent sessions accumulate transcripts, file reads, searches, command output, and dead ends. The useful state gets buried in the history of how the agent reached it, and every request pays for more context.
+Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters gets buried in the story of how the agent got there, and every request pays for it.
 
-Elpis separates working context from durable evidence. The next request receives a small, inspectable working set; the exact record stays on disk and is retrieved only when it is needed.
+Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
 
 **One controlled comparison** — same task, same prompt:
 
