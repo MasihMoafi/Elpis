@@ -2,11 +2,11 @@
 
 Elpis can run a **read-only workspace RAG** (Retrieval-Augmented Generation) service for semantic discovery over project documentation, codebase files, and external reference materials, without cluttering the agent's active context window.
 
-!!! warning "Requires a source checkout"
-
-    This service is **not reachable from a binary install**. The `.deb` package and the `curl` installer ship the Rust binary only; the RAG service is a separate Python sidecar that lives in the repository.
-
-    To use it you need a source checkout, [`uv`](https://docs.astral.sh/uv/), and a run of `scripts/setup-rag.sh`, which creates the virtualenv in place and writes an absolute-path `mcp_servers.elpis-rag` block into your `config.toml`. Re-run it after moving the checkout. Reaching binary installs is [tracked work](https://github.com/MasihMoafi/Elpis/blob/main/TASKS.md).
+> **Requires a source checkout.**
+>
+> This service is **not reachable from a binary install**. The `.deb` package and the `curl` installer ship the Rust binary only; the RAG service is a separate Python sidecar that lives in the repository.
+>
+> To use it you need a source checkout, [`uv`](https://docs.astral.sh/uv/), and a run of `scripts/setup-rag.sh`, which creates the virtualenv in place and writes an absolute-path `mcp_servers.elpis-rag` block into your `config.toml`. Re-run it after moving the checkout. Reaching binary installs is [tracked work](https://github.com/MasihMoafi/Elpis/blob/main/TASKS.md).
 
 ---
 

@@ -22,7 +22,7 @@ Context management acts as the primary gatekeeper between raw workspace/session 
            v
 +----------+-------------------------------------------------------+
 |                    3-LAYER PRUNING PIPELINE                      |
-|  Layer 1: RTK Shell-Output Filter (Pre-model command trim)      |
+|  Layer 1: RTK Shell-Output Filter (Pre-model command rewrite)   |
 |  Layer 2: Deterministic Safety Cap (Upper bound truncation)     |
 |  Layer 3: Ace Post-Turn Pass (Post-turn exploration pruning)     |
 +----------+-------------------------------------------------------+
@@ -43,7 +43,7 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 [Raw Tool / Terminal Output]
            |
            v
-[Layer 1: RTK Filter]          -> Pre-model, optional: compacts verbose CLI output (rg, find).
+[Layer 1: RTK Filter]          -> Pre-model: compacts verbose CLI output (rg, find).
            |
            v
 [Layer 2: Safety Cap]          -> Pre-model: Hard deterministic upper-bound truncation.
@@ -59,11 +59,26 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 
 | Layer | Trigger | Scope | Behavior | Failure Recovery |
 | :--- | :--- | :--- | :--- | :--- |
-| **1. RTK Filter** *(optional)* | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
+| **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
 | **3. Ace Post-Turn Pass** | Turn completion | Turn exploration & tool history | Evaluates the completed turn. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. | A failed pass changes nothing — working context is left as-is. |
 
-**Layer 1 is not built in.** It activates only once you install RTK and trust its hook; layers 2 and 3 ship with Elpis. Inspect the result of a pass with `/prune`, which writes `prune_report.md` alongside the session logs (`codex-rs/core/src/session/context_prune_audit.rs`).
+**All three layers ship with Elpis.** Layer 1 rewrites supported commands through the built-in `PreToolUse` hook (`codex-rs/hooks/src/events/pre_tool_use.rs`) before their output reaches the model. Inspect the result of a pass with `/prune`, which writes `prune_report.md` alongside the session logs (`codex-rs/core/src/session/context_prune_audit.rs`).
+
+### Ace pass audit trail
+
+Every applied Ace pass writes an immutable audit before the working history changes. If that audit cannot be written, Elpis keeps the working history and does not record the pass as applied.
+
+```text
+~/.elpis/logs/
+├── prune_report.md              # points at the latest pass; contains clickable file:// links
+└── pruning/passes/<pass-id>/
+    ├── ace.json                 # Ace's exact instructions, input, and raw response
+    ├── manifest.json            # every reviewed call ID and its kept/deleted decision
+    └── items/*.json             # exact model-visible before/after for one call
+```
+
+You do not have to go looking for these: `prune_report.md` renders `ace.json` and `manifest.json` as clickable links (`context_prune_audit.rs`). The audit deliberately omits the system prompt, skills, and transcript, so it stays readable.
 
 ---
 

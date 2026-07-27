@@ -29,7 +29,7 @@ Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
-![Elpis demo](docs/assets/demo-linkedin.gif)
+![Elpis demo](docs/assets/demo.gif)
 
 <details>
 <summary>Full uncut session</summary>
@@ -75,17 +75,17 @@ This is one recorded workflow, not a claim that every task reduces the same amou
 
 | Level | What it does | When |
 | --- | --- | --- |
-| **1. Shell-output filtering** | Supported commands run through RTK before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. | Before the agent sees it |
+| **1. Shell-output filtering** | Supported commands are rewritten through RTK by the built-in `PreToolUse` hook, before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. | Before the agent sees it |
 | **2. Safety cap** | Deterministic truncation bounds exceptionally large tool output. Inherited from Codex, unchanged. | Before the agent sees it |
 | **3. Ace post-turn pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After the work is done |
 
-Level 1 activates once you install RTK and trust its hook; levels 2 and 3 are built in. Inspect the result with `/prune`.
+All three levels ship with Elpis. Inspect the result with `/prune`.
 
 ```text
 [tool output]
      |
      v
-[1. RTK filter]         optional; compact output, exact output on demand
+[1. RTK filter]         compact output, exact output on demand
      |
      v
 [2. safety cap]         deterministic; only exceptionally large output
@@ -148,7 +148,7 @@ Full roadmap: [TASKS.md](TASKS.md).
 - [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
 - [Providers](docs/providers.md) — every supported route, including local inference
 - [Workspace RAG](docs/rag.md) — read-only semantic search; needs a source checkout
-- [`GUIDE.md`](GUIDE.md) — product vision and architecture
+- [`GUIDE.md`](docs/GUIDE.md) — product vision and architecture
 - [`TASKS.md`](TASKS.md) — release state and backlog
 
 ## License
