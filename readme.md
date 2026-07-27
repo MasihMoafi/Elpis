@@ -75,11 +75,11 @@ This is one recorded workflow, not a claim that every task reduces the same amou
 
 | Level | What it does | When |
 | --- | --- | --- |
-| **1. Shell-output filtering** | Supported commands are rewritten through RTK by the built-in `PreToolUse` hook, before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. | Before the agent sees it |
+| **1. Shell-output filtering** | Supported commands are rewritten through RTK, before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. Needs RTK installed and its `PreToolUse` hook registered; automatic setup is [tracked work](TASKS.md). | Before the agent sees it |
 | **2. Safety cap** | Deterministic truncation bounds exceptionally large tool output. Inherited from Codex, unchanged. | Before the agent sees it |
 | **3. Ace post-turn pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After the work is done |
 
-All three levels ship with Elpis. Inspect the result with `/prune`.
+Levels 2 and 3 ship with Elpis and need no setup. Inspect the result with `/prune`.
 
 ```text
 [tool output]

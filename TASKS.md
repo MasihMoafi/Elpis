@@ -39,6 +39,7 @@ release: 435ms total, 10ms before `main`, ready at 425ms.
 
 | #   | Task                                                          | Type         | Parallel |
 | --- | ------------------------------------------------------------- | ------------ | -------- |
+| 12  | RTK hook is not active on a fresh install — layer 1 is absent | Bug          | no       |
 | 3   | Startup — cold start is still unmeasured; 168 MB binary       | Optimization | yes      |
 
 ## Second

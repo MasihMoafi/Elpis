@@ -63,7 +63,7 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
 | **3. Ace Post-Turn Pass** | Turn completion | Turn exploration & tool history | Evaluates the completed turn. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. | A failed pass changes nothing — working context is left as-is. |
 
-**All three layers ship with Elpis.** Layer 1 rewrites supported commands through the built-in `PreToolUse` hook (`codex-rs/hooks/src/events/pre_tool_use.rs`) before their output reaches the model. Inspect the result of a pass with `/prune`, which writes `prune_report.md` alongside the session logs (`codex-rs/core/src/session/context_prune_audit.rs`).
+**Layers 2 and 3 ship with Elpis and need no setup.** Layer 1 needs RTK: Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) accepts RTK's rewrite response, but a fresh install has no RTK hook registered, so supported commands are rewritten only once RTK is installed and a `PreToolUse` hook running `rtk hook claude` exists in `~/.elpis/hooks.json` — written by hand, or carried over by `elpis migrate --hooks`. Making that automatic is tracked work. Inspect the result of a pass with `/prune`, which writes `prune_report.md` alongside the session logs (`codex-rs/core/src/session/context_prune_audit.rs`).
 
 ### Ace pass audit trail
 
