@@ -129,7 +129,17 @@ Linux x86_64:
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
+macOS on Apple Silicon:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+```
+
 On first launch, choose a provider and sign in or enter its API key.
+
+The macOS binary is built and smoke-tested on an Apple Silicon CI runner: it compiles,
+its tests pass, and it launches and exits cleanly there. No one has yet run a full
+interactive session on a real Mac, so treat it as unconfirmed and report what breaks.
 
 ## Future development
 

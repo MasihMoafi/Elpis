@@ -299,10 +299,258 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  build-macos:
+    name: Build and verify Elpis on macOS (Apple Silicon)
+    runs-on: macos-14
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: codex-rs
+    env:
+      CARGO_INCREMENTAL: "1"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_TERM_COLOR: always
+      MACOS_TARGET: aarch64-apple-darwin
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install 1.95.0 --no-self-update
+          rustup target add "$MACOS_TARGET" --toolchain 1.95.0
+
+      - name: Confirm the runner is Apple Silicon
+        run: |
+          # macos-14 is arm64. If GitHub ever repoints it, fail loudly rather than
+          # publishing an x86_64 binary under an arm64 asset name.
+          test "$(uname -s)-$(uname -m)" = "Darwin-arm64"
+
+      - name: Restore Cargo downloads
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: elpis-cargo-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}
+          restore-keys: |
+            elpis-cargo-${{ runner.os }}-
+
+      - name: Restore incremental build outputs
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: codex-rs/target
+          key: elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-
+
+      - name: Verify Elpis launcher and provider entrypoints
+        run: cargo test -p codex-tui --bin elpis --locked --target "$MACOS_TARGET"
+
+      - name: Verify context lifecycle and archive failure safety
+        run: |
+          cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" context_cleaner::tests
+          cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" elpis_context::tests
+          cargo test -p codex-memories-write --locked --target "$MACOS_TARGET" reset_memory_workspace_baseline_
+
+      - name: Verify memory promotion, bounds, and retrieval
+        run: |
+          cargo test -p codex-state --locked --target "$MACOS_TARGET" record_stage1_output_usage_updates_usage_metadata
+          cargo test -p codex-memories-write --locked --target "$MACOS_TARGET" sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
+          cargo test -p codex-memories-write --locked --target "$MACOS_TARGET" validate_consolidation_artifacts_
+          cargo test -p codex-config --locked --target "$MACOS_TARGET" memories_config_preserves_configured_root
+          cargo test -p codex-state --locked --target "$MACOS_TARGET" init_with_memories_state_root_separates_only_memories_db
+          cargo test -p codex-memories-extension --locked --target "$MACOS_TARGET" local::search::tests
+
+      - name: Verify provider protocol and authentication boundaries
+        run: |
+          cargo test -p codex-model-provider-info --locked --target "$MACOS_TARGET"
+          cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" chat_completions
+
+      - name: Verify runtime identity surfaces
+        run: |
+          cargo test -p codex-tui --lib --locked --target "$MACOS_TARGET" branding::tests
+          cargo test -p codex-tui --lib --locked --target "$MACOS_TARGET" slash_command::tests
+
+      - name: Build Elpis binary
+        run: cargo build -p codex-tui --bin elpis --locked --release --target "$MACOS_TARGET"
+
+      - name: Ensure the binary carries a valid ad-hoc signature
+        run: |
+          # The release profile already sets `strip = "symbols"`, so there is nothing
+          # left to strip here. What matters on arm64 macOS is the signature: an
+          # unsigned or stale-signed Mach-O is killed on launch, and rustc's own strip
+          # pass has historically invalidated it. Repair it rather than assume.
+          binary="target/$MACOS_TARGET/release/elpis"
+          ls -l "$binary"
+          if ! codesign --verify --verbose "$binary"; then
+            echo "Signature missing or invalid; re-signing ad hoc."
+            codesign --force --sign - "$binary"
+            codesign --verify --verbose "$binary"
+          fi
+
+      - name: Verify the binary is a native arm64 Mach-O
+        run: |
+          file "target/$MACOS_TARGET/release/elpis"
+          file "target/$MACOS_TARGET/release/elpis" | grep -q 'Mach-O 64-bit executable arm64'
+
+      - name: Verify executable identity
+        run: |
+          binary="target/$MACOS_TARGET/release/elpis"
+          "$binary" --help
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' tui/Cargo.toml | head -1)"
+          test -n "$expected"
+          test "$("$binary" --version)" = "elpis $expected"
+
+      - name: Launch the binary headlessly and assert a clean exit
+        run: |
+          # A non-interactive run that actually starts the async runtime, resolves the
+          # Elpis home, and touches the filesystem. This is the dead-on-arrival check:
+          # a missing framework or a Linux-only syscall shows up here, not in --version.
+          binary="$PWD/target/$MACOS_TARGET/release/elpis"
+          home="$RUNNER_TEMP/elpis-smoke-home"
+          codex_home="$RUNNER_TEMP/elpis-smoke-codex"
+          mkdir -p "$home" "$codex_home"
+          ELPIS_HOME="$home" CODEX_HOME="$codex_home" \
+            "$binary" --migrate-from-codex > "$RUNNER_TEMP/migrate-preview.txt"
+          cat "$RUNNER_TEMP/migrate-preview.txt"
+          grep -q 'Preview only. Nothing is selected or copied.' "$RUNNER_TEMP/migrate-preview.txt"
+          test -d "$home"
+
+      - name: Upload Elpis macOS binary
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: elpis-macos-arm64
+          path: codex-rs/target/aarch64-apple-darwin/release/elpis
+          if-no-files-found: error
+          retention-days: 7
+
+  installer-platform-detection:
+    name: Verify installer platform selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Run the installer for each platform with a faked uname and curl
+        run: |
+          set -euo pipefail
+          script="$PWD/scripts/install-elpis.sh"
+          work="$(mktemp -d "${TMPDIR:-/tmp}/elpis-installer-test.XXXXXX")"
+          failures=0
+
+          release="$work/release"
+          mkdir -p "$release"
+          for asset in elpis-linux-x86_64 elpis-macos-arm64; do
+            printf 'payload-for-%s\n' "$asset" > "$release/$asset"
+            (cd "$release" && sha256sum "$asset" > "$asset.sha256")
+          done
+
+          make_shims() {
+            # $1 shim dir, $2 uname -s, $3 uname -m, $4 "gnu" | "bsd"
+            local dir=$1 sysname=$2 machine=$3 flavor=$4
+            mkdir -p "$dir"
+            cat > "$dir/uname" <<EOF
+          #!/usr/bin/env bash
+          case "\$1" in
+            -s) echo "$sysname" ;;
+            -m) echo "$machine" ;;
+            *) echo "$sysname" ;;
+          esac
+          EOF
+            cat > "$dir/curl" <<EOF
+          #!/usr/bin/env bash
+          dest=""; url=""
+          while [ \$# -gt 0 ]; do
+            case "\$1" in
+              --output) dest=\$2; shift 2 ;;
+              http*) url=\$1; shift ;;
+              *) shift ;;
+            esac
+          done
+          echo "CURL \$url" >> "$work/curl.log"
+          name=\${url##*/}
+          test -f "$release/\$name" || { echo "fake curl: 404 \$name" >&2; exit 22; }
+          cp "$release/\$name" "\$dest"
+          EOF
+            chmod +x "$dir/uname" "$dir/curl"
+            # The "bsd" flavor omits sha256sum so the macOS `shasum` fallback runs.
+            local tools=(bash sh mktemp mkdir install mv rm cp sed)
+            if [ "$flavor" = gnu ]; then
+              tools+=(sha256sum shasum)
+            else
+              tools+=(shasum)
+            fi
+            for tool in "${tools[@]}"; do
+              ln -sf "$(command -v "$tool")" "$dir/$tool"
+            done
+          }
+
+          check() {
+            # $1 label, $2 uname -s, $3 uname -m, $4 flavor, $5 expected asset
+            local label=$1 sysname=$2 machine=$3 flavor=$4 expected=$5
+            local dir="$work/case-$label"
+            make_shims "$dir/bin" "$sysname" "$machine" "$flavor"
+            : > "$work/curl.log"
+            if env -i HOME="$dir" PATH="$dir/bin" TMPDIR="$dir" \
+                ELPIS_SKIP_RTK=1 ELPIS_INSTALL_DIR="$dir/install" \
+                bash "$script" > "$dir/out" 2> "$dir/err"; then
+              if [ "$(cat "$dir/install/elpis")" != "payload-for-$expected" ]; then
+                printf 'FAIL %-14s installed the wrong asset\n' "$label"
+                failures=$((failures + 1))
+              elif ! grep -q "/$expected\$" "$work/curl.log"; then
+                printf 'FAIL %-14s did not fetch %s\n' "$label" "$expected"
+                failures=$((failures + 1))
+              elif [ ! -x "$dir/install/elpis" ]; then
+                printf 'FAIL %-14s installed file is not executable\n' "$label"
+                failures=$((failures + 1))
+              else
+                printf 'PASS %-14s %s-%s -> %s\n' "$label" "$sysname" "$machine" "$expected"
+              fi
+            else
+              printf 'FAIL %-14s installer exited non-zero\n' "$label"
+              sed 's/^/       /' "$dir/err"
+              failures=$((failures + 1))
+            fi
+          }
+
+          reject() {
+            # $1 label, $2 uname -s, $3 uname -m, $4 flavor
+            local label=$1
+            local dir="$work/case-$label"
+            make_shims "$dir/bin" "$2" "$3" "$4"
+            : > "$work/curl.log"
+            if env -i HOME="$dir" PATH="$dir/bin" TMPDIR="$dir" \
+                ELPIS_SKIP_RTK=1 ELPIS_INSTALL_DIR="$dir/install" \
+                bash "$script" > "$dir/out" 2> "$dir/err"; then
+              printf 'FAIL %-14s %s-%s was accepted but must be rejected\n' "$label" "$2" "$3"
+              failures=$((failures + 1))
+            elif [ -s "$work/curl.log" ]; then
+              printf 'FAIL %-14s rejected platform still hit the network\n' "$label"
+              failures=$((failures + 1))
+            else
+              printf 'PASS %-14s %s-%s rejected: %s\n' "$label" "$2" "$3" "$(head -1 "$dir/err")"
+            fi
+          }
+
+          check linux-x86_64 Linux x86_64 gnu elpis-linux-x86_64
+          check darwin-arm64 Darwin arm64 bsd elpis-macos-arm64
+          reject darwin-x86_64 Darwin x86_64 bsd
+          reject linux-aarch64 Linux aarch64 gnu
+
+          test "$failures" -eq 0
+
   release:
-    name: Publish tagged Linux binary
+    name: Publish tagged binaries
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, build-macos, installer-platform-detection]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -316,6 +564,12 @@ jobs:
           name: elpis-linux-x86_64
           path: dist
 
+      - name: Download verified Elpis macOS binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: elpis-macos-arm64
+          path: dist-macos
+
       - name: Download Elpis .deb
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -327,7 +581,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mv dist/elpis dist/elpis-linux-x86_64
+          # Both artifacts contain a file named `elpis`, so the macOS one is
+          # downloaded to its own directory and renamed before it joins dist/.
+          mv dist-macos/elpis dist/elpis-macos-arm64
           (cd dist && sha256sum elpis-linux-x86_64 > elpis-linux-x86_64.sha256)
+          (cd dist && sha256sum elpis-macos-arm64 > elpis-macos-arm64.sha256)
           for deb in dist/*.deb; do
             (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
           done
@@ -338,6 +596,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             dist/elpis-linux-x86_64 \
             dist/elpis-linux-x86_64.sha256 \
+            dist/elpis-macos-arm64 \
+            dist/elpis-macos-arm64.sha256 \
             dist/*.deb \
             dist/*.deb.sha256 \
             --repo "$GITHUB_REPOSITORY" \
