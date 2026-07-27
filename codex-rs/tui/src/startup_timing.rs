@@ -19,6 +19,12 @@ use std::time::Instant;
 /// Set once, from the first line of `main`, before argument parsing.
 static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
+/// Time the kernel and dynamic loader spent before `main` ran at all: process creation,
+/// mapping the executable, and relocation. For a large binary on a cold page cache this
+/// can dominate everything measured after it, and a timer started in `main` cannot see
+/// it. `None` on platforms without `/proc`.
+static PRE_MAIN: OnceLock<Option<Duration>> = OnceLock::new();
+
 /// Phase name paired with the elapsed time since `PROCESS_START` when it completed.
 static PHASES: Mutex<Vec<(&'static str, Duration)>> = Mutex::new(Vec::new());
 
@@ -27,7 +33,40 @@ static TOTAL: OnceLock<Duration> = OnceLock::new();
 
 /// Record the process start instant. Safe to call more than once; the first call wins.
 pub fn mark_process_start() {
+    let _ = PRE_MAIN.set(time_before_main());
     let _ = PROCESS_START.set(Instant::now());
+}
+
+/// Elapsed time between the kernel creating this process and `main` starting.
+pub fn pre_main() -> Option<Duration> {
+    PRE_MAIN.get().copied().flatten()
+}
+
+/// Extract the `starttime` field from the contents of `/proc/self/stat`.
+///
+/// The second field is the executable name in parentheses and may itself contain spaces
+/// and parentheses, so fields are counted from after the final `)`.
+fn parse_starttime_ticks(stat: &str) -> Option<f64> {
+    let after_comm = stat.rsplit_once(')')?.1;
+    // Fields resume at `state` (field 3), so `starttime` (field 22) is index 19 here.
+    after_comm.split_whitespace().nth(19)?.parse().ok()
+}
+
+#[cfg(target_os = "linux")]
+fn time_before_main() -> Option<Duration> {
+    // Near-universal on Linux; `getconf CLK_TCK` has been 100 on every supported target.
+    const CLOCK_TICKS_PER_SEC: f64 = 100.0;
+    let starttime_ticks = parse_starttime_ticks(&std::fs::read_to_string("/proc/self/stat").ok()?)?;
+    let uptime = std::fs::read_to_string("/proc/uptime").ok()?;
+    let uptime_secs: f64 = uptime.split_whitespace().next()?.parse().ok()?;
+    let elapsed = uptime_secs - (starttime_ticks / CLOCK_TICKS_PER_SEC);
+    // Reject anything implausible rather than reporting a nonsense launch time.
+    (elapsed.is_finite() && (0.0..60.0).contains(&elapsed)).then(|| Duration::from_secs_f64(elapsed))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn time_before_main() -> Option<Duration> {
+    None
 }
 
 /// Time since process start, or `None` when `mark_process_start` was never called
@@ -70,9 +109,11 @@ fn format_duration(duration: Duration) -> String {
 /// `<elpis_home>/logs/startup/`. Timing must never be able to fail a launch, so every
 /// error here is discarded.
 pub fn finish_and_log(elpis_home: &Path) {
-    let Some(total) = since_start() else {
+    let Some(in_main) = since_start() else {
         return;
     };
+    // What a user actually waits through: pressing enter to a usable Elpis.
+    let total = in_main + pre_main().unwrap_or_default();
     let _ = TOTAL.set(total);
 
     let phases = match PHASES.lock() {
@@ -89,7 +130,15 @@ pub fn finish_and_log(elpis_home: &Path) {
     record.push_str(&total.as_millis().to_string());
     record.push_str(",\"build\":\"");
     record.push_str(build_profile());
-    record.push_str("\",\"version\":\"");
+    record.push_str("\",\"before_main_ms\":");
+    record.push_str(
+        &pre_main()
+            .map(|pre| pre.as_millis().to_string())
+            .unwrap_or_else(|| "null".to_string()),
+    );
+    record.push_str(",\"in_main_ms\":");
+    record.push_str(&in_main.as_millis().to_string());
+    record.push_str(",\"version\":\"");
     record.push_str(env!("CARGO_PKG_VERSION"));
     record.push_str("\",\"phases\":{");
     for (index, (phase, elapsed)) in phases.iter().enumerate() {
@@ -142,6 +191,17 @@ mod tests {
     #[test]
     fn durations_of_a_second_or_more_render_as_seconds() {
         assert_eq!(format_duration(Duration::from_millis(1240)), "1.24s");
+    }
+
+    #[test]
+    fn starttime_is_read_past_an_executable_name_containing_spaces() {
+        let stat = "42 (my app (x)) S 1 42 42 0 -1 4194304 100 0 0 0 5 3 0 0 20 0 1 0 987654 0";
+        assert_eq!(parse_starttime_ticks(stat), Some(987654.0));
+    }
+
+    #[test]
+    fn malformed_stat_yields_no_starttime_rather_than_a_wrong_one() {
+        assert_eq!(parse_starttime_ticks("nonsense without parens"), None);
     }
 
     #[test]

@@ -1258,8 +1258,9 @@ async fn run_ratatui_app(
     }));
     crate::startup_timing::record("logging");
     let mut initialized_terminal = tui::init()?;
-    crate::startup_timing::record("terminal_ready");
-    crate::startup_timing::finish_and_log(initial_config.codex_home.as_path());
+    crate::startup_timing::record("terminal");
+    // Captured before `initial_config` is moved into the session below.
+    let startup_log_home = initial_config.codex_home.as_path().to_path_buf();
     initialized_terminal.terminal.clear()?;
 
     let mut tui = Tui::new(
@@ -1729,6 +1730,10 @@ async fn run_ratatui_app(
         StartupHooksReviewOutcome::OpenHooksBrowser(data) => Some(data),
     };
 
+    // Launch is finished only here: everything above must complete before Elpis will
+    // accept a keystroke, so this is the wait a user actually experiences.
+    crate::startup_timing::record("ready");
+    crate::startup_timing::finish_and_log(&startup_log_home);
     let app_result = App::run(
         &mut tui,
         app_server,
