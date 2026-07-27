@@ -55,9 +55,11 @@ Our core contributions are:
 \end{itemize}
 
 \section{Background and Related Work}
-Current autonomous coding agents largely rely on raw transcript accumulation. Systems like AutoGPT \cite{autogpt2023} and generic CLI wrappers pass the entire session history back to the model on each turn. While models with 1M+ token context windows (e.g., Gemini 1.5 Pro) exist, empirical studies show that LLMs suffer from the ``Lost in the Middle'' phenomenon, where reasoning degrades when critical information is buried in massive contexts \cite{liu2024lost}.
+Current autonomous coding agents face significant challenges in managing session state. Early generic agents like AutoGPT \cite{autogpt2023} relied on raw transcript accumulation, passing the entire session history back to the model on each turn. More recent software engineering specific agents, such as SWE-agent \cite{yang2024swe}, attempt to manage context by restricting the agent to a specialized set of file-editing and search tools that emit condensed outputs. However, even with specialized tools, long-running debugging and refactoring sessions inevitably accumulate massive context overhead.
 
-Furthermore, passing large contexts incurs high latency and financial costs. Approaches to mitigate this include vector database retrieval (RAG) \cite{lewis2020retrieval} and model-driven summarization. However, RAG often struggles to maintain the sequential narrative of an active debugging session, and naive summarization frequently drops critical file paths and state variables necessary for code execution. Elpis differentiates itself by treating context management as an explicit pipeline of deterministic and meaning-aware pruning steps external to the LLM itself.
+While hardware and model architectures have expanded to support 1M+ token context windows, empirical studies show that LLMs suffer from the ``Lost in the Middle'' phenomenon, where reasoning capability degrades when critical information is buried inside massive contexts \cite{liu2024lost}. Passing large contexts also incurs high latency and financial costs that scale linearly with session length.
+
+To mitigate context bloat, architectures like MemGPT \cite{packer2023memgpt} introduced a multi-tier memory system inspired by traditional operating systems, actively paging information in and out of the LLM's context window. Alternatively, vector database retrieval (RAG) \cite{lewis2020retrieval} is commonly used to dynamically load documentation. However, RAG struggles to maintain the sequential narrative and causal chain of an active debugging session, and LLM-driven active paging requires the model to spend valuable reasoning tokens managing its own memory. Elpis differentiates itself by treating context management as an explicit, inspectable pipeline of deterministic and meaning-aware pruning steps that are external to the LLM's reasoning loop, combined with explicit human-in-the-loop admission control.
 
 \section{System Architecture}
 
@@ -91,33 +93,37 @@ To survive thread compaction and model switches, Elpis supports \textit{Lean Con
 
 Additionally, a two-stage memory pipeline runs asynchronously. Stage 1 extracts candidate facts from completed rollouts. Phase 2 (Consolidation) evaluates these candidates against recall frequency and query diversity, promoting stable project facts to a durable \texttt{MEMORY.md}. Crucially, when an agent recalls a memory concerning workspace state, Elpis treats it as a hypothesis and re-verifies it against the live filesystem.
 
-\section{Evaluation}
+\section{Evaluation Methodology and Preliminary Observations}
 
-\subsection{Experimental Setup}
-To evaluate the efficacy of the 3-Layer Pruning Pipeline, we compared Elpis against a standard, unmanaged coding agent baseline (Codex-derived architecture without Elpis pruning). Both systems were given the same complex software engineering task and the same initial prompt, utilizing the same underlying LLM infrastructure.
+\subsection{Evaluation Framework}
+To rigorously evaluate the efficacy of the Context Sovereignty architecture and the 3-Layer Pruning Pipeline, future work will conduct a comprehensive benchmark against established coding agent architectures. The evaluation framework will measure:
+\begin{itemize}
+    \item \textbf{Context Window Efficiency:} The ratio of free context to used context over time across standardized tasks of varying lengths (e.g., SWE-bench \cite{jimenez2023swebench}).
+    \item \textbf{Inference Cost and Latency:} Total token consumption and wall-clock time required to complete debugging and feature implementation tasks.
+    \item \textbf{Task Completion Rate:} The ability of the agent to successfully resolve issues without succumbing to context-exhaustion or losing the primary objective.
+\end{itemize}
 
-% TODO (Author): Insert specific methodology details here (e.g., what was the exact task? How many files were touched? What model was used?)
+\subsection{Preliminary Case Study: Controlled Workflow Comparison}
+As an initial probe into the system's behavior, we conducted a single, controlled workflow comparison. We compared Elpis against a standard, unmanaged coding agent baseline (a Codex-derived architecture without the Elpis pruning pipeline). Both systems were provided the identical initial prompt and tasked with the same software engineering objective, utilizing the exact same underlying LLM infrastructure and parameters.
 
-\subsection{Context Efficiency}
-We measured the percentage of the context window that remained free at the end of the completed workflow. A higher free context percentage indicates that the system successfully discarded transient exploration data, leaving room for future tasks and reducing inference costs.
+We measured the percentage of the model's total context window that remained free (unutilized) at the conclusion of the workflow. A higher free context percentage indicates that the system successfully discarded transient exploration data (such as raw search outputs and dead-end file reads), thereby preserving capacity for subsequent tasks and minimizing cost.
 
-As shown in Table \ref{tab:results}, Elpis maintained 93\% free context at the conclusion of the workflow. In contrast, the baseline system retained only 73\% free context, having accumulated the entire transcript of searches, reads, and dead ends.
+\subsubsection{Results of the Case Study}
+In this single recorded workflow, the Elpis architecture demonstrated a significant reduction in context bloat. As shown in Table \ref{tab:results}, Elpis maintained 93\% free context at the end of the task. In contrast, the baseline unmanaged system retained only 73\% free context, having accumulated the entire sequential transcript of searches, reads, and intermediate errors.
+
+While this result represents a single controlled observation rather than a generalized benchmark claim, it provides strong preliminary evidence that explicitly decoupling the working set from the historical transcript effectively mitigates the rapid context exhaustion typical of autonomous coding sessions.
 
 \begin{table}[htbp]
 \centering
-\caption{Free Context Remaining at Workflow Conclusion}
+\caption{Free Context Remaining (Single Controlled Workflow)}
 \label{tab:results}
 \begin{tabular}{@{}lc@{}}
 \toprule
-\textbf{System} & \textbf{Free Context at End} \\ \midrule
+\textbf{System Architecture} & \textbf{Free Context at Task End} \\ \midrule
 Baseline (Unmanaged Codex) & 73\% \\
 \textbf{Elpis (3-Layer Pruning)} & \textbf{93\%} \\ \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{Qualitative Observations}
-% TODO (Author): Expand this section with observations on latency, cost savings, or qualitative improvements in agent reasoning due to a cleaner context.
-Beyond the quantitative reduction in context size, we observed that the Elpis agent was less prone to hallucinating obsolete file paths that were present early in the session but subsequently changed. By relying on the \texttt{ES.md} checkpoint, the agent maintained a highly accurate representation of the current workspace state.
 
 \section{Conclusion}
 The accumulation of transient exploration data is a major bottleneck for autonomous coding agents. Elpis demonstrates that Context Sovereignty---achieved via a 3-layer pruning pipeline, explicit admission control, and a curated two-stage memory architecture---drastically reduces context bloat. By maintaining 93\% free context after complex tasks, Elpis enables long-running sessions, reduces inference costs, and ensures that the agent remains focused on the user's goals rather than its own raw history. Future work will explore dynamic thresholding for automated tier-switching between exact resume and lean continuation.
