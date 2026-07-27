@@ -14,21 +14,19 @@ up, not here. Closed work: `docs/TASKS_ARCHIVE_V0_1_1.md`, `docs/TASKS_V0_1_ARCH
   Masih. It leaves for the archive only after he verifies it.
 - No claim of "done" without Masih's verification. CI and cargo are necessary, never
   sufficient.
+- **Verification states are recorded literally, for whoever reads this next:**
+  `Masih-verified` (he used it and accepted it), `agent-verified` (an agent ran a check
+  and Masih has not confirmed it), and `unverifiable here` (Masih lacks the machine or
+  environment to confirm it at all). Never write `agent-verified` work up as done.
 
 ## Landed — awaiting Masih's verification
 
 Implemented and checked in; not "done" until Masih confirms the behavior.
 
-| #   | Task                                          | Type         | Verify by |
-| --- | --------------------------------------------- | ------------ | --------- |
-| 1   | Condense `docs/` — one source per topic       | Docs         | Read `readme.md` and the five topic docs; no topic is explained twice, no link is dead. |
-| 2   | Startup — remove the visible launch wait      | Optimization | Launch `elpis`; the window should accept a keystroke immediately, with no 2–3s pause after the frame is drawn. |
-| 12  | RTK hook active on a fresh install            | Bug          | On a machine without RTK, run the install one-liner, launch Elpis, trust the hook it offers, then ask the agent to run a broad `rg`; the output reaching it should be RTK-compacted. |
-
-Evidence — 1: `65bac2f`, `6058a0f`. `CONTEXT_AND_SESSIONS.md` and `visual-walkthrough.md`
-deleted, `GUIDE.md` and `SECURITY.md` moved under `docs/`, GUIDE's stale provider tables
-folded into `providers.md`, every reference repaired. `docs/` now holds one file per
-topic plus two task archives and the build/shipping rules.
+| #   | Task                                          | State | Verify by |
+| --- | --------------------------------------------- | ----- | --------- |
+| 2   | Startup — remove the visible launch wait      | agent-verified | Launch `elpis`; the window should accept a keystroke immediately, with no 2–3s pause after the frame is drawn. Masih, 2026-07-27: "it's not instant." Not accepted. |
+| 12  | RTK hook active on a fresh install            | agent-verified; unverifiable here | Needs a machine without RTK: run the install one-liner, launch Elpis, trust the hook it offers, then have the agent run a broad `rg` and check the output arrives RTK-compacted. Masih has no such machine, so this will not become Masih-verified without a clean VM or container. |
 
 Evidence — 2: `be0a78e`, `c54b95d`, `554e666`. `Feature::Apps` now defaults off, removing
 the 2–3s remote connector boot that was the entire visible wait; ChatGPT connectors are

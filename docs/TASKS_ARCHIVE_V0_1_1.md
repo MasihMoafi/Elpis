@@ -6,6 +6,15 @@ Older history: `docs/TASKS_V0_1_ARCHIVE.md`.
 
 ---
 
+## Docs condensed to one source per topic — Masih-verified 2026-07-27
+
+`CONTEXT_AND_SESSIONS.md` and `visual-walkthrough.md` deleted, `GUIDE.md` and
+`SECURITY.md` moved under `docs/`, GUIDE's stale provider tables folded into
+`providers.md`, every reference repaired. `docs/` now holds one file per topic plus two
+task archives and the build/shipping rules.
+
+Evidence: `65bac2f`, `6058a0f`.
+
 ## Context Ledger placement and file links — verified 2026-07-25
 
 `v0.1.1` was first tagged on 2026-07-24, but its tag CI run failed and no release was
