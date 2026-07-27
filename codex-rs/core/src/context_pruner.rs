@@ -1,4 +1,4 @@
-//! Layer 2 of Elpis's context pruning (see `docs/CONTEXT_AND_SESSIONS.md`, "Masih's
+//! Layer 2 of Elpis's context pruning (see `docs/context.md`, "Masih's
 //! Ace in the Hole"). This layer handles content that requires judgment — deciding
 //! whether a search was a dead end (delete outright, no trace) or found something
 //! that matters (keep one evidence-pointer line). That judgment comes from a model

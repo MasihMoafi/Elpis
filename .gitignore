@@ -89,3 +89,9 @@ docs/blog/*
 
 # Personal feedback notes, not for the repo
 docs/feedback-hosein.md
+
+# Masih's personal notes, not for the repo
+NOTES-masih.md
+
+# Obsidian vault config, not for the repo
+.obsidian/

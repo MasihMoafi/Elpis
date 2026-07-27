@@ -80,3 +80,60 @@ Elpis translates canonical turn objects into vendor-native HTTP payloads and tra
 
 1. **Credential Isolation:** Credentials are read strictly from their designated environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`). Native keys are never forwarded to OpenRouter or cross-contaminated.
 2. **Provider Switch Mobility:** Switching providers (`/model`) changes the active inference engine, but **does not discard Elpis workspace context, GOAL.md, ES.md checkpoints, or memory state**.
+
+Anthropic sends its key only as `x-api-key` along with `anthropic-version: 2023-06-01`; Gemini sends its key only as `x-goog-api-key`; OpenAI and OpenRouter keep `Authorization: Bearer`.
+
+---
+
+## 6. Stream Translation Behavior
+
+Beyond the request/response mapping above, the native adapters also translate streamed text, tool calls, vendor errors, token usage, model and version identifiers, and completion state back into the unified event stream. Dropping the response stream cancels the parser and releases the upstream response body, and provider stream-idle timeouts surface as stream errors.
+
+The static native catalogs are supplied to the model manager, so `/model` uses the native provider's own default model instead of attempting an OpenAI `/models` request.
+
+---
+
+## 7. Honest Protocol Limitations
+
+The native boundary rejects unsupported history and tool shapes rather than silently approximating them.
+
+- Text and function tools are supported. Image inputs and image-bearing tool results are rejected, even though both vendors have image-capable APIs.
+- OpenAI Responses-only items — encrypted reasoning state, remote compaction controls, custom/freeform tools, tool-search items, built-in web search, image generation, and namespace tools — are not translated.
+- Vendor-native thinking/reasoning signatures, citations, prompt-cache controls, structured-output strictness, Anthropic server tools, and Gemini built-in tools/code execution are not preserved.
+- Anthropic requests use an explicit `max_tokens` of 8192, because the canonical request has no provider-neutral output-token limit.
+- Gemini emits only the first candidate. Repeated full function-call chunks are de-duplicated.
+- The canonical completion event exposes `end_turn`, not a raw vendor finish-reason. Known finish reasons are mapped explicitly; unknown ones remain unknown. A parsed tool call always maps to `end_turn = false`.
+- Native stream reconnection is not attempted after partial output. HTTP and SSE failures go to the existing provider error path.
+- Live vendor acceptance of both native adapters is still pending.
+
+---
+
+## 8. Manual Smoke Tests
+
+Anthropic:
+
+```sh
+export ANTHROPIC_API_KEY='...'
+cargo run -p codex-tui --bin elpis -- --provider anthropic
+# In the TUI: run /model and confirm Claude Sonnet 4.6 is listed, then ask for a simple
+# answer and a task that invokes a local function tool.
+```
+
+Gemini:
+
+```sh
+export GEMINI_API_KEY='...'
+cargo run -p codex-tui --bin elpis -- --provider google-gemini
+# In the TUI: run /model and confirm Gemini 3.5 Flash is listed, then exercise text and a
+# function-tool turn.
+```
+
+Compatibility route:
+
+```sh
+export OPENROUTER_API_KEY='...'
+cargo run -p codex-tui --bin elpis -- --provider claude
+# Confirm logs/config show model_provider=openrouter and the compatibility model alias.
+```
+
+Do not run these on the maintainer's workstation; use the remote Rust workflow.

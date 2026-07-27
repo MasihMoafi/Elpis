@@ -16,7 +16,7 @@ Elpis separates the model provider's native thread from its own provider-neutral
 | **Provider mobility** | Bound to the originating provider thread. | Provider-neutral — the checkpoint is plain Markdown. |
 | **Evidence** | Provider transcript on disk. | Provider transcript on disk, plus the checkpoint. |
 
-> **Open decision.** The threshold at which Elpis should switch automatically from exact resume to lean continuation is listed under Deferred Decisions in [`GUIDE.md`](https://github.com/MasihMoafi/Elpis/blob/main/GUIDE.md). Today the portable checkpoint is contributed to thread context on every thread start; there is no automatic tier-switching state machine.
+> **Open decision.** The threshold at which Elpis should switch automatically from exact resume to lean continuation is listed under Deferred Decisions in [`GUIDE.md`](https://github.com/MasihMoafi/Elpis/blob/main/docs/GUIDE.md). Today the portable checkpoint is contributed to thread context on every thread start; there is no automatic tier-switching state machine.
 
 ---
 
