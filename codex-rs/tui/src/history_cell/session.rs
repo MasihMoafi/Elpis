@@ -295,12 +295,18 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let make_row = |spans: Vec<Span<'static>>| Line::from(spans);
 
         // Title line rendered inside the box: ">_ Elpis · Codex runtime (vX)"
-        let title_spans: Vec<Span<'static>> = vec![
+        let mut title_spans: Vec<Span<'static>> = vec![
             Span::from(">_ ").dim(),
             Span::from(CODEX_RUNTIME_TITLE).style(brand_style()),
             Span::from(" ").dim(),
             Span::from(format!("(v{})", self.version)).dim(),
         ];
+        // An unoptimized build must never be mistaken for a release one, either by a
+        // user reporting slow startup or by us when shipping.
+        if crate::startup_timing::is_debug_build() {
+            title_spans.push(Span::from("  "));
+            title_spans.push(Span::from(" DEBUG BUILD ").black().on_red().bold());
+        }
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
         const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
@@ -370,6 +376,17 @@ impl HistoryCell for SessionHeaderHistoryCell {
             lines.push(make_row(vec![
                 Span::from(format!("{permissions_label} ")).dim(),
                 "YOLO mode".magenta().bold(),
+            ]));
+        }
+
+        // Absent until a real launch publishes it, so this stays out of snapshot tests.
+        if let Some(startup) = crate::startup_timing::total_display() {
+            let startup_label = format!("{:<label_width$}", "startup:");
+            lines.push(make_row(vec![
+                Span::from(format!("{startup_label} ")).dim(),
+                Span::from(startup).dim(),
+                Span::from("   ").dim(),
+                Span::from(crate::startup_timing::build_profile()).dim(),
             ]));
         }
 

@@ -302,7 +302,10 @@ mod tests {
 }
 
 fn main() -> anyhow::Result<()> {
+    // First statement in the process: everything after this point is measurable.
+    codex_tui::startup_timing::mark_process_start();
     let (elpis_home, codex_auth_home) = prepare_elpis_environment()?;
+    codex_tui::startup_timing::record("elpis_environment");
     arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
         let mut top_cli = TopCli::parse();
         if top_cli.update {

@@ -266,16 +266,18 @@ Implementation evidence:
    and exclude obsolete state from future requests. Prefer extending the validated
    Ace record pipeline over adding an unconstrained third agent. Native compaction
    remains the fail-safe; failure changes nothing.
-3. **Automatic project `VISION.md` — Foundational · Hard.** Masih has specified this to
-   several agents and none of them recorded it, so it has never been built. When a chat
-   opens, Elpis silently has Terra inspect the project and write or refresh a project
-   `VISION.md`. That file is the agent's eyes on the project: what this project is, where
-   things live, what is built versus aspirational, and what is out of scope. It is not
-   the readme and not `GUIDE.md`, which describe Elpis itself to humans; this is a
-   per-project orientation file the agent generates for whatever repository it is
-   pointed at. It happens under the hood on the first message, not as a visible step.
-   Open questions for Masih: refresh on every chat or only when the project changed,
-   and whether a human-edited `VISION.md` may be overwritten.
+3. ~~**Automatic project `VISION.md` — Foundational · Hard.**~~ **Done 2026-07-27.**
+   Masih reclassified this as not hard and closed it at the prompt layer rather than as
+   an Elpis feature: the behavior now lives as an always-on `## Vision` rule in the dev
+   skill's `AGENTS.md`, alongside the existing `vision` skill. On arrival at a project
+   the agent finds the orientation file (`VISION.md` → `AGENTS.md` → `CLAUDE.md` →
+   `readme.md`), extracts identity, directory map, built-versus-aspirational state, and
+   non-goals, drafts a `VISION.md` when none exists — shown before saving — and reports
+   drift instead of silently reconciling it.
+
+   The two open questions are answered by that placement: nothing refreshes on a timer,
+   and a human-edited `VISION.md` is never overwritten without being shown first. Reopen
+   only if the prompt-layer rule proves insufficient in real use.
 
 ## Ordering Masih set on 2026-07-26
 

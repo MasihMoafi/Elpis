@@ -166,6 +166,7 @@ mod session_resume;
 mod session_state;
 mod shimmer;
 mod skills_helpers;
+pub mod startup_timing;
 mod slash_command;
 mod startup_error;
 mod startup_hooks_review;
@@ -890,6 +891,7 @@ pub async fn run_main(
         }
     };
 
+    crate::startup_timing::record("find_home");
     let mut launch_loader_overrides = loader_overrides.clone();
     if let Some(profile_v2) = cli.config_profile_v2.as_ref() {
         let user_config_path = resolve_profile_v2_config_path(&codex_home, profile_v2);
@@ -912,6 +914,7 @@ pub async fn run_main(
         default_daemon,
         reuse_implicit_local_daemon,
     );
+    crate::startup_timing::record("daemon_probe");
     let remote_cwd_override = cli
         .cwd
         .clone()
@@ -929,6 +932,7 @@ pub async fn run_main(
         }
         .map(Arc::new)
         .map_err(std::io::Error::other)?;
+    crate::startup_timing::record("environments");
     let cwd = cli.cwd.clone();
     let config_cwd =
         config_cwd_for_app_server_target(cwd.as_deref(), &app_server_target, &environment_manager)?;
@@ -948,6 +952,7 @@ pub async fn run_main(
         CloudConfigBundleLoader::default(),
     )
     .await;
+    crate::startup_timing::record("config_load");
     let bootstrap_config_toml = &bootstrap_config.config_toml;
 
     let chatgpt_base_url = bootstrap_config_toml
@@ -975,6 +980,7 @@ pub async fn run_main(
     )
     .await;
 
+    crate::startup_timing::record("auth_store");
     let cwd_override = if app_server_target.uses_remote_workspace() {
         None
     } else {
@@ -1096,6 +1102,7 @@ pub async fn run_main(
         let _ = codex_state::install_process_db_telemetry(telemetry);
     }
     let state_db = init_state_db_for_app_server_target(&config, &app_server_target).await?;
+    crate::startup_timing::record("state_db");
     let config_toml_log_dir_configured = config
         .config_layer_stack
         .effective_config()
@@ -1249,7 +1256,10 @@ async fn run_ratatui_app(
         tracing::error!("panic: {info}");
         prev_hook(info);
     }));
+    crate::startup_timing::record("logging");
     let mut initialized_terminal = tui::init()?;
+    crate::startup_timing::record("terminal_ready");
+    crate::startup_timing::finish_and_log(initial_config.codex_home.as_path());
     initialized_terminal.terminal.clear()?;
 
     let mut tui = Tui::new(
