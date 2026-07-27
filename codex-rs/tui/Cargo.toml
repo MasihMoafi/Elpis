@@ -133,6 +133,7 @@ url = { workspace = true }
 urlencoding = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
+which = { workspace = true }
 
 codex-windows-sandbox = { workspace = true }
 tokio-util = { workspace = true, features = ["time"] }
@@ -141,7 +142,6 @@ tokio-util = { workspace = true, features = ["time"] }
 libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-which = { workspace = true }
 windows-sys = { version = "0.52", features = [
     "Win32_Foundation",
     "Win32_Security",

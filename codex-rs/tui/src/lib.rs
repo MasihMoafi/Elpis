@@ -162,6 +162,7 @@ mod selection_list;
 mod service_tier_resolution;
 mod session_archive_commands;
 mod session_log;
+mod rtk_hook;
 mod session_resume;
 mod session_state;
 mod shimmer;
@@ -1710,6 +1711,9 @@ async fn run_ratatui_app(
     let bypass_hook_trust_for_startup_review = config.bypass_hook_trust && !is_persistent_resume;
     let hooks_request_handle = app_server.request_handle();
     let hooks_cwd = config.cwd.to_path_buf();
+    // Layer 1 of the pruning pipeline is a hook, not built-in behavior. Register it just
+    // before hooks are listed, so a first launch that finds RTK reviews it right away.
+    crate::rtk_hook::ensure_rtk_hook(config.codex_home.as_path());
     let startup_prefetch_started_at = Instant::now();
     let (startup_bootstrap, startup_hooks_entry) = tokio::join!(
         app_server.bootstrap(&config),
