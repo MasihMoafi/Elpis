@@ -268,11 +268,12 @@ Implementation evidence:
    now reads the expected version out of the manifest, so a version bump can no longer
    turn the release build red. Verified locally: the extraction yields `0.1.0` and matches
    `elpis --version`.
-2. **Cross-turn consolidation — Foundational · Hard.** Near 65% context use, reassess
-   compact conclusions across completed turns, mark superseded findings explicitly,
-   and exclude obsolete state from future requests. Prefer extending the validated
-   Ace record pipeline over adding an unconstrained third agent. Native compaction
-   remains the fail-safe; failure changes nothing.
+2. **Cross-turn consolidation — Foundational · Hard. TABLED by Masih 2026-07-27.**
+   Do not start this; it is deferred until he reopens it. Near 65% context use,
+   reassess compact conclusions across completed turns, mark superseded findings
+   explicitly, and exclude obsolete state from future requests. Prefer extending the
+   validated Ace record pipeline over adding an unconstrained third agent. Native
+   compaction remains the fail-safe; failure changes nothing.
 3. ~~**Automatic project `VISION.md` — Foundational · Hard.**~~ **Done 2026-07-27.**
    Masih reclassified this as not hard and closed it at the prompt layer rather than as
    an Elpis feature: the behavior now lives as an always-on `## Vision` rule in the dev
@@ -426,17 +427,30 @@ shipped binary by string inspection:
 
 - **V8, the JavaScript engine, including its WebAssembly engine and TurboFan JIT.** It
   arrives through `codex-code-mode` -> `codex-core`. Its rlib is 183 MB, the largest in
-  the build. `Feature::CodeMode` is `Stage::UnderDevelopment` with `default_enabled:
-  false`, so **no user has ever run it** -- Elpis ships a JavaScript engine that cannot
-  execute.
+  the build.
 - **Starlark**, an 81 MB rlib, through `codex-execpolicy` -> `codex-config`.
 
-Cost of removal: `code_mode` is referenced by 33 files in `core/src/` outside its own
-module, so this is a tangled drawer, not a cheap one. Under Masih's own I3 rule that
-means it needs a result to justify it -- but the result here is a feature that is off by
-default and unfinished, which is as close to free weight as this codebase has. The clean
-route is making `codex-code-mode` an optional Cargo feature, default off, rather than
-deleting the module. **Decision pending: Masih has not approved this removal.**
+**Correction, 2026-07-27.** This entry previously claimed `Feature::CodeMode` is
+`default_enabled: false` so "no user has ever run it," and treated the drawer as free
+weight. Masih challenged that and he was right on both counts. Checked against the code:
+
+- `codex-code-mode = { workspace = true }` in `core/Cargo.toml` is **not optional**, so
+  V8 is compiled and linked into every binary. The `FeatureSpec` registry holds *runtime*
+  switches; they have no effect on what Cargo builds. "Off by default" was never a claim
+  about binary contents, and citing it as one was the error.
+- `Feature::CodeModeHost` is `Stage::Stable` with `default_enabled: true` -- genuinely
+  on. `thread_manager.rs:347` constructs a `ProcessOwnedCodeModeSessionProvider` for
+  every user. The code-mode path is live, not dormant. Upstream Codex ships the same
+  defaults.
+- What *is* true: V8 boots lazily. `v8_init.rs` guards initialization behind a
+  `OnceLock` reached only from `runtime/mod.rs:87`, so this costs binary size, not
+  startup time.
+
+So the cost is real and the justification is weaker than stated: this is not free weight,
+it is a live subsystem. `code_mode` is referenced by 33 files in `core/src/` outside its
+own module. The route remains making `codex-code-mode` an optional Cargo feature rather
+than deleting the module, but it must be judged as removing a working feature, not
+reclaiming dead code. **Decision pending: Masih has not approved this removal.**
 
 Next candidate, cheap and compiler-proven: the dead TUI methods and constants rustc
 already reports as never used. Rejected as not worth its cost: deleting `thread_source`,
