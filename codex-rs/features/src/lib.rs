@@ -1057,9 +1057,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     },
     FeatureSpec {
         id: Feature::Apps,
+        // Off by default in Elpis. Enabling this boots the remote codex_apps connector
+        // over the network on every launch, which is the entire visible wait after the
+        // window appears. Users who want ChatGPT connectors opt in with `apps = true`.
         key: "apps",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::EnableMcpApps,

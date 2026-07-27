@@ -186,9 +186,9 @@ Implementation evidence:
   finding, removed about 1,764 characters, wrote the exact before/after audit, and did
   not append the successful pass to the old multi-megabyte debug log.
 
-## Current Action — Separate Elpis from Codex state
+## Masih-verified — Separate Elpis from Codex state
 
-**Importance:** Foundational · **Difficulty:** Hard · **Status:** implemented, awaiting Masih
+**Importance:** Foundational · **Difficulty:** Hard · **Status:** verified by Masih 2026-07-27
 
 Give Elpis its own `ELPIS_HOME`/`~/.elpis` for configuration, sessions, history, logs,
 hooks, skills, plugins, caches, and mutable runtime state. Elpis and Codex must not
@@ -239,8 +239,11 @@ Implementation evidence:
   the selected hook, left its source byte-identical, and skipped the existing
   destination on a second application.
 - Masih confirmed on 2026-07-26 that ChatGPT subscription login was reused, the RTK
-  hook was discovered, and the turn resumed correctly. One real-turn completion and
-  bidirectional Elpis/Codex state isolation remain awaiting Masih's verification.
+  hook was discovered, and the turn resumed correctly. He confirmed on 2026-07-27 that
+  he had already tested it and that sessions resume; the item is closed.
+- Isolation measured mechanically on 2026-07-27: `~/.codex` was snapshotted (11,805
+  files), Elpis was launched, and the file list plus every top-level file including
+  `auth.json` were byte-identical afterwards.
 
 ## Queued next — do not start until the Current Action is closed
 
@@ -411,20 +414,32 @@ Next candidate, cheap and compiler-proven: the dead TUI methods and constants ru
 already reports as never used. Rejected as not worth its cost: deleting `thread_source`,
 a pure classification label spread over 205 sites with a persisted-store migration.
 
-### I4. Startup time — open, unmeasured
+### I4. Startup time — measured 2026-07-27
 
-Corrected 2026-07-26. This entry previously read "startup already feels fast in current
-daily use, so there is no active startup project." Masih reports the opposite: Elpis starts
-no faster than Codex, if at all. That claim was never backed by a measurement, and nothing
-in the repository measures startup today.
+Elpis had never measured startup, so no claim about it could be checked. It now does.
 
-The work, in order:
+**Measured.** The window appears in ~270 ms on a warm release build (~300 ms debug).
+Phase timings are recorded from the first statement in `main` and written as one JSON
+record per launch under `$ELPIS_HOME/logs/startup/`. The session header shows the total
+and the build profile. Process load and argument parsing are ~18 ms and are not a factor.
 
-1. Profile where the milliseconds actually go — config load, skills injection, history/DB
-   open, hook discovery, provider probe — before changing anything. No speculative trimming.
-2. Only then open focused work against whatever dominates.
+**The visible wait was the `codex_apps` connector**, not startup. It is a remote ChatGPT
+app server that was booted over the network on every launch whenever subscription login
+was in use, costing 2-3 seconds after the frame was already drawn. `Feature::Apps` now
+defaults to disabled; users who want ChatGPT connectors opt in with `apps = true`.
+Verified: the connector boot no longer appears on launch.
 
-Binary-size reduction remains inactive.
+**Debug builds are now labelled.** An unoptimized binary shows a red `DEBUG BUILD` badge
+in the session header so it cannot be mistaken for a release one.
+
+Still open:
+
+1. The measurement stops when the window appears. It does not yet cover the time until
+   Elpis is genuinely ready to work. That is the number worth capturing next.
+2. Cold start is untested. The release binary is 167 MB, and Masih reports the first
+   launch after installing was noticeably slower than later ones, which is consistent
+   with paging that binary in from disk. Binary size is the lever there, and it is
+   unmeasured.
 
 ### I5. Structured interactive clarification — closed 2026-07-26
 
