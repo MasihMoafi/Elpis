@@ -244,7 +244,11 @@ Implementation evidence:
 
 ## Queued next — do not start until the Current Action is closed
 
-1. **Corrected public release — Foundational · Medium.** After the evidence inspector,
+1. ~~**Corrected public release — Foundational · Medium.**~~ **Done 2026-07-26.**
+   `v0.1.0` is published and is the sole release; the old `v0.1.0`/`v0.1.1` releases and
+   tags are gone and no repository history was rewritten. Original entry, for the record:
+
+   After the evidence inspector,
    updater, and state separation are verified, publish the fixed build as the first
    recommended public preview. Masih selected a clean public release surface on
    2026-07-26: after the successor is live, delete the old `v0.1.0` and `v0.1.1`
@@ -336,7 +340,9 @@ Non-goals:
 
 ### F4. Release and installation baseline — shipped
 
-- `v0.1.1` is the current release; `v0.1.0` remains the first public launch.
+- `v0.1.0` (the corrected build, published 2026-07-26) is the only release and the only
+  tag on the remote. The earlier `v0.1.0`/`v0.1.1` releases and tags were deleted as
+  planned, so new visitors see one clean release surface.
 - CI builds and verifies the Linux release artifact.
 - The release installer verifies the downloaded artifact before replacing the binary.
 

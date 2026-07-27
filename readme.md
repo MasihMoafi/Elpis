@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
 
-[Install](#quickstart) • [Features](#core-features) • [Docs](https://masihmoafi.github.io/Elpis/) • [Roadmap](TASKS.md)
+[Install](#quickstart) • [Features](#core-features) • [Docs](#documentation) • [Roadmap](TASKS.md)
 
 </div>
 
@@ -145,11 +145,11 @@ Full roadmap: [TASKS.md](TASKS.md).
 
 ## Documentation
 
-- [Context and pruning](https://masihmoafi.github.io/Elpis/context/)
-- [Sessions and continuity](https://masihmoafi.github.io/Elpis/sessions/)
-- [Memory](https://masihmoafi.github.io/Elpis/memory/)
-- [Providers](https://masihmoafi.github.io/Elpis/providers/)
-- [Workspace RAG](https://masihmoafi.github.io/Elpis/rag/)
+- [Context and pruning](docs/context.md) — the three pruning layers and the Context Ledger
+- [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
+- [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
+- [Providers](docs/providers.md) — every supported route, including local inference
+- [Workspace RAG](docs/rag.md) — read-only semantic search; needs a source checkout
 - [`GUIDE.md`](GUIDE.md) — product vision and architecture
 - [`TASKS.md`](TASKS.md) — release state and backlog
 
