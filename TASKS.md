@@ -410,6 +410,28 @@ that mutates the live account's installed plugins." Both halves are wrong:
 The dependency and the `debug app-server` subcommand were removed from `cli/` anyway as
 cheap subtraction under I3, not as a shipping fix.
 
+**Binary size, measured 2026-07-27.** The shipped Linux binary is 168 MB: 93 MB of
+machine code, 32 MB of constants, 18 MB of unwind tables. It is already stripped and
+already built with `opt-level = "z"`, thin LTO, and `strip = "symbols"`, so no build
+setting is left to change. The size is real code from 896 crates.
+
+Two whole drawers account for a large share of it, and both are confirmed present in the
+shipped binary by string inspection:
+
+- **V8, the JavaScript engine, including its WebAssembly engine and TurboFan JIT.** It
+  arrives through `codex-code-mode` -> `codex-core`. Its rlib is 183 MB, the largest in
+  the build. `Feature::CodeMode` is `Stage::UnderDevelopment` with `default_enabled:
+  false`, so **no user has ever run it** -- Elpis ships a JavaScript engine that cannot
+  execute.
+- **Starlark**, an 81 MB rlib, through `codex-execpolicy` -> `codex-config`.
+
+Cost of removal: `code_mode` is referenced by 33 files in `core/src/` outside its own
+module, so this is a tangled drawer, not a cheap one. Under Masih's own I3 rule that
+means it needs a result to justify it -- but the result here is a feature that is off by
+default and unfinished, which is as close to free weight as this codebase has. The clean
+route is making `codex-code-mode` an optional Cargo feature, default off, rather than
+deleting the module. **Decision pending: Masih has not approved this removal.**
+
 Next candidate, cheap and compiler-proven: the dead TUI methods and constants rustc
 already reports as never used. Rejected as not worth its cost: deleting `thread_source`,
 a pure classification label spread over 205 sites with a persisted-store migration.
