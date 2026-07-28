@@ -42,23 +42,33 @@ aside, one launch recreated it byte-identical to the known-good hook and `/hooks
 `PreToolUse  Installed 1  Active 1`. The first-run trust prompt on a machine that has
 never trusted this hook is not yet exercised.
 
-## Ready to dispatch
+## In flight — on branches, not merged
 
-Worktree and worker prompt exist; none is running yet. Prompts live in
-`~/Desktop/tmp/elpis-worker-prompts/`. Masih is not needed while these run.
+Each worker prompt lives at `WORKER_PROMPT.md` in its own worktree.
 
-| #   | Task                                             | Worktree / branch                   |
-| --- | ------------------------------------------------ | ----------------------------------- |
-| 13  | Clean-install verification in a container        | `Elpis-wt-clean-install-check` / `agent/clean-install-check` |
-| 5   | macOS build (Apple Silicon)                      | `Elpis-wt-macos-build` / `agent/macos-build` |
-| 3   | Startup — cold start unmeasured; 168 MB binary   | `Elpis-wt-startup-size` / `agent/startup-size` |
+| #   | Task                                      | Branch                     | State |
+| --- | ----------------------------------------- | -------------------------- | ----- |
+| 5   | macOS build (Apple Silicon)               | `agent/macos-build`        | Built on a `macos-14` runner; one test failed and exposed a real symlink bug, fixed on main and cherry-picked here. CI re-run in progress. Ceiling is CI-proven, user-unverified — nobody has run the TUI on a Mac. |
+| 3   | Startup — measurement done                | `agent/startup-size`       | Measured, no code change. See the finding below. |
+| 13  | Clean-install check in a container        | `agent/clean-install-check`| Harness and Dockerfile committed **unrun** — the worker hit its session limit mid-run. None of the five assertions has a real result. |
+
+### Finding — task 3, binary size is a dead end
+
+Warm launch is 415 ms, of which the loader contributes 10 ms. Forcing the whole 168 MB
+binary back off disk costs 111 ms. `panic = "abort"` (~25 MB) is unsafe because
+`catch_unwind` runs during startup; fat LTO was already tried and reverted for ~13 min of
+CI; relocation packing could attack at most 30 ms and would raise the glibc floor. Close
+the size half.
+
+True cold start is still unmeasured: the `pkexec` page-cache drop was refused by the
+permission classifier, so the number above is binary-eviction only — a lower bound.
 
 ## First
 
 | #   | Task                                                          | Type         | Parallel |
 | --- | ------------------------------------------------------------- | ------------ | -------- |
-| 13  | Clean-install check — the only way task 12 stops being blind  | Bug          | yes      |
-| 3   | Startup — cold start is still unmeasured; 168 MB binary       | Optimization | yes      |
+| 15  | First launch costs ~2.16s, not 415ms — ~1.75s of it is in the final bootstrap phase | Optimization | yes      |
+| 13  | Finish the clean-install check — resume from the committed harness | Bug       | yes      |
 
 ## Second
 
@@ -68,7 +78,6 @@ the plan and instructions at the start.
 | #   | Task                                                                 | Type     | Parallel |
 | --- | -------------------------------------------------------------------- | -------- | -------- |
 | 4   | RAG — unreachable from binary installs; hard-imports torch on Ollama | Feature  | yes      |
-| 5   | macOS build (Apple Silicon) — largest adoption blocker               | Platform | yes      |
 | 6   | Multi-agents                                                         | Feature  | no       |
 | 7   | Endurance run — one long real session, measured                      | Research | yes      |
 
