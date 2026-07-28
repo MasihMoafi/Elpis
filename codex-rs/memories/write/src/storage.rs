@@ -10,7 +10,9 @@ use crate::ensure_layout;
 use crate::raw_memories_file;
 use crate::rollout_summaries_dir;
 
-const PROMOTION_MIN_RECALL_COUNT: u32 = 3;
+// Lowered from 3 after five days of real use promoted nothing: no memory on a live install
+// was ever recalled more than twice, so the old threshold could not be reached.
+const PROMOTION_MIN_RECALL_COUNT: u32 = 2;
 const PROMOTION_MIN_UNIQUE_QUERIES: u32 = 2;
 
 /// Rebuild `raw_memories.md` from DB-backed stage-1 outputs.
