@@ -109,7 +109,7 @@ All three levels ship with Elpis. Inspect the result with `/prune`.
 
 `Tab` — or `Alt+C` while a turn is running — opens a side panel listing every source admitted into the working set, each with its size and whether it is included. Toggling a row changes what the next turn actually receives, so context selection becomes an intentional operation instead of a side effect.
 
-<img src="docs/assets/context-ledger.webp" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="520">
+<img src="docs/assets/context-ledger.webp" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="400">
 
 ### Where the window went
 
@@ -132,9 +132,12 @@ Goal and checkpoint state survive compaction, model switches, and restarts, so w
 
 Reusable memory is selective, size-capped, and attributable — every entry records where it came from, and entries are promoted or archived rather than accumulating forever. It is on by default; `/memories` turns recall and writing off independently, and the agent you talk to has no memory-write tool of its own.
 
-### Retrieval you plug in
+### MCP integrations you plug in
 
-Elpis ships no retrieval engine and downloads no models. Semantic search over your own documents is an MCP server you register — the embeddings, the vector store, the reranker, and any API key stay yours, along with the disk space they cost. [rag-mcp](https://github.com/MasihMoafi/rag-mcp) is a ready-made local one; `/mcp` confirms it connected. See [docs/rag.md](docs/rag.md).
+Elpis ships no retrieval or speech engine and downloads no models. MCP servers keep optional capabilities in their own processes, with their own dependencies and disk costs; `/mcp` confirms the servers you register are connected.
+
+- **Workspace retrieval:** [rag-mcp](https://github.com/MasihMoafi/rag-mcp) provides local semantic search over your own documents. Its embeddings, vector store, reranker, and any API key remain yours. See [docs/rag.md](docs/rag.md).
+- **Voice transcription:** [Voice Commander](https://github.com/MasihMoafi/Voice-commander) records speech, transcribes it locally, and pastes at the active cursor. It remains an external companion; it can expose transcription as an MCP tool rather than adding Whisper, CUDA, Python, or model downloads to Elpis.
 
 ### Privacy and ownership
 

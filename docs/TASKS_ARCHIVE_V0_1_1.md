@@ -158,3 +158,8 @@ The crate and its upload path went earlier; the surviving knobs, flags, and gene
 schema entries followed, along with a stale second gate that discarded OTEL metrics even
 when a user had explicitly configured a metrics exporter. No analytics debt remains. The
 pass did not measurably change speed, build time, or package size.
+
+## Update progress feedback — verified 2026-07-29
+
+`elpis --update` now shows a progress bar while it downloads the release instead of
+appearing stalled. Implemented in `61f4af9`; Masih verified the behavior locally.

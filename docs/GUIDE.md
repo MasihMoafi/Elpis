@@ -134,12 +134,14 @@ are enforced by code where prompts are insufficient.
 **R7. Claims require proof** — Documentation separates implemented behavior, remote
 tests, and outstanding user acceptance. Design documents and hidden code are not proof.
 
-**R8. Retrieval is plugged in, not built in** — Elpis ships no retrieval engine, no model
-weights, and no `/rag` command. Workspace semantic search is obtained by registering an MCP
-server that exposes a retrieval tool, which the runtime may then call autonomously for broad
-discovery. Exact current-file evidence remains required before editing. Never add a
-machine-learning dependency to this repository; the engine, its models, and their download
-size belong to the user who chooses them.
+**R8. Expensive capabilities are plugged in, not built in** — Elpis ships no retrieval or
+speech engine, no model weights, and no `/rag` or `/voice` command. Workspace semantic search
+is obtained by registering an MCP server that exposes a retrieval tool. Voice capture and
+transcription belong to an external program such as
+[Voice Commander](https://github.com/MasihMoafi/Voice-commander), which may expose a
+transcription tool through MCP. Exact current-file evidence remains required before editing.
+Never add a machine-learning dependency to this repository; engines, models, and their
+download size belong to the user who chooses them.
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused
 first-release checks. Exhaustive inherited TUI/app-server regression runs nightly,
