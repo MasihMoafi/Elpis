@@ -114,12 +114,7 @@ impl ChatWidget {
         let selectable = sources
             .iter()
             .enumerate()
-            .filter_map(|(index, source)| {
-                (source.selectable
-                    && source.category
-                        != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory)
-                    .then_some(index)
-            })
+            .filter_map(|(index, source)| source.selectable.then_some(index))
             .collect::<Vec<_>>();
         if selectable.is_empty() {
             if matches!(key_event.code, KeyCode::Esc) {
@@ -139,7 +134,7 @@ impl ChatWidget {
                 KeyCode::Char('i') => {
                     let selectable_sources = sources
                         .iter()
-                        .filter(|source| source.selectable && source.category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory)
+                        .filter(|source| source.selectable)
                         .collect::<Vec<_>>();
                     let all_admitted = !selectable_sources.is_empty()
                         && selectable_sources.iter().all(|source| source.admitted);
@@ -163,7 +158,7 @@ impl ChatWidget {
             KeyCode::Char('i') => {
                 let selectable_sources = sources
                     .iter()
-                    .filter(|source| source.selectable && source.category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory)
+                    .filter(|source| source.selectable)
                     .collect::<Vec<_>>();
                 let all_admitted = !selectable_sources.is_empty()
                     && selectable_sources.iter().all(|source| source.admitted);

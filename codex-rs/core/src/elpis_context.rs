@@ -161,16 +161,22 @@ pub fn continuity_sources(
         }
     }
 
-    // Dev rules are on by default and can be switched off per file in the ledger. Only a
-    // `skills/dev` sibling of the workspace is discovered automatically: absolute paths
-    // tied to one developer's home layout must never be baked into the binary, since they
-    // would scan directories on every user's machine and silently admit what they find.
-    // Extra directories are opt-in per machine through ELPIS_DEV_SKILLS_DIRS
+    // Dev rules are on by default and can be switched off per file in the ledger. No
+    // absolute path tied to one developer's home layout is ever baked into the binary —
+    // that would scan directories on every user's machine and silently admit what it
+    // finds. Instead there are two portable, opt-in discovery routes: a `skills/dev`
+    // sibling of the current project (follows one project around), and a fixed
+    // `skills/dev` folder under the Elpis home directory (follows the machine, so it
+    // still loads for a project that has no sibling folder of its own). Extra
+    // directories can be layered on top per machine through ELPIS_DEV_SKILLS_DIRS
     // (platform-separated, like PATH).
     let mut dev_dirs: Vec<PathBuf> = std::env::var_os("ELPIS_DEV_SKILLS_DIRS")
         .map(|value| std::env::split_paths(&value).collect())
         .unwrap_or_default();
     dev_dirs.extend(cwd.parent().map(|parent| parent.join("skills/dev")));
+    if let Some(elpis_home) = memories_root.parent() {
+        dev_dirs.push(elpis_home.join("skills/dev"));
+    }
 
     let mut already_listed: std::collections::HashSet<PathBuf> = instruction_paths
         .iter()
