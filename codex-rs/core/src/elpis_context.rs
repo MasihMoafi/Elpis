@@ -269,22 +269,34 @@ pub fn continuity_sources(
         }
         sources.push(source);
     }
+    // Custom sources are stored canonicalized, so the memories root has to be resolved
+    // the same way before comparing them. Where the root reaches the file through a
+    // symlink — macOS puts every temporary directory behind one, and a symlinked home
+    // does it anywhere — a raw prefix test files durable memory under Files instead.
+    let memories_root_canonical = memories_root
+        .canonicalize()
+        .unwrap_or_else(|_| memories_root.to_path_buf());
     sources.extend(
         admission
             .custom_sources
             .iter()
             .filter_map(|(path, admitted)| {
                 let path = PathBuf::from(path);
-                if let Ok(canonical) = path.canonicalize()
-                    && canonical_paths.contains(&canonical)
+                let canonical_path = path.canonicalize();
+                if let Ok(canonical) = &canonical_path
+                    && canonical_paths.contains(canonical)
                 {
                     return None;
                 }
+                let is_memory = canonical_path
+                    .as_deref()
+                    .unwrap_or(path.as_path())
+                    .starts_with(&memories_root_canonical);
                 let metadata = std::fs::metadata(&path).ok()?;
                 (metadata.is_file() && metadata.len() > 0).then_some(ContinuitySource {
                     name: path.display().to_string(),
                     estimated_tokens: estimate_tokens(&path, metadata.len(), MAX_RULE_CHARS),
-                    category: if path.starts_with(memories_root) {
+                    category: if is_memory {
                         ContinuitySourceCategory::Memory
                     } else {
                         ContinuitySourceCategory::Files
@@ -645,6 +657,35 @@ mod tests {
         assert_eq!(sources[0].estimated_tokens, 3);
         assert_eq!(sources[0].category, ContinuitySourceCategory::Files);
         assert_eq!(sources[0].lifetime, "every turn");
+        Ok(())
+    }
+
+    /// macOS reaches every temporary directory through a symlink, and a symlinked home
+    /// does the same anywhere, so durable memory must still group as Memory when the
+    /// stored path and the memories root spell the same file differently.
+    #[cfg(unix)]
+    #[test]
+    fn memory_groups_as_memory_when_its_root_is_reached_through_a_symlink() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let real_home = home.path().join("real");
+        let memories = real_home.join(".elpis/memories");
+        let cwd = real_home.join("projects/Elpis");
+        std::fs::create_dir_all(&memories)?;
+        std::fs::create_dir_all(&cwd)?;
+        let memory = memories.join("MEMORY.md");
+        std::fs::write(&memory, "Durable memory")?;
+
+        let linked_home = home.path().join("linked");
+        std::os::unix::fs::symlink(&real_home, &linked_home)?;
+        let linked_memories = linked_home.join(".elpis/memories");
+        add_continuity_source(Some(&linked_memories), &cwd, &memory)?;
+
+        let sources = continuity_sources(Some(&linked_memories), &cwd, &[]);
+        let source = sources
+            .iter()
+            .find(|source| source.name.ends_with("MEMORY.md"))
+            .expect("memory source");
+        assert_eq!(source.category, ContinuitySourceCategory::Memory);
         Ok(())
     }
 
