@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/elpis.png" alt="Elpis" width="450">
+<img src="docs/assets/elpis.webp" alt="Elpis" width="450">
 
 <br>
 
@@ -14,6 +14,20 @@
 
 </div>
 
+![Elpis demo](docs/assets/demo.gif)
+
+## Quickstart
+
+Linux x86_64 and macOS on Apple Silicon:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+```
+
+The installer picks the right binary for your machine and also installs
+[RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
+choose a provider and sign in or enter its API key.
+
 ## What is Elpis
 
 > *You run an agent inside Elpis, and it becomes Elpis.*
@@ -22,20 +36,11 @@ The agent runs the model loop. Elpis owns everything around it: context, memory,
 
 Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
 
-<img src="docs/assets/elpises.png" alt="One Elpis environment, many paths of work running through it" width="720">
+<img src="docs/assets/elpises.webp" alt="One Elpis environment, many paths of work running through it" width="720">
 
 Different paths. Same roots. One shared project.
 
 ## Why Elpis
-
-![Elpis demo](docs/assets/demo.gif)
-
-<details>
-<summary>Full uncut session</summary>
-
-![Elpis evidence — full context-management session](docs/assets/evidence.gif)
-
-</details>
 
 Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters gets buried in the story of how the agent got there, and every request pays for it.
 
@@ -53,16 +58,16 @@ Elpis keeps the two apart. The next request gets a small working set you can ins
 
 Start:
 
-![Starting Elpis](docs/demo/starting-elpis.png)
-![Starting Codex with the same prompt](docs/demo/starting-codex.png)
+![Starting Elpis](docs/demo/starting-elpis.webp)
+![Starting Codex with the same prompt](docs/demo/starting-codex.webp)
 
 End — Elpis, 93% free:
 
-![Elpis end state](docs/demo/elpis-end-state.png)
+![Elpis end state](docs/demo/elpis-end-state.webp)
 
 End — Codex, 73% free:
 
-![Codex end state](docs/demo/codex-end-state.png)
+![Codex end state](docs/demo/codex-end-state.webp)
 
 This is one recorded workflow, not a claim that every task reduces the same amount.
 
@@ -104,13 +109,20 @@ All three levels ship with Elpis. Inspect the result with `/prune`.
 
 `Tab` — or `Alt+C` while a turn is running — opens a side panel listing every source admitted into the working set, each with its size and whether it is included. Toggling a row changes what the next turn actually receives, so context selection becomes an intentional operation instead of a side effect.
 
-<img src="docs/assets/context-ledger.png" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="520">
+<img src="docs/assets/context-ledger.webp" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="520">
 
 ### Where the window went
 
 `/context` answers a different question: not what is admitted, but what filled the window. It shows usage as a grid broken down by category — user messages, agent responses, tool calls, system prompt, skills, free space — alongside the backtrack checkpoints you can jump to.
 
-<img src="docs/assets/elpis-context-slash.png" alt="/context showing token usage as a grid, broken down by category, with available backtrack checkpoints" width="720">
+<img src="docs/assets/elpis-context-slash.webp" alt="/context showing token usage as a grid, broken down by category, with available backtrack checkpoints" width="720">
+
+<details>
+<summary>Full uncut session — context pruning, ledger, and /context in one recorded run</summary>
+
+![Elpis evidence — full context-management session](docs/assets/evidence.gif)
+
+</details>
 
 ### Session continuity
 
@@ -128,18 +140,6 @@ Elpis ships no retrieval engine and downloads no models. Semantic search over yo
 
 No analytics are uploaded, and every OpenTelemetry exporter defaults to off — telemetry is sent only if you configure an exporter yourself. Bring your own keys: use OpenAI, Anthropic, Gemini, or OpenRouter without one provider being silently routed through another. Durable state is plain files you can inspect, edit, export, or delete.
 
-## Quickstart
-
-Linux x86_64 and macOS on Apple Silicon:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
-```
-
-The installer picks the right binary for your machine and also installs
-[RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
-choose a provider and sign in or enter its API key.
-
 ## Future development
 
 - Windows support.
@@ -156,7 +156,7 @@ choose a provider and sign in or enter its API key.
 - [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
 - [Providers](docs/providers.md) — every supported route, including local inference
 - [Workspace retrieval](docs/rag.md) — how to plug in semantic search over your own documents
-- [`GUIDE.md`](docs/GUIDE.md) — product vision and architecture
+- [Technical guide](docs/GUIDE.md) — product vision and architecture
 
 ## License
 
