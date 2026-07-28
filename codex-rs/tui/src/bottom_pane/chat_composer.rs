@@ -544,6 +544,7 @@ impl ChatComposer {
                 status_line_enabled: false,
                 side_conversation_context_label: None,
                 active_agent_label: None,
+                approval_mode_label: None,
                 external_editor_key: Some(key_hint::ctrl(KeyCode::Char('g'))),
                 show_transcript_key: Some(key_hint::ctrl(KeyCode::Char('t'))),
                 insert_newline_key: footer_insert_newline_key(
@@ -1092,6 +1093,11 @@ impl ChatComposer {
     #[cfg(test)]
     pub(crate) fn is_vim_enabled(&self) -> bool {
         self.draft.textarea.is_vim_enabled()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn approval_mode_label(&self) -> Option<String> {
+        self.footer.approval_mode_label.clone()
     }
 
     /// Return whether Escape should be routed to the textarea before popups.
@@ -3482,6 +3488,7 @@ impl ChatComposer {
                 reasoning_up: self.footer.reasoning_up_key,
             },
             active_agent_label: self.footer.active_agent_label.clone(),
+            approval_mode_label: self.footer.approval_mode_label.clone(),
         }
     }
 
@@ -4030,6 +4037,18 @@ impl ChatComposer {
             return false;
         }
         self.footer.active_agent_label = active_agent_label;
+        true
+    }
+
+    /// Replaces the persistent footer label for the current permission/approval mode.
+    ///
+    /// Set once per Shift+Tab cycle so the active mode stays visible instead of only
+    /// appearing as a one-time message that scrolls out of view.
+    pub(crate) fn set_approval_mode_label(&mut self, approval_mode_label: Option<String>) -> bool {
+        if self.footer.approval_mode_label == approval_mode_label {
+            return false;
+        }
+        self.footer.approval_mode_label = approval_mode_label;
         true
     }
 }

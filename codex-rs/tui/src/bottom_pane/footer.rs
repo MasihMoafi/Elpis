@@ -85,6 +85,10 @@ pub(crate) struct FooterProps {
     /// When both this label and the configured status line are available, they are rendered on the
     /// same row separated by ` · `.
     pub(crate) active_agent_label: Option<String>,
+    /// Current permission/approval mode, set on every Shift+Tab cycle. Rendered persistently
+    /// (unlike the one-time "Permissions updated to X" history message) so the active mode
+    /// stays visible instead of only flashing by once in the transcript.
+    pub(crate) approval_mode_label: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -795,6 +799,16 @@ pub(crate) fn passive_footer_status_line(props: &FooterProps) -> Option<Line<'st
             existing.spans.push(active_agent_label.clone().dim());
         } else {
             line = Some(Line::from(active_agent_label.clone()).dim());
+        }
+    }
+
+    if let Some(approval_mode_label) = props.approval_mode_label.as_ref() {
+        let span = Span::from(approval_mode_label.clone()).cyan();
+        if let Some(existing) = line.as_mut() {
+            existing.spans.push(" · ".dim());
+            existing.spans.push(span);
+        } else {
+            line = Some(Line::from(vec![span]));
         }
     }
 
@@ -1570,6 +1584,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1591,6 +1606,7 @@ mod tests {
                     ..FooterKeyHints::default_bindings()
                 },
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1609,6 +1625,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1627,6 +1644,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1645,6 +1663,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1663,6 +1682,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1681,6 +1701,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1699,6 +1720,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1717,6 +1739,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
             Some(72),
             /*used_tokens*/ None,
@@ -1737,6 +1760,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
             /*percent*/ None,
             Some(123_456),
@@ -1757,6 +1781,7 @@ mod tests {
                 status_line_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
                 active_agent_label: None,
+                approval_mode_label: None,
             },
         );
 
@@ -1773,6 +1798,7 @@ mod tests {
             status_line_enabled: false,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer_with_mode_indicator(
@@ -1802,6 +1828,7 @@ mod tests {
             status_line_enabled: false,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer_with_mode_indicator(
@@ -1824,6 +1851,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer("footer_status_line_overrides_shortcuts", props);
@@ -1841,6 +1869,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer("footer_status_line_yields_to_queue_hint", props);
@@ -1858,6 +1887,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer("footer_status_line_overrides_draft_idle", props);
@@ -1875,6 +1905,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer_with_mode_indicator_and_context(
@@ -1906,6 +1937,7 @@ mod tests {
             status_line_enabled: false,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer_with_mode_indicator_and_context(
@@ -1929,6 +1961,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         // has status line and no collaboration mode
@@ -1955,6 +1988,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         snapshot_footer_with_mode_indicator_and_context(
@@ -1978,6 +2012,7 @@ mod tests {
             status_line_enabled: false,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: Some("Robie [explorer]".to_string()),
+            approval_mode_label: None,
         };
 
         snapshot_footer("footer_active_agent_label", props);
@@ -1995,6 +2030,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: Some("Robie [explorer]".to_string()),
+            approval_mode_label: None,
         };
 
         snapshot_footer("footer_status_line_with_active_agent_label", props);
@@ -2018,6 +2054,7 @@ mod tests {
             status_line_enabled: true,
             key_hints: FooterKeyHints::default_bindings(),
             active_agent_label: None,
+            approval_mode_label: None,
         };
 
         let screen = render_footer_with_mode_indicator_and_context(
@@ -2039,6 +2076,52 @@ mod tests {
             screen.contains('…'),
             "status line should be truncated with ellipsis to keep mode indicator"
         );
+    }
+
+    #[test]
+    fn passive_footer_status_line_shows_the_current_approval_mode() {
+        let props = FooterProps {
+            mode: FooterMode::ComposerEmpty,
+            esc_backtrack_hint: false,
+            use_shift_enter_hint: false,
+            is_task_running: false,
+            queue_submissions: false,
+            collaboration_modes_enabled: false,
+            is_wsl: false,
+            quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
+            status_line_value: None,
+            status_line_enabled: false,
+            key_hints: FooterKeyHints::default_bindings(),
+            active_agent_label: None,
+            approval_mode_label: Some("Approve for me".to_string()),
+        };
+
+        let line = passive_footer_status_line(&props).expect("approval mode line");
+        let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
+        assert_eq!(text, "Approve for me");
+    }
+
+    #[test]
+    fn passive_footer_status_line_combines_agent_and_approval_mode_labels() {
+        let props = FooterProps {
+            mode: FooterMode::ComposerEmpty,
+            esc_backtrack_hint: false,
+            use_shift_enter_hint: false,
+            is_task_running: false,
+            queue_submissions: false,
+            collaboration_modes_enabled: false,
+            is_wsl: false,
+            quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
+            status_line_value: None,
+            status_line_enabled: false,
+            key_hints: FooterKeyHints::default_bindings(),
+            active_agent_label: Some("Robie [explorer]".to_string()),
+            approval_mode_label: Some("Auto".to_string()),
+        };
+
+        let line = passive_footer_status_line(&props).expect("combined footer line");
+        let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
+        assert_eq!(text, "Robie [explorer] · Auto");
     }
 
     #[test]

@@ -83,6 +83,12 @@ impl ChatWidget {
         self.bottom_pane.set_active_agent_label(active_agent_label);
     }
 
+    /// Forwards the current permission/approval mode label into the bottom-pane footer.
+    pub(crate) fn set_approval_mode_label(&mut self, approval_mode_label: Option<String>) {
+        self.bottom_pane
+            .set_approval_mode_label(approval_mode_label);
+    }
+
     /// Recomputes footer status-line content from config and current runtime state.
     ///
     /// This method is the status-line orchestrator: it parses configured item identifiers,

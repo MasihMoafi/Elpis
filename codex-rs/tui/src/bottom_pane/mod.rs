@@ -825,6 +825,11 @@ impl BottomPane {
         self.composer.cursor()
     }
 
+    #[cfg(test)]
+    pub(crate) fn approval_mode_label(&self) -> Option<String> {
+        self.composer.approval_mode_label()
+    }
+
     pub(crate) fn composer_draft_snapshot(&self) -> chat_composer::ComposerDraftSnapshot {
         self.composer.draft_snapshot()
     }
@@ -1786,6 +1791,13 @@ impl BottomPane {
     /// the label several times while the visible thread settles.
     pub(crate) fn set_active_agent_label(&mut self, active_agent_label: Option<String>) {
         if self.composer.set_active_agent_label(active_agent_label) {
+            self.request_redraw();
+        }
+    }
+
+    /// Updates the persistent footer label for the current permission/approval mode.
+    pub(crate) fn set_approval_mode_label(&mut self, approval_mode_label: Option<String>) {
+        if self.composer.set_approval_mode_label(approval_mode_label) {
             self.request_redraw();
         }
     }

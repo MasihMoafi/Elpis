@@ -439,6 +439,8 @@ impl ChatWidget {
         let next_index = (current_index + 1) % available_presets.len();
         let (next_preset, next_label, next_reviewer) = available_presets[next_index].clone();
 
+        self.set_approval_mode_label(Some(next_label.clone()));
+
         for action in Self::approval_preset_actions(
             AskForApproval::from(next_preset.approval),
             next_preset.permission_profile,

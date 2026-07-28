@@ -1219,6 +1219,11 @@ async fn test_cycle_approval_preset() {
     // It should jump to the next valid preset.
 
     let initial_approval = chat.config_ref().permissions.approval_policy.value();
+    assert_eq!(
+        chat.bottom_pane.approval_mode_label(),
+        None,
+        "no persistent footer label before the first cycle"
+    );
 
     // Simulate Shift+Tab
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
@@ -1228,5 +1233,9 @@ async fn test_cycle_approval_preset() {
     assert_ne!(
         initial_approval, current_approval,
         "Shift+Tab should cycle permission preset"
+    );
+    assert!(
+        chat.bottom_pane.approval_mode_label().is_some(),
+        "Shift+Tab should set a persistent footer label, not just a one-time message"
     );
 }
