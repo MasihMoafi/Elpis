@@ -83,22 +83,29 @@ impl ChatWidget {
         }
         self.skills_initial_state = Some(initial_state);
 
-        let items: Vec<SkillsToggleItem> = self
+        let core_skills: Vec<(bool, SkillMetadata)> = self
             .skills_all
             .iter()
-            .filter_map(|skill| {
-                let core_skill = protocol_skill_to_core(skill)?;
-                let display_name = skill_display_name(&core_skill);
+            .filter_map(|skill| Some((skill.enabled, protocol_skill_to_core(skill)?)))
+            .collect();
+        let colliding_names = crate::skills_helpers::skill_name_collisions(
+            core_skills.iter().map(|(_, skill)| skill),
+        );
+
+        let items: Vec<SkillsToggleItem> = core_skills
+            .into_iter()
+            .map(|(enabled, core_skill)| {
+                let display_name = skill_display_name(&core_skill, &colliding_names);
                 let description = skill_description(&core_skill).to_string();
                 let name = core_skill.name.clone();
                 let path = core_skill.path_to_skills_md;
-                Some(SkillsToggleItem {
+                SkillsToggleItem {
                     name: display_name,
                     skill_name: name,
                     description,
-                    enabled: skill.enabled,
+                    enabled,
                     path,
-                })
+                }
             })
             .collect();
 

@@ -3823,8 +3823,9 @@ impl ChatComposer {
     fn mention_items(&self) -> Vec<MentionItem> {
         let mut mentions = Vec::new();
         if let Some(skills) = self.skills.as_ref() {
+            let colliding_names = crate::skills_helpers::skill_name_collisions(skills);
             for skill in skills {
-                let display_name = skill_display_name(skill);
+                let display_name = skill_display_name(skill, &colliding_names);
                 let description = skill_description(skill);
                 let skill_name = skill.name.clone();
                 let search_terms = if display_name == skill.name {
