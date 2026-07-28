@@ -44,6 +44,29 @@
 - Rust changes pass `cargo test`. This repository contains no Python.
 - Known gaps and skipped checks are stated plainly.
 
+## Known Gaps
+
+### Durable memory never promotes (inherited, unfixed)
+
+Stage 1 works: rollouts are extracted, stored, and marked as phase-2 candidates. Phase 2
+runs, claims its job, and finishes without error — and has never once written to
+`MEMORY.md` on a real machine. Measured on Masih's install: 104 extraction jobs done, 65
+raw memories, 60 marked as candidates, and the memories git repository holding exactly one
+commit — the initial baseline. `MEMORY.md` had not changed in the two days of use that
+followed.
+
+Root cause: promotion is gated on recall, and recall almost never happens. A raw memory
+becomes eligible only at `recall_count >= 3` **and** `unique_query_count >= 2`
+(`codex-rs/memories/write/src/storage.rs`), and the consolidation prompt refuses to promote
+anything whose metadata says `promotion_eligible: false`. On that same install the whole
+database held five recall queries total and no memory was ever recalled more than twice, so
+the gate has never opened for a single item. Nothing is broken in the plumbing; the
+threshold is simply out of reach at real usage rates.
+
+Before changing it: the fix is a threshold and recall-frequency question, not a rewrite.
+Anything that claims memory works must show a promotion commit in `~/.elpis/memories/.git`,
+not a passing test.
+
 ## Agent Dispatch
 
 Use one coordinator and one worktree per implementation task. The coordinator owns

@@ -7,7 +7,6 @@
 **Terminal environment for coding agents that keeps the working context small.**
 
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
-[![Release](https://img.shields.io/github/v/release/MasihMoafi/Elpis?style=flat-square&color=orange)](https://github.com/MasihMoafi/Elpis/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
 
@@ -123,27 +122,19 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 
 ## Quickstart
 
-Linux x86_64:
+Linux x86_64 and macOS on Apple Silicon:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
-macOS on Apple Silicon:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
-```
-
-On first launch, choose a provider and sign in or enter its API key.
-
-The macOS binary is built and smoke-tested on an Apple Silicon CI runner: it compiles,
-its tests pass, and it launches and exits cleanly there. No one has yet run a full
-interactive session on a real Mac, so treat it as unconfirmed and report what breaks.
+The installer picks the right binary for your machine and also installs
+[RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
+choose a provider and sign in or enter its API key.
 
 ## Future development
 
-- Apple Silicon macOS support, followed by Windows.
+- Windows support.
 - Structured clarification and acceptance checks before difficult work.
 - Multi-agent controls and visible task coordination.
 - `/auto` model routing after it proves a real cost benefit.
@@ -157,9 +148,9 @@ Full roadmap: [TASKS.md](TASKS.md).
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
 - [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
 - [Providers](docs/providers.md) — every supported route, including local inference
-- [Workspace RAG](docs/rag.md) — read-only semantic search; needs a source checkout
+- [Workspace RAG](docs/rag.md) — read-only semantic search over your own documents
 - [`GUIDE.md`](docs/GUIDE.md) — product vision and architecture
-- [`TASKS.md`](TASKS.md) — release state and backlog
+- [`TASKS.md`](TASKS.md) — what is being built next
 
 ## License
 
