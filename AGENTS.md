@@ -63,9 +63,14 @@ database held five recall queries total and no memory was ever recalled more tha
 the gate has never opened for a single item. Nothing is broken in the plumbing; the
 threshold is simply out of reach at real usage rates.
 
-Before changing it: the fix is a threshold and recall-frequency question, not a rewrite.
-Anything that claims memory works must show a promotion commit in `~/.elpis/memories/.git`,
-not a passing test.
+Fixed by removing the arithmetic gate: `raw_memories.md` now carries
+`recall_evidence: repeated | some | none` and the consolidation agent decides what to
+promote, weighing recall as evidence rather than permission. A preference stated once is
+durable; a twice-recalled impression is not. Judgment sits where it belongs, and the
+size cap on `MEMORY.md` still bounds the damage if the agent is too generous.
+
+Unverified until a real promotion lands: anything claiming memory works must show a
+promotion commit in `~/.elpis/memories/.git`, not a passing test.
 
 ## Agent Dispatch
 

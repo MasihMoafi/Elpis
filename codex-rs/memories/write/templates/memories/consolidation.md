@@ -185,12 +185,15 @@ C) `memory_summary.md`
 Rules:
 
 - If there is no meaningful signal to add beyond what already exists, keep outputs minimal.
-- Treat `raw_memories.md` as short-term evidence. A new item may enter durable `MEMORY.md`
-  only when its metadata says `promotion_eligible: true` (at least three recalls across at
-  least two distinct query contexts). Ineligible items remain available through raw memory
-  and rollout summaries; do not promote them merely because they are recent or eloquent.
+- Treat `raw_memories.md` as short-term evidence, and decide yourself what belongs in
+  durable `MEMORY.md`. Each item carries `recall_evidence: repeated | some | none`, which
+  says how often it has already been searched for. Weigh it as evidence, not as permission:
+  `repeated` is a strong argument to promote, `none` is common and disqualifies nothing — a
+  standing user preference stated once is durable, a recent impression recalled twice is
+  not. Promote what will change how the next agent acts; leave the rest in raw memory and
+  rollout summaries rather than promoting it for being recent or eloquent.
 - Existing durable memories are reviewed for staleness and evidence as usual; do not delete
-  an existing item solely because older metadata lacks the promotion fields.
+  an existing item solely because older metadata lacks the recall fields.
 - You should always make sure `MEMORY.md` and `memory_summary.md` exist and are up to date.
 - `MEMORY.md` must not exceed {{ max_durable_memory_chars }} characters. When near the limit,
   remove stale, duplicated, low-utility, or weakly supported material before adding new material.

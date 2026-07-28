@@ -155,5 +155,5 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
     )));
     assert!(raw_memories.contains("recall_count: 3"));
     assert!(raw_memories.contains("unique_query_count: 2"));
-    assert!(raw_memories.contains("promotion_eligible: true"));
+    assert!(raw_memories.contains("recall_evidence: repeated"));
 }
