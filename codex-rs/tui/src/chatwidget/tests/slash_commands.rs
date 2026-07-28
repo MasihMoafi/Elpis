@@ -12,6 +12,25 @@ fn fast_tier_command() -> ServiceTierCommand {
     }
 }
 
+/// Elpis ships no retrieval engine, so `/rag` only works once the user has
+/// registered a retrieval MCP server. Tests that expect a query to go out must
+/// register one first.
+fn register_rag_server(chat: &mut ChatWidget, name: &str) {
+    let server: codex_config::types::McpServerConfig = toml::from_str(
+        r#"
+command = "python"
+args = ["server.py"]
+environment_id = "default"
+"#,
+    )
+    .expect("valid stdio mcp server config");
+    let servers = HashMap::from([(name.to_string(), server)]);
+    chat.config
+        .mcp_servers
+        .set(servers)
+        .expect("mcp_servers is settable in tests");
+}
+
 fn complete_turn_with_message(chat: &mut ChatWidget, turn_id: &str, message: Option<&str>) {
     if let Some(message) = message {
         complete_assistant_message(
@@ -87,9 +106,10 @@ fn next_add_to_history_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEv
 }
 
 #[tokio::test]
-async fn rag_command_routes_query_to_elpis_rag_tool() {
+async fn rag_command_routes_query_to_registered_rag_tool() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
+    register_rag_server(&mut chat, "elpis-rag");
 
     chat.dispatch_command_with_args(
         SlashCommand::Rag,
@@ -112,9 +132,10 @@ async fn rag_command_routes_query_to_elpis_rag_tool() {
 }
 
 #[tokio::test]
-async fn rag_command_routes_explicit_path_to_elpis_rag_tool() {
+async fn rag_command_routes_explicit_path_to_registered_rag_tool() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
+    register_rag_server(&mut chat, "rag");
 
     chat.dispatch_command_with_args(
         SlashCommand::Rag,
@@ -127,11 +148,70 @@ async fn rag_command_routes_explicit_path_to_elpis_rag_tool() {
             let [UserInput::Text { text, .. }] = items.as_slice() else {
                 panic!("expected one text input, got {items:?}");
             };
+            assert!(text.contains("`rag`"));
             assert!(text.contains("doc_path `docs`"));
             assert!(text.contains("query `what is Elpis?`"));
         }
         other => panic!("expected RAG user turn, got {other:?}"),
     }
+}
+
+/// Without a registered retrieval server there is no `query_knowledge_base` to
+/// call. Sending the turn anyway asks the model to cite "retrieved chunks" that
+/// were never retrieved, so the command must refuse instead.
+#[tokio::test]
+async fn rag_command_without_registered_server_refuses_instead_of_asking_the_model() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Rag,
+        "how is context managed?".to_string(),
+        Vec::new(),
+    );
+
+    assert!(
+        op_rx.try_recv().is_err(),
+        "no turn may be submitted without a retrieval server"
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<String>();
+    assert!(
+        rendered.contains("retrieval MCP server"),
+        "expected an actionable message, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("rag-mcp"),
+        "expected a pointer to a usable server, got: {rendered}"
+    );
+}
+
+/// A server the user has switched off must not satisfy the check.
+#[tokio::test]
+async fn rag_command_ignores_a_disabled_rag_server() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    register_rag_server(&mut chat, "rag");
+    let mut servers = chat.config.mcp_servers.get().clone();
+    servers.get_mut("rag").expect("registered above").enabled = false;
+    chat.config
+        .mcp_servers
+        .set(servers)
+        .expect("mcp_servers is settable in tests");
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Rag,
+        "how is context managed?".to_string(),
+        Vec::new(),
+    );
+
+    assert!(
+        op_rx.try_recv().is_err(),
+        "a disabled server must not satisfy /rag"
+    );
 }
 
 #[tokio::test]
@@ -141,6 +221,7 @@ async fn rag_path_prompt_enters_current_working_directory_by_default() {
         .current_cwd
         .clone()
         .expect("chat has a current working directory");
+    register_rag_server(&mut chat, "rag");
 
     chat.dispatch_command_with_args(
         SlashCommand::Rag,

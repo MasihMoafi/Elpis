@@ -38,9 +38,21 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
 const RAG_USAGE: &str = "Usage: /rag <query> or /rag <path> -- <query>";
 
-fn rag_request(doc_path: &str, query: &str) -> String {
+/// Server names `/rag` will drive, most specific first. Elpis ships no retrieval
+/// engine of its own, so the user registers one and `/rag` finds it by name.
+const RAG_SERVER_NAMES: [&str; 3] = ["elpis-rag", "rag-mcp", "rag"];
+
+/// Without a registered server there is no tool to call, and instructing the model
+/// to answer from "retrieved chunks" that were never retrieved invites a cited
+/// answer grounded in nothing. Say so instead of asking.
+const RAG_NO_SERVER: &str = "/rag needs a retrieval MCP server and none is registered. \
+Elpis does not ship one — the engine, its models, and their download size are yours to pick. \
+Register one as `rag` in config.toml and restart Elpis; https://github.com/MasihMoafi/rag-mcp \
+is a ready-made local option. Run /mcp to see what is registered.";
+
+fn rag_request(server: &str, doc_path: &str, query: &str) -> String {
     format!(
-        "Use the Elpis `elpis-rag` MCP server's `query_knowledge_base` tool with doc_path `{doc_path}` and query `{query}`. Base the answer on the retrieved chunks and cite their source paths."
+        "Use the `{server}` MCP server's `query_knowledge_base` tool with doc_path `{doc_path}` and query `{query}`. Base the answer on the retrieved chunks and cite their source paths."
     )
 }
 const ADD_CONTEXT_USAGE: &str = "Usage: /add <file-or-directory-path> (drag & drop works too)";
@@ -693,24 +705,33 @@ impl ChatWidget {
                 _ => self.add_error_message("Usage: /hotkeys [debug]".to_string()),
             },
             SlashCommand::Rag => {
-                let request = match trimmed.split_once(" -- ") {
-                    Some((doc_path, query))
-                        if doc_path.trim().is_empty() && !query.trim().is_empty() =>
-                    {
-                        self.show_rag_path_prompt(query.trim().to_string());
-                        return;
+                let Some(server) = self.rag_server_name() else {
+                    self.add_error_message(RAG_NO_SERVER.to_string());
+                    return;
+                };
+                // `args` arrives trimmed, so an omitted path (`/rag -- <query>`) has
+                // no leading space left to split on and must be matched up front.
+                if let Some(query) = trimmed.strip_prefix("--") {
+                    let query = query.trim();
+                    if query.is_empty() {
+                        self.add_error_message(RAG_USAGE.to_string());
+                    } else {
+                        self.show_rag_path_prompt(query.to_string());
                     }
+                    return;
+                }
+                let request = match trimmed.split_once(" -- ") {
                     Some((doc_path, query))
                         if !doc_path.trim().is_empty() && !query.trim().is_empty() =>
                     {
-                        rag_request(doc_path.trim(), query.trim())
+                        rag_request(server, doc_path.trim(), query.trim())
                     }
                     Some(_) => {
                         self.add_error_message(RAG_USAGE.to_string());
                         return;
                     }
                     None => format!(
-                        "Use the Elpis `elpis-rag` MCP server's `query_knowledge_base` tool to search the current workspace for `{trimmed}`. Base the answer on the retrieved chunks and cite their source paths."
+                        "Use the `{server}` MCP server's `query_knowledge_base` tool to search the current workspace for `{trimmed}`. Base the answer on the retrieved chunks and cite their source paths."
                     ),
                 };
                 self.submit_user_message(UserMessage::from(request));
@@ -903,8 +924,21 @@ impl ChatWidget {
         }
     }
 
+    /// The registered MCP server `/rag` should query, or `None` when the user has
+    /// not brought one.
+    fn rag_server_name(&self) -> Option<&'static str> {
+        let servers = self.config.mcp_servers.get();
+        RAG_SERVER_NAMES
+            .into_iter()
+            .find(|name| servers.get(*name).is_some_and(|server| server.enabled))
+    }
+
     pub(crate) fn submit_rag_search(&mut self, query: String, doc_path: String) {
-        self.submit_user_message(UserMessage::from(rag_request(&doc_path, &query)));
+        let Some(server) = self.rag_server_name() else {
+            self.add_error_message(RAG_NO_SERVER.to_string());
+            return;
+        };
+        self.submit_user_message(UserMessage::from(rag_request(server, &doc_path, &query)));
     }
 
     fn show_rag_path_prompt(&mut self, query: String) {
