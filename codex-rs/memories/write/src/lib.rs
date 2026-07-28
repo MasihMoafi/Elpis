@@ -15,6 +15,7 @@ mod prompts;
 mod runtime;
 mod start;
 mod storage;
+mod sweep_log;
 pub mod workspace;
 
 use codex_utils_absolute_path::AbsolutePathBuf;

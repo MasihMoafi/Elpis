@@ -66,6 +66,11 @@ pub async fn run(
         Ok(claim) => claim,
         Err(e) => {
             context.counter(MEMORY_PHASE_TWO_JOBS, /*inc*/ 1, &[("status", e)]);
+            // Cooldown and lock skips are the common case and stay out of the log; a
+            // reader wants the sweeps that ran, not a heartbeat.
+            if !e.starts_with("skipped") {
+                crate::sweep_log::record(&root, &format!("did not run ({e})")).await;
+            }
             return;
         }
     };
@@ -154,6 +159,13 @@ pub async fn run(
     if !workspace_diff.has_changes() && validate_consolidation_artifacts(&root).await.is_ok() {
         tracing::error!("Phase 2 no changes");
         // We check only after sync of the file system.
+        crate::sweep_log::record(
+            &root,
+            &format!(
+                "no change; {raw_memory_count} candidates, nothing new since the last sweep"
+            ),
+        )
+        .await;
         job::succeed(
             context.as_ref(),
             db.as_ref(),
@@ -180,6 +192,12 @@ pub async fn run(
     }
 
     // 8. Spawn the consolidation agent.
+    let memory_size_before = crate::sweep_log::memory_file_size(&root).await;
+    crate::sweep_log::record(
+        &root,
+        &format!("reviewing {raw_memory_count} candidates"),
+    )
+    .await;
     let prompt = agent::get_prompt(&root);
     let agent = match context
         .spawn_consolidation_agent(agent_config, prompt)
@@ -198,6 +216,7 @@ pub async fn run(
         Arc::clone(&context),
         claim,
         new_watermark,
+        memory_size_before,
         raw_memories.clone(),
         root,
         agent,
@@ -382,6 +401,7 @@ mod agent {
         context: Arc<MemoryStartupContext>,
         claim: Claim,
         new_watermark: i64,
+        memory_size_before: Option<u64>,
         selected_outputs: Vec<codex_state::Stage1Output>,
         memory_root: codex_utils_absolute_path::AbsolutePathBuf,
         agent: SpawnedConsolidationAgent,
@@ -453,19 +473,31 @@ mod agent {
                     if let Err(err) = reset_memory_workspace_baseline(&memory_root).await {
                         tracing::error!("failed resetting memory workspace baseline: {err}");
                         job::failed(context.as_ref(), &db, &claim, "failed_workspace_commit").await;
-                    } else if !job::succeed(
-                        context.as_ref(),
-                        &db,
-                        &claim,
-                        new_watermark,
-                        &selected_outputs,
-                        "succeeded",
-                    )
-                    .await
-                    {
-                        tracing::error!(
-                            "failed marking global memory consolidation job succeeded after resetting workspace baseline"
-                        );
+                    } else {
+                        let memory_size_after =
+                            crate::sweep_log::memory_file_size(&memory_root).await;
+                        crate::sweep_log::record(
+                            &memory_root,
+                            &crate::sweep_log::describe_memory_change(
+                                memory_size_before,
+                                memory_size_after,
+                            ),
+                        )
+                        .await;
+                        if !job::succeed(
+                            context.as_ref(),
+                            &db,
+                            &claim,
+                            new_watermark,
+                            &selected_outputs,
+                            "succeeded",
+                        )
+                        .await
+                        {
+                            tracing::error!(
+                                "failed marking global memory consolidation job succeeded after resetting workspace baseline"
+                            );
+                        }
                     }
                 }
             } else if !agent_completed {

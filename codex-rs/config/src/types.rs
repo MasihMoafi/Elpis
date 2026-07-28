@@ -330,7 +330,10 @@ impl Default for MemoriesConfig {
             disable_on_external_context: false,
             generate_memories: true,
             use_memories: true,
-            dedicated_tools: false,
+            // openclaw's structure: the agent you are talking to reads, searches, and writes
+            // memory when you ask it to. Without these it can only receive whatever a
+            // background pass decided to inject, and "remember this" does nothing.
+            dedicated_tools: true,
             max_raw_memories_for_consolidation: DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION,
             max_unused_days: DEFAULT_MEMORIES_MAX_UNUSED_DAYS,
             max_rollout_age_days: DEFAULT_MEMORIES_MAX_ROLLOUT_AGE_DAYS,
