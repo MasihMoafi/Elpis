@@ -18,7 +18,9 @@ Evidence: `65bac2f`, `6058a0f`.
 ## Context Ledger placement and file links — verified 2026-07-25
 
 `v0.1.1` was first tagged on 2026-07-24, but its tag CI run failed and no release was
-published. It was retagged and published on 2026-07-25.
+published. It was retagged and published on 2026-07-25 — then, on Masih's instruction,
+that history was collapsed and its content republished as `v0.1.0` instead, so only one
+release/tag exists now. GitHub currently shows `v0.1.0` alone as the only tag and release.
 
 - **Ledger top alignment.** The ledger was bottom-anchored and sized to the whole chat
   region, so a tall panel started level with the last chat message and overhung the
