@@ -22,6 +22,7 @@ struct ContinuityAdmission {
     project_rules: bool,
     goal: bool,
     checkpoint: bool,
+    memory: bool,
     /// Per-file admission for `skills/dev/*.md`, keyed by file name.
     /// Files absent from the map are admitted by default.
     dev_sources: BTreeMap<String, bool>,
@@ -35,6 +36,7 @@ impl Default for ContinuityAdmission {
             project_rules: true,
             goal: true,
             checkpoint: true,
+            memory: true,
             dev_sources: BTreeMap::new(),
             custom_sources: BTreeMap::new(),
         }
@@ -269,6 +271,22 @@ pub fn continuity_sources(
         }
         sources.push(source);
     }
+    // Durable memory is listed like the goal and the checkpoint: visible in the ledger from
+    // the start, and switchable there. Memory that rewrites itself in the background without
+    // appearing anywhere is the failure mode this row exists to prevent.
+    let memory_path = memories_root.join("MEMORY.md");
+    if let Some(source) = existing_file_source(
+        "MEMORY.md".to_string(),
+        memory_path.clone(),
+        ContinuitySourceCategory::Memory,
+        "durable memory",
+        admission.memory,
+    ) {
+        if let Ok(canonical) = memory_path.canonicalize() {
+            canonical_paths.insert(canonical);
+        }
+        sources.push(source);
+    }
     // Custom sources are stored canonicalized, so the memories root has to be resolved
     // the same way before comparing them. Where the root reaches the file through a
     // symlink — macOS puts every temporary directory behind one, and a symlinked home
@@ -363,6 +381,7 @@ pub fn set_continuity_source_admitted(
         PROJECT_RULES => selection.project_rules = admitted,
         "GOAL.md" => selection.goal = admitted,
         "ES.md" => selection.checkpoint = admitted,
+        "MEMORY.md" => selection.memory = admitted,
         name if name.starts_with(DEV_SOURCE_PREFIX) => {
             selection
                 .dev_sources
@@ -539,6 +558,7 @@ fn read_admission(workspace_dir: &Path) -> ContinuityAdmission {
             PROJECT_RULES => admission.project_rules = admitted,
             "GOAL.md" => admission.goal = admitted,
             "ES.md" => admission.checkpoint = admitted,
+            "MEMORY.md" => admission.memory = admitted,
             key if key.starts_with(DEV_SOURCE_PREFIX) => {
                 admission
                     .dev_sources

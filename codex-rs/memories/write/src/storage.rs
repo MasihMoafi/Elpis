@@ -10,8 +10,8 @@ use crate::ensure_layout;
 use crate::raw_memories_file;
 use crate::rollout_summaries_dir;
 
-const REPEATED_RECALL_COUNT: u32 = 3;
-const REPEATED_UNIQUE_QUERIES: u32 = 2;
+const PROMOTION_MIN_RECALL_COUNT: u32 = 3;
+const PROMOTION_MIN_UNIQUE_QUERIES: u32 = 2;
 
 /// Rebuild `raw_memories.md` from DB-backed stage-1 outputs.
 pub async fn rebuild_raw_memories_file_from_memories(
@@ -81,7 +81,7 @@ async fn rebuild_raw_memories_file(
             writeln!(body, "last_recalled_at: {}", last_recalled_at.to_rfc3339())
                 .map_err(raw_memories_format_error)?;
         }
-        writeln!(body, "recall_evidence: {}", recall_evidence(memory))
+        writeln!(body, "promotion_eligible: {}", promotion_eligible(memory))
             .map_err(raw_memories_format_error)?;
         writeln!(body).map_err(raw_memories_format_error)?;
         body.push_str(memory.raw_memory.trim());
@@ -91,19 +91,9 @@ async fn rebuild_raw_memories_file(
     tokio::fs::write(raw_memories_file(root), body).await
 }
 
-/// How much recall evidence backs a raw memory. This is a signal for the consolidation
-/// agent to weigh, not a gate: memories that are never searched for can still be worth
-/// keeping, and requiring repeated recall before promotion left durable memory empty.
-fn recall_evidence(memory: &Stage1Output) -> &'static str {
-    if memory.recall_count >= REPEATED_RECALL_COUNT
-        && memory.unique_query_count >= REPEATED_UNIQUE_QUERIES
-    {
-        "repeated"
-    } else if memory.recall_count > 0 {
-        "some"
-    } else {
-        "none"
-    }
+fn promotion_eligible(memory: &Stage1Output) -> bool {
+    memory.recall_count >= PROMOTION_MIN_RECALL_COUNT
+        && memory.unique_query_count >= PROMOTION_MIN_UNIQUE_QUERIES
 }
 
 async fn prune_rollout_summaries(root: &Path, keep: &HashSet<String>) -> std::io::Result<()> {
