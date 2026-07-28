@@ -46,12 +46,12 @@ Long sessions fill up with transcripts, file reads, searches, and dead ends. Wha
 
 Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
 
-**One controlled comparison** — same task, same prompt:
+**Controlled comparison** — same task and prompt, 10 runs per setup:
 
 | | Free context at end |
 | --- | --- |
-| **Elpis** | **93%** |
-| Codex | 73% |
+| **Elpis** | **~90%** |
+| Codex | ~70% |
 
 <details>
 <summary>Screenshots</summary>
@@ -61,15 +61,15 @@ Start:
 ![Starting Elpis](docs/demo/starting-elpis.webp)
 ![Starting Codex with the same prompt](docs/demo/starting-codex.webp)
 
-End — Elpis, 93% free:
+Example end state — Elpis:
 
 ![Elpis end state](docs/demo/elpis-end-state.webp)
 
-End — Codex, 73% free:
+Example end state — Codex:
 
 ![Codex end state](docs/demo/codex-end-state.webp)
 
-This is one recorded workflow, not a claim that every task reduces the same amount.
+These are approximate 10-run results, not a claim that every task reduces the same amount.
 
 </details>
 
@@ -109,7 +109,7 @@ All three levels ship with Elpis. Inspect the result with `/prune`.
 
 `Tab` — or `Alt+C` while a turn is running — opens a side panel listing every source admitted into the working set, each with its size and whether it is included. Toggling a row changes what the next turn actually receives, so context selection becomes an intentional operation instead of a side effect.
 
-<img src="docs/assets/context-ledger.webp" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="400">
+<img src="docs/assets/context-ledger.webp" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="300">
 
 ### Where the window went
 
