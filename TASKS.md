@@ -14,25 +14,31 @@ up, not here. Closed work: `docs/TASKS_ARCHIVE_V0_1_1.md`, `docs/TASKS_V0_1_ARCH
 
 ## On main — awaiting Masih's verification
 
-| #   | Task                                | State                                                                                                                                                                                                          |
-| --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 4   | RAG — engine moved out of Elpis     | agent-verified. `38520fc`, `564961e`, `1064497`. Elpis ships no engine and no Python; `/rag` is a client of a registered MCP retrieval server. Test checklist below. |
+| #   | Task                              | State                                                                                                                                                                                        |
+| --- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4   | RAG — removed from Elpis entirely | agent-verified. `38520fc`, `564961e`, `1064497`, `306a4a3`. No engine, no Python, no `/rag`. Retrieval is an MCP server the user registers. Evals moved to rag-mcp `dac6f86`. |
 
-Task 4 also fixed two live defects. `/rag` never checked that a retrieval server existed —
-it told the model to answer from "retrieved chunks" and cite paths with nothing behind it,
-so the failure mode was a confident cited answer grounded in nothing. And `/rag -- <query>`
-could never reach the path picker: arguments arrive trimmed, so `split_once(" -- ")` missed
-and it searched the workspace for the literal string `-- <query>`.
+Retrieval left in two steps. First the engine: a bundled Python sidecar pinning PyTorch,
+which is why `/rag` could never reach a binary install — you cannot put 2.5GB in a release
+artifact. Then the command itself, since MCP already covers registering a tool and calling
+it, and a dedicated command implied Elpis owned a capability it does not.
+
+Two live defects were found and fixed on the way, both now moot but worth recording.
+`/rag` never checked that a server existed, so it asked the model to cite "retrieved chunks"
+that were never retrieved — a confident cited answer grounded in nothing. And
+`/rag -- <query>` could never reach its path picker: arguments arrive trimmed, so the split
+never matched and it searched for the literal string `-- <query>`.
+
+Known loss: `/rag <path> -- <query>` scoped a search to a folder in one keystroke. That now
+depends on naming the folder in plain language and the model passing `doc_path` through.
 
 Test checklist for Masih:
 
-- With no retrieval server registered, run `/rag anything` — expect a refusal naming what to
-  register, not an answer.
-- Register rag-mcp as `rag` in `config.toml`, restart, run `/rag <query>` — expect real
-  excerpts with source paths.
-- Run `/rag docs -- <query>` — expect the search scoped to that folder.
-- Run `/rag -- <query>` — expect a path picker prefilled with the working directory, and
-  Enter to search it.
+- `/rag` no longer appears in the slash-command popup.
+- Register rag-mcp in `config.toml`, restart, run `/mcp` — expect it listed and connected.
+- Ask for something in plain language that needs retrieval — expect the agent to call
+  `query_knowledge_base` and cite source paths.
+- Ask with a folder named — expect the search scoped to it.
 - Confirm a fresh binary install pulls no PyTorch.
 
 ## Second
