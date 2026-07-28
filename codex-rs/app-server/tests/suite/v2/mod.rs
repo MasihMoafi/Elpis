@@ -35,6 +35,7 @@ mod mcp_resource;
 mod mcp_server_elicitation;
 mod mcp_server_status;
 mod mcp_tool;
+mod memory_recall;
 mod memory_reset;
 mod model_list;
 mod model_provider_capabilities_read;

@@ -96,7 +96,33 @@ turn            Transient exploration     File reads, rg outputs, command execut
 
 ---
 
-## 6. Inspection & Verification
+## 6. Evals
+
+Memory is judged by behavior, not by whether its plumbing runs. The eval plants a fact that
+appears nowhere except durable memory, runs a real turn against a mock model, and inspects
+the request that left for the model.
+
+| Eval | Location | Proves |
+| :--- | :--- | :--- |
+| Recall | `codex-rs/app-server/tests/suite/v2/memory_recall.rs` | A fact in `MEMORY.md` reaches the model, **and** switching `MEMORY.md` off in the Context Ledger removes it. |
+
+The negative half carries the weight. A recall test that only checks the fact arrived passes
+just as well when every file on disk is admitted unconditionally — which is not memory
+working. Both halves have been verified to fail when the behavior they describe is broken.
+
+Run it with:
+
+```bash
+CODEX_SKIP_BWRAP_BUILD=1 cargo test --manifest-path codex-rs/Cargo.toml \
+  -p codex-app-server --test all v2::memory
+```
+
+Any change to how memory is stored, promoted, or recalled must keep this eval passing, and
+a new memory behavior needs its own eval before the behavior is written.
+
+---
+
+## 7. Inspection & Verification
 
 You can inspect and verify memory behavior using the following surfaces:
 

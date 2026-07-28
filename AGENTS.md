@@ -44,6 +44,17 @@
 - Rust changes pass `cargo test`. This repository contains no Python.
 - Known gaps and skipped checks are stated plainly.
 
+## Evals First
+
+Behavior that can silently do nothing needs an eval before it is changed, and the eval
+needs a negative case. Memory ran for days, completed every job, reported no error, and
+promoted nothing; no test caught it because every test checked plumbing rather than
+behavior. The pattern that does catch it: plant something only the feature could know, run
+the real path, assert it arrives — then switch the feature off and assert it does not.
+
+Existing evals: `docs/memory.md` section 6 (memory recall). Prove a new eval can fail
+before trusting it.
+
 ## Known Gaps
 
 ### Durable memory never promotes (inherited, unfixed)
