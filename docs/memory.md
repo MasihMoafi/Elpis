@@ -49,9 +49,31 @@ Memory processing in Elpis operates in two distinct background stages:
    - Tracks `usage_count`, `last_usage` timestamps, and `stage1_recall_queries` `(thread_id, query_key, recalled_at)` to measure recall frequency and query diversity.
 
 2. **Phase 2 (Global Consolidation — `memory_consolidate_global`):**
-   - Runs periodically (with a default 6-hour success cooldown).
-   - Evaluates Stage 1 candidates against score, recall frequency, and query diversity gates.
-   - Promotes qualified candidates into long-term memory (`MEMORY.md`).
+   - Attempts to run on each session launch, and stops immediately unless every condition
+     holds: no other run holds the lock, the last success finished more than 6 hours ago,
+     and the candidate set has actually changed since the last run. In practice this is a
+     few times a day at most, never mid-turn.
+   - Loads up to 256 candidates, dropping any not recalled in 30 days, and writes them into
+     the memory workspace as `raw_memories.md`.
+   - Hands a second Elpis — sandboxed to the memory directory, no network, no memory tools
+     of its own — the diff of what changed, and asks it to decide what belongs in
+     `MEMORY.md`. That agent edits the files; the pipeline only commits the result.
+
+### What the consolidation agent decides on
+
+Promotion is a judgment call, not a threshold. Each candidate carries
+`recall_evidence: repeated | some | none` — how often it has already been searched for —
+and the agent weighs it as evidence rather than permission. `repeated` argues strongly for
+promotion; `none` disqualifies nothing, since a standing preference stated once is durable
+while a twice-recalled impression is not. The instructions ask for stable project facts,
+user operating preferences, recurring corrections, repo maps, tooling quirks, and proven
+reproduction plans — and explicitly reject generic advice, secrets, verbatim output, and
+one-off exploratory discussion. The size cap on `MEMORY.md` bounds the result: near the
+limit the agent must remove stale or weakly supported material before adding more.
+
+This replaced an arithmetic gate that required three recalls across two distinct query
+contexts. On real usage nothing ever cleared it, so durable memory stayed empty while
+candidates accumulated. Judgment now sits with an agent, as it does for context pruning.
 
 ---
 
@@ -108,3 +130,7 @@ You can inspect and verify memory behavior using the following surfaces:
    SELECT thread_id, query_key, datetime(recalled_at, 'unixepoch') FROM stage1_recall_queries;
    ```
 4. **Archive Safety:** Inspect `~/.elpis/memories/archive.md` to review historical faded or deleted memory entries preserved prior to baseline resets.
+5. **Promotion History:** `~/.elpis/memories/` is a git repository, and every consolidation
+   pass that changes anything commits there. `git log -p` in that directory is the complete
+   record of what the consolidation agent promoted, reworded, or removed, and when. A
+   repository holding only its initial baseline commit means nothing has ever been promoted.
