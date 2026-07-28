@@ -137,7 +137,10 @@ tests, and outstanding user acceptance. Design documents and hidden code are not
 **R8. Internal read-only RAG** — `/rag <query>` searches the workspace and
 `/rag <path> -- <query>` targets a folder. The runtime may call the same read-only tool
 autonomously for broad discovery. Exact current-file evidence remains required before
-editing.
+editing. Elpis owns the command, not the engine: retrieval is served by an MCP server the
+user registers, so no model weights or machine-learning dependency ever ship with Elpis.
+With no server registered, `/rag` must refuse rather than ask the model to answer from
+retrieval that did not happen.
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused
 first-release checks. Exhaustive inherited TUI/app-server regression runs nightly,
@@ -193,12 +196,13 @@ Treat upstream behavior as evidence, not inspiration copied from memory.
 
 ### Codex: execution and interface reference
 
-Primary source is the local clone at `/home/masih/Desktop/f/p/others/codex`:
+Primary source is the local clone at `~/Desktop/p/codex`, a sibling of this
+repository:
 
-- App-server: `/home/masih/Desktop/f/p/others/codex/codex-rs/app-server`
-- App-server protocol: `/home/masih/Desktop/f/p/others/codex/codex-rs/app-server-protocol`
-- Rust TUI: `/home/masih/Desktop/f/p/others/codex/codex-rs/tui`
-- Core agent runtime: `/home/masih/Desktop/f/p/others/codex/codex-rs/core`
+- App-server: `~/Desktop/p/codex/codex-rs/app-server`
+- App-server protocol: `~/Desktop/p/codex/codex-rs/app-server-protocol`
+- Rust TUI: `~/Desktop/p/codex/codex-rs/tui`
+- Core agent runtime: `~/Desktop/p/codex/codex-rs/core`
 
 The clone's origin is [openai/codex](https://github.com/openai/codex). Use the remote
 only for provenance or an explicitly requested update; do not browse it when the local
@@ -218,11 +222,8 @@ prototype as the active runtime.
 
 ### OpenClaw: context and continuity reference
 
-Primary source is the current shallow clone at
-`/home/masih/Desktop/f/p/others/openclaw-upstream`. The older May 26 source archive is
-`/home/masih/Desktop/f/p/others/openclaw-main`.
-The primary clone was refreshed from the official repository on 2026-07-16 at
-`dd58667b` (source version `2026.7.2`).
+Primary source is the local clone at `~/Desktop/p/openclaw`, a sibling of this
+repository. Checked 2026-07-28 at `22950e5a` (source version `2026.7.2`).
 Read implementation and tests, not only explanatory documents. The main source areas
 are:
 
@@ -236,8 +237,6 @@ are:
   `memory-budget.ts`, and `dreaming.ts`.
 
 The upstream project is [openclaw/openclaw](https://github.com/openclaw/openclaw).
-The initialized but empty-history `/home/masih/Desktop/f/repos/openclaw-main` is not an
-upstream source clone and is not the Elpis reference tree.
 
 OpenClaw's useful memory behavior is a pipeline, not a special Markdown filename:
 ephemeral pruning keeps a live turn small; guarded compaction preserves continuity;
@@ -266,9 +265,9 @@ has it. It becomes an Elpis feature only after the Elpis acceptance check passes
 
 Pinned candidate revision: repository `openai/codex`, revision
 `2e1607ee2fa8099a233df7437adee5f16a741905`, license Apache-2.0 (`LICENSE` and `NOTICE`
-retained under `codex-rs/`). The donor working tree at
-`/home/masih/Desktop/f/p/others/codex` has unrelated local edits; only committed content
-from the pinned revision was imported, never the donor's working-tree state.
+retained under `codex-rs/`). The donor working tree at `~/Desktop/p/codex` has unrelated
+local edits; only committed content from the pinned revision was imported, never the
+donor's working-tree state.
 `codex-rs/ELPIS_UPSTREAM.md` records this provenance. After the imported foundation
 passed its authenticated milestone, the superseded root `tui/` prototype was archived on
 the `archive/pre-cleanup-20260716` branch and removed from canonical `main`. Crate and
@@ -403,13 +402,12 @@ Elpis may vendor/adapt Codex source or manage a compatible app-server binary, bu
 must not load source from the donor directory. Selecting Gemini, Claude, or another
 runtime must not implicitly delegate its turn to Codex.
 
-Upstream evidence for this boundary (paths relative to `/home/masih/Desktop/f/p/`):
+Upstream evidence for this boundary (paths relative to `~/Desktop/p/codex/codex-rs/`):
 
-- Account protocol: `others/codex/codex-rs/app-server-protocol/src/protocol/v2/account.rs`
-- Account processor:
-  `others/codex/codex-rs/app-server/src/request_processors/account_processor.rs`
-- Reusable auth component: `others/codex/codex-rs/login/`
-- Deprecation marker: `others/codex/codex-rs/app-server-protocol/src/protocol/common.rs`
+- Account protocol: `app-server-protocol/src/protocol/v2/account.rs`
+- Account processor: `app-server/src/request_processors/account_processor.rs`
+- Reusable auth component: `login/`
+- Deprecation marker: `app-server-protocol/src/protocol/common.rs`
 
 Run `scripts/codex-auth-status-smoke.sh` from the Elpis repository to check this
 boundary: it initializes app-server and sends exactly one `account/read` request,
@@ -622,47 +620,16 @@ without deleting shared machinery required by retained behavior.
 ### Startup performance
 
 Typing `elpis` previously took about five seconds before the TUI was usable; the archived
-prototype took under one second. The regression is now resolved. Do not describe PyTorch
-as part of the Rust TUI: it belongs to the separate Python RAG service and is loaded only
-for an explicit RAG query. Keep the startup target below one second, with optional
-services forbidden from blocking the first usable frame.
+prototype took under one second. The regression is now resolved. Keep the startup target
+below one second, with optional services forbidden from blocking the first usable frame.
 
-The July 16 startup audit found that the registered `elpis-rag` process was still the
-old unified MCP: it advertised 21 unrelated memory, shell, web, speech, document, and
-RAG tools and imported the memory/Qdrant stack before answering Codex. The working-tree
-replacement exposes only `query_knowledge_base` and answers the MCP handshake using
-Python's standard library. Its measured handshake is about 0.04 seconds, a profiled
-Elpis launch scheduled its first frame in 0.049 seconds, and Masih confirmed that the
-fresh launch is fast. Startup performance is accepted.
+A profiled Elpis launch scheduled its first frame in 0.049 seconds and Masih confirmed
+that the fresh launch is fast. Startup performance is accepted.
 
-The one-tool host was not a new product decision: it already existed on the historical
-legacy-prototype tip now preserved inside `archive/pre-cleanup-20260716`. During the
-Codex-foundation transition, canonical `main` inherited an older unified host from the
-embedded-launcher line where extra tools defaulted on, while the minimal host remained
-on the prototype line. This was a migration regression, not a Codex TUI cost.
-
-RAG indexing is not startup work. `rag.fetch` is imported only after an explicit query.
-On that first query it loads Torch and embedding models, then loads an existing persisted
-index or scans and indexes the requested folder when no usable index exists. If indexing
-is later moved to a background job, it must not block or visually take over the TUI; the
-previous usable index should remain available until replacement is complete.
-
-The Python service is RAG-only. Its retained source packages are `src/agent` for the
-one-tool MCP host, `src/rag` for retrieval, and `src/utils` for RAG's proxy handling.
-The superseded Python memory, shell, web, speech, document, parser, and tool-execution
-modules are deleted; Codex owns those general agent capabilities. Future Elpis memory
-and dictation work must be designed at the Elpis product layer, not restored inside the
-RAG MCP.
-
-RAG's vector storage (`src/rag/qdrant_backend.py`, `QdrantVectorDB`) supports both a
-local on-disk Qdrant client and Qdrant Cloud via a `mode: "local" | "cloud"`
-constructor argument plus a `url`/`api_key` pair for cloud mode; cloud mode avoids the
-local client's single-writer locking, at the cost of a separate, non-syncing
-collection — the first cloud query re-indexes rather than reusing a local index.
-`src/rag/core.py`'s `RAGPipelineV2` currently always constructs `QdrantVectorDB` in
-local mode (`persist_path` only, no `mode`/`url`/`api_key` passed); using cloud mode
-requires extending that call site to pass those parameters from environment
-variables, not hardcoding a key.
+Elpis contains no Python. Retrieval runs in an MCP server the user registers, in its own
+process, started by the MCP layer — so an engine's imports, model loading, and indexing
+cost cannot reach the launch path no matter how heavy that engine is. Never reintroduce a
+machine-learning dependency into this repository to serve `/rag`; see [rag.md](rag.md).
 
 ### Memory ownership
 
@@ -706,7 +673,7 @@ non-TUI consumers retain the inherited Codex-home fallback for compatibility.
 
 For fast local binary build and verification (~15s), run:
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo build --manifest-path codex-rs/Cargo.toml --bin elpis && install -m 755 codex-rs/target/debug/elpis /home/masih/.local/bin/elpis
+CODEX_SKIP_BWRAP_BUILD=1 cargo build --manifest-path codex-rs/Cargo.toml --bin elpis && install -m 755 codex-rs/target/debug/elpis ~/.local/bin/elpis
 ```
 
 Use `.github/workflows/embedded-elpis-linux.yml` for CI Rust formatting, focused tests, release build, executable identity, and artifact verification.

@@ -11,7 +11,7 @@
 - Verify the repository state before editing; preserve unrelated user changes.
 - Read `docs/LOCAL_BUILD_RULES.md` before running `cargo` here. `target/` reached 246 GB
   on a 451 GB disk; every command needs `CODEX_SKIP_BWRAP_BUILD=1`; never `cargo fmt --all`.
-- **Local incremental build & install command:** For fast local binary verification (~15s), run `CODEX_SKIP_BWRAP_BUILD=1 cargo build --manifest-path codex-rs/Cargo.toml --bin elpis && install -m 755 codex-rs/target/debug/elpis /home/masih/.local/bin/elpis`. Full workspace release compilations remain reserved for CI.
+- **Local incremental build & install command:** For fast local binary verification (~15s), run `CODEX_SKIP_BWRAP_BUILD=1 cargo build --manifest-path codex-rs/Cargo.toml --bin elpis && install -m 755 codex-rs/target/debug/elpis ~/.local/bin/elpis`. Full workspace release compilations remain reserved for CI.
 - Challenge unclear or solution-first requirements with `$challenge-requirements`
   before planning implementation.
 
@@ -41,8 +41,7 @@
 - Behavior is implemented, not merely documented.
 - A feature becomes complete only when its acceptance check passes and evidence is
   recorded in `TASKS.md`.
-- Rust changes pass `cargo test`; Python changes pass the narrowest relevant test and
-  `.venv/bin/python -m compileall -q src`.
+- Rust changes pass `cargo test`. This repository contains no Python.
 - Known gaps and skipped checks are stated plainly.
 
 ## Agent Dispatch

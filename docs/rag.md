@@ -1,64 +1,77 @@
 # Internal Read-Only Workspace RAG
 
-Elpis can run a **read-only workspace RAG** (Retrieval-Augmented Generation) service for semantic discovery over project documentation, codebase files, and external reference materials, without cluttering the agent's active context window.
+`/rag` gives Elpis read-only semantic search over a workspace: ask a question in plain
+language, get back relevant excerpts with their source paths, without loading whole files
+into the context window.
 
-> **Requires a source checkout.**
+> **Elpis does not ship a retrieval engine.**
 >
-> This service is **not reachable from a binary install**. The `.deb` package and the `curl` installer ship the Rust binary only; the RAG service is a separate Python sidecar that lives in the repository.
->
-> To use it you need a source checkout, [`uv`](https://docs.astral.sh/uv/), and a run of `scripts/setup-rag.sh`, which creates the virtualenv in place and writes an absolute-path `mcp_servers.elpis-rag` block into your `config.toml`. Re-run it after moving the checkout. Reaching binary installs is [tracked work](https://github.com/MasihMoafi/Elpis/blob/main/TASKS.md).
+> Retrieval means embedding models, a vector store, and — depending on the reranker you
+> pick — gigabytes of weights. None of that belongs in a terminal binary, and none of it
+> should be downloaded on a user's behalf. Elpis owns the `/rag` surface; you own the
+> engine, the models, and the cost.
 
 ---
 
-## 1. Systemic Architecture
+## 1. Architecture
 
-The RAG pipeline operates as an isolated Python MCP (Model Context Protocol) microservice that communicates directly with the Rust TUI:
+Elpis is the client. The engine is any MCP server you register.
 
 ```text
-[Elpis TUI / Agent Core]
-          |
-          |  (Stdio MCP JSON-RPC handshake)
-          v
-+---------+-------------------------------------------------------+
-|              PYTHON RAG MCP SERVICE (`elpis-rag`)               |
-|  Exposes tool: `query_knowledge_base(query, path)`              |
-+---------+-------------------------------------------------------+
-          |
-          v  (Lazy loads PyTorch + Embeddings on first query)
-+---------+-------------------------------------------------------+
-|                    QDRANT VECTOR ENGINE                         |
-|  - Local Mode: Persistent disk index under workspace            |
-|  - Cloud Mode: Remote Qdrant cluster endpoint                   |
-+-----------------------------------------------------------------+
+[Elpis TUI / agent]
+        |
+        |  MCP (stdio JSON-RPC)
+        v
+[ your retrieval server ]  -- exposes: query_knowledge_base(query, doc_path?)
+        |
+        v
+[ your embeddings + vector store ]  -- local models, Ollama, or a hosted API
 ```
 
----
-
-## 2. Fast Startup & Lazy Loading
-
-Importing the machine-learning stack is slow enough to be felt at startup, so Elpis isolates the RAG service from the launch path:
-
-- **Standard-library handshake:** `src/agent/host.py` imports nothing beyond the Python standard library at module scope, so the MCP protocol handshake is answered without loading any machine-learning stack.
-- **Lazy Dependency Loading (`rag.fetch`):** Heavier dependencies (PyTorch, SentenceTransformers, Qdrant client) load only when `query_knowledge_base` runs, via `importlib.import_module("rag.fetch")` inside the tool handler itself.
-- **Out-of-process:** The service is a separate MCP process, so its memory footprint and import cost never enter the TUI's address space.
+Elpis contributes the command, the argument parsing, the path picker, and the instruction
+that the answer must cite its source paths. Everything below the MCP boundary is yours.
 
 ---
 
-## 3. Command Usage & Tool Invocation
+## 2. Registering a server
 
-Users and agents can invoke semantic search across the workspace using the `/rag` command or MCP tool:
+`/rag` looks for a registered and enabled MCP server named `elpis-rag`, `rag-mcp`, or
+`rag`, in that order. Add one to `~/.codex/config.toml`:
 
-### User Slash Commands
-- `/rag <query>`: Executes a workspace-wide semantic vector search and returns relevant markdown excerpts with file pointers.
-- `/rag <path> -- <query>`: Restricts semantic search to a specific subdirectory or file target.
+```toml
+[mcp_servers.rag]
+command = "/absolute/path/to/your/.venv/bin/python"
+args = ["/absolute/path/to/server.py"]
+```
 
-### Autonomous Agent Tool
-- **`query_knowledge_base`:** Agents can call this tool autonomously when needing broad context or searching for concepts across unfamiliar files before modifying code.
-- **Read-Only Safety Guarantee:** The RAG tool is strictly read-only. It has no filesystem write or edit capabilities.
+Restart Elpis, then confirm with `/mcp`. Until a server is registered, `/rag` refuses and
+tells you so — it will not ask the model to answer from retrieval that did not happen.
+
+The server must expose a `query_knowledge_base` tool taking `query` and an optional
+`doc_path`. [rag-mcp](https://github.com/MasihMoafi/rag-mcp) is a ready-made local
+implementation: hybrid BM25 + vector search with reranking, everything on-device, no API
+keys. Any MCP server meeting the same contract works equally well, including one backed by
+a hosted embedding API.
 
 ---
 
-## 4. Systemic Inter-Dependencies
+## 3. Usage
 
-- **Integration with Context Pruning:** Excerpts returned by `/rag` are injected into context as temporary `turn`-level evidence pointers, which are automatically pruned post-turn by Ace (see `docs/context.md`).
-- **Integration with Memory:** Durable memory (`MEMORY.md`) can store successful `/rag` query keys and search strategies without duplicating full document content (see `docs/memory.md`).
+- `/rag <query>` — search the current workspace.
+- `/rag <path> -- <query>` — restrict the search to a folder or file.
+- `/rag -- <query>` — opens a path picker prefilled with the working directory.
+
+Agents may also call `query_knowledge_base` directly when they need broad discovery before
+editing. The tool is read-only; it has no write or edit capability. Exact current-file
+evidence is still required before changing a file.
+
+---
+
+## 4. Interaction with the rest of Elpis
+
+- **Context pruning:** returned excerpts enter context as turn-level evidence pointers and
+  are pruned after the turn (see [context.md](context.md)).
+- **Memory:** durable memory may record a useful query or search strategy, never the
+  retrieved document bodies (see [memory.md](memory.md)).
+- **Startup:** the retrieval server is a separate process. Its import cost, model loading,
+  and memory footprint never enter the TUI's launch path.

@@ -82,5 +82,6 @@ user-facing:
 
 - The README's stated version must be the version `releases/latest` actually serves.
 - Do not describe a feature as available if the shipped install path cannot reach it.
-  Local RAG requires a git clone; the `curl` and `.deb` paths cannot run
-  `setup-rag.sh`. Say so where the feature is documented.
+- Never add a machine-learning dependency to this repository. `/rag` is a client of an
+  MCP retrieval server the user registers; the engine, its models, and their download
+  size stay outside Elpis and outside the release artifact.

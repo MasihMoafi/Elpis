@@ -26,11 +26,6 @@ htmlcov/
 .gitignore
 
 # Project specific
-src/agent_chroma_db/
-src/agent_qdrant_db/
-src/rag/rag_db/
-src/rag/rag_db_v2/
-src/rag/rag_db_v3/
 *.db
 
 # Large files

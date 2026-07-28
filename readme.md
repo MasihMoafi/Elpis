@@ -115,7 +115,7 @@ Reusable memory is selective, size-capped, and attributable — every entry reco
 
 ### Local knowledge base
 
-Optional read-only semantic search over your own documents, with no write access granted to the agent. Currently available from a source checkout via `scripts/setup-rag.sh`; reaching binary installs is [tracked work](TASKS.md).
+Optional read-only semantic search over your own documents, with no write access granted to the agent. Elpis ships no retrieval engine and downloads no models: `/rag` talks to an MCP retrieval server you register, so the embeddings, the vector store, and any API key stay yours. [rag-mcp](https://github.com/MasihMoafi/rag-mcp) is a ready-made local one. Until a server is registered, `/rag` says so instead of answering. See [docs/rag.md](docs/rag.md).
 
 ### Privacy and ownership
 
