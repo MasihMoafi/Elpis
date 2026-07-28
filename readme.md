@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
 
-[Install](#quickstart) • [Features](#core-features) • [Docs](#documentation) • [Roadmap](TASKS.md)
+[Install](#quickstart) • [Features](#core-features) • [Docs](#documentation)
 
 </div>
 
@@ -148,7 +148,6 @@ choose a provider and sign in or enter its API key.
 - `/auto` model routing after it proves a real cost benefit.
 - Voice input and LSP-backed code intelligence.
 
-Full roadmap: [TASKS.md](TASKS.md).
 
 ## Documentation
 
@@ -158,7 +157,6 @@ Full roadmap: [TASKS.md](TASKS.md).
 - [Providers](docs/providers.md) — every supported route, including local inference
 - [Workspace retrieval](docs/rag.md) — how to plug in semantic search over your own documents
 - [`GUIDE.md`](docs/GUIDE.md) — product vision and architecture
-- [`TASKS.md`](TASKS.md) — what is being built next
 
 ## License
 

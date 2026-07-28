@@ -95,3 +95,6 @@ NOTES-masih.md
 
 # Obsidian vault config, not for the repo
 .obsidian/
+
+# Private task list; not published.
+TASKS.md
