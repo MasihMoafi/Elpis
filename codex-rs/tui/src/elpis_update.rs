@@ -5,14 +5,19 @@ use reqwest::Client;
 use serde::Deserialize;
 use sha2::Digest;
 use sha2::Sha256;
+use std::io::IsTerminal;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
+use std::time::Instant;
 use tempfile::NamedTempFile;
 
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/MasihMoafi/Elpis/releases/latest";
 const MAX_BINARY_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_CHECKSUM_BYTES: usize = 16 * 1024;
+const PROGRESS_BAR_WIDTH: usize = 28;
+const PROGRESS_REDRAW_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Deserialize)]
 struct Release {
@@ -34,27 +39,163 @@ struct UpdateConfig {
     os: String,
     arch: String,
     persist: fn(NamedTempFile, &Path) -> Result<()>,
+    progress: Box<dyn UpdateProgress>,
+}
+
+/// Sink for the human-facing account of an update: status notes plus the
+/// download's byte-by-byte advance.
+trait UpdateProgress {
+    fn note(&mut self, message: &str);
+    fn start(&mut self, label: &str, total: Option<u64>);
+    fn advance(&mut self, downloaded: u64);
+    fn finish(&mut self, downloaded: u64);
+}
+
+/// Used when stderr is not a terminal, and by the tests.
+struct SilentProgress;
+
+impl UpdateProgress for SilentProgress {
+    fn note(&mut self, _message: &str) {}
+    fn start(&mut self, _label: &str, _total: Option<u64>) {}
+    fn advance(&mut self, _downloaded: u64) {}
+    fn finish(&mut self, _downloaded: u64) {}
+}
+
+struct TerminalProgress {
+    total: Option<u64>,
+    started: Instant,
+    last_redraw: Option<Instant>,
+}
+
+impl TerminalProgress {
+    fn new() -> Self {
+        Self {
+            total: None,
+            started: Instant::now(),
+            last_redraw: None,
+        }
+    }
+
+    fn line(&self, downloaded: u64, elapsed: f64) -> String {
+        let rate = if elapsed > 0.0 {
+            format!("{}/s", format_bytes(((downloaded as f64) / elapsed) as u64))
+        } else {
+            "--".to_string()
+        };
+        match self.total {
+            Some(total) if total > 0 => {
+                let fraction = (downloaded as f64 / total as f64).clamp(0.0, 1.0);
+                let filled = (fraction * PROGRESS_BAR_WIDTH as f64).round() as usize;
+                let bar = format!(
+                    "{}{}",
+                    "█".repeat(filled),
+                    "░".repeat(PROGRESS_BAR_WIDTH - filled)
+                );
+                format!(
+                    "  {bar} {:>3}%  {} / {}  {rate}",
+                    (fraction * 100.0).round() as u64,
+                    format_bytes(downloaded),
+                    format_bytes(total),
+                )
+            }
+            // No Content-Length: report what has landed so far.
+            _ => format!("  {} downloaded  {rate}", format_bytes(downloaded)),
+        }
+    }
+
+    fn redraw(&self, downloaded: u64) {
+        let line = self.line(downloaded, self.started.elapsed().as_secs_f64());
+        let mut stderr = std::io::stderr();
+        let _ = write!(stderr, "\r\u{1b}[K{line}");
+        let _ = stderr.flush();
+    }
+}
+
+impl UpdateProgress for TerminalProgress {
+    fn note(&mut self, message: &str) {
+        eprintln!("{message}");
+    }
+
+    fn start(&mut self, label: &str, total: Option<u64>) {
+        eprintln!("{label}");
+        self.total = total;
+        self.started = Instant::now();
+        self.last_redraw = None;
+        self.redraw(0);
+    }
+
+    fn advance(&mut self, downloaded: u64) {
+        let now = Instant::now();
+        if self
+            .last_redraw
+            .is_some_and(|last| now.duration_since(last) < PROGRESS_REDRAW_INTERVAL)
+        {
+            return;
+        }
+        self.last_redraw = Some(now);
+        self.redraw(downloaded);
+    }
+
+    fn finish(&mut self, downloaded: u64) {
+        self.redraw(downloaded);
+        eprintln!();
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    const KIB: f64 = 1024.0;
+    let bytes = bytes as f64;
+    if bytes >= MIB {
+        format!("{:.1} MiB", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{:.0} KiB", bytes / KIB)
+    } else {
+        format!("{bytes:.0} B")
+    }
+}
+
+/// Debug builds only: lets a local build rehearse the update against a fake
+/// release without pointing at the real one or touching the real install.
+/// Release builds ignore these entirely.
+fn debug_override(key: &str) -> Option<String> {
+    if cfg!(debug_assertions) {
+        std::env::var(key).ok()
+    } else {
+        None
+    }
 }
 
 pub(crate) async fn run() -> Result<String> {
     let home = dirs::home_dir().context("cannot find the home directory")?;
+    let progress: Box<dyn UpdateProgress> = if std::io::stderr().is_terminal() {
+        Box::new(TerminalProgress::new())
+    } else {
+        Box::new(SilentProgress)
+    };
     let config = UpdateConfig {
-        latest_release_url: LATEST_RELEASE_URL.to_string(),
-        install_path: home.join(".local/bin/elpis"),
+        latest_release_url: debug_override("ELPIS_UPDATE_RELEASE_URL")
+            .unwrap_or_else(|| LATEST_RELEASE_URL.to_string()),
+        install_path: debug_override("ELPIS_UPDATE_INSTALL_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local/bin/elpis")),
         current_executable: std::env::current_exe()
             .context("cannot locate the running Elpis binary")?,
-        current_version: env!("CARGO_PKG_VERSION").to_string(),
+        current_version: debug_override("ELPIS_UPDATE_CURRENT_VERSION")
+            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
         persist: persist_update,
+        progress,
     };
     run_with_config(config).await
 }
 
-async fn run_with_config(config: UpdateConfig) -> Result<String> {
+async fn run_with_config(mut config: UpdateConfig) -> Result<String> {
     let asset_name = platform_asset_name(&config.os, &config.arch)?;
     require_user_local_install(&config.current_executable, &config.install_path)?;
 
+    config.progress.note("Checking for a newer Elpis release…");
     let client = Client::builder()
         .user_agent(format!("elpis-updater/{}", config.current_version))
         .build()
@@ -89,7 +230,14 @@ async fn run_with_config(config: UpdateConfig) -> Result<String> {
         .context("Elpis install path has no parent directory")?;
     let mut staged = NamedTempFile::new_in(parent)
         .with_context(|| format!("cannot stage the update in {}", parent.display()))?;
-    let actual_checksum = download_binary(&client, binary_url, &mut staged).await?;
+    let actual_checksum = download_binary(
+        &client,
+        binary_url,
+        &mut staged,
+        &format!("Downloading Elpis {latest_version} ({asset_name})"),
+        config.progress.as_mut(),
+    )
+    .await?;
     if actual_checksum != expected_checksum {
         bail!(
             "Elpis update checksum mismatch: expected {expected_checksum}, got {actual_checksum}"
@@ -217,6 +365,8 @@ async fn download_binary(
     client: &Client,
     url: &str,
     destination: &mut NamedTempFile,
+    label: &str,
+    progress: &mut dyn UpdateProgress,
 ) -> Result<String> {
     let mut response = client
         .get(url)
@@ -225,12 +375,11 @@ async fn download_binary(
         .context("cannot download the Elpis update")?
         .error_for_status()
         .context("cannot download the Elpis update")?;
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_BINARY_BYTES)
-    {
+    let expected_length = response.content_length();
+    if expected_length.is_some_and(|length| length > MAX_BINARY_BYTES) {
         bail!("Elpis update is unexpectedly large");
     }
+    progress.start(label, expected_length);
 
     let mut total = 0_u64;
     let mut hasher = Sha256::new();
@@ -249,7 +398,9 @@ async fn download_binary(
         destination
             .write_all(&chunk)
             .context("cannot write the staged Elpis update")?;
+        progress.advance(total);
     }
+    progress.finish(total);
     Ok(format!("{:x}", hasher.finalize()))
 }
 
@@ -286,6 +437,8 @@ mod tests {
     use super::*;
     use sha2::Digest;
     use std::fs;
+    use std::sync::Arc;
+    use std::sync::Mutex;
     use tempfile::TempDir;
     use wiremock::Mock;
     use wiremock::MockServer;
@@ -318,7 +471,40 @@ mod tests {
                 os: "linux".to_string(),
                 arch: "x86_64".to_string(),
                 persist: persist_update,
+                progress: Box::new(SilentProgress),
             }
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordedProgress {
+        started: Option<(String, Option<u64>)>,
+        advances: Vec<u64>,
+        finished: Option<u64>,
+    }
+
+    #[derive(Clone, Default)]
+    struct RecordingProgress(Arc<Mutex<RecordedProgress>>);
+
+    impl RecordingProgress {
+        fn recorded(&self) -> std::sync::MutexGuard<'_, RecordedProgress> {
+            self.0.lock().expect("progress lock")
+        }
+    }
+
+    impl UpdateProgress for RecordingProgress {
+        fn note(&mut self, _message: &str) {}
+
+        fn start(&mut self, label: &str, total: Option<u64>) {
+            self.recorded().started = Some((label.to_string(), total));
+        }
+
+        fn advance(&mut self, downloaded: u64) {
+            self.recorded().advances.push(downloaded);
+        }
+
+        fn finish(&mut self, downloaded: u64) {
+            self.recorded().finished = Some(downloaded);
         }
     }
 
@@ -476,6 +662,58 @@ mod tests {
 
         assert!(message.contains("already current"));
         assert_eq!(fs::read(&fixture.install_path).unwrap(), b"old elpis");
+    }
+
+    #[tokio::test]
+    async fn download_reports_its_size_and_completion_to_the_progress_sink() {
+        let server = MockServer::start().await;
+        let fixture = Fixture::new();
+        let binary = vec![7_u8; 4096];
+        mount_release(
+            &server,
+            &binary,
+            &format!("{}  elpis-linux-x86_64\n", sha256(&binary)),
+        )
+        .await;
+        let recorder = RecordingProgress::default();
+        let mut config = fixture.config(&server, "0.1.1");
+        config.progress = Box::new(recorder.clone());
+
+        run_with_config(config).await.expect("successful update");
+
+        let recorded = recorder.recorded();
+        let (label, total) = recorded.started.clone().expect("download started");
+        assert!(label.contains("Downloading Elpis 0.1.2"));
+        assert_eq!(total, Some(binary.len() as u64));
+        assert_eq!(recorded.finished, Some(binary.len() as u64));
+        assert_eq!(recorded.advances.last(), Some(&(binary.len() as u64)));
+    }
+
+    #[test]
+    fn progress_line_renders_percentage_when_the_size_is_known() {
+        let mut bar = TerminalProgress::new();
+        bar.total = Some(4 * 1024 * 1024);
+
+        let line = bar.line(1024 * 1024, 2.0);
+
+        assert!(line.contains(" 25%"), "{line}");
+        assert!(line.contains("1.0 MiB / 4.0 MiB"), "{line}");
+        assert!(line.contains("512 KiB/s"), "{line}");
+        assert_eq!(line.matches('█').count(), PROGRESS_BAR_WIDTH / 4);
+        assert_eq!(
+            line.matches('█').count() + line.matches('░').count(),
+            PROGRESS_BAR_WIDTH
+        );
+    }
+
+    #[test]
+    fn progress_line_falls_back_to_bytes_when_the_size_is_unknown() {
+        let bar = TerminalProgress::new();
+
+        let line = bar.line(2 * 1024 * 1024, 1.0);
+
+        assert!(!line.contains('█'), "{line}");
+        assert!(line.contains("2.0 MiB downloaded"), "{line}");
     }
 
     #[test]
