@@ -49,9 +49,11 @@ Memory processing in Elpis operates in two distinct background stages:
    - Tracks `usage_count`, `last_usage` timestamps, and `stage1_recall_queries` `(thread_id, query_key, recalled_at)` to measure recall frequency and query diversity.
 
 2. **Phase 2 (Global Consolidation — `memory_consolidate_global`):**
-   - Runs periodically (with a default 6-hour success cooldown).
-   - Evaluates Stage 1 candidates against score, recall frequency, and query diversity gates.
-   - Promotes qualified candidates into long-term memory (`MEMORY.md`).
+   - Attempts to run on each launch and stops unless the last success is more than 6 hours old and the candidate set changed.
+   - Marks a candidate promotable only when it clears both thresholds: recalled at least twice, across at least two distinct query contexts. There is no weighted score — the two conditions are absolute.
+   - Hands a sandboxed consolidation agent the changed inputs; that agent, not the pipeline, edits `MEMORY.md`, and it is instructed to skip anything the thresholds marked ineligible.
+
+   Measured reality: on a live install this produced **zero** promotions in five days — 104 extractions, 60 candidates, no change to `MEMORY.md`. The threshold was 3 recalls at the time and is now 2. Until a promotion is observed, treat this stage as unproven.
 
 ---
 
@@ -61,7 +63,9 @@ Elpis memory state is strictly separated from upstream runtime state and stored 
 
 | Path | Purpose | Behavior |
 | :--- | :--- | :--- |
-| `~/.elpis/memories/MEMORY.md` | Curated durable long-term memory. | Injected into session bootstrap (subject to token budget cap). |
+| `~/.elpis/memories/MEMORY.md` | Curated durable long-term memory. | Reaches the model through the Context Ledger, where it is listed and switchable like `GOAL.md` and `ES.md`. |
+| `~/.elpis/memories/memory_summary.md` | Compact index of stored memory. | Injected into developer instructions when memory is on, capped at 2,500 tokens. This — not `MEMORY.md` — is what the pipeline puts in the prompt. |
+| `~/.elpis/memories/raw_memories.md` | Every extracted candidate. | The journal. Grows unbounded until consolidation prunes it; 210 KB on a five-day-old install. |
 | `~/.elpis/memories/archive.md` | Searchable append-only archive. | Receives deleted or age-faded memories prior to baseline reset. Fail-closed on write error. |
 | `~/.elpis/state/memories_1.sqlite` | SQLite state database. | Stores `stage1_outputs`, `stage1_recall_queries`, job queues, and promotion metadata. |
 | `~/.elpis/context/workspaces/<workspace>/GOAL.md` | Active goal checkpoint. | Survives restarts, model switches, and thread compaction. |
