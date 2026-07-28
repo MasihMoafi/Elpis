@@ -122,6 +122,17 @@ Elpis provides interactive context admission control in the TUI:
   - Global & project-level `AGENTS.md` rules
   - Individual skill rules (`skills/dev/*.md`)
 
+![The Context Ledger listing admitted instruction files with their token counts and included state](assets/context-ledger.png)
+
+### `/context` — where the window went
+
+The ledger answers *what is admitted*. `/context` answers *what filled the window*: token
+usage as a grid broken down by category — user messages, agent responses, tool calls,
+system prompt, skills, and free space — alongside the backtrack checkpoints available via
+`Esc Esc`. The two are separate surfaces and neither replaces the other.
+
+![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](assets/elpis-context-slash.png)
+
 ### Context Accounting Contract
 
 Elpis exposes **one single source of truth** for context measurement:

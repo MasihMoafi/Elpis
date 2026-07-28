@@ -36,25 +36,6 @@ const SIDE_STARTING_CONTEXT_LABEL: &str = "Side starting...";
 const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to return to the main thread first.";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
-const RAG_USAGE: &str = "Usage: /rag <query> or /rag <path> -- <query>";
-
-/// Server names `/rag` will drive, most specific first. Elpis ships no retrieval
-/// engine of its own, so the user registers one and `/rag` finds it by name.
-const RAG_SERVER_NAMES: [&str; 3] = ["elpis-rag", "rag-mcp", "rag"];
-
-/// Without a registered server there is no tool to call, and instructing the model
-/// to answer from "retrieved chunks" that were never retrieved invites a cited
-/// answer grounded in nothing. Say so instead of asking.
-const RAG_NO_SERVER: &str = "/rag needs a retrieval MCP server and none is registered. \
-Elpis does not ship one — the engine, its models, and their download size are yours to pick. \
-Register one as `rag` in config.toml and restart Elpis; https://github.com/MasihMoafi/rag-mcp \
-is a ready-made local option. Run /mcp to see what is registered.";
-
-fn rag_request(server: &str, doc_path: &str, query: &str) -> String {
-    format!(
-        "Use the `{server}` MCP server's `query_knowledge_base` tool with doc_path `{doc_path}` and query `{query}`. Base the answer on the retrieved chunks and cite their source paths."
-    )
-}
 const ADD_CONTEXT_USAGE: &str = "Usage: /add <file-or-directory-path> (drag & drop works too)";
 
 /// Terminals drop paths quoted and/or with backslash-escaped spaces, sometimes as
@@ -448,9 +429,6 @@ impl ChatWidget {
             SlashCommand::Skills => {
                 self.open_skills_menu();
             }
-            SlashCommand::Rag => {
-                self.add_error_message(RAG_USAGE.to_string());
-            }
             SlashCommand::Import => {
                 self.app_event_tx
                     .send(AppEvent::OpenExternalAgentConfigMigration);
@@ -704,38 +682,6 @@ impl ChatWidget {
                 }
                 _ => self.add_error_message("Usage: /hotkeys [debug]".to_string()),
             },
-            SlashCommand::Rag => {
-                let Some(server) = self.rag_server_name() else {
-                    self.add_error_message(RAG_NO_SERVER.to_string());
-                    return;
-                };
-                // `args` arrives trimmed, so an omitted path (`/rag -- <query>`) has
-                // no leading space left to split on and must be matched up front.
-                if let Some(query) = trimmed.strip_prefix("--") {
-                    let query = query.trim();
-                    if query.is_empty() {
-                        self.add_error_message(RAG_USAGE.to_string());
-                    } else {
-                        self.show_rag_path_prompt(query.to_string());
-                    }
-                    return;
-                }
-                let request = match trimmed.split_once(" -- ") {
-                    Some((doc_path, query))
-                        if !doc_path.trim().is_empty() && !query.trim().is_empty() =>
-                    {
-                        rag_request(server, doc_path.trim(), query.trim())
-                    }
-                    Some(_) => {
-                        self.add_error_message(RAG_USAGE.to_string());
-                        return;
-                    }
-                    None => format!(
-                        "Use the `{server}` MCP server's `query_knowledge_base` tool to search the current workspace for `{trimmed}`. Base the answer on the retrieved chunks and cite their source paths."
-                    ),
-                };
-                self.submit_user_message(UserMessage::from(request));
-            }
             SlashCommand::Raw => match trimmed.to_ascii_lowercase().as_str() {
                 "on" => {
                     self.set_raw_output_mode_and_notify(/*enabled*/ true);
@@ -924,47 +870,6 @@ impl ChatWidget {
         }
     }
 
-    /// The registered MCP server `/rag` should query, or `None` when the user has
-    /// not brought one.
-    fn rag_server_name(&self) -> Option<&'static str> {
-        let servers = self.config.mcp_servers.get();
-        RAG_SERVER_NAMES
-            .into_iter()
-            .find(|name| servers.get(*name).is_some_and(|server| server.enabled))
-    }
-
-    pub(crate) fn submit_rag_search(&mut self, query: String, doc_path: String) {
-        let Some(server) = self.rag_server_name() else {
-            self.add_error_message(RAG_NO_SERVER.to_string());
-            return;
-        };
-        self.submit_user_message(UserMessage::from(rag_request(server, &doc_path, &query)));
-    }
-
-    fn show_rag_path_prompt(&mut self, query: String) {
-        let current_cwd = self
-            .current_cwd
-            .clone()
-            .unwrap_or_else(|| self.config.cwd.to_path_buf());
-        let tx = self.app_event_tx.clone();
-        let view = CustomPromptView::new(
-            "Search path".to_string(),
-            "Folder path; Enter uses the current workspace".to_string(),
-            current_cwd.display().to_string(),
-            Some(
-                "Edit the path or press Enter to search the terminal working directory."
-                    .to_string(),
-            ),
-            Box::new(move |doc_path: String| {
-                tx.send(AppEvent::SubmitRagSearch {
-                    query: query.clone(),
-                    doc_path,
-                });
-            }),
-        );
-        self.bottom_pane.show_view(Box::new(view));
-    }
-
     pub(super) fn submit_queued_slash_prompt(
         &mut self,
         queued_message: QueuedUserMessage,
@@ -1145,7 +1050,6 @@ impl ChatWidget {
             | SlashCommand::Logout
             | SlashCommand::Mention
             | SlashCommand::Skills
-            | SlashCommand::Rag
             | SlashCommand::Import
             | SlashCommand::Hooks
             | SlashCommand::Title

@@ -30,7 +30,6 @@ pub enum SlashCommand {
     Memories,
     Add,
     Skills,
-    Rag,
     Import,
     Hooks,
     Review,
@@ -95,7 +94,6 @@ impl SlashCommand {
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
             SlashCommand::Skills => "use skills to improve how Elpis performs specific tasks",
-            SlashCommand::Rag => "search files: /rag <query> or /rag <path> -- <query>",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Usage => "inspect current context, continuity, and token usage",
@@ -150,7 +148,6 @@ impl SlashCommand {
             self,
             SlashCommand::Review
                 | SlashCommand::Add
-                | SlashCommand::Rag
                 | SlashCommand::Rename
                 | SlashCommand::Plan
                 | SlashCommand::Goal
@@ -170,7 +167,6 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::Copy
-                | SlashCommand::Rag
                 | SlashCommand::Raw
                 | SlashCommand::Diff
                 | SlashCommand::Mention
@@ -212,7 +208,6 @@ impl SlashCommand {
             | SlashCommand::Rename
             | SlashCommand::Mention
             | SlashCommand::Skills
-            | SlashCommand::Rag
             | SlashCommand::Hooks
             | SlashCommand::Usage
             | SlashCommand::Context
@@ -245,7 +240,6 @@ impl SlashCommand {
             | SlashCommand::Permissions
             | SlashCommand::Add
             | SlashCommand::Skills
-            | SlashCommand::Rag
             | SlashCommand::Hooks
             | SlashCommand::Review
             | SlashCommand::New
@@ -391,7 +385,6 @@ mod tests {
 
     #[test]
     fn certain_commands_are_available_during_task() {
-        assert!(SlashCommand::Rag.available_during_task());
         assert!(SlashCommand::Goal.available_during_task());
         assert!(SlashCommand::Ide.available_during_task());
         assert!(SlashCommand::Title.available_during_task());

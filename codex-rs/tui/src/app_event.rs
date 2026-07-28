@@ -935,12 +935,6 @@ pub(crate) enum AppEvent {
         collaboration_mode: CollaborationModeMask,
     },
 
-    /// Submit a scoped, read-only RAG request chosen from the local path prompt.
-    SubmitRagSearch {
-        query: String,
-        doc_path: String,
-    },
-
     /// Open the approval popup.
     FullScreenApprovalRequest(ApprovalRequest),
 

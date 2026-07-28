@@ -14,8 +14,8 @@ not a blanket refactor):
   sites, ownership, configuration reachability, tests, and runtime purpose.
 - Preserve ChatGPT/Codex login, streaming, shell/file tools, approvals, sandboxing,
   sessions, compaction, mouse selection, `/agent`, `/skills`, and `@` attachment.
-- Preserve the `/rag` MCP-client boundary. Elpis contains no retrieval engine and no
-  Python; do not restore either.
+- Preserve the retrieval boundary. Elpis contains no retrieval engine, no `/rag`, and no
+  Python; do not restore any of them.
 - Do not mix appearance changes, feature deletion, and architecture work in one pass.
 
 Audit steps:

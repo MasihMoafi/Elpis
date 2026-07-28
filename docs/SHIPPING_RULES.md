@@ -1,8 +1,8 @@
 # Shipping Rules
 
 Rules for anything that reaches a user's machine: the `elpis` binary, the installer,
-the `.deb`, and the RAG sidecar. Read this before a release or before changing code
-that reads the filesystem, the environment, or the network.
+and the `.deb`. Read this before a release or before changing code that reads the
+filesystem, the environment, or the network.
 
 The governing question is always: **what does this do on a machine that is not Masih's?**
 
@@ -36,8 +36,8 @@ grep -rn 'Desktop/\|/home/[a-z]' codex-rs --include='*.rs' | grep -v MasihMoafi
 
 - Install the actual published artifact in a clean container and run it.
 - Check first-run behavior with no `~/.codex`, no config, no auth, no network cache.
-- For anything with Python or model downloads, verify from an empty environment,
-  because that is where pinned versions and missing wheels fail.
+- For anything that downloads at runtime, verify from an empty environment, because
+  that is where pinned versions and missing artifacts fail.
 
 ## 3. Release mechanics
 
@@ -82,6 +82,6 @@ user-facing:
 
 - The README's stated version must be the version `releases/latest` actually serves.
 - Do not describe a feature as available if the shipped install path cannot reach it.
-- Never add a machine-learning dependency to this repository. `/rag` is a client of an
-  MCP retrieval server the user registers; the engine, its models, and their download
-  size stay outside Elpis and outside the release artifact.
+- Never add a machine-learning dependency to this repository. Retrieval is an MCP server
+  the user registers; the engine, its models, and their download size stay outside Elpis
+  and outside the release artifact.

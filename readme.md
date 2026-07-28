@@ -102,7 +102,15 @@ All three levels ship with Elpis. Inspect the result with `/prune`.
 
 ### Context Ledger
 
-`/context` shows exactly which files are in the working set, why each one is there, and ctrl+click opens any path. Context selection becomes an intentional operation instead of a side effect.
+`Tab` — or `Alt+C` while a turn is running — opens a side panel listing every source admitted into the working set, each with its size and whether it is included. Toggling a row changes what the next turn actually receives, so context selection becomes an intentional operation instead of a side effect.
+
+<img src="docs/assets/context-ledger.png" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="520">
+
+### Where the window went
+
+`/context` answers a different question: not what is admitted, but what filled the window. It shows usage as a grid broken down by category — user messages, agent responses, tool calls, system prompt, skills, free space — alongside the backtrack checkpoints you can jump to.
+
+<img src="docs/assets/elpis-context-slash.png" alt="/context showing token usage as a grid, broken down by category, with available backtrack checkpoints" width="720">
 
 ### Session continuity
 
@@ -112,9 +120,9 @@ Goal and checkpoint state survive compaction, model switches, and restarts, so w
 
 Reusable memory is selective, size-capped, and attributable — every entry records where it came from, and entries are promoted or archived rather than accumulating forever. It is on by default; `/memories` turns recall and writing off independently, and the agent you talk to has no memory-write tool of its own.
 
-### Local knowledge base
+### Retrieval you plug in
 
-Optional read-only semantic search over your own documents, with no write access granted to the agent. Elpis ships no retrieval engine and downloads no models: `/rag` talks to an MCP retrieval server you register, so the embeddings, the vector store, and any API key stay yours. [rag-mcp](https://github.com/MasihMoafi/rag-mcp) is a ready-made local one. Until a server is registered, `/rag` says so instead of answering. See [docs/rag.md](docs/rag.md).
+Elpis ships no retrieval engine and downloads no models. Semantic search over your own documents is an MCP server you register — the embeddings, the vector store, the reranker, and any API key stay yours, along with the disk space they cost. [rag-mcp](https://github.com/MasihMoafi/rag-mcp) is a ready-made local one; `/mcp` confirms it connected. See [docs/rag.md](docs/rag.md).
 
 ### Privacy and ownership
 
@@ -148,7 +156,7 @@ Full roadmap: [TASKS.md](TASKS.md).
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
 - [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
 - [Providers](docs/providers.md) — every supported route, including local inference
-- [Workspace RAG](docs/rag.md) — read-only semantic search over your own documents
+- [Workspace retrieval](docs/rag.md) — how to plug in semantic search over your own documents
 - [`GUIDE.md`](docs/GUIDE.md) — product vision and architecture
 - [`TASKS.md`](TASKS.md) — what is being built next
 

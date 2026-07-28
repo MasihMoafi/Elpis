@@ -134,13 +134,12 @@ are enforced by code where prompts are insufficient.
 **R7. Claims require proof** — Documentation separates implemented behavior, remote
 tests, and outstanding user acceptance. Design documents and hidden code are not proof.
 
-**R8. Internal read-only RAG** — `/rag <query>` searches the workspace and
-`/rag <path> -- <query>` targets a folder. The runtime may call the same read-only tool
-autonomously for broad discovery. Exact current-file evidence remains required before
-editing. Elpis owns the command, not the engine: retrieval is served by an MCP server the
-user registers, so no model weights or machine-learning dependency ever ship with Elpis.
-With no server registered, `/rag` must refuse rather than ask the model to answer from
-retrieval that did not happen.
+**R8. Retrieval is plugged in, not built in** — Elpis ships no retrieval engine, no model
+weights, and no `/rag` command. Workspace semantic search is obtained by registering an MCP
+server that exposes a retrieval tool, which the runtime may then call autonomously for broad
+discovery. Exact current-file evidence remains required before editing. Never add a
+machine-learning dependency to this repository; the engine, its models, and their download
+size belong to the user who chooses them.
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused
 first-release checks. Exhaustive inherited TUI/app-server regression runs nightly,
@@ -629,7 +628,7 @@ that the fresh launch is fast. Startup performance is accepted.
 Elpis contains no Python. Retrieval runs in an MCP server the user registers, in its own
 process, started by the MCP layer — so an engine's imports, model loading, and indexing
 cost cannot reach the launch path no matter how heavy that engine is. Never reintroduce a
-machine-learning dependency into this repository to serve `/rag`; see [rag.md](rag.md).
+machine-learning dependency into this repository to serve retrieval; see [rag.md](rag.md).
 
 ### Memory ownership
 
