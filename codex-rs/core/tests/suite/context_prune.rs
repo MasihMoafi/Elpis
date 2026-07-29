@@ -68,7 +68,11 @@ async fn pressure_prune_runs_at_sixty_percent_and_rewrites_next_request() -> Res
                 "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
             ),
             final_response(),
-            main_tool_response(CURRENT_CALL_ID, /*total_tokens*/ 6_000, "printf current-marker"),
+            main_tool_response(
+                CURRENT_CALL_ID,
+                /*total_tokens*/ 6_000,
+                "printf current-marker",
+            ),
             prune_response,
             final_response(),
         ],
@@ -90,9 +94,7 @@ async fn pressure_prune_runs_at_sixty_percent_and_rewrites_next_request() -> Res
         "the pruning model must never receive current-turn tool output"
     );
     assert!(requests[4].body_contains_text("[ELPIS CONTEXT UPDATE]"));
-    assert!(
-        requests[4].body_contains_text(&format!("rollout://tool-call/{OLD_CALL_ID}"))
-    );
+    assert!(requests[4].body_contains_text(&format!("rollout://tool-call/{OLD_CALL_ID}")));
     assert!(requests[4].body_contains_text("Output:\ncurrent-marker"));
     assert!(
         !requests[4].body_contains_text(&"x".repeat(128)),
