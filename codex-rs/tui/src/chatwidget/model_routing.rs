@@ -64,7 +64,8 @@ fn needs_frontier_reasoning(request: &str, byte_len: usize) -> bool {
 }
 
 fn is_plainly_mechanical(request: &str, byte_len: usize) -> bool {
-    if byte_len > 280
+    if byte_len > 360
+        || request.contains('?')
         || [
             "delete",
             "deploy",
@@ -88,11 +89,24 @@ fn is_plainly_mechanical(request: &str, byte_len: usize) -> bool {
 
     [
         "copy ",
+        "cut ",
+        "paste ",
         "move ",
         "rename ",
+        "duplicate ",
+        "sort ",
+        "format ",
+        "trim ",
+        "replace ",
+        "remove whitespace",
+        "change the extension",
+        "convert ",
         "list ",
         "show ",
         "print ",
+        "open ",
+        "close ",
+        "save ",
         "create directory",
         "make directory",
     ]
@@ -116,6 +130,14 @@ mod tests {
     fn routes_only_plainly_mechanical_work_to_luna() {
         assert_eq!(
             route_user_request("Copy notes.md to archive.md").model,
+            LUNA_MODEL
+        );
+        assert_eq!(
+            route_user_request("Cut the first paragraph and paste it at the end").model,
+            LUNA_MODEL
+        );
+        assert_eq!(
+            route_user_request("Rename every .jpeg file to .jpg").model,
             LUNA_MODEL
         );
         assert_eq!(
