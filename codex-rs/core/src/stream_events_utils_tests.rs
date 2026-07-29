@@ -406,3 +406,18 @@ fn completed_item_keeps_mailbox_delivery_open_for_commentary_messages() {
         &item, /*plan_mode*/ false,
     ));
 }
+
+#[test]
+fn rollout_summary_slugs_are_extracted_from_a_memory_read() {
+    let args = r#"{"command":["cat","/home/u/.elpis/memories/rollout_summaries/2026-07-26T13-54-10-yZ1q-elpis_state_separation.md"]}"#;
+    assert_eq!(
+        super::rollout_summary_slugs_in(args),
+        vec!["elpis_state_separation".to_string()]
+    );
+}
+
+#[test]
+fn ordinary_tool_calls_are_not_scanned_for_slugs() {
+    let args = r#"{"command":["cat","/home/u/project/src/main.rs"]}"#;
+    assert!(super::rollout_summary_slugs_in(args).is_empty());
+}

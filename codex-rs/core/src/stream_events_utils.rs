@@ -143,6 +143,12 @@ pub(crate) async fn record_completed_response_item_with_finalized_facts(
             .await;
     }
     mark_thread_memory_mode_polluted_if_external_context(sess, turn_context, item).await;
+    record_stage1_output_usage_for_summary_reads(
+        sess.services.state_db.as_ref(),
+        item,
+        Some(turn_context.sub_id.as_str()),
+    )
+    .await;
     let has_memory_citation = if let Some(memory_citation) =
         finalized_facts.and_then(|facts| facts.memory_citation.as_ref())
     {
@@ -191,6 +197,69 @@ pub(crate) async fn mark_thread_memory_mode_polluted_if_external_context(
         "record_completed_response_item",
     )
     .await;
+}
+
+/// Rollout-summary slugs referenced by a tool call.
+///
+/// Summary files are named `<timestamp>-<hash>-<slug>.md`, so the slug is what survives
+/// between the stored row and the path the model touched. Only text that names the
+/// summaries directory is examined, so ordinary tool calls cost nothing.
+pub(crate) fn rollout_summary_slugs_in(text: &str) -> Vec<String> {
+    if !text.contains("rollout_summaries") {
+        return Vec::new();
+    }
+
+    let mut slugs = Vec::new();
+    for candidate in text.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ',')) {
+        let Some(stem) = candidate
+            .rsplit('/')
+            .next()
+            .and_then(|name| name.strip_suffix(".md"))
+        else {
+            continue;
+        };
+        // `2026-07-26T13-54-10-yZ1q-<slug>`: six dash-separated fields of timestamp and
+        // short hash precede the slug, which is the remainder and may contain dashes.
+        let slug = stem.splitn(7, '-').nth(6).unwrap_or_default();
+        if !slug.is_empty() && !slugs.iter().any(|existing| existing == slug) {
+            slugs.push(slug.to_string());
+        }
+    }
+    slugs
+}
+
+/// Counts a recall when the model reads a memory's rollout summary. This is the
+/// retrieval signal promotion needs: citations alone almost never fire, so recall counts
+/// never reached the promotion threshold.
+async fn record_stage1_output_usage_for_summary_reads(
+    state_db_ctx: Option<&state_db::StateDbHandle>,
+    item: &ResponseItem,
+    query_key: Option<&str>,
+) {
+    let text = match item {
+        ResponseItem::FunctionCall { arguments, .. } => arguments.clone(),
+        ResponseItem::CustomToolCall { input, .. } => input.clone(),
+        _ => return,
+    };
+
+    let slugs = rollout_summary_slugs_in(&text);
+    if slugs.is_empty() {
+        return;
+    }
+
+    let Some(db) = state_db_ctx else {
+        return;
+    };
+    let Ok(thread_ids) = db.memories().thread_ids_for_rollout_slugs(&slugs).await else {
+        return;
+    };
+    if thread_ids.is_empty() {
+        return;
+    }
+    let _ = db
+        .memories()
+        .record_stage1_output_usage(&thread_ids, query_key)
+        .await;
 }
 
 async fn record_stage1_output_usage_and_detect_memory_citation(

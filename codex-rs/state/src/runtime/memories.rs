@@ -104,6 +104,44 @@ WHERE EXISTS (SELECT 1 FROM stage1_outputs WHERE thread_id = ?)
         Ok(updated_rows)
     }
 
+    /// Thread ids whose stored rollout slug appears in `slugs`.
+    ///
+    /// Reading a memory's rollout summary is the retrieval signal Elpis actually has:
+    /// there is no memory search tool, so the model reaches memory through the shell, and
+    /// the summary filename carries the slug. Counting that read is what openclaw counts
+    /// when its search returns a memory.
+    pub async fn thread_ids_for_rollout_slugs(
+        &self,
+        slugs: &[String],
+    ) -> anyhow::Result<Vec<ThreadId>> {
+        if slugs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(
+            r#"
+SELECT thread_id, rollout_slug
+FROM stage1_outputs
+WHERE rollout_slug IS NOT NULL AND length(trim(rollout_slug)) > 0
+            "#,
+        )
+        .fetch_all(self.pool.as_ref())
+        .await?;
+
+        let mut matched = Vec::new();
+        for row in rows {
+            let slug: String = row.try_get("rollout_slug")?;
+            if !slugs.iter().any(|candidate| candidate == &slug) {
+                continue;
+            }
+            let thread_id: String = row.try_get("thread_id")?;
+            if let Ok(thread_id) = ThreadId::try_from(thread_id.as_str()) {
+                matched.push(thread_id);
+            }
+        }
+        Ok(matched)
+    }
+
     async fn stage1_source_needs_update(
         &self,
         thread_id: ThreadId,

@@ -61,25 +61,34 @@ pub enum ContinuitySourceCategory {
     Files,
     Memory,
     Instructions,
-    Evidence,
 }
 
 impl ContinuitySourceCategory {
-    pub const ALL: [Self; 4] = [
-        Self::Files,
-        Self::Memory,
-        Self::Instructions,
-        Self::Evidence,
-    ];
+    pub const ALL: [Self; 3] = [Self::Files, Self::Memory, Self::Instructions];
 
     pub fn display_name(self) -> &'static str {
         match self {
-            Self::Files => "ACTIVE FILES",
+            Self::Files => "SESSION CONTINUITY",
             Self::Memory => "DURABLE MEMORY",
             Self::Instructions => "INSTRUCTIONS",
-            Self::Evidence => "TOOL EVIDENCE",
         }
     }
+}
+
+/// True when `GOAL.md` records a finished objective. The status line is written by the
+/// goal writer itself, so this needs no database lookup.
+fn goal_is_complete(goal_path: &Path) -> bool {
+    let Ok(contents) = std::fs::read_to_string(goal_path) else {
+        return false;
+    };
+    contents
+        .lines()
+        .take(12)
+        .filter_map(|line| line.trim().strip_prefix("- Status:"))
+        .any(|status| {
+            let status = status.trim();
+            status.eq_ignore_ascii_case("complete") || status.eq_ignore_ascii_case("completed")
+        })
 }
 
 pub fn workspace_context_dir(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
@@ -253,12 +262,16 @@ pub fn continuity_sources(
     }
 
     let goal_path = workspace_dir.join("GOAL.md");
+    // A finished goal is history, not working context. It stays listed so it can be
+    // switched back on deliberately, but a completed objective no longer occupies the
+    // window just because its file is still on disk.
+    let goal_admitted = admission.goal && !goal_is_complete(&goal_path);
     if let Some(source) = existing_file_source(
         "GOAL.md".to_string(),
         goal_path.clone(),
         ContinuitySourceCategory::Files,
         "active workspace goal",
-        admission.goal,
+        goal_admitted,
     ) {
         if let Ok(canonical) = goal_path.canonicalize() {
             canonical_paths.insert(canonical);
@@ -266,10 +279,12 @@ pub fn continuity_sources(
         sources.push(source);
     }
     let checkpoint_path = workspace_dir.join("ES.md");
+    // ES.md sits with GOAL.md, not under evidence. Both exist to carry the session
+    // forward; neither is a tool observation, which is what the evidence category means.
     if let Some(source) = existing_file_source(
         "ES.md".to_string(),
         checkpoint_path.clone(),
-        ContinuitySourceCategory::Evidence,
+        ContinuitySourceCategory::Files,
         "lean session checkpoint",
         admission.checkpoint,
     ) {
@@ -744,7 +759,7 @@ mod tests {
             ("GOAL.md", ContinuitySourceCategory::Files),
             ("MEMORY.md", ContinuitySourceCategory::Memory),
             ("Global AGENTS.md", ContinuitySourceCategory::Instructions),
-            ("ES.md", ContinuitySourceCategory::Evidence),
+            ("ES.md", ContinuitySourceCategory::Files),
         ] {
             let source = sources
                 .iter()
@@ -842,9 +857,11 @@ mod tests {
 
         // Excluding leaves the row on the list; removing takes it off entirely.
         let name = added.display().to_string();
-        assert!(continuity_sources(Some(&memories), &cwd, &[])
-            .iter()
-            .any(|source| source.path == added));
+        assert!(
+            continuity_sources(Some(&memories), &cwd, &[])
+                .iter()
+                .any(|source| source.path == added)
+        );
         assert!(remove_continuity_source(Some(&memories), &cwd, &name)?);
         assert!(
             continuity_sources(Some(&memories), &cwd, &[])
@@ -867,7 +884,10 @@ mod tests {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("projects/Elpis");
-        let dev = home.path().join("projects/skills/dev");
+        // The canonical installed location. A project-sibling `skills/dev` is
+        // deliberately no longer scanned, so rules placed there are never discovered and
+        // the continuity prompt comes back empty.
+        let dev = home.path().join(".elpis/skills/dev");
         let global = home.path().join("global/AGENTS.md");
         tokio::fs::create_dir_all(&cwd).await?;
         tokio::fs::create_dir_all(&dev).await?;
@@ -1076,6 +1096,42 @@ mod tests {
         std::fs::create_dir_all(&empty)?;
         let error = add_continuity_sources(Some(&memories), &cwd, &empty).unwrap_err();
         assert!(error.to_string().contains("no non-empty files"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_completed_goal_is_listed_but_no_longer_admitted() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let workspace = workspace_context_dir(Some(&memories), &cwd).expect("workspace path");
+        std::fs::create_dir_all(&workspace)?;
+
+        let goal = workspace.join("GOAL.md");
+        std::fs::write(
+            &goal,
+            "# Elpis Goal\n\n- Status: active\n\n## Objective\n\nShip it.\n",
+        )?;
+        let active = continuity_sources(Some(&memories), &cwd, &[]);
+        let active_goal = active
+            .iter()
+            .find(|source| source.name == "GOAL.md")
+            .expect("goal row");
+        assert!(active_goal.admitted, "an active goal is admitted");
+
+        std::fs::write(
+            &goal,
+            "# Elpis Goal\n\n- Status: complete\n\n## Objective\n\nShip it.\n",
+        )?;
+        let finished = continuity_sources(Some(&memories), &cwd, &[]);
+        let finished_goal = finished
+            .iter()
+            .find(|source| source.name == "GOAL.md")
+            .expect("goal row stays listed");
+        assert!(
+            !finished_goal.admitted,
+            "a finished goal stops occupying the window"
+        );
         Ok(())
     }
 

@@ -338,7 +338,10 @@ impl ChatWidget {
                 let state_style = if source.admitted { cyan } else { amber };
                 let marker_style = if source.admitted { cat_style } else { muted };
                 let prefix = if selected { "› " } else { "  " };
-                let right = format!("≈{} {state}", format_tokens(source.estimated_tokens));
+                // The unit belongs on the row, not only on the category header: a row
+                // reading "≈52" under a header reading "≈0 tokens admitted" reads as a
+                // contradiction rather than as "this file is 52 tokens, none admitted".
+                let right = format!("≈{} tokens {state}", format_tokens(source.estimated_tokens));
                 // "› " + "[x]" + " " ahead of the name; truncate long names from the
                 // left with '…' so the token count and state stay right-aligned.
                 let fixed = prefix.chars().count() + marker.chars().count() + 1;
@@ -377,7 +380,7 @@ impl ChatWidget {
                     ),
                     Span::raw(" ".repeat(pad)),
                     Span::styled(
-                        format!("≈{} ", format_tokens(source.estimated_tokens)),
+                        format!("≈{} tokens ", format_tokens(source.estimated_tokens)),
                         muted,
                     ),
                     Span::styled(state, state_style),
@@ -652,7 +655,6 @@ fn category_color(category: crate::legacy_core::elpis_context::ContinuitySourceC
         C::Files => Color::Rgb(52, 168, 83),
         C::Memory => Color::Rgb(215, 119, 87),
         C::Instructions => Color::Rgb(255, 193, 7),
-        C::Evidence => Color::Rgb(177, 185, 249),
     }
 }
 
