@@ -278,7 +278,9 @@ impl ChatWidget {
             }),
             {
                 let name = "Conversation (messages)";
-                let right = format!("≈{}", format_tokens(conversation_tokens));
+                // Same unit as every other row and header; without it this row reads
+                // "≈0" two lines under a total reading "≈4.4k tokens".
+                let right = format!("≈{} tokens", format_tokens(conversation_tokens));
                 let pad = content_width
                     .saturating_sub(2 + 2 + name.chars().count() + right.chars().count())
                     .max(1);
@@ -321,7 +323,6 @@ impl ChatWidget {
                     muted,
                 ),
             ]));
-            lines.push(Line::from(""));
             for (index, source) in category_sources {
                 let source_line_start = lines.len();
                 let selected = self.context_ledger.focused && index == self.context_ledger.selected;
@@ -405,8 +406,10 @@ impl ChatWidget {
                         )
                         .dim(),
                     ));
+                    // Only the expanded block needs separating from the next row;
+                    // rows sit adjacent so the categories do not dominate the panel.
+                    lines.push(Line::from(""));
                 }
-                lines.push(Line::from(""));
 
                 source_line_ranges[index] = source_line_start..lines.len();
             }

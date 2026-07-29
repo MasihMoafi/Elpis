@@ -9,3 +9,10 @@ rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "link-arg=/arm64hazardfree"]
 
 [target.'cfg(all(windows, target_env = "gnu"))']
 rustflags = ["-C", "link-arg=-Wl,--stack,8388608"]
+
+# Debug test binaries carry large async state machines, and the default 2 MiB thread
+# stack overflows on the context-pruning integration suite before it can assert
+# anything. The tests are sound; the stack was not. Raising it here keeps `cargo test`
+# working without every caller having to remember the environment variable.
+[env]
+RUST_MIN_STACK = "16777216"

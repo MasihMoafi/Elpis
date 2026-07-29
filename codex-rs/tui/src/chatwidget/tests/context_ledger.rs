@@ -40,11 +40,13 @@ fn configure_ledger_sources(
     std::fs::create_dir_all(&cwd)?;
     std::fs::create_dir_all(&dev)?;
     std::fs::create_dir_all(&workspace)?;
+    std::fs::create_dir_all(&memories)?;
     std::fs::write(&global, "Global instructions")?;
     std::fs::write(cwd.join("AGENTS.md"), "Project instructions")?;
     std::fs::write(dev.join("SKILL.md"), "Development instructions")?;
     std::fs::write(workspace.join("GOAL.md"), "Ship the grouped ledger")?;
     std::fs::write(workspace.join("ES.md"), "Command evidence")?;
+    std::fs::write(memories.join("MEMORY.md"), "Durable memory")?;
 
     chat.config.memories.root = Some(memories.clone().abs());
     chat.config.cwd = cwd.clone().abs();
@@ -73,7 +75,9 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
     let rendered = render_ledger(&chat, 80);
 
-    for heading in ["ACTIVE FILES", "INSTRUCTIONS", "TOOL EVIDENCE"] {
+    // GOAL.md and ES.md both carry the session forward, so they share one category and
+    // there is no separate evidence heading.
+    for heading in ["SESSION CONTINUITY", "DURABLE MEMORY", "INSTRUCTIONS"] {
         assert!(rendered.contains(heading), "missing {heading}:\n{rendered}");
     }
     assert!(rendered.contains("≈"), "token estimates must be labeled");
