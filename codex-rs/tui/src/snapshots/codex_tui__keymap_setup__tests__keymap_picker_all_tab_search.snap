@@ -4,7 +4,7 @@ expression: snapshot
 ---
 Open Transcript | ctrl-t | Global open_transcript Open Transcript Open the transcript overlay. ctrl-t Default
 Open External Editor | ctrl-g | Global open_external_editor Open External Editor Open the current draft in an external editor. ctrl-g Default
-Copy | ctrl-o | Global copy Copy Copy the last agent response to the clipboard. ctrl-o Default
+Copy | ctrl-o | Global copy Copy Copy the last prompt and agent response to the clipboard. ctrl-o Default
 Clear Terminal | ctrl-l | Global clear_terminal Clear Terminal Clear the terminal UI. ctrl-l Default
 Toggle Vim Mode | unbound | Global toggle_vim_mode Toggle Vim Mode Turn Vim composer mode on or off. unbound Default
 Toggle Raw Output | alt-r | Global toggle_raw_output Toggle Raw Output Toggle raw scrollback mode. alt-r Default

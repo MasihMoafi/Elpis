@@ -262,7 +262,7 @@ impl ChatWidget {
         false
     }
 
-    /// Copy the last agent response (raw markdown) to the system clipboard.
+    /// Copy the last prompt and agent response (raw markdown) to the system clipboard.
     pub(crate) fn copy_last_agent_markdown(&mut self) {
         self.copy_last_agent_markdown_with(crate::clipboard_copy::copy_to_clipboard);
     }
@@ -272,12 +272,17 @@ impl ChatWidget {
         &mut self,
         copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
     ) {
-        match self.transcript.last_agent_markdown.clone() {
+        match self
+            .transcript
+            .last_exchange_markdown
+            .clone()
+            .or_else(|| self.transcript.last_agent_markdown.clone())
+        {
             Some(markdown) if !markdown.is_empty() => match copy_fn(&markdown) {
                 Ok(lease) => {
                     self.clipboard_lease = lease;
                     self.add_to_history(history_cell::new_info_event(
-                        "Copied last message to clipboard".into(),
+                        "Copied last prompt and response to clipboard".into(),
                         /*hint*/ None,
                     ));
                 }

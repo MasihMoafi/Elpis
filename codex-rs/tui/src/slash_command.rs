@@ -89,7 +89,7 @@ impl SlashCommand {
             SlashCommand::Fork => "fork the current chat",
             SlashCommand::App => "continue this session in Codex Desktop",
             SlashCommand::Quit => "quit Elpis",
-            SlashCommand::Copy => "copy last response as markdown",
+            SlashCommand::Copy => "copy last prompt and response as markdown",
             SlashCommand::Raw => "toggle raw scrollback mode for copy-friendly terminal selection",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
@@ -256,6 +256,7 @@ impl SlashCommand {
             | SlashCommand::Theme
             | SlashCommand::Fork
             | SlashCommand::Goal
+            | SlashCommand::Copy
             // Inherited Codex features being re-evaluated for the Elpis contract:
             // multi-agent threads (I6 /multi-task), IDE context, and Plan mode
             // (evaluated against I5 structured interactive clarification).
@@ -269,7 +270,6 @@ impl SlashCommand {
             | SlashCommand::Delete
             | SlashCommand::Side
             | SlashCommand::Btw
-            | SlashCommand::Copy
             | SlashCommand::Logout
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
@@ -338,7 +338,6 @@ mod tests {
         for removed in [
             "archive",
             "btw",
-            "copy",
             "del",
             "debug-m-drop",
             "debug-m-update",
@@ -369,6 +368,7 @@ mod tests {
         assert!(visible.contains(&"fork"));
         assert!(visible.contains(&"goal"));
         assert!(visible.contains(&"hooks"));
+        assert!(visible.contains(&"copy"));
         // Unhidden 2026-07-25 for evaluation against the multi-agent backlog (I6) and
         // the IDE-extension decision. Re-hide these here if either is dropped.
         assert!(visible.contains(&"agent"));

@@ -60,7 +60,7 @@ pub(crate) struct AppKeymap {
     pub(crate) open_transcript: Vec<KeyBinding>,
     /// Open external editor for the current draft.
     pub(crate) open_external_editor: Vec<KeyBinding>,
-    /// Copy the last agent response to the clipboard.
+    /// Copy the last prompt and agent response to the clipboard.
     pub(crate) copy: Vec<KeyBinding>,
     /// Clear the terminal UI.
     pub(crate) clear_terminal: Vec<KeyBinding>,

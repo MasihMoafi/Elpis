@@ -958,6 +958,16 @@ impl ChatWidget {
     fn record_agent_markdown(&mut self, message: &str) {
         if !message.is_empty() {
             self.transcript.record_agent_markdown(message.to_string());
+            self.transcript.last_exchange_markdown = Some(
+                self.last_rendered_user_message_display
+                    .as_ref()
+                    .map(|display| display.message.trim())
+                    .filter(|prompt| !prompt.is_empty())
+                    .map_or_else(
+                        || message.to_string(),
+                        |prompt| format!("{prompt}\n\n{message}"),
+                    ),
+            );
         }
     }
 

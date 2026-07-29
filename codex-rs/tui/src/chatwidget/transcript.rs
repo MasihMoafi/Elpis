@@ -9,6 +9,8 @@ pub(super) struct TranscriptState {
     pub(super) active_cell_revision: u64,
     /// Raw markdown of the most recently completed agent response.
     pub(super) last_agent_markdown: Option<String>,
+    /// Raw markdown of the prompt and response from the most recently completed exchange.
+    pub(super) last_exchange_markdown: Option<String>,
     /// Raw markdown of the most recently completed proposed plan.
     pub(super) latest_proposed_plan_markdown: Option<String>,
     /// Whether this turn already produced a copyable response.
@@ -51,6 +53,7 @@ impl TranscriptState {
 
     pub(super) fn reset_copy_history(&mut self) {
         self.last_agent_markdown = None;
+        self.last_exchange_markdown = None;
         self.saw_copy_source_this_turn = false;
     }
 

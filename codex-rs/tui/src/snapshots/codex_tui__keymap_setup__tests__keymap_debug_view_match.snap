@@ -11,4 +11,4 @@ Config key: ctrl-o
 Raw event: code=Char('o'), modifiers=ctrl, kind=Press
 
 Assigned actions:
-  - global.copy (Copy) - Copy the last agent response to the clipboard. [Default]
+  - global.copy (Copy) - Copy the last prompt and agent response to the clipboard. [Default]

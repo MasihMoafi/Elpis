@@ -89,7 +89,7 @@ impl KeymapActionDescriptor {
 pub(super) const KEYMAP_ACTIONS: &[KeymapActionDescriptor] = &[
     action("global", "Global", "open_transcript", "Open the transcript overlay."),
     action("global", "Global", "open_external_editor", "Open the current draft in an external editor."),
-    action("global", "Global", "copy", "Copy the last agent response to the clipboard."),
+    action("global", "Global", "copy", "Copy the last prompt and agent response to the clipboard."),
     action("global", "Global", "clear_terminal", "Clear the terminal UI."),
     action("global", "Global", "toggle_vim_mode", "Turn Vim composer mode on or off."),
     gated_action("global", "Global", "toggle_fast_mode", "Turn Fast mode on or off.", KeymapActionFeature::FastMode),

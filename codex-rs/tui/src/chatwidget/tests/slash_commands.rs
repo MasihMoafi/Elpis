@@ -1904,10 +1904,16 @@ async fn copy_shortcut_can_be_remapped() {
 #[tokio::test]
 async fn slash_copy_stores_clipboard_lease_and_preserves_it_on_failure() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.transcript.last_agent_markdown = Some("copy me".to_string());
+    chat.last_rendered_user_message_display = Some(super::super::UserMessageDisplay {
+        message: "latest prompt".to_string(),
+        remote_image_urls: Vec::new(),
+        local_images: Vec::new(),
+        text_elements: Vec::new(),
+    });
+    chat.record_agent_markdown("copy me");
 
     chat.copy_last_agent_markdown_with(|markdown| {
-        assert_eq!(markdown, "copy me");
+        assert_eq!(markdown, "latest prompt\n\ncopy me");
         Ok(Some(crate::clipboard_copy::ClipboardLease::test()))
     });
 
@@ -1916,12 +1922,12 @@ async fn slash_copy_stores_clipboard_lease_and_preserves_it_on_failure() {
     assert_eq!(cells.len(), 1, "expected one success message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Copied last message to clipboard"),
+        rendered.contains("Copied last prompt and response to clipboard"),
         "expected success message, got {rendered:?}"
     );
 
     chat.copy_last_agent_markdown_with(|markdown| {
-        assert_eq!(markdown, "copy me");
+        assert_eq!(markdown, "latest prompt\n\ncopy me");
         Err("blocked".into())
     });
 
