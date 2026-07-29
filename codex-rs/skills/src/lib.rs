@@ -5,21 +5,30 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::Hash;
 use std::hash::Hasher;
+use std::path::Path;
 
 use thiserror::Error;
 
 const SYSTEM_SKILLS_DIR: Dir = include_dir::include_dir!("$CARGO_MANIFEST_DIR/src/assets/samples");
+const DEV_RULES_DIR: Dir = include_dir::include_dir!("$CARGO_MANIFEST_DIR/src/assets/dev");
 
 const SYSTEM_SKILLS_DIR_NAME: &str = ".system";
+const DEV_RULES_DIR_NAME: &str = "dev";
 const SKILLS_DIR_NAME: &str = "skills";
 const SYSTEM_SKILLS_MARKER_FILENAME: &str = ".codex-system-skills.marker";
 const SYSTEM_SKILLS_MARKER_SALT: &str = "v1";
+const DEV_RULES_MANIFEST_FILENAME: &str = ".elpis-managed-rules";
+const LEGACY_RETIRED_DEV_RULES: [&str; 1] = ["TERMINAL_AND_GIT_RULES.md"];
 
 /// Returns the on-disk cache location for embedded system skills from an absolute CODEX_HOME.
 pub fn system_cache_root_dir(codex_home: &AbsolutePathBuf) -> AbsolutePathBuf {
     codex_home
         .join(SKILLS_DIR_NAME)
         .join(SYSTEM_SKILLS_DIR_NAME)
+}
+
+fn dev_rules_root_dir(codex_home: &AbsolutePathBuf) -> AbsolutePathBuf {
+    codex_home.join(SKILLS_DIR_NAME).join(DEV_RULES_DIR_NAME)
 }
 
 /// Installs embedded system skills into `CODEX_HOME/skills/.system`.
@@ -34,6 +43,7 @@ pub fn install_system_skills(codex_home: &AbsolutePathBuf) -> Result<(), SystemS
     let skills_root_dir = codex_home.join(SKILLS_DIR_NAME);
     fs::create_dir_all(skills_root_dir.as_path())
         .map_err(|source| SystemSkillsError::io("create skills root dir", source))?;
+    install_dev_rules(codex_home)?;
 
     let dest_system = system_cache_root_dir(codex_home);
 
@@ -53,6 +63,60 @@ pub fn install_system_skills(codex_home: &AbsolutePathBuf) -> Result<(), SystemS
     write_embedded_dir(&SYSTEM_SKILLS_DIR, &dest_system)?;
     fs::write(marker_path.as_path(), format!("{expected_fingerprint}\n"))
         .map_err(|source| SystemSkillsError::io("write system skills marker", source))?;
+    Ok(())
+}
+
+fn install_dev_rules(codex_home: &AbsolutePathBuf) -> Result<(), SystemSkillsError> {
+    let dest = dev_rules_root_dir(codex_home);
+    fs::create_dir_all(dest.as_path())
+        .map_err(|source| SystemSkillsError::io("create dev rules dir", source))?;
+
+    let mut current_files = DEV_RULES_DIR
+        .files()
+        .filter_map(|file| {
+            file.path()
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    current_files.sort_unstable();
+
+    let manifest_path = dest.join(DEV_RULES_MANIFEST_FILENAME);
+    let mut retired_files = fs::read_to_string(manifest_path.as_path())
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .chain(LEGACY_RETIRED_DEV_RULES.map(str::to_string))
+        .collect::<Vec<_>>();
+    retired_files.sort_unstable();
+    retired_files.dedup();
+
+    for file_name in retired_files {
+        if current_files.contains(&file_name)
+            || Path::new(&file_name).components().count() != 1
+            || Path::new(&file_name)
+                .file_name()
+                .and_then(|name| name.to_str())
+                != Some(file_name.as_str())
+        {
+            continue;
+        }
+        match fs::remove_file(dest.join(&file_name).as_path()) {
+            Ok(()) => {}
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(SystemSkillsError::io("remove retired dev rule", source));
+            }
+        }
+    }
+
+    write_embedded_dir(&DEV_RULES_DIR, &dest)?;
+    fs::write(
+        manifest_path.as_path(),
+        format!("{}\n", current_files.join("\n")),
+    )
+    .map_err(|source| SystemSkillsError::io("write dev rules manifest", source))?;
     Ok(())
 }
 
@@ -148,6 +212,9 @@ impl SystemSkillsError {
 mod tests {
     use super::SYSTEM_SKILLS_DIR;
     use super::collect_fingerprint_items;
+    use super::install_system_skills;
+    use codex_utils_absolute_path::AbsolutePathBuf;
+    use std::fs;
 
     #[test]
     fn fingerprint_traverses_nested_entries() {
@@ -165,6 +232,32 @@ mod tests {
             paths
                 .binary_search_by(|probe| probe.as_str().cmp("skill-creator/scripts/init_skill.py"))
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn install_system_skills_installs_current_dev_rules_and_removes_retired_managed_rule() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let codex_home =
+            AbsolutePathBuf::from_absolute_path(home.path()).expect("absolute tempdir");
+        let dev_dir = home.path().join("skills/dev");
+        fs::create_dir_all(&dev_dir).expect("create legacy dev dir");
+        fs::write(
+            dev_dir.join("TERMINAL_AND_GIT_RULES.md"),
+            "retired bundled rule",
+        )
+        .expect("write retired rule");
+        fs::write(dev_dir.join("PERSONAL.md"), "keep user-authored rule")
+            .expect("write personal rule");
+
+        install_system_skills(&codex_home).expect("install embedded rules");
+
+        assert!(dev_dir.join("AGENTS.md").is_file());
+        assert!(dev_dir.join("CODING_GUIDELINES.md").is_file());
+        assert!(!dev_dir.join("TERMINAL_AND_GIT_RULES.md").exists());
+        assert_eq!(
+            fs::read_to_string(dev_dir.join("PERSONAL.md")).expect("read personal rule"),
+            "keep user-authored rule"
         );
     }
 }

@@ -565,8 +565,11 @@ improved or the ledger should be removed. Do not assume that decision.
   a total for currently admitted bytes. Selecting a row toggles its admission and
   writes the workspace `admission.toml` (`codex-rs/core/src/elpis_context.rs`), which
   governs next-turn admission for `GOAL.md`, `ES.md`, applicable global/project
-  `AGENTS.md` rules, and `skills/dev/*.md` rules. Each `skills/dev/*.md` file is
-  enumerated as its own independently toggleable row, admitted by default.
+  `AGENTS.md` rules, and Elpis's portable development rules. Elpis embeds those rules,
+  installs their managed copies under `~/.elpis/skills/dev`, and lists that directory
+  as the single default dev-rule source; project-sibling copies are not scanned.
+  Each installed Markdown file is enumerated as its own independently toggleable row,
+  admitted by default. Machine-specific additions require `ELPIS_DEV_SKILLS_DIRS`.
 - The provider-aware **Choose a mind** naming for `/model`
   (`codex-rs/tui/src/chatwidget/model_popups.rs`, commit `bae7108`), surfacing
   provider, protocol, route, and credential labels.

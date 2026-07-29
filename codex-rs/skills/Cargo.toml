@@ -17,3 +17,6 @@ workspace = true
 codex-utils-absolute-path = { workspace = true }
 include_dir = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -134,7 +134,14 @@ Elpis provides interactive context admission control in the TUI:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)
   - Global & project-level `AGENTS.md` rules
-  - Individual skill rules (`skills/dev/*.md`)
+  - Individual portable development rules installed by Elpis
+    (`~/.elpis/skills/dev/*.md`)
+
+Elpis embeds and installs its portable development rules on first launch and refreshes
+the managed files when the binary changes. The installed directory is the single default
+source; a project-sibling `skills/dev` is not scanned, so a development checkout cannot
+double-admit the same rules. Machine-specific additions remain opt-in through
+`ELPIS_DEV_SKILLS_DIRS`.
 
 ![The Context Ledger listing admitted instruction files with their token counts and included state](assets/context-ledger.png)
 

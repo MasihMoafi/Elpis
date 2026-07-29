@@ -161,47 +161,38 @@ pub fn continuity_sources(
         }
     }
 
-    // Dev rules are on by default and can be switched off per file in the ledger. No
-    // absolute path tied to one developer's home layout is ever baked into the binary —
-    // that would scan directories on every user's machine and silently admit what it
-    // finds. Instead there are two portable, opt-in discovery routes: a `skills/dev`
-    // sibling of the current project (follows one project around), and a fixed
-    // `skills/dev` folder under the Elpis home directory (follows the machine, so it
-    // still loads for a project that has no sibling folder of its own). Extra
-    // directories can be layered on top per machine through ELPIS_DEV_SKILLS_DIRS
-    // (platform-separated, like PATH).
-    let mut dev_dirs: Vec<(PathBuf, String)> = std::env::var_os("ELPIS_DEV_SKILLS_DIRS")
-        .map(|value| {
-            std::env::split_paths(&value)
-                .enumerate()
-                .map(|(index, dir)| (dir, format!("extra{}", index + 1)))
-                .collect()
-        })
-        .unwrap_or_default();
-    if let Some(parent) = cwd.parent() {
-        dev_dirs.push((parent.join("skills/dev"), "project".to_string()));
-    }
+    // Dev rules are on by default and can be switched off per file in the ledger.
+    // Elpis installs one portable canonical set under its own home. Machine-specific
+    // additions are opt-in through ELPIS_DEV_SKILLS_DIRS. A project-sibling folder is
+    // deliberately not scanned: on a development checkout it is usually the source of
+    // the installed rules and listing both copies produced duplicate context.
+    let mut dev_dirs = Vec::new();
     if let Some(elpis_home) = memories_root.parent() {
-        dev_dirs.push((elpis_home.join("skills/dev"), "home".to_string()));
+        dev_dirs.push(elpis_home.join("skills/dev"));
     }
+    dev_dirs.extend(
+        std::env::var_os("ELPIS_DEV_SKILLS_DIRS")
+            .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+            .unwrap_or_default(),
+    );
 
     let mut already_listed: std::collections::HashSet<PathBuf> = instruction_paths
         .iter()
         .filter_map(|path| path.canonicalize().ok())
         .collect();
 
-    // Two dev dirs can each contain a same-named file (e.g. both a project-sibling and
-    // a machine-wide `skills/dev/AGENTS.md`) — that's a real, distinct pair of files, not
-    // a duplicate to collapse. Track which origin each survives from so a filename that
-    // collides across dirs can be disambiguated below; a filename found in only one dir
-    // keeps its plain `dev/<file>` identity, unchanged from before this dir-layering existed.
-    let mut dev_paths: Vec<(PathBuf, String)> = Vec::new();
-    for (dev_dir, tag) in &dev_dirs {
+    let mut seen_dev_file_names = std::collections::HashSet::new();
+    for dev_dir in &dev_dirs {
         if let Ok(entries) = std::fs::read_dir(dev_dir) {
             let mut dev_files: Vec<PathBuf> = entries
                 .filter_map(|entry| entry.ok())
                 .map(|entry| entry.path())
                 .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| seen_dev_file_names.insert(name.to_string()))
+                })
                 .filter(|path| {
                     if let Ok(canonical) = path.canonicalize() {
                         already_listed.insert(canonical)
@@ -211,27 +202,8 @@ pub fn continuity_sources(
                 })
                 .collect();
             dev_files.sort();
-            for file in dev_files {
-                dev_paths.push((file, tag.clone()));
-            }
+            instruction_paths.extend(dev_files);
         }
-    }
-    let mut dev_name_collisions: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
-    for (path, _) in &dev_paths {
-        if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
-            *dev_name_collisions.entry(file_name.to_string()).or_insert(0) += 1;
-        }
-    }
-    let mut dev_name_overrides: std::collections::HashMap<PathBuf, String> =
-        std::collections::HashMap::new();
-    for (path, tag) in dev_paths {
-        if let Some(file_name) = path.file_name().and_then(|name| name.to_str())
-            && dev_name_collisions.get(file_name).copied().unwrap_or(0) > 1
-        {
-            dev_name_overrides.insert(path.clone(), format!("{DEV_SOURCE_PREFIX}{tag}/{file_name}"));
-        }
-        instruction_paths.push(path);
     }
 
     for path in &instruction_paths {
@@ -245,11 +217,10 @@ pub fn continuity_sources(
                 .parent()
                 .is_some_and(|dir| dir.ends_with("skills/dev") || dir.ends_with("dev"));
         let (name, reason): (String, &'static str) = if is_dev_source {
-            let name = dev_name_overrides
-                .get(path)
-                .cloned()
-                .unwrap_or_else(|| format!("{DEV_SOURCE_PREFIX}{file_name}"));
-            (name, "configured development rules")
+            (
+                format!("{DEV_SOURCE_PREFIX}{file_name}"),
+                "configured development rules",
+            )
         } else if file_name == "AGENTS.md" && path.starts_with(cwd) {
             (PROJECT_RULES.to_string(), "applicable project rules")
         } else if file_name == "AGENTS.md" {
@@ -750,7 +721,7 @@ mod tests {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("projects/Elpis");
-        let dev = home.path().join("projects/skills/dev");
+        let dev = home.path().join(".elpis/skills/dev");
         let workspace = workspace_context_dir(Some(&memories), &cwd).expect("workspace path");
         let global = home.path().join("global/AGENTS.md");
         std::fs::create_dir_all(&memories)?;
@@ -965,7 +936,7 @@ mod tests {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("projects/Elpis");
-        let dev = home.path().join("projects/skills/dev");
+        let dev = home.path().join(".elpis/skills/dev");
         tokio::fs::create_dir_all(&cwd).await?;
         tokio::fs::create_dir_all(&dev).await?;
         tokio::fs::write(dev.join("AGENTS.md"), "Dev rule").await?;
@@ -994,13 +965,10 @@ mod tests {
         Ok(())
     }
 
-    /// A project-sibling `skills/dev` and the machine-wide `~/.elpis/skills/dev` can both
-    /// legitimately hold a same-named file (e.g. both an `AGENTS.md`). Those are two
-    /// distinct files, not a duplicate to collapse — but they must get distinct ledger
-    /// identities so toggling one doesn't silently toggle the other.
+    /// Bundled rules installed under the Elpis home are canonical. A project-sibling
+    /// `skills/dev` left beside a checkout must not create a second ledger copy.
     #[tokio::test]
-    async fn same_named_dev_files_from_different_dirs_get_distinct_names_and_toggles()
-    -> anyhow::Result<()> {
+    async fn installed_dev_rules_replace_project_sibling_duplicates() -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("projects/Elpis");
@@ -1013,55 +981,30 @@ mod tests {
         tokio::fs::write(home_dev.join("AGENTS.md"), "Home dev rule").await?;
 
         let sources = continuity_sources(Some(&memories), &cwd, &[]);
-        let names: Vec<&str> = sources
+        let dev_sources = sources
             .iter()
             .filter(|source| source.name.starts_with(DEV_SOURCE_PREFIX))
-            .map(|source| source.name.as_str())
-            .collect();
+            .collect::<Vec<_>>();
         assert_eq!(
-            names.len(),
-            2,
-            "both dev files must be listed, not deduped away: {names:?}"
+            dev_sources.len(),
+            1,
+            "the installed canonical rule must appear exactly once: {dev_sources:?}"
         );
-        assert_ne!(
-            names[0], names[1],
-            "same-named dev files from different dirs must not share a display name"
-        );
-        assert!(sources.iter().all(|source| source.admitted));
-
-        let project_name = sources
-            .iter()
-            .find(|source| source.path == project_dev.join("AGENTS.md"))
-            .expect("project dev source")
-            .name
-            .clone();
-        let home_name = sources
-            .iter()
-            .find(|source| source.path == home_dev.join("AGENTS.md"))
-            .expect("home dev source")
-            .name
-            .clone();
-
-        set_continuity_source_admitted(Some(&memories), &cwd, &project_name, false)?;
-        let sources = continuity_sources(Some(&memories), &cwd, &[]);
-        assert!(
-            sources
-                .iter()
-                .any(|source| source.name == project_name && !source.admitted),
-            "excluding the project copy must not require touching the home copy"
-        );
-        assert!(
-            sources
-                .iter()
-                .any(|source| source.name == home_name && source.admitted),
-            "the home copy must stay admitted when only the project copy was excluded"
-        );
+        assert_eq!(dev_sources[0].name, "dev/AGENTS.md");
+        assert_eq!(dev_sources[0].path, home_dev.join("AGENTS.md"));
 
         let prompt = build_continuity_prompt(Some(&memories), &cwd)
             .await
-            .expect("home dev rule still admitted");
+            .expect("installed dev rule should be admitted");
         assert!(!prompt.contains("Project dev rule"));
         assert!(prompt.contains("Home dev rule"));
+
+        set_continuity_source_admitted(Some(&memories), &cwd, dev_sources[0].name.as_str(), false)?;
+        assert!(
+            !build_continuity_prompt(Some(&memories), &cwd)
+                .await
+                .is_some_and(|prompt| prompt.contains("Home dev rule"))
+        );
         Ok(())
     }
 

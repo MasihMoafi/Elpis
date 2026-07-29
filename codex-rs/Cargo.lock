@@ -3677,6 +3677,7 @@ version = "0.0.0"
 dependencies = [
  "codex-utils-absolute-path",
  "include_dir",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
