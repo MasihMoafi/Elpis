@@ -641,6 +641,7 @@ impl Session {
             approvals_reviewer: config.approvals_reviewer,
             permission_profile_state: session_permission_profile_state_from_config(&config)?,
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+            automatic_model_routing: config.features.enabled(Feature::AutomaticModelRouting),
             environments: TurnEnvironmentSelections::new(
                 config.cwd.clone(),
                 environment_selections,

@@ -117,6 +117,7 @@ struct ThreadSettingsBuildParams {
     approvals_reviewer: Option<codex_app_server_protocol::ApprovalsReviewer>,
     sandbox_policy: Option<codex_app_server_protocol::SandboxPolicy>,
     permissions: Option<String>,
+    automatic_model_routing: Option<bool>,
     model: Option<String>,
     service_tier: Option<Option<String>>,
     effort: Option<ReasoningEffort>,
@@ -502,6 +503,7 @@ impl TurnRequestProcessor {
                     approvals_reviewer: params.approvals_reviewer,
                     sandbox_policy: params.sandbox_policy,
                     permissions: params.permissions,
+                    automatic_model_routing: None,
                     model: params.model,
                     service_tier: params.service_tier,
                     effort: params.effort,
@@ -643,6 +645,7 @@ impl TurnRequestProcessor {
             approvals_reviewer,
             sandbox_policy,
             permissions,
+            automatic_model_routing,
             model,
             service_tier,
             effort,
@@ -674,6 +677,7 @@ impl TurnRequestProcessor {
             || approvals_reviewer.is_some()
             || sandbox_policy.is_some()
             || permissions.is_some()
+            || automatic_model_routing.is_some()
             || model.is_some()
             || service_tier.is_some()
             || effort.is_some()
@@ -742,6 +746,7 @@ impl TurnRequestProcessor {
                     active_permission_profile: active_permission_profile.clone(),
                     profile_workspace_roots: profile_workspace_roots.clone(),
                     windows_sandbox_level: None,
+                    automatic_model_routing,
                     model: model.clone(),
                     effort: effort.clone(),
                     summary,
@@ -764,6 +769,7 @@ impl TurnRequestProcessor {
             permission_profile,
             active_permission_profile,
             windows_sandbox_level: None,
+            automatic_model_routing,
             model,
             effort,
             summary,
@@ -798,6 +804,7 @@ impl TurnRequestProcessor {
                     approvals_reviewer: params.approvals_reviewer,
                     sandbox_policy: params.sandbox_policy,
                     permissions: params.permissions,
+                    automatic_model_routing: params.automatic_model_routing,
                     model: params.model,
                     service_tier: params.service_tier,
                     effort: params.effort,

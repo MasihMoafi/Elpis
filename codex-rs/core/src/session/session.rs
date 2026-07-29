@@ -77,6 +77,7 @@ pub(crate) struct SessionConfiguration {
     /// the methods below instead of mutating the fields independently.
     pub(super) permission_profile_state: PermissionProfileState,
     pub(super) windows_sandbox_level: WindowsSandboxLevel,
+    pub(super) automatic_model_routing: bool,
 
     /// Sticky thread-level environment selections plus the legacy cwd used
     /// when a turn does not select an environment.
@@ -274,6 +275,9 @@ impl SessionConfiguration {
         if let Some(windows_sandbox_level) = updates.windows_sandbox_level {
             next_configuration.windows_sandbox_level = windows_sandbox_level;
         }
+        if let Some(automatic_model_routing) = updates.automatic_model_routing {
+            next_configuration.automatic_model_routing = automatic_model_routing;
+        }
 
         let current_cwd = self.cwd().clone();
         let next_environments = updates
@@ -421,6 +425,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) permission_profile: Option<PermissionProfile>,
     pub(crate) active_permission_profile: Option<ActivePermissionProfile>,
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
+    pub(crate) automatic_model_routing: Option<bool>,
     pub(crate) collaboration_mode: Option<CollaborationMode>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) service_tier: Option<Option<String>>,

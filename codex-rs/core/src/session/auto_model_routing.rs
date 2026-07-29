@@ -7,7 +7,6 @@ use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::session::TurnInput;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use codex_features::Feature;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -30,10 +29,7 @@ pub(crate) async fn route_turn_if_enabled(
     turn_context: Arc<TurnContext>,
     input: &[TurnInput],
 ) -> Arc<TurnContext> {
-    if !turn_context
-        .config
-        .features
-        .enabled(Feature::AutomaticModelRouting)
+    if !turn_context.automatic_model_routing
         || turn_context.model_info.slug != TERRA_MODEL
     {
         return turn_context;

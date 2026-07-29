@@ -236,6 +236,9 @@ pub struct ThreadSettingsUpdateParams {
     /// Override the model for subsequent turns.
     #[ts(optional = nullable)]
     pub model: Option<String>,
+    /// Whether Elpis should choose the concrete model automatically.
+    #[ts(optional = nullable)]
+    pub automatic_model_routing: Option<bool>,
     /// Override the model provider for subsequent turns.
     #[ts(optional = nullable)]
     pub model_provider: Option<String>,

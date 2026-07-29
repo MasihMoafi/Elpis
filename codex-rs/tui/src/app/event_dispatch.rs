@@ -1050,8 +1050,7 @@ impl App {
                 .await
                 {
                     Ok(_) => self.chat_widget.add_info_message(
-                        "Auto model routing enabled: Terra by default; Luna for plainly mechanical work; Sol for critical or long-horizon work."
-                            .to_string(),
+                        "Auto model routing enabled.".to_string(),
                         None,
                     ),
                     Err(err) => self.chat_widget.add_error_message(format!(

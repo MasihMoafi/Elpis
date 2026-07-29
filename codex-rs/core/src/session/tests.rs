@@ -3702,6 +3702,7 @@ async fn set_rate_limits_retains_previous_credits() {
         originator: "test_originator".to_string(),
         dynamic_tools: Vec::new(),
         user_shell_override: None,
+        automatic_model_routing: false,
     };
 
     let mut state = SessionState::new(session_configuration);
@@ -3811,6 +3812,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         originator: "test_originator".to_string(),
         dynamic_tools: Vec::new(),
         user_shell_override: None,
+        automatic_model_routing: false,
     };
 
     let mut state = SessionState::new(session_configuration);
@@ -4350,7 +4352,28 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         originator: "test_originator".to_string(),
         dynamic_tools: Vec::new(),
         user_shell_override: None,
+        automatic_model_routing: false,
     }
+}
+
+#[tokio::test]
+async fn session_settings_update_applies_automatic_model_routing() {
+    let configuration = make_session_configuration_for_tests().await;
+    let enabled = configuration
+        .apply(&SessionSettingsUpdate {
+            automatic_model_routing: Some(true),
+            ..Default::default()
+        })
+        .expect("enable automatic model routing");
+    assert!(enabled.automatic_model_routing);
+
+    let disabled = enabled
+        .apply(&SessionSettingsUpdate {
+            automatic_model_routing: Some(false),
+            ..Default::default()
+        })
+        .expect("disable automatic model routing");
+    assert!(!disabled.automatic_model_routing);
 }
 
 async fn resolved_environments_for_configuration(
@@ -5008,6 +5031,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         originator: "test_originator".to_string(),
         dynamic_tools: Vec::new(),
         user_shell_override: None,
+        automatic_model_routing: false,
     };
 
     let (tx_event, _rx_event) = async_channel::unbounded();
@@ -5138,6 +5162,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         originator: "test_originator".to_string(),
         dynamic_tools: Vec::new(),
         user_shell_override: None,
+        automatic_model_routing: false,
     };
     let per_turn_config =
         Session::build_per_turn_config(&session_configuration, session_configuration.cwd().clone());
@@ -5386,6 +5411,7 @@ async fn make_session_with_config_and_rx(
         originator: "test_originator".to_string(),
         dynamic_tools: Vec::new(),
         user_shell_override: None,
+        automatic_model_routing: false,
     };
 
     let (tx_event, rx_event) = async_channel::unbounded();
@@ -5492,6 +5518,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         originator: "test_originator".to_string(),
         dynamic_tools: Vec::new(),
         user_shell_override: None,
+        automatic_model_routing: false,
     };
 
     let (tx_event, rx_event) = async_channel::unbounded();
@@ -7248,6 +7275,7 @@ where
         originator: "test_originator".to_string(),
         dynamic_tools,
         user_shell_override: None,
+        automatic_model_routing: false,
     };
     let per_turn_config =
         Session::build_per_turn_config(&session_configuration, session_configuration.cwd().clone());

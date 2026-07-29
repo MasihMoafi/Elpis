@@ -34,6 +34,7 @@ impl App {
         let thread_id = self.active_thread_id?;
         Some(ThreadSettingsUpdateParams {
             thread_id: thread_id.to_string(),
+            automatic_model_routing: Some(self.chat_widget.auto_model_routing_enabled()),
             model: Some(model),
             model_provider,
             collaboration_mode: Some(self.chat_widget.effective_collaboration_mode()),
@@ -205,6 +206,7 @@ fn thread_settings_update_has_changes(params: &ThreadSettingsUpdateParams) -> bo
         || params.approvals_reviewer.is_some()
         || params.sandbox_policy.is_some()
         || params.permissions.is_some()
+        || params.automatic_model_routing.is_some()
         || params.model.is_some()
         || params.service_tier.is_some()
         || params.effort.is_some()

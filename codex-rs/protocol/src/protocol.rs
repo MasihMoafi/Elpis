@@ -479,6 +479,9 @@ pub struct ThreadSettingsOverrides {
     /// Updated Windows sandbox mode for tool execution.
     pub windows_sandbox_level: Option<WindowsSandboxLevel>,
 
+    /// Whether Auto model routing applies to future turns.
+    pub automatic_model_routing: Option<bool>,
+
     /// Updated model slug. When set, the model info is derived automatically.
     pub model: Option<String>,
 

@@ -3109,6 +3109,19 @@ async fn model_picker_shows_auto_without_upstream_auto_presets() {
         popup.contains("Auto"),
         "expected Elpis Auto routing to appear without upstream auto presets:\n{popup}"
     );
+    let normalized_popup = popup.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        popup.contains("Elpis")
+            && popup.contains("automatically")
+            && popup.contains("chooses the")
+            && popup.contains("right model")
+            && popup.contains("for the task"),
+        "expected opaque Auto description:\n{popup}"
+    );
+    assert!(
+        !normalized_popup.contains("Terra by default"),
+        "routing policy should not be advertised:\n{popup}"
+    );
 }
 
 #[tokio::test]

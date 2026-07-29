@@ -116,6 +116,7 @@ pub struct TurnContext {
     pub(crate) trace_id: Option<String>,
     pub(crate) realtime_active: bool,
     pub config: Arc<Config>,
+    pub(crate) automatic_model_routing: bool,
     pub(crate) auth_manager: Option<Arc<AuthManager>>,
     pub(crate) model_info: ModelInfo,
     pub(crate) session_telemetry: SessionTelemetry,
@@ -276,6 +277,7 @@ impl TurnContext {
             trace_id: self.trace_id.clone(),
             realtime_active: self.realtime_active,
             config: Arc::new(config),
+            automatic_model_routing: self.automatic_model_routing,
             auth_manager: self.auth_manager.clone(),
             model_info: model_info.clone(),
             session_telemetry: self
@@ -557,6 +559,7 @@ impl Session {
             trace_id: current_span_trace_id(),
             realtime_active: false,
             config: per_turn_config,
+            automatic_model_routing: session_configuration.automatic_model_routing,
             auth_manager: auth_manager_for_context,
             model_info,
             session_telemetry: session_telemetry_for_context,

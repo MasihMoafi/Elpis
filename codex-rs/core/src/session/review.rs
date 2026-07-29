@@ -113,6 +113,7 @@ pub(super) async fn spawn_review_thread(
         trace_id: current_span_trace_id(),
         realtime_active: parent_turn_context.realtime_active,
         config: per_turn_config,
+        automatic_model_routing: parent_turn_context.automatic_model_routing,
         auth_manager: auth_manager_for_context,
         model_info: model_info.clone(),
         session_telemetry: session_telemetry_for_context,
