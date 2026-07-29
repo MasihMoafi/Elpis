@@ -392,11 +392,15 @@ fn validate_write_scopes(task_id: &str, scopes: &[String]) -> Result<()> {
         let scope = scope.trim().trim_end_matches('/');
         if scope.is_empty()
             || scope.starts_with('/')
+            || scope.contains('\\')
+            || scope.contains(':')
+            || scope == ".git"
+            || scope.starts_with(".git/")
             || scope == "."
             || scope == ".."
             || scope
                 .split('/')
-                .any(|part| part.is_empty() || part == "." || part == "..")
+                .any(|part| part.is_empty() || part == "." || part == ".." || part == ".git")
         {
             return Err(anyhow::anyhow!(
                 "work graph task `{task_id}` has invalid repository-relative write scope `{scope}`"
@@ -467,6 +471,28 @@ mod tests {
         let mut invalid = task("first", &[]);
         invalid.write_scopes = vec!["../outside".to_string()];
         let err = validate_work_graph_tasks(&[invalid]).expect_err("escaping scope should fail");
+        assert!(
+            err.to_string()
+                .contains("invalid repository-relative write scope")
+        );
+    }
+
+    #[test]
+    fn rejects_windows_style_write_scope() {
+        let mut invalid = task("first", &[]);
+        invalid.write_scopes = vec![r"C:\outside".to_string()];
+        let err = validate_work_graph_tasks(&[invalid]).expect_err("drive path should fail");
+        assert!(
+            err.to_string()
+                .contains("invalid repository-relative write scope")
+        );
+    }
+
+    #[test]
+    fn rejects_git_metadata_write_scope() {
+        let mut invalid = task("first", &[]);
+        invalid.write_scopes = vec![".git/config".to_string()];
+        let err = validate_work_graph_tasks(&[invalid]).expect_err("git metadata should fail");
         assert!(
             err.to_string()
                 .contains("invalid repository-relative write scope")

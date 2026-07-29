@@ -120,6 +120,29 @@ fn scheduler_serializes_overlapping_path_prefixes() {
 }
 
 #[test]
+fn scheduler_conservatively_serializes_case_variant_scopes() {
+    let tasks = vec![
+        task(
+            "first",
+            0,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src/Core"],
+            "repo",
+        ),
+        task(
+            "second",
+            1,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src/core"],
+            "repo",
+        ),
+    ];
+    assert_eq!(select_ready_tasks(tasks.as_slice(), 2).len(), 1);
+}
+
+#[test]
 fn isolated_environments_can_use_the_same_scope_in_parallel() {
     let tasks = vec![
         task(
@@ -163,6 +186,10 @@ fn report_scope_validation_rejects_out_of_scope_and_read_only_changes() {
 fn repository_paths_cannot_escape() {
     let err = normalize_repo_path("../outside").expect_err("escaping path should fail");
     assert!(err.to_string().contains("invalid repository-relative path"));
+    let err = normalize_repo_path(r"C:\outside").expect_err("drive path should fail");
+    assert!(err.to_string().contains("invalid repository-relative path"));
+    let err = normalize_repo_path(".git/config").expect_err("git metadata should fail");
+    assert!(err.to_string().contains("invalid repository-relative path"));
 }
 
 #[test]
@@ -188,7 +215,9 @@ fn worker_permission_profile_hard_limits_writes_to_declared_scopes() {
     let profile = scoped_permission_profile(
         &cwd,
         &["src/core".to_string(), "tests/focused.rs".to_string()],
-    );
+        &PermissionProfile::Disabled,
+    )
+    .expect("profile");
     let PermissionProfile::Managed { file_system, .. } = profile else {
         panic!("expected managed profile");
     };
@@ -214,7 +243,8 @@ fn worker_permission_profile_hard_limits_writes_to_declared_scopes() {
 #[test]
 fn read_only_task_profile_contains_no_write_entry() {
     let cwd = AbsolutePathBuf::from_absolute_path("/tmp/work-graph").expect("absolute test path");
-    let profile = scoped_permission_profile(&cwd, &[]);
+    let profile =
+        scoped_permission_profile(&cwd, &[], &PermissionProfile::Disabled).expect("profile");
     let PermissionProfile::Managed { file_system, .. } = profile else {
         panic!("expected managed profile");
     };
@@ -222,4 +252,63 @@ fn read_only_task_profile_contains_no_write_entry() {
         panic!("expected restricted filesystem");
     };
     assert!(entries.iter().all(|entry| !entry.access.can_write()));
+}
+
+#[test]
+fn child_profile_cannot_broaden_parent_write_or_read_denials() {
+    let cwd = AbsolutePathBuf::from_absolute_path("/tmp/work-graph").expect("absolute test path");
+    let secret = cwd.join("secret");
+    let parent = PermissionProfile::Managed {
+        file_system: ManagedFileSystemPermissions::Restricted {
+            entries: vec![
+                FileSystemSandboxEntry {
+                    path: FileSystemPath::Special {
+                        value: FileSystemSpecialPath::Root,
+                    },
+                    access: FileSystemAccessMode::Read,
+                },
+                FileSystemSandboxEntry {
+                    path: FileSystemPath::Path {
+                        path: cwd.join("src"),
+                    },
+                    access: FileSystemAccessMode::Write,
+                },
+                FileSystemSandboxEntry {
+                    path: FileSystemPath::Path {
+                        path: secret.clone(),
+                    },
+                    access: FileSystemAccessMode::Deny,
+                },
+            ],
+            glob_scan_max_depth: None,
+        },
+        network: codex_protocol::permissions::NetworkSandboxPolicy::Restricted,
+    };
+    let profile = scoped_permission_profile(&cwd, &["src/core".to_string()], &parent)
+        .expect("narrow child scope");
+    let PermissionProfile::Managed { file_system, .. } = profile else {
+        panic!("expected managed profile");
+    };
+    let policy = file_system.to_sandbox_policy();
+    assert!(policy.can_write_path_with_cwd(cwd.join("src/core").as_path(), cwd.as_path()));
+    assert!(!policy.can_write_path_with_cwd(cwd.join("tests").as_path(), cwd.as_path()));
+    assert!(!policy.can_read_path_with_cwd(secret.as_path(), cwd.as_path()));
+    assert!(scoped_permission_profile(&cwd, &["tests".to_string()], &parent).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_scope_cannot_escape_selected_workspace() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let workspace = temp.path().join("workspace");
+    let outside = temp.path().join("outside");
+    std::fs::create_dir_all(&workspace).expect("workspace");
+    std::fs::create_dir_all(&outside).expect("outside");
+    symlink(&outside, workspace.join("link")).expect("symlink");
+    let cwd = AbsolutePathBuf::from_absolute_path(&workspace).expect("absolute workspace");
+    let err = validate_scope_resolution(&cwd, &["link/generated".to_string()])
+        .expect_err("symlink escape should fail");
+    assert!(err.to_string().contains("outside the selected workspace"));
 }

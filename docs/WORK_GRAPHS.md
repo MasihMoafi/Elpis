@@ -120,6 +120,11 @@ The engine derives a managed permission profile for every worker:
 - an empty scope list is read-only;
 - network access is restricted.
 
+The child profile cannot broaden the parent profile: parent read denials survive and a
+declared write scope must already be writable by the coordinator's active profile.
+Windows-style absolute paths, Git metadata paths, and scopes whose existing prefix
+resolves through a symlink outside the selected workspace are rejected.
+
 This is enforced by the sandbox, not only by the prompt. A successful
 `report_agent_work_task` is accepted only from the assigned thread, must include
 concrete evidence, and may not declare a changed file outside its scopes. The report

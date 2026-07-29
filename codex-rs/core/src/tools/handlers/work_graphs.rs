@@ -21,6 +21,7 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
+use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::MultiAgentVersion;
@@ -299,6 +300,19 @@ async fn run_work_graph(
     .await
     {
         let message = format!("work graph scheduler failed: {err}");
+        if let Ok(tasks) = db.list_work_graph_tasks(graph_id.as_str()).await {
+            for task in tasks {
+                if !task.status.is_final() {
+                    let _ = db
+                        .mark_work_graph_task_failed(
+                            graph_id.as_str(),
+                            task.task_id.as_str(),
+                            message.as_str(),
+                        )
+                        .await;
+                }
+            }
+        }
         let _ = db
             .finish_work_graph(
                 graph_id.as_str(),
@@ -327,6 +341,12 @@ async fn report_work_task(
             reason: Some("unknown graph or task id".to_string()),
         });
     };
+    if args.summary.trim().is_empty() {
+        return tool_json(&ReportToolResult {
+            accepted: false,
+            reason: Some("work graph reports require a non-empty summary".to_string()),
+        });
+    }
 
     let invalid_files =
         changed_files_outside_scopes(args.changed_files.as_slice(), task.write_scopes.as_slice())?;
@@ -349,11 +369,15 @@ async fn report_work_task(
     let thread_id = session.thread_id.to_string();
     let accepted = match args.outcome.as_str() {
         "succeeded" => {
-            if args.evidence.is_empty() {
+            if args.evidence.is_empty()
+                || args.evidence.iter().any(|item| item.trim().is_empty())
+                || args.checks.is_empty()
+                || args.checks.iter().any(|item| item.trim().is_empty())
+            {
                 return tool_json(&ReportToolResult {
                     accepted: false,
                     reason: Some(
-                        "successful work graph reports require at least one evidence item"
+                        "successful work graph reports require non-empty checks and evidence"
                             .to_string(),
                     ),
                 });
@@ -524,9 +548,27 @@ async fn run_scheduler(
         let ready = select_ready_tasks(tasks.as_slice(), slots);
         let mut progressed = false;
         for task in ready {
-            let prompt = build_worker_prompt(&task, tasks.as_slice())?;
-            let environments = task_environment_selection(&turn, task.environment_id.as_deref())?;
-            let spawn_config = scoped_spawn_config(&options.spawn_config, &task, &environments[0])?;
+            let setup = (|| {
+                let prompt = build_worker_prompt(&task, tasks.as_slice())?;
+                let environments =
+                    task_environment_selection(&turn, task.environment_id.as_deref())?;
+                let spawn_config =
+                    scoped_spawn_config(&options.spawn_config, &task, &environments[0])?;
+                Ok::<_, anyhow::Error>((prompt, environments, spawn_config))
+            })();
+            let (prompt, environments, spawn_config) = match setup {
+                Ok(setup) => setup,
+                Err(err) => {
+                    db.mark_work_graph_task_failed(
+                        graph_id,
+                        task.task_id.as_str(),
+                        format!("worker setup failed: {err}").as_str(),
+                    )
+                    .await?;
+                    progressed = true;
+                    continue;
+                }
+            };
             let spawned = session
                 .services
                 .agent_control
@@ -561,21 +603,32 @@ async fn run_scheduler(
                     continue;
                 }
             };
-            if !db
+            let assigned = db
                 .mark_work_graph_task_running_with_thread(
                     graph_id,
                     task.task_id.as_str(),
                     thread_id.to_string().as_str(),
                 )
-                .await?
-            {
-                let _ = session
-                    .services
-                    .agent_control
-                    .shutdown_live_agent(thread_id)
-                    .await;
-                continue;
-            }
+                .await;
+            match assigned {
+                Ok(true) => {}
+                Ok(false) => {
+                    let _ = session
+                        .services
+                        .agent_control
+                        .shutdown_live_agent(thread_id)
+                        .await;
+                    continue;
+                }
+                Err(err) => {
+                    let _ = session
+                        .services
+                        .agent_control
+                        .shutdown_live_agent(thread_id)
+                        .await;
+                    return Err(err);
+                }
+            };
             active.insert(
                 thread_id,
                 ActiveTask {
@@ -614,7 +667,7 @@ async fn cancel_running_graph(
     active.clear();
     for task in db.list_work_graph_tasks(graph_id).await? {
         if !task.status.is_final() {
-            db.mark_work_graph_task_failed(
+            db.mark_work_graph_task_cancelled(
                 graph_id,
                 task.task_id.as_str(),
                 "coordinator turn was cancelled",
@@ -721,7 +774,9 @@ fn tasks_have_write_conflict(
 }
 
 fn scopes_overlap(first: &str, second: &str) -> bool {
-    path_prefix(first, second) || path_prefix(second, first)
+    let first = first.to_ascii_lowercase();
+    let second = second.to_ascii_lowercase();
+    path_prefix(first.as_str(), second.as_str()) || path_prefix(second.as_str(), first.as_str())
 }
 
 fn path_prefix(prefix: &str, path: &str) -> bool {
@@ -914,7 +969,12 @@ fn scoped_spawn_config(
             task.task_id
         )
     })?;
-    let permission_profile = scoped_permission_profile(&cwd, task.write_scopes.as_slice());
+    validate_scope_resolution(&cwd, task.write_scopes.as_slice())?;
+    let permission_profile = scoped_permission_profile(
+        &cwd,
+        task.write_scopes.as_slice(),
+        base.permissions.permission_profile(),
+    )?;
     let mut config = base.clone();
     config
         .permissions
@@ -929,26 +989,90 @@ fn scoped_spawn_config(
     Ok(config)
 }
 
-fn scoped_permission_profile(cwd: &AbsolutePathBuf, write_scopes: &[String]) -> PermissionProfile {
-    let mut entries = vec![FileSystemSandboxEntry {
-        path: FileSystemPath::Special {
-            value: FileSystemSpecialPath::Root,
-        },
-        access: FileSystemAccessMode::Read,
-    }];
+fn scoped_permission_profile(
+    cwd: &AbsolutePathBuf,
+    write_scopes: &[String],
+    parent: &PermissionProfile,
+) -> anyhow::Result<PermissionProfile> {
+    let (mut entries, glob_scan_max_depth) = match parent {
+        PermissionProfile::Managed { file_system, .. } => {
+            let policy = file_system.to_sandbox_policy();
+            for scope in write_scopes {
+                let path = cwd.join(scope);
+                if !policy.can_write_path_with_cwd(path.as_path(), cwd.as_path()) {
+                    return Err(anyhow::anyhow!(
+                        "declared write scope `{scope}` exceeds the parent permission profile"
+                    ));
+                }
+            }
+            let entries = if policy.kind == FileSystemSandboxKind::Unrestricted {
+                root_read_entries()
+            } else {
+                policy
+                    .entries
+                    .into_iter()
+                    .map(|mut entry| {
+                        if entry.access.can_write() {
+                            entry.access = FileSystemAccessMode::Read;
+                        }
+                        entry
+                    })
+                    .collect()
+            };
+            (
+                entries,
+                policy
+                    .glob_scan_max_depth
+                    .and_then(std::num::NonZeroUsize::new),
+            )
+        }
+        PermissionProfile::Disabled | PermissionProfile::External { .. } => {
+            (root_read_entries(), None)
+        }
+    };
     entries.extend(write_scopes.iter().map(|scope| FileSystemSandboxEntry {
         path: FileSystemPath::Path {
             path: cwd.join(scope),
         },
         access: FileSystemAccessMode::Write,
     }));
-    PermissionProfile::Managed {
+    Ok(PermissionProfile::Managed {
         file_system: ManagedFileSystemPermissions::Restricted {
             entries,
-            glob_scan_max_depth: None,
+            glob_scan_max_depth,
         },
         network: codex_protocol::permissions::NetworkSandboxPolicy::Restricted,
+    })
+}
+
+fn root_read_entries() -> Vec<FileSystemSandboxEntry> {
+    vec![FileSystemSandboxEntry {
+        path: FileSystemPath::Special {
+            value: FileSystemSpecialPath::Root,
+        },
+        access: FileSystemAccessMode::Read,
+    }]
+}
+
+fn validate_scope_resolution(cwd: &AbsolutePathBuf, write_scopes: &[String]) -> anyhow::Result<()> {
+    let canonical_cwd = std::fs::canonicalize(cwd.as_path())?;
+    for scope in write_scopes {
+        let mut probe = cwd.join(scope).as_path().to_path_buf();
+        while !probe.exists() {
+            if !probe.pop() {
+                return Err(anyhow::anyhow!(
+                    "cannot resolve declared write scope `{scope}`"
+                ));
+            }
+        }
+        let resolved = std::fs::canonicalize(probe)?;
+        if !resolved.starts_with(canonical_cwd.as_path()) {
+            return Err(anyhow::anyhow!(
+                "declared write scope `{scope}` resolves outside the selected workspace"
+            ));
+        }
     }
+    Ok(())
 }
 
 fn resolve_task_environment<'a>(
@@ -993,11 +1117,15 @@ fn normalize_repo_path(path: &str) -> Result<String, FunctionCallError> {
     let normalized = path.trim().trim_end_matches('/');
     if normalized.is_empty()
         || normalized.starts_with('/')
+        || normalized.contains('\\')
+        || normalized.contains(':')
+        || normalized == ".git"
+        || normalized.starts_with(".git/")
         || normalized == "."
         || normalized == ".."
         || normalized
             .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
+            .any(|part| part.is_empty() || part == "." || part == ".." || part == ".git")
     {
         return Err(FunctionCallError::RespondToModel(format!(
             "invalid repository-relative path `{path}`"

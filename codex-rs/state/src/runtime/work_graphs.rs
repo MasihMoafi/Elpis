@@ -334,6 +334,22 @@ WHERE graph_id = ? AND task_id = ? AND status = ?
         .await
     }
 
+    pub async fn mark_work_graph_task_cancelled(
+        &self,
+        graph_id: &str,
+        task_id: &str,
+        reason: &str,
+    ) -> anyhow::Result<bool> {
+        self.finish_unassigned_work_graph_task(
+            graph_id,
+            task_id,
+            WorkGraphTaskStatus::Cancelled,
+            "task_cancelled",
+            reason,
+        )
+        .await
+    }
+
     async fn finish_unassigned_work_graph_task(
         &self,
         graph_id: &str,
@@ -710,5 +726,42 @@ mod tests {
             .expect("graph query")
             .expect("graph");
         assert_eq!(graph.status, WorkGraphStatus::Failed);
+    }
+
+    #[tokio::test]
+    async fn cancelled_task_is_terminal_and_audited() {
+        let (runtime, _home) = runtime().await;
+        let graph = create_fixture(&runtime).await;
+        runtime
+            .mark_work_graph_task_running_with_thread(
+                graph.id.as_str(),
+                "foundation",
+                "assigned-thread",
+            )
+            .await
+            .expect("task should start");
+        assert!(
+            runtime
+                .mark_work_graph_task_cancelled(
+                    graph.id.as_str(),
+                    "foundation",
+                    "coordinator cancelled",
+                )
+                .await
+                .expect("task should cancel")
+        );
+        let tasks = runtime
+            .list_work_graph_tasks(graph.id.as_str())
+            .await
+            .expect("tasks");
+        assert_eq!(tasks[0].status, WorkGraphTaskStatus::Cancelled);
+        let events = runtime
+            .list_work_graph_events(graph.id.as_str())
+            .await
+            .expect("events");
+        assert_eq!(
+            events.last().map(|event| event.event_type.as_str()),
+            Some("task_cancelled")
+        );
     }
 }
