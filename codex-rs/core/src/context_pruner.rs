@@ -167,9 +167,17 @@ pub(crate) fn build_prune_batch_for_reclaim(
         return Vec::new();
     }
 
+    let Some(current_turn_start) = input.iter().rposition(
+        |item| matches!(item, ResponseItem::Message { role, .. } if role == "user"),
+    ) else {
+        return Vec::new();
+    };
+
     let mut selected = Vec::new();
     let mut selected_tokens = 0usize;
-    for (call_id, evidence, output_tokens) in build_prune_candidates(input, covered_call_ids) {
+    for (call_id, evidence, output_tokens) in
+        build_prune_candidates(&input[..current_turn_start], covered_call_ids)
+    {
         selected.push((call_id, evidence));
         selected_tokens = selected_tokens.saturating_add(output_tokens);
         if selected_tokens >= target_tokens {
@@ -410,6 +418,18 @@ mod tests {
         }
     }
 
+    fn user_message(text: &str) -> ResponseItem {
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: text.to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        }
+    }
+
     #[test]
     fn should_prune_respects_threshold() {
         assert!(!should_prune(599_999, 100_000, 1_000_000));
@@ -480,8 +500,10 @@ mod tests {
     #[test]
     fn pressure_batch_selects_oldest_output_needed_and_keeps_recent_suffix() {
         let input = vec![
+            user_message("previous turn"),
             tool_output("old", &"a".repeat(8_000)),
             tool_output("middle", &"b".repeat(8_000)),
+            user_message("current turn"),
             tool_output("recent", &"c".repeat(8_000)),
         ];
 
@@ -494,6 +516,27 @@ mod tests {
                 .map(|(call_id, _)| call_id.as_str())
                 .collect::<Vec<_>>(),
             vec!["old", "middle"]
+        );
+    }
+
+    #[test]
+    fn pressure_batch_never_consumes_the_current_turn() {
+        let input = vec![
+            user_message("previous turn"),
+            tool_output("old", &"a".repeat(8_000)),
+            user_message("current turn"),
+            tool_output("current", &"b".repeat(8_000)),
+        ];
+
+        let batch =
+            build_prune_batch_for_reclaim(&input, &HashSet::new(), /*target_tokens*/ usize::MAX);
+
+        assert_eq!(
+            batch
+                .iter()
+                .map(|(call_id, _)| call_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["old"]
         );
     }
 

@@ -12,7 +12,8 @@ use serde_json::json;
 const CONTEXT_WINDOW: i64 = 10_000;
 const MAIN_MODEL: &str = "gpt-5.4";
 const PRUNE_MODEL: &str = "gpt-5.6-luna";
-const CALL_ID: &str = "pressure-output";
+const OLD_CALL_ID: &str = "old-pressure-output";
+const CURRENT_CALL_ID: &str = "current-turn-output";
 
 fn shell_arguments(command: &str) -> String {
     serde_json::to_string(&json!({
@@ -32,9 +33,9 @@ async fn pressure_harness() -> Result<TestCodexHarness> {
     .await
 }
 
-fn main_tool_response(total_tokens: i64, command: &str) -> String {
+fn main_tool_response(call_id: &str, total_tokens: i64, command: &str) -> String {
     sse(vec![
-        ev_function_call(CALL_ID, "shell_command", &shell_arguments(command)),
+        ev_function_call(call_id, "shell_command", &shell_arguments(command)),
         ev_completed_with_tokens("main-tool", total_tokens),
     ])
 }
@@ -54,7 +55,7 @@ async fn pressure_prune_runs_at_sixty_percent_and_rewrites_next_request() -> Res
     let prune_response = sse(vec![
         ev_assistant_message(
             "prune-result",
-            &format!("{CALL_ID}: command output was generated and inspected"),
+            &format!("{OLD_CALL_ID}: command output was generated and inspected"),
         ),
         ev_completed_with_tokens("prune-result", /*total_tokens*/ 100),
     ]);
@@ -62,27 +63,39 @@ async fn pressure_prune_runs_at_sixty_percent_and_rewrites_next_request() -> Res
         harness.server(),
         vec![
             main_tool_response(
-                /*total_tokens*/ 6_000,
+                OLD_CALL_ID,
+                /*total_tokens*/ 5_500,
                 "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
             ),
+            final_response(),
+            main_tool_response(CURRENT_CALL_ID, /*total_tokens*/ 6_000, "printf current-marker"),
             prune_response,
             final_response(),
         ],
     )
     .await;
 
-    harness.submit("generate a large diagnostic output").await?;
+    harness.submit("generate an old diagnostic output").await?;
+    harness.submit("inspect the current marker").await?;
 
     let requests = requests.requests();
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 5);
     assert_eq!(requests[0].body_json()["model"], MAIN_MODEL);
-    assert_eq!(requests[1].body_json()["model"], PRUNE_MODEL);
-    assert_eq!(requests[2].body_json()["model"], MAIN_MODEL);
-    assert!(requests[1].body_contains_text("<evidence_batch>"));
-    assert!(requests[2].body_contains_text("[ELPIS CONTEXT UPDATE]"));
-    assert!(requests[2].body_contains_text("rollout://tool-call/pressure-output"));
+    assert_eq!(requests[3].body_json()["model"], PRUNE_MODEL);
+    assert_eq!(requests[4].body_json()["model"], MAIN_MODEL);
+    assert!(requests[3].body_contains_text("<evidence_batch>"));
+    assert!(requests[3].body_contains_text(OLD_CALL_ID));
     assert!(
-        !requests[2].body_contains_text(&"x".repeat(128)),
+        !requests[3].body_contains_text("output:\ncurrent-marker"),
+        "the pruning model must never receive current-turn tool output"
+    );
+    assert!(requests[4].body_contains_text("[ELPIS CONTEXT UPDATE]"));
+    assert!(
+        requests[4].body_contains_text(&format!("rollout://tool-call/{OLD_CALL_ID}"))
+    );
+    assert!(requests[4].body_contains_text("Output:\ncurrent-marker"));
+    assert!(
+        !requests[4].body_contains_text(&"x".repeat(128)),
         "the next real model request must receive the compact receipt, not raw bulk output"
     );
 
@@ -97,7 +110,7 @@ async fn pressure_prune_does_not_run_below_sixty_percent() -> Result<()> {
     let requests = mount_sse_sequence(
         harness.server(),
         vec![
-            main_tool_response(/*total_tokens*/ 5_500, "printf x"),
+            main_tool_response(CURRENT_CALL_ID, /*total_tokens*/ 5_500, "printf x"),
             final_response(),
         ],
     )
