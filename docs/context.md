@@ -61,7 +61,7 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 | :--- | :--- | :--- | :--- | :--- |
 | **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
-| **3. Ace Pressure Pass** | Exact model-window use reaches 60% | Oldest eligible tool exploration | Selects only enough old tool evidence to target roughly 50% use. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely; the recent suffix stays verbatim. | A failed pass changes nothing — working context is left as-is, and native compaction remains the exhaustion fallback. |
+| **3. Ace Pressure Pass** | Exact model-window use reaches 60% | Oldest eligible tool exploration from completed turns | Selects only enough old tool evidence to target roughly 50% use. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely; the current turn and recent suffix stay verbatim. | A failed pass changes nothing — working context is left as-is, and native compaction remains the exhaustion fallback. |
 
 **All three layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
@@ -70,6 +70,9 @@ long-running tool-driven turn cannot skip the pressure boundary. OpenAI-backed p
 Luna at low reasoning effort. Every successful pass immediately recomputes the working
 history estimate and writes `prune_report.md` alongside the session logs
 (`codex-rs/core/src/session/context_prune_audit.rs`).
+The pass may run during a current turn, but it only receives and rewrites tool evidence
+from earlier completed turns; current-turn observations remain intact for the next
+follow-up.
 
 `/prune` is currently a compatibility alias for full native `/compact`; it summarizes and
 replaces conversation history, so it can legitimately leave a nearly empty working window.
