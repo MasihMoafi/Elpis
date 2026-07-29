@@ -214,21 +214,33 @@ impl ChatWidget {
                 self.refresh_skills_for_current_cwd(/*force_reload*/ true);
             }
             ServerNotification::ModelRerouted(notification) => {
-                crate::branding::record_model_reroute(
-                    &notification.from_model,
-                    &notification.to_model,
-                );
-                self.add_info_message(
-                    "Continuity preserved after model reroute.".to_string(),
-                    Some(format!(
-                        "{} → {} · reason {:?} · evidence thread:{}/turn:{}",
-                        notification.from_model,
-                        notification.to_model,
-                        notification.reason,
-                        notification.thread_id,
-                        notification.turn_id
-                    )),
-                );
+                if notification.reason
+                    == codex_app_server_protocol::ModelRerouteReason::AutoModelRouting
+                {
+                    self.add_info_message(
+                        format!("Auto routed this turn to {}.", notification.to_model),
+                        Some(format!(
+                            "Auto → {} · evidence thread:{}/turn:{}",
+                            notification.to_model, notification.thread_id, notification.turn_id
+                        )),
+                    );
+                } else {
+                    crate::branding::record_model_reroute(
+                        &notification.from_model,
+                        &notification.to_model,
+                    );
+                    self.add_info_message(
+                        "Continuity preserved after model reroute.".to_string(),
+                        Some(format!(
+                            "{} → {} · reason {:?} · evidence thread:{}/turn:{}",
+                            notification.from_model,
+                            notification.to_model,
+                            notification.reason,
+                            notification.thread_id,
+                            notification.turn_id
+                        )),
+                    );
+                }
                 self.refresh_status_line();
             }
             ServerNotification::ModelVerification(notification) => {

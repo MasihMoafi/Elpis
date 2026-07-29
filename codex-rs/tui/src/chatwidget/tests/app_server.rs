@@ -637,6 +637,30 @@ async fn live_app_server_warning_notification_renders_message() {
 }
 
 #[tokio::test]
+async fn live_auto_model_reroute_names_the_selected_model() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.handle_server_notification(
+        ServerNotification::ModelRerouted(codex_app_server_protocol::ModelReroutedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            from_model: "auto".to_string(),
+            to_model: "gpt-5.6-sol".to_string(),
+            reason: codex_app_server_protocol::ModelRerouteReason::AutoModelRouting,
+        }),
+        /*replay_kind*/ None,
+    );
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one Auto routing history cell");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Auto routed this turn to gpt-5.6-sol."),
+        "expected visible Auto routed choice, got {rendered}"
+    );
+}
+
+#[tokio::test]
 async fn live_app_server_guardian_warning_notification_renders_message() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

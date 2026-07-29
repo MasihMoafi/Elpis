@@ -3,15 +3,18 @@
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
+use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::session::TurnInput;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::responses_metadata::CodexResponsesRequestKind;
 use codex_features::Feature;
-use codex_protocol::config_types::ReasoningEffort;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ModelRerouteEvent;
+use codex_protocol::protocol::ModelRerouteReason;
 use codex_protocol::user_input::UserInput;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
@@ -26,7 +29,10 @@ pub(crate) async fn route_turn_if_enabled(
     turn_context: Arc<TurnContext>,
     input: &[TurnInput],
 ) -> Arc<TurnContext> {
-    if !turn_context.config.features.enabled(Feature::AutomaticModelRouting)
+    if !turn_context
+        .config
+        .features
+        .enabled(Feature::AutomaticModelRouting)
         || turn_context.model_info.slug != TERRA_MODEL
     {
         return turn_context;
@@ -35,20 +41,24 @@ pub(crate) async fn route_turn_if_enabled(
     let Some(request) = user_request(input) else {
         return turn_context;
     };
-    let Some(prompt_text) = classifier_prompt(&request, &turn_context) else {
-        return turn_context;
+    let model = if let Some(prompt_text) = classifier_prompt(&request, &turn_context) {
+        let mut classifier_session = sess.services.model_client.new_session();
+        classify(sess, &turn_context, &mut classifier_session, prompt_text)
+            .await
+            .unwrap_or(TERRA_MODEL)
+    } else {
+        TERRA_MODEL
     };
 
-    let mut classifier_session = sess.services.model_client.new_session();
-    let Some(model) = classify(
-        sess,
+    sess.send_event(
         &turn_context,
-        &mut classifier_session,
-        prompt_text,
+        EventMsg::ModelReroute(ModelRerouteEvent {
+            from_model: "auto".to_string(),
+            to_model: model.to_string(),
+            reason: ModelRerouteReason::AutoModelRouting,
+        }),
     )
-    .await else {
-        return turn_context;
-    };
+    .await;
 
     Arc::new(
         turn_context
@@ -131,15 +141,36 @@ async fn classify(
         .await
         .ok()?;
 
-    let mut text = String::new();
+    let mut streamed_text = String::new();
+    let mut completed_text = None;
     while let Some(event) = stream.next().await {
         match event.ok()? {
-            ResponseEvent::OutputTextDelta(delta) => text.push_str(&delta),
+            ResponseEvent::OutputTextDelta(delta) => streamed_text.push_str(&delta),
+            ResponseEvent::OutputItemDone(item) => {
+                completed_text = response_item_text(&item);
+            }
             ResponseEvent::Completed { .. } => break,
             _ => {}
         }
     }
-    parse_route(&text)
+    parse_route(&streamed_text).or_else(|| completed_text.as_deref().and_then(parse_route))
+}
+
+fn response_item_text(item: &ResponseItem) -> Option<String> {
+    let ResponseItem::Message { content, .. } = item else {
+        return None;
+    };
+    let text = content
+        .iter()
+        .filter_map(|item| match item {
+            ContentItem::OutputText { text } | ContentItem::InputText { text } => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    (!text.trim().is_empty()).then_some(text)
 }
 
 fn parse_route(response: &str) -> Option<&'static str> {

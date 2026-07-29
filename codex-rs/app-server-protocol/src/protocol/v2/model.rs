@@ -13,7 +13,8 @@ use ts_rs::TS;
 
 v2_enum_from_core!(
     pub enum ModelRerouteReason from CoreModelRerouteReason {
-        HighRiskCyberActivity
+        HighRiskCyberActivity,
+        AutoModelRouting
     }
 );
 
