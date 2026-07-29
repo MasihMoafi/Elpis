@@ -23,6 +23,7 @@ use std::sync::Arc;
 const LUNA_MODEL: &str = "gpt-5.6-luna";
 const TERRA_MODEL: &str = "gpt-5.6-terra";
 const SOL_MODEL: &str = "gpt-5.6-sol";
+const ROUTER_INSTRUCTIONS: &str = "You are the Elpis model router. Choose exactly one of {luna}, {terra}, or {sol}. Use the supplied model descriptions and assess the request on three factors: importance, difficulty/complexity, and length/detail. Choose Luna only for clearly trivial mechanical work. Choose Sol only when the request is both important or difficult enough to need top-tier reasoning; a long, detailed specification can be difficult, while a short request seldom needs Sol. Choose Terra for ordinary work and whenever uncertain. Reply with the model ID only.";
 
 pub(crate) async fn route_turn_if_enabled(
     sess: &Arc<Session>,
@@ -116,9 +117,10 @@ async fn classify(
             internal_chat_message_metadata_passthrough: None,
         }],
         base_instructions: BaseInstructions {
-            text: format!(
-                "You are the Elpis model router. Choose exactly one of {LUNA_MODEL}, {TERRA_MODEL}, or {SOL_MODEL}. Use the supplied model descriptions and the user request. Choose Luna only for truly trivial mechanical work. Choose Sol only for genuinely complex, high-stakes, or long-horizon work. Choose Terra for everything else. Reply with the model ID only."
-            ),
+            text: ROUTER_INSTRUCTIONS
+                .replace("{luna}", LUNA_MODEL)
+                .replace("{terra}", TERRA_MODEL)
+                .replace("{sol}", SOL_MODEL),
         },
         ..Default::default()
     };
@@ -191,5 +193,13 @@ mod tests {
         assert_eq!(parse_route("gpt-5.6-luna\n"), Some(LUNA_MODEL));
         assert_eq!(parse_route("Use gpt-5.6-sol"), None);
         assert_eq!(parse_route("gpt-4.1"), None);
+    }
+
+    #[test]
+    fn tells_terra_to_default_to_terra_when_uncertain() {
+        assert!(ROUTER_INSTRUCTIONS.contains("importance"));
+        assert!(ROUTER_INSTRUCTIONS.contains("difficulty/complexity"));
+        assert!(ROUTER_INSTRUCTIONS.contains("length/detail"));
+        assert!(ROUTER_INSTRUCTIONS.contains("whenever uncertain"));
     }
 }
