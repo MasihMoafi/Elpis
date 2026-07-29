@@ -3089,6 +3089,29 @@ async fn model_selection_popup_snapshot() {
 }
 
 #[tokio::test]
+async fn model_picker_shows_auto_without_upstream_auto_presets() {
+    let (mut chat, _rx, _op_rx) =
+        make_chatwidget_manual(Some(crate::chatwidget::model_routing::TERRA_MODEL)).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    let presets = [
+        crate::chatwidget::model_routing::LUNA_MODEL,
+        crate::chatwidget::model_routing::TERRA_MODEL,
+        crate::chatwidget::model_routing::SOL_MODEL,
+    ]
+    .into_iter()
+    .map(|model| get_available_model(&chat, model))
+    .collect();
+    chat.open_model_popup_with_presets(presets);
+
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(
+        popup.contains("Auto"),
+        "expected Elpis Auto routing to appear without upstream auto presets:\n{popup}"
+    );
+}
+
+#[tokio::test]
 async fn personality_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());

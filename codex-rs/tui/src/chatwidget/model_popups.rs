@@ -236,11 +236,6 @@ impl ChatWidget {
             .into_iter()
             .partition(|preset| Self::is_auto_model(&preset.model));
 
-        if auto_presets.is_empty() {
-            self.open_all_models_popup(other_presets);
-            return;
-        }
-
         auto_presets.sort_by_key(|preset| Self::auto_model_order(&preset.model));
         let mut items: Vec<SelectionItem> = auto_presets
             .into_iter()
