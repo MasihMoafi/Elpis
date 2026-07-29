@@ -1,16 +1,42 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 3088
 expression: popup
 ---
-  Select Model and Effort
-  Access legacy models by running codex -m <model_name> or in your config.toml
-
-  1. gpt-5.6-sol (default)  Latest frontier agentic coding model.
-  2. gpt-5.6-terra          Balanced agentic coding model for everyday work.
-  3. gpt-5.6-luna           Fast and affordable agentic coding model.
-  4. gpt-5.5                Frontier model for complex coding, research, and
-                            real-world work.
-› 5. gpt-5.2 (current)      Optimized for professional work and long-running
-                            agents.
-
+ Elpis · model gpt-5.2 · location /tmp/project
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Choose a mind                                ││admitted
+│ Provider: OpenAI                             ││i = select/deselect all ·
+│ Route: direct provider connection            ││backspace = remove added file
+│ Protocol: responses                          ││
+│ Credential: OpenAI/ChatGPT credential store  ││CONTEXT WINDOW  ≈0 of 200.0k
+│ Codex model: gpt-5.2                         ││used (0%)
+│ Provider, protocol, route, and credential so ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+│                                              ││■ Conversation (messages)  ≈0
+     OPENAI                                    ││
+  1. Auto                       Terra by       ││No portable context is
+                                default; Luna  ││available.
+                                only for       │
+                                plainly        │
+                                mechanical     │
+                                work; Sol for  │
+                                critical or    │
+                                long-horizon   │
+                                work.          │
+› 2. All models (current)       Browse this    │
+                                provider's     │
+                                full catalog   │
+                                (current: gpt- │
+                                5.2)           │
+     OPENROUTER                                │
+  3. tencent/hy3:free           Free           │
+                                OpenRouter     │
+                                model          │
+  4. nvidia/nemotron-3-ultra-5… Free           │
+                                OpenRouter     │
+                                model          │
+  5. poolside/laguna-m.1:free   Free           │
+                                OpenRouter     │
+                                model          │
+└──────────────────────────────────────────────┘
   Press enter to confirm or esc to go back
