@@ -325,8 +325,7 @@ impl ChatWidget {
                 preset.model.as_str() == crate::chatwidget::model_routing::TERRA_MODEL
             });
         let description = if available {
-            "Terra by default; Luna only for plainly mechanical work; Sol for critical or long-horizon work."
-                .to_string()
+            "Elpis automatically chooses the right model for the task".to_string()
         } else {
             "Requires this provider to offer GPT-5.6 Luna, Terra, and Sol.".to_string()
         };
