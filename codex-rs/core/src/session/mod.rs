@@ -193,6 +193,7 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::exec_output::StreamOutput;
 
 mod code_mode_warning;
+mod auto_model_routing;
 mod config_lock;
 mod context_prune;
 mod context_prune_audit;

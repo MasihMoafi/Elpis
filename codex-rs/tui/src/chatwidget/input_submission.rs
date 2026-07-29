@@ -311,19 +311,16 @@ impl ChatWidget {
             return (false, None);
         }
 
-        let auto_route = self
-            .auto_model_routing_enabled()
-            .then(|| self.auto_model_routing_available())
-            .unwrap_or(false)
-            .then(|| crate::chatwidget::model_routing::route_user_request(&text));
-        let selected_model = auto_route.as_ref().map_or_else(
-            || effective_mode.model().to_string(),
-            |route| route.model.to_string(),
-        );
-        let selected_effort = auto_route.as_ref().map_or_else(
-            || effective_mode.reasoning_effort(),
-            |route| Some(route.reasoning_effort.clone()),
-        );
+        // Auto always begins with Terra. Core asks Terra to choose from the live
+        // catalog, then rebuilds this turn for the selected model before sampling.
+        let selected_model = if self.auto_model_routing_enabled()
+            && self.auto_model_routing_available()
+        {
+            crate::chatwidget::model_routing::TERRA_MODEL.to_string()
+        } else {
+            effective_mode.model().to_string()
+        };
+        let selected_effort = effective_mode.reasoning_effort();
 
         self.maybe_apply_ide_context(&mut items);
 
@@ -375,15 +372,6 @@ impl ChatWidget {
         }
         if render_in_history {
             self.input_queue.user_turn_pending_start = true;
-        }
-        if let Some(route) = auto_route {
-            self.add_info_message(
-                format!(
-                    "Auto routed this turn to {}: {}.",
-                    route.model, route.reason
-                ),
-                None,
-            );
         }
 
         // Persist the submitted text to cross-session message history. Mentions are encoded into
