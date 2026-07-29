@@ -1013,6 +1013,7 @@ impl App {
                     .await;
             }
             AppEvent::UpdateModel(model) => {
+                self.chat_widget.set_auto_model_routing_enabled(false);
                 let provider_id = if model.contains('/')
                     || model.contains(":free")
                     || !codex_model_provider_info::openrouter_free_fallback_candidates(&model)
@@ -1027,6 +1028,37 @@ impl App {
                     .await;
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
+            }
+            AppEvent::EnableAutoModelRouting => {
+                let model = crate::chatwidget::model_routing::TERRA_MODEL.to_string();
+                let effort = codex_protocol::openai_models::ReasoningEffort::Medium;
+                self.chat_widget.set_auto_model_routing_enabled(true);
+                self.chat_widget.set_model(&model);
+                self.on_update_reasoning_effort(Some(effort.clone()));
+                self.sync_active_thread_model_setting(
+                    app_server,
+                    model,
+                    Some("openai".to_string()),
+                )
+                .await;
+                self.sync_active_thread_reasoning_setting(app_server, Some(effort))
+                    .await;
+                match crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    crate::config_update::build_auto_model_routing_edits(),
+                )
+                .await
+                {
+                    Ok(_) => self.chat_widget.add_info_message(
+                        "Auto model routing enabled: Terra by default; Luna for plainly mechanical work; Sol for critical or long-horizon work."
+                            .to_string(),
+                        None,
+                    ),
+                    Err(err) => self.chat_widget.add_error_message(format!(
+                        "Failed to save Auto model routing: {}",
+                        format_config_error(&err)
+                    )),
+                }
             }
             AppEvent::UpdatePersonality(personality) => {
                 self.on_update_personality(personality);

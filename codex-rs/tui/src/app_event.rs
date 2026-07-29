@@ -682,6 +682,9 @@ pub(crate) enum AppEvent {
     /// Update the current model slug in the running app and widget.
     UpdateModel(String),
 
+    /// Enable the conservative Sol/Terra/Luna routing policy from `/model`.
+    EnableAutoModelRouting,
+
     /// Update the current personality in the running app and widget.
     UpdatePersonality(Personality),
 

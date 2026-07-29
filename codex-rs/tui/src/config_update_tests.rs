@@ -38,3 +38,27 @@ fn format_config_error_preserves_server_validation_message() {
          features.fast_mode=true violates managed requirements; allowed set [fast_mode=false]"
     );
 }
+
+#[test]
+fn model_selection_turns_auto_routing_off() {
+    assert_eq!(
+        build_model_selection_edits("gpt-5.6-sol", Some("high")),
+        vec![
+            replace_config_value("model", serde_json::json!("gpt-5.6-sol")),
+            replace_config_value("model_reasoning_effort", serde_json::json!("high")),
+            replace_config_value("features.auto_model_routing", serde_json::json!(false)),
+        ]
+    );
+}
+
+#[test]
+fn auto_model_routing_persists_terra_as_the_safe_default() {
+    assert_eq!(
+        build_auto_model_routing_edits(),
+        vec![
+            replace_config_value("model", serde_json::json!("gpt-5.6-terra")),
+            replace_config_value("model_reasoning_effort", serde_json::json!("medium")),
+            replace_config_value("features.auto_model_routing", serde_json::json!(true)),
+        ]
+    );
+}

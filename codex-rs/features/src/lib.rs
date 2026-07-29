@@ -135,6 +135,8 @@ pub enum Feature {
     RuntimeMetrics,
     /// Enable startup memory extraction and file-backed memory consolidation.
     MemoryTool,
+    /// Route user turns between the configured Sol, Terra, and Luna models.
+    AutomaticModelRouting,
     /// Compress cold local thread-store rollout files.
     LocalThreadStoreCompression,
     /// Enable the Chronicle sidecar for passive screen-context memories.
@@ -929,6 +931,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::MemoryTool,
         key: "memories",
         stage: Stage::Stable,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::AutomaticModelRouting,
+        key: "auto_model_routing",
+        stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {

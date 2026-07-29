@@ -371,6 +371,7 @@ use self::plugins::PluginsCacheState;
 mod plan_implementation;
 use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
 mod model_popups;
+pub(crate) mod model_routing;
 mod notifications;
 use self::notifications::Notification;
 mod permission_popups;

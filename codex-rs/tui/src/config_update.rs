@@ -74,6 +74,15 @@ pub(crate) fn build_model_selection_edits(
     vec![
         replace_config_value("model", serde_json::json!(model)),
         effort_edit,
+        replace_config_value("features.auto_model_routing", serde_json::json!(false)),
+    ]
+}
+
+pub(crate) fn build_auto_model_routing_edits() -> Vec<ConfigEdit> {
+    vec![
+        replace_config_value("model", serde_json::json!("gpt-5.6-terra")),
+        replace_config_value("model_reasoning_effort", serde_json::json!("medium")),
+        replace_config_value("features.auto_model_routing", serde_json::json!(true)),
     ]
 }
 

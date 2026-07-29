@@ -311,12 +311,30 @@ impl ChatWidget {
             return (false, None);
         }
 
+        let auto_route = self
+            .auto_model_routing_enabled()
+            .then(|| self.auto_model_routing_available())
+            .unwrap_or(false)
+            .then(|| crate::chatwidget::model_routing::route_user_request(&text));
+        let selected_model = auto_route.as_ref().map_or_else(
+            || effective_mode.model().to_string(),
+            |route| route.model.to_string(),
+        );
+        let selected_effort = auto_route.as_ref().map_or_else(
+            || effective_mode.reasoning_effort(),
+            |route| Some(route.reasoning_effort.clone()),
+        );
+
         self.maybe_apply_ide_context(&mut items);
 
         let collaboration_mode = if self.collaboration_modes_enabled() {
-            self.active_collaboration_mask
-                .as_ref()
-                .map(|_| effective_mode.clone())
+            self.active_collaboration_mask.as_ref().map(|_| {
+                effective_mode.with_updates(
+                    Some(selected_model.clone()),
+                    Some(selected_effort.clone()),
+                    /*developer_instructions*/ None,
+                )
+            })
         } else {
             None
         };
@@ -343,8 +361,8 @@ impl ChatWidget {
             self.config.cwd.to_path_buf(),
             AskForApproval::from(self.config.permissions.approval_policy.value()),
             active_permission_profile,
-            effective_mode.model().to_string(),
-            effective_mode.reasoning_effort(),
+            selected_model,
+            selected_effort,
             /*summary*/ None,
             service_tier,
             /*final_output_json_schema*/ None,
@@ -357,6 +375,15 @@ impl ChatWidget {
         }
         if render_in_history {
             self.input_queue.user_turn_pending_start = true;
+        }
+        if let Some(route) = auto_route {
+            self.add_info_message(
+                format!(
+                    "Auto routed this turn to {}: {}.",
+                    route.model, route.reason
+                ),
+                None,
+            );
         }
 
         // Persist the submitted text to cross-session message history. Mentions are encoded into

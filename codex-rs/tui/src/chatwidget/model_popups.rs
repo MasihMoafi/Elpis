@@ -223,6 +223,7 @@ impl ChatWidget {
             .into_iter()
             .filter(|preset| preset.show_in_picker)
             .collect();
+        let auto_routing_item = self.auto_model_routing_item(&presets);
 
         let current_model = self.current_model();
         let current_label = presets
@@ -309,6 +310,7 @@ impl ChatWidget {
 
         self.push_openrouter_free_model_group(&mut items);
         items.insert(0, self.model_provider_group_item());
+        items.insert(1, auto_routing_item);
 
         let header = self.model_menu_header(
             "Choose a mind",
@@ -320,6 +322,34 @@ impl ChatWidget {
             header,
             ..Default::default()
         });
+    }
+
+    fn auto_model_routing_item(&self, presets: &[ModelPreset]) -> SelectionItem {
+        let available = self.auto_model_routing_available()
+            && presets.iter().any(|preset| {
+                preset.model.as_str() == crate::chatwidget::model_routing::TERRA_MODEL
+            });
+        let description = if available {
+            "Terra by default; Luna only for plainly mechanical work; Sol for critical or long-horizon work."
+                .to_string()
+        } else {
+            "Requires this provider to offer GPT-5.6 Luna, Terra, and Sol.".to_string()
+        };
+        let mut actions: Vec<SelectionAction> = Vec::new();
+        if available {
+            actions.push(Box::new(|tx| {
+                tx.send(AppEvent::EnableAutoModelRouting);
+            }));
+        }
+        SelectionItem {
+            name: "Auto".to_string(),
+            description: Some(description),
+            is_current: self.auto_model_routing_enabled(),
+            is_disabled: !available,
+            actions,
+            dismiss_on_select: available,
+            ..Default::default()
+        }
     }
 
     fn is_auto_model(model: &str) -> bool {

@@ -269,6 +269,30 @@ impl ChatWidget {
         self.refresh_model_dependent_surfaces();
     }
 
+    pub(crate) fn set_auto_model_routing_enabled(&mut self, enabled: bool) {
+        let _ = self
+            .config
+            .features
+            .set_enabled(Feature::AutomaticModelRouting, enabled);
+    }
+
+    pub(crate) fn auto_model_routing_enabled(&self) -> bool {
+        self.config.features.enabled(Feature::AutomaticModelRouting)
+    }
+
+    pub(crate) fn auto_model_routing_available(&self) -> bool {
+        let required_models = [
+            crate::chatwidget::model_routing::LUNA_MODEL,
+            crate::chatwidget::model_routing::TERRA_MODEL,
+            crate::chatwidget::model_routing::SOL_MODEL,
+        ];
+        self.model_catalog.try_list_models().is_ok_and(|models| {
+            required_models
+                .iter()
+                .all(|model| models.iter().any(|preset| preset.model.as_str() == *model))
+        })
+    }
+
     pub(crate) fn current_model(&self) -> &str {
         if !self.collaboration_modes_enabled() {
             return self.current_collaboration_mode.model();
