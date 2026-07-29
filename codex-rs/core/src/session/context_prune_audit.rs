@@ -18,6 +18,8 @@ use crate::context_pruner::PruneRecord;
 const AUDIT_SCHEMA_VERSION: u32 = 1;
 
 pub(super) struct PruneAuditInput<'a> {
+    /// Which trigger fired this pass: `steady` or `pressure`.
+    pub(super) trigger: &'a str,
     pub(super) model_slug: &'a str,
     pub(super) ace_instructions: &'a str,
     pub(super) ace_input: &'a str,
@@ -48,6 +50,7 @@ struct PassManifest<'a> {
     schema_version: u32,
     pass_id: String,
     timestamp: String,
+    trigger: &'a str,
     model: &'a str,
     saved_chars: usize,
     ace_conversation: &'static str,
@@ -156,6 +159,7 @@ pub(super) fn write_applied_pass(
             schema_version: AUDIT_SCHEMA_VERSION,
             pass_id: pass_id.clone(),
             timestamp: chrono::Utc::now().to_rfc3339(),
+            trigger: input.trigger,
             model: input.model_slug,
             saved_chars: input.saved_chars,
             ace_conversation: "ace.json",
@@ -174,6 +178,7 @@ pub(super) fn write_applied_pass(
 
     let report = build_latest_report(
         &final_dir,
+        input.trigger,
         input.model_slug,
         input.saved_chars,
         &report_items,
@@ -263,6 +268,7 @@ fn safe_filename_component(call_id: &str) -> String {
 
 fn build_latest_report(
     pass_dir: &Path,
+    trigger: &str,
     model_slug: &str,
     saved_chars: usize,
     items: &[(String, &'static str, Option<String>, PathBuf)],
@@ -276,6 +282,7 @@ fn build_latest_report(
     let mut report = format!(
         "# Elpis Context Pruning Evidence\n\n\
          Latest immutable pass: `{}`  \n\
+         Trigger: `{trigger}`  \n\
          Model: `{model_slug}`  \n\
          Result: {} reviewed · {kept} kept · {} deleted · ≈{saved_chars} chars removed\n\n\
          - Exact Ace conversation: {ace_url}\n\
@@ -384,6 +391,7 @@ mod tests {
         let written = write_applied_pass(
             root.path(),
             PruneAuditInput {
+                trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "PRUNING INSTRUCTIONS",
                 ace_input: "ACE INPUT",
@@ -457,6 +465,7 @@ mod tests {
             write_applied_pass(
                 root.path(),
                 PruneAuditInput {
+                    trigger: "pressure",
                     model_slug: "terra",
                     ace_instructions: "instructions",
                     ace_input: "input",
@@ -490,6 +499,7 @@ mod tests {
         let error = write_applied_pass(
             root.path(),
             PruneAuditInput {
+                trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "instructions",
                 ace_input: "input",

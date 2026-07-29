@@ -6,11 +6,18 @@
 //! action: useful evidence earns one compact conclusion, while dead ends leave no
 //! model-visible trace.
 //!
-//! Trigger: once active context use reaches 60% and uncovered tool output exists, one
-//! pass selects the oldest eligible output needed to target 50% use. This preserves a
-//! recent verbatim suffix and avoids paying for a model pass after nearly every turn.
-//! On any failure (model error, timeout, unparseable output) the batch is left alone
-//! and can retry after the next completed turn.
+//! Two triggers drive the same pass, and both are needed. The steady trigger fires
+//! whenever completed turns hold at least 1% of the context window in uncovered tool
+//! output, and takes that whole backlog: this is what keeps a long session from
+//! filling up in the first place. The pressure trigger fires once active use reaches
+//! 60% and takes only the oldest output needed to get back to 50%, preserving a recent
+//! verbatim suffix. Steady alone cannot catch a single turn that balloons past the
+//! boundary; pressure alone lets a session climb to 60% before anything is reclaimed,
+//! which is the state the steady pass exists to prevent.
+//!
+//! Neither trigger ever touches the current turn. On any failure (model error,
+//! timeout, unparseable output) the batch is left alone and can retry after the next
+//! completed turn.
 
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -23,6 +30,11 @@ use std::sync::atomic::Ordering;
 
 pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 60;
 pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 50;
+
+/// Floor for the steady pass, as a percentage of the context window. Low enough that
+/// routine exploration is distilled the turn after it lands, high enough that a couple
+/// of small reads do not buy a model call.
+pub(crate) const STEADY_PRUNE_FLOOR_PERCENT: i64 = 1;
 
 /// Luna is sufficient for the pass's bounded keep/delete classification and avoids
 /// spending a larger model on routine context maintenance.
@@ -62,9 +74,47 @@ impl PruneRecord {
     }
 }
 
-/// True when active context use reaches 60% and uncovered tool output exists.
-pub(crate) fn should_prune(used_tokens: i64, uncovered_chars: usize, context_window: i64) -> bool {
-    uncovered_chars > 0 && pressure_reached(used_tokens, context_window)
+/// Which trigger a pass is running under. Pressure outranks steady: when use is
+/// already at 60% the reclaim target is what matters, not the backlog size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PruneTrigger {
+    /// Completed turns hold at least `STEADY_PRUNE_FLOOR_PERCENT` of the window.
+    Steady,
+    /// Active use reached `AUTO_PRUNE_TRIGGER_PERCENT`.
+    Pressure,
+}
+
+impl PruneTrigger {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Steady => "steady",
+            Self::Pressure => "pressure",
+        }
+    }
+}
+
+/// The trigger that applies right now, or `None` when no pass should run.
+pub(crate) fn select_trigger(
+    used_tokens: i64,
+    uncovered_tokens: usize,
+    context_window: i64,
+) -> Option<PruneTrigger> {
+    if context_window <= 0 || uncovered_tokens == 0 {
+        return None;
+    }
+    if pressure_reached(used_tokens, context_window) {
+        return Some(PruneTrigger::Pressure);
+    }
+    steady_floor_reached(uncovered_tokens, context_window).then_some(PruneTrigger::Steady)
+}
+
+/// True when uncovered completed-turn output is worth a steady pass on its own.
+pub(crate) fn steady_floor_reached(uncovered_tokens: usize, context_window: i64) -> bool {
+    if context_window <= 0 {
+        return false;
+    }
+    let uncovered = i64::try_from(uncovered_tokens).unwrap_or(i64::MAX);
+    uncovered.saturating_mul(100) >= context_window.saturating_mul(STEADY_PRUNE_FLOOR_PERCENT)
 }
 
 pub(crate) fn pressure_reached(used_tokens: i64, context_window: i64) -> bool {
@@ -127,29 +177,41 @@ pub(crate) fn latest_user_message_text(input: &[ResponseItem]) -> Option<String>
     })
 }
 
-/// Chars of turn-lifetime tool call/output content in `input` not already covered by
-/// a prior record. Only counts what a pass could plausibly do anything about;
-/// durable rules, messages, and already-covered items are excluded.
-pub(crate) fn uncovered_transient_chars(
+/// Everything before the latest user message: the only region either trigger may
+/// rewrite. The current turn's own observations must survive for the next follow-up.
+fn completed_turn_items(input: &[ResponseItem]) -> &[ResponseItem] {
+    match input
+        .iter()
+        .rposition(|item| matches!(item, ResponseItem::Message { role, .. } if role == "user"))
+    {
+        Some(current_turn_start) => &input[..current_turn_start],
+        None => &[],
+    }
+}
+
+/// Approximate tokens of turn-lifetime tool output from completed turns not already
+/// covered by a prior record — the backlog the steady trigger measures. Durable rules,
+/// messages, the current turn, and already-covered items are all excluded.
+pub(crate) fn uncovered_completed_turn_tokens(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
 ) -> usize {
-    input
+    completed_turn_items(input)
         .iter()
         .filter_map(prunable_text)
         .filter(|(call_id, _)| !covered_call_ids.contains(*call_id))
-        .map(|(_, text)| text.chars().count())
+        .map(|(_, text)| approx_token_count(&text))
         .sum()
 }
 
-/// Snapshot of the batch eligible for one pruning pass: `(call_id, text)` pairs not
-/// yet covered by a prior record, oldest first.
-#[cfg(test)]
-pub(crate) fn build_prune_batch(
+/// The whole uncovered backlog from completed turns, oldest first. The steady pass
+/// takes all of it rather than a size-bounded slice: at the 1% floor there is little
+/// to take, and leaving remnants would only buy another model call next turn.
+pub(crate) fn build_steady_prune_batch(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
 ) -> Vec<(String, String)> {
-    build_prune_candidates(input, covered_call_ids)
+    build_prune_candidates(completed_turn_items(input), covered_call_ids)
         .into_iter()
         .map(|(call_id, evidence, _)| (call_id, evidence))
         .collect()
@@ -167,16 +229,10 @@ pub(crate) fn build_prune_batch_for_reclaim(
         return Vec::new();
     }
 
-    let Some(current_turn_start) = input.iter().rposition(
-        |item| matches!(item, ResponseItem::Message { role, .. } if role == "user"),
-    ) else {
-        return Vec::new();
-    };
-
     let mut selected = Vec::new();
     let mut selected_tokens = 0usize;
     for (call_id, evidence, output_tokens) in
-        build_prune_candidates(&input[..current_turn_start], covered_call_ids)
+        build_prune_candidates(completed_turn_items(input), covered_call_ids)
     {
         selected.push((call_id, evidence));
         selected_tokens = selected_tokens.saturating_add(output_tokens);
@@ -431,10 +487,24 @@ mod tests {
     }
 
     #[test]
-    fn should_prune_respects_threshold() {
-        assert!(!should_prune(599_999, 100_000, 1_000_000));
-        assert!(should_prune(600_000, 100_000, 1_000_000));
-        assert!(!should_prune(900_000, 0, 1_000_000));
+    fn pressure_trigger_wins_at_sixty_percent_use() {
+        assert_eq!(
+            select_trigger(600_000, 100_000, 1_000_000),
+            Some(PruneTrigger::Pressure)
+        );
+        assert_eq!(select_trigger(900_000, 0, 1_000_000), None);
+    }
+
+    #[test]
+    fn steady_trigger_fires_below_pressure_once_backlog_reaches_one_percent() {
+        // The regression this guards: under pressure-only gating, a session with a
+        // real backlog but modest use pruned nothing and grew until it hit 60%.
+        assert_eq!(
+            select_trigger(200_000, 10_000, 1_000_000),
+            Some(PruneTrigger::Steady)
+        );
+        assert_eq!(select_trigger(200_000, 9_999, 1_000_000), None);
+        assert_eq!(select_trigger(200_000, 0, 1_000_000), None);
     }
 
     #[test]
@@ -443,9 +513,9 @@ mod tests {
     }
 
     #[test]
-    fn should_prune_false_for_non_positive_context_window() {
-        assert!(!should_prune(200_000, 1_000_000, 0));
-        assert!(!should_prune(200_000, 1_000_000, -1));
+    fn no_trigger_fires_for_non_positive_context_window() {
+        assert_eq!(select_trigger(200_000, 1_000_000, 0), None);
+        assert_eq!(select_trigger(200_000, 1_000_000, -1), None);
     }
 
     #[test]
@@ -455,45 +525,64 @@ mod tests {
     }
 
     #[test]
-    fn uncovered_transient_chars_excludes_already_covered_and_non_transient_items() {
-        use codex_protocol::models::ContentItem;
-
+    fn uncovered_backlog_excludes_covered_items_and_the_current_turn() {
         let input = vec![
-            ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "please grep the repo".to_string(),
-                }],
-                phase: None,
-                internal_chat_message_metadata_passthrough: None,
-            },
-            tool_output("a", "aaaa"),
-            tool_output("b", "bb"),
+            user_message("previous turn"),
+            tool_output("a", &"a".repeat(4_000)),
+            tool_output("b", &"b".repeat(4_000)),
+            user_message("current turn"),
+            tool_output("current", &"c".repeat(4_000)),
         ];
-        // The id-less user message is not prunable, so only tool outputs count.
+
         let mut covered = HashSet::new();
-        assert_eq!(uncovered_transient_chars(&input, &covered), 6);
+        let both = uncovered_completed_turn_tokens(&input, &covered);
         covered.insert("a".to_string());
-        assert_eq!(uncovered_transient_chars(&input, &covered), 2);
+        let one = uncovered_completed_turn_tokens(&input, &covered);
+
+        // Messages and the current turn's output never count toward the backlog, so
+        // covering one of the two completed outputs halves it.
+        assert!(both > 0);
+        assert_eq!(one * 2, both);
     }
 
     #[test]
-    fn build_prune_batch_skips_covered_ids() {
+    fn steady_batch_takes_the_whole_backlog_but_skips_covered_ids() {
         let input = vec![
+            user_message("previous turn"),
             tool_call("a", "exec_command", r#"{"cmd":"first"}"#),
             tool_output("a", "aaaa"),
             tool_call("b", "exec_command", r#"{"cmd":"second"}"#),
             tool_output("b", "bb"),
+            user_message("current turn"),
         ];
         let covered: HashSet<String> = ["a".to_string()].into_iter().collect();
-        let batch = build_prune_batch(&input, &covered);
+        let batch = build_steady_prune_batch(&input, &covered);
         assert_eq!(
             batch,
             vec![(
                 "b".to_string(),
                 "tool: exec_command\ninput: {\"cmd\":\"second\"}\noutput:\nbb".to_string()
             )]
+        );
+    }
+
+    #[test]
+    fn steady_batch_never_consumes_the_current_turn() {
+        let input = vec![
+            user_message("previous turn"),
+            tool_output("old", "aaaa"),
+            user_message("current turn"),
+            tool_output("current", "bbbb"),
+        ];
+
+        let batch = build_steady_prune_batch(&input, &HashSet::new());
+
+        assert_eq!(
+            batch
+                .iter()
+                .map(|(call_id, _)| call_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["old"]
         );
     }
 
@@ -528,8 +617,11 @@ mod tests {
             tool_output("current", &"b".repeat(8_000)),
         ];
 
-        let batch =
-            build_prune_batch_for_reclaim(&input, &HashSet::new(), /*target_tokens*/ usize::MAX);
+        let batch = build_prune_batch_for_reclaim(
+            &input,
+            &HashSet::new(),
+            /*target_tokens*/ usize::MAX,
+        );
 
         assert_eq!(
             batch
@@ -558,7 +650,9 @@ mod tests {
             latest_user_message_text(&input).as_deref(),
             Some("Find the source of the bug.")
         );
-        assert_eq!(build_prune_batch(&input, &HashSet::new()).len(), 1);
+        // The question is classification context; its own turn's output is not
+        // eligible, so no batch forms from it alone.
+        assert!(build_steady_prune_batch(&input, &HashSet::new()).is_empty());
     }
 
     #[test]

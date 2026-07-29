@@ -1,5 +1,5 @@
-//! Triggers the Ace context-pressure pass (`crate::context_pruner`) once the
-//! active working set reaches its threshold. Mirrors
+//! Runs the Ace pass (`crate::context_pruner`) under whichever trigger applies: the
+//! steady backlog floor, or the 60% pressure boundary. Mirrors
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual
@@ -30,9 +30,6 @@ pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &
     }
 
     let active_context_tokens = sess.get_total_token_usage().await;
-    if !context_pruner::pressure_reached(active_context_tokens, context_window) {
-        return;
-    }
 
     let covered_call_ids = {
         let state = sess.state.lock().await;
@@ -44,17 +41,33 @@ pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &
     let before_model_items = history
         .clone()
         .for_prompt(&turn_context.model_info.input_modalities);
-    let uncovered = context_pruner::uncovered_transient_chars(&items, &covered_call_ids);
-    if !context_pruner::should_prune(active_context_tokens, uncovered, context_window) {
+    let uncovered = context_pruner::uncovered_completed_turn_tokens(&items, &covered_call_ids);
+    let trigger = context_pruner::select_trigger(active_context_tokens, uncovered, context_window);
+    let batch = match trigger {
+        Some(context_pruner::PruneTrigger::Steady) => {
+            context_pruner::build_steady_prune_batch(&items, &covered_call_ids)
+        }
+        Some(context_pruner::PruneTrigger::Pressure) => {
+            let reclaim_target =
+                context_pruner::reclaim_target_tokens(active_context_tokens, context_window);
+            context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target)
+        }
+        None => Vec::new(),
+    };
+    let Some((trigger, batch)) = trigger.zip((!batch.is_empty()).then_some(batch)) else {
+        // Nothing reclaimable. Past the pressure boundary that means distillation is
+        // exhausted — the window is full of messages and reasoning rather than tool
+        // evidence — so the working set would climb from here with no layer left to
+        // stop it. Hand off to compaction instead of letting it drift toward the
+        // model's hard limit. The turn loop performs the rollover on its next step.
+        if context_pruner::pressure_reached(active_context_tokens, context_window) {
+            tracing::info!(
+                "Context pruning is exhausted at {active_context_tokens} tokens; requesting compaction"
+            );
+            sess.request_new_context_window().await;
+        }
         return;
-    }
-    let reclaim_target =
-        context_pruner::reclaim_target_tokens(active_context_tokens, context_window);
-    let batch =
-        context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target);
-    if batch.is_empty() {
-        return;
-    }
+    };
     let active_question = context_pruner::latest_user_message_text(&items);
     // Keep maintenance inference isolated from the active turn's sticky routing and
     // incremental request state. This lets the pressure check run between tool
@@ -85,6 +98,7 @@ pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &
     let audit = match context_prune_audit::write_applied_pass(
         &log_dir,
         context_prune_audit::PruneAuditInput {
+            trigger: trigger.as_str(),
             model_slug: &model_slug,
             ace_instructions: codex_prompts::CONTEXT_PRUNE_PROMPT,
             ace_input: &ace_input,
