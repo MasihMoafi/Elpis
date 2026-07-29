@@ -4,6 +4,24 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 #[tokio::test]
+async fn shutdown_feedback_is_rendered_immediately() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.show_shutdown_in_progress();
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|frame| chat.render(frame.area(), frame.buffer_mut()))
+        .expect("draw shutdown feedback");
+
+    assert!(
+        normalized_backend_snapshot(terminal.backend()).contains("Shutting down..."),
+        "shutdown feedback should be visible before cleanup finishes"
+    );
+}
+
+#[tokio::test]
 async fn forked_thread_history_line_without_name_shows_id_once_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

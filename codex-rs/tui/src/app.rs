@@ -1336,6 +1336,14 @@ See the Elpis keymap documentation for supported actions and examples."
         })?;
         Ok(rendered_area)
     }
+
+    pub(super) fn show_shutdown_feedback(&mut self, tui: &mut tui::Tui) -> Result<()> {
+        self.chat_widget.show_shutdown_in_progress();
+        self.handle_draw_pre_render(tui)?;
+        self.chat_widget.pre_draw_tick();
+        self.render_chat_widget_frame(tui)?;
+        Ok(())
+    }
 }
 
 impl Drop for App {
