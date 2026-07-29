@@ -29,6 +29,11 @@ fn under_development_features_are_disabled_by_default() {
 }
 
 #[test]
+fn guardian_auto_review_is_opt_in() {
+    assert_eq!(Feature::GuardianApproval.default_enabled(), false);
+}
+
+#[test]
 fn default_enabled_features_are_stable() {
     for spec in crate::FEATURES {
         if spec.default_enabled {
