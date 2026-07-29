@@ -161,6 +161,15 @@ spawns a fresh `claude` CLI process — and was removed entirely rather than kep
 known-degraded state. The native Anthropic Messages API adapter (`--provider anthropic`)
 is unaffected and remains the supported way to run Claude models in Elpis.
 
+**R12. Deterministic multi-agent orchestration** — Confirmed by Masih 2026-07-29.
+Elpis owns a persisted task DAG above the existing agent lineage graph. The engine
+validates dependencies, selects ready tasks in stable order, bounds concurrency,
+serializes overlapping writes in one environment, gives workers only scoped execution
+and reporting authority, and releases dependents only after authenticated evidence.
+Branch/worktree creation and integration remain deliberate coordinator actions rather
+than automatic graph behavior. The exact contract and current verification state are in
+[WORK_GRAPHS.md](WORK_GRAPHS.md).
+
 ### First-Release Order
 
 1. Keep the canonical repository and verification cycle clean.
@@ -182,6 +191,8 @@ was complete when the tag was made.
 - `~/.elpis/memories/MEMORY.md` — curated durable memory.
 - `~/.elpis/memories/archive.md` — append-only faded/deleted evidence.
 - `~/.elpis/state/memories_1.sqlite` — recall, promotion, and consolidation state.
+- `~/.elpis/state/state_5.sqlite` — threads, agent jobs, persisted work graphs, task
+  claims, evidence, and transition events.
 - Provider transcripts and workspace artifacts remain the exact evidence sources.
 
 ### Deferred Decisions

@@ -51,6 +51,8 @@ use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHa
 use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::WaitAgentHandler as WaitAgentHandlerV2;
 use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
+use crate::tools::handlers::work_graphs::ReportAgentWorkTaskHandler;
+use crate::tools::handlers::work_graphs::RunAgentWorkGraphHandler;
 use crate::tools::hosted_spec::WebSearchToolOptions;
 use crate::tools::hosted_spec::create_web_search_tool;
 use crate::tools::registry::CoreToolRuntime;
@@ -363,6 +365,19 @@ fn agent_jobs_worker_tools_enabled(turn_context: &TurnContext) -> bool {
             SessionSource::SubAgent(SubAgentSource::Other(label))
                 if label.starts_with("agent_job:")
         )
+}
+
+fn work_graph_worker_tools_enabled(turn_context: &TurnContext) -> bool {
+    agent_jobs_tools_enabled(turn_context)
+        && is_work_graph_worker_source(&turn_context.session_source)
+}
+
+fn is_work_graph_worker_source(session_source: &SessionSource) -> bool {
+    matches!(
+        session_source,
+        SessionSource::SubAgent(SubAgentSource::Other(label))
+            if label.starts_with("work_graph:")
+    )
 }
 
 fn image_generation_runtime_enabled(turn_context: &TurnContext) -> bool {
@@ -787,7 +802,9 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut
 #[instrument(level = "trace", skip_all)]
 fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut PlannedTools) {
     let turn_context = context.step_context.turn.as_ref();
-    if collab_tools_enabled(turn_context) {
+    if collab_tools_enabled(turn_context)
+        && !is_work_graph_worker_source(&turn_context.session_source)
+    {
         if multi_agent_v2_enabled(turn_context) {
             let exposure = if turn_context.config.multi_agent_v2.non_code_mode_only {
                 ToolExposure::DirectModelOnly
@@ -870,9 +887,14 @@ fn add_collaboration_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mu
     }
 
     if agent_jobs_tools_enabled(turn_context) {
-        planned_tools.add(SpawnAgentsOnCsvHandler);
-        if agent_jobs_worker_tools_enabled(turn_context) {
-            planned_tools.add(ReportAgentJobResultHandler);
+        if work_graph_worker_tools_enabled(turn_context) {
+            planned_tools.add(ReportAgentWorkTaskHandler);
+        } else {
+            planned_tools.add(SpawnAgentsOnCsvHandler);
+            if agent_jobs_worker_tools_enabled(turn_context) {
+                planned_tools.add(ReportAgentJobResultHandler);
+            }
+            planned_tools.add(RunAgentWorkGraphHandler);
         }
     }
 }

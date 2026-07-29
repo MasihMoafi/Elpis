@@ -1,0 +1,225 @@
+use super::*;
+use chrono::Utc;
+use codex_protocol::models::ManagedFileSystemPermissions;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::permissions::FileSystemAccessMode;
+use codex_protocol::permissions::FileSystemPath;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use pretty_assertions::assert_eq;
+
+fn task(
+    id: &str,
+    ordinal: i64,
+    status: codex_state::WorkGraphTaskStatus,
+    dependencies: &[&str],
+    scopes: &[&str],
+    environment_id: &str,
+) -> codex_state::WorkGraphTask {
+    let now = Utc::now();
+    codex_state::WorkGraphTask {
+        graph_id: "graph-1".to_string(),
+        task_id: id.to_string(),
+        ordinal,
+        title: id.to_string(),
+        instruction: format!("Implement {id}"),
+        status,
+        dependencies: dependencies
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        write_scopes: scopes.iter().map(|value| (*value).to_string()).collect(),
+        acceptance_criteria: vec!["focused check passes".to_string()],
+        environment_id: Some(environment_id.to_string()),
+        workspace_path: Some(format!("/tmp/{environment_id}")),
+        assigned_thread_id: None,
+        attempt_count: 0,
+        result: None,
+        evidence: Vec::new(),
+        failure_reason: None,
+        created_at: now,
+        updated_at: now,
+        started_at: None,
+        completed_at: None,
+    }
+}
+
+#[test]
+fn scheduler_selects_only_dependency_ready_tasks_in_stable_order() {
+    let tasks = vec![
+        task(
+            "first",
+            0,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src/first"],
+            "repo",
+        ),
+        task(
+            "blocked",
+            1,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &["first"],
+            &["src/blocked"],
+            "repo",
+        ),
+        task(
+            "second",
+            2,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src/second"],
+            "repo",
+        ),
+    ];
+    let selected = select_ready_tasks(tasks.as_slice(), 3);
+    assert_eq!(
+        selected
+            .iter()
+            .map(|task| task.task_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first", "second"]
+    );
+}
+
+#[test]
+fn scheduler_serializes_overlapping_path_prefixes() {
+    let tasks = vec![
+        task(
+            "broad",
+            0,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src"],
+            "repo",
+        ),
+        task(
+            "narrow",
+            1,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src/core"],
+            "repo",
+        ),
+        task(
+            "independent",
+            2,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["tests"],
+            "repo",
+        ),
+    ];
+    let selected = select_ready_tasks(tasks.as_slice(), 3);
+    assert_eq!(
+        selected
+            .iter()
+            .map(|task| task.task_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["broad", "independent"]
+    );
+}
+
+#[test]
+fn isolated_environments_can_use_the_same_scope_in_parallel() {
+    let tasks = vec![
+        task(
+            "one",
+            0,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src"],
+            "worktree-one",
+        ),
+        task(
+            "two",
+            1,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src"],
+            "worktree-two",
+        ),
+    ];
+    assert_eq!(select_ready_tasks(tasks.as_slice(), 2).len(), 2);
+}
+
+#[test]
+fn report_scope_validation_rejects_out_of_scope_and_read_only_changes() {
+    assert_eq!(
+        changed_files_outside_scopes(
+            &["src/core/lib.rs".to_string(), "docs/guide.md".to_string()],
+            &["src/core".to_string()],
+        )
+        .expect("valid paths"),
+        vec!["docs/guide.md"]
+    );
+    assert_eq!(
+        changed_files_outside_scopes(&["src/lib.rs".to_string()], &[])
+            .expect("valid read-only path"),
+        vec!["src/lib.rs"]
+    );
+}
+
+#[test]
+fn repository_paths_cannot_escape() {
+    let err = normalize_repo_path("../outside").expect_err("escaping path should fail");
+    assert!(err.to_string().contains("invalid repository-relative path"));
+}
+
+#[test]
+fn worker_prompt_removes_graph_and_merge_authority() {
+    let task = task(
+        "safe",
+        0,
+        codex_state::WorkGraphTaskStatus::Pending,
+        &[],
+        &["src/safe"],
+        "repo",
+    );
+    let prompt =
+        build_worker_prompt(&task, std::slice::from_ref(&task)).expect("prompt should render");
+    assert!(prompt.contains("Do not merge, rebase, push"));
+    assert!(prompt.contains("Do not delegate or spawn another agent"));
+    assert!(prompt.contains("report_agent_work_task"));
+}
+
+#[test]
+fn worker_permission_profile_hard_limits_writes_to_declared_scopes() {
+    let cwd = AbsolutePathBuf::from_absolute_path("/tmp/work-graph").expect("absolute test path");
+    let profile = scoped_permission_profile(
+        &cwd,
+        &["src/core".to_string(), "tests/focused.rs".to_string()],
+    );
+    let PermissionProfile::Managed { file_system, .. } = profile else {
+        panic!("expected managed profile");
+    };
+    let ManagedFileSystemPermissions::Restricted { entries, .. } = file_system else {
+        panic!("expected restricted filesystem");
+    };
+    assert_eq!(entries[0].access, FileSystemAccessMode::Read);
+    assert_eq!(
+        entries[1].path,
+        FileSystemPath::Path {
+            path: cwd.join("src/core")
+        }
+    );
+    assert_eq!(entries[1].access, FileSystemAccessMode::Write);
+    assert_eq!(
+        entries[2].path,
+        FileSystemPath::Path {
+            path: cwd.join("tests/focused.rs")
+        }
+    );
+}
+
+#[test]
+fn read_only_task_profile_contains_no_write_entry() {
+    let cwd = AbsolutePathBuf::from_absolute_path("/tmp/work-graph").expect("absolute test path");
+    let profile = scoped_permission_profile(&cwd, &[]);
+    let PermissionProfile::Managed { file_system, .. } = profile else {
+        panic!("expected managed profile");
+    };
+    let ManagedFileSystemPermissions::Restricted { entries, .. } = file_system else {
+        panic!("expected restricted filesystem");
+    };
+    assert!(entries.iter().all(|entry| !entry.access.can_write()));
+}

@@ -701,8 +701,8 @@ async fn host_context_gates_agent_job_tools() {
         set_feature(turn, Feature::SpawnCsv, /*enabled*/ true);
     })
     .await;
-    normal_agent_job.assert_visible_contains(&["spawn_agents_on_csv"]);
-    normal_agent_job.assert_visible_lacks(&["report_agent_job_result"]);
+    normal_agent_job.assert_visible_contains(&["spawn_agents_on_csv", "run_agent_work_graph"]);
+    normal_agent_job.assert_visible_lacks(&["report_agent_job_result", "report_agent_work_task"]);
 
     let worker_agent_job = probe(|turn| {
         set_feature(turn, Feature::SpawnCsv, /*enabled*/ true);
@@ -711,6 +711,20 @@ async fn host_context_gates_agent_job_tools() {
     })
     .await;
     worker_agent_job.assert_visible_contains(&["spawn_agents_on_csv", "report_agent_job_result"]);
+
+    let work_graph_worker = probe(|turn| {
+        set_feature(turn, Feature::SpawnCsv, /*enabled*/ true);
+        turn.session_source =
+            SessionSource::SubAgent(SubAgentSource::Other("work_graph:42:task".to_string()));
+    })
+    .await;
+    work_graph_worker.assert_visible_contains(&["report_agent_work_task"]);
+    work_graph_worker.assert_visible_lacks(&[
+        "run_agent_work_graph",
+        "spawn_agents_on_csv",
+        "spawn_agent",
+        "report_agent_job_result",
+    ]);
 }
 
 #[tokio::test]

@@ -18,6 +18,13 @@ use crate::THREAD_HISTORY_DB_FILENAME;
 use crate::ThreadMetadata;
 use crate::ThreadMetadataBuilder;
 use crate::ThreadsPage;
+use crate::WorkGraph;
+use crate::WorkGraphCreateParams;
+use crate::WorkGraphStatus;
+use crate::WorkGraphTask;
+use crate::WorkGraphTaskCreateParams;
+use crate::WorkGraphTaskReport;
+use crate::WorkGraphTaskStatus;
 use crate::apply_rollout_item;
 use crate::migrations::repair_legacy_recency_migration_version;
 use crate::migrations::runtime_goals_migrator;
@@ -72,6 +79,7 @@ mod remote_control;
 #[cfg(test)]
 mod test_support;
 mod threads;
+mod work_graphs;
 
 pub use external_agent_config_imports::ExternalAgentConfigImportDetailsRecord;
 pub use external_agent_config_imports::ExternalAgentConfigImportFailureRecord;

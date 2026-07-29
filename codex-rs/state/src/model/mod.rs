@@ -6,6 +6,7 @@ mod log;
 mod memories;
 mod thread_goal;
 mod thread_metadata;
+mod work_graph;
 
 pub use agent_job::AgentJob;
 pub use agent_job::AgentJobCreateParams;
@@ -36,6 +37,18 @@ pub use thread_metadata::ThreadMetadata;
 pub use thread_metadata::ThreadMetadataBuilder;
 pub use thread_metadata::ThreadRelationFilter;
 pub use thread_metadata::ThreadsPage;
+pub use work_graph::WorkGraph;
+pub use work_graph::WorkGraphCreateParams;
+pub use work_graph::WorkGraphEvent;
+pub(crate) use work_graph::WorkGraphEventRow;
+pub(crate) use work_graph::WorkGraphRow;
+pub use work_graph::WorkGraphStatus;
+pub use work_graph::WorkGraphTask;
+pub use work_graph::WorkGraphTaskCreateParams;
+pub use work_graph::WorkGraphTaskReport;
+pub(crate) use work_graph::WorkGraphTaskRow;
+pub use work_graph::WorkGraphTaskStatus;
+pub use work_graph::validate_work_graph_tasks;
 
 pub(crate) use agent_job::AgentJobItemRow;
 pub(crate) use agent_job::AgentJobRow;
