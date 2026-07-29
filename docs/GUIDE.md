@@ -477,9 +477,14 @@ retain the entire old and new file merely because the agent touched them.
 
 - **Pruning is ephemeral:** trim or replace old tool results for the next request;
   leave the durable transcript intact.
+- Selective pressure pruning starts at 60% exact model-window use and chooses only the
+  oldest eligible tool evidence needed to target roughly 50%, preserving a recent
+  verbatim suffix. It uses Luna at low reasoning effort on the OpenAI path.
 - **Compaction is persistent:** summarize older conversation into a checkpoint that
   preserves the goal, constraints, decisions, changed files, verification, blockers,
   and next action.
+- The compatibility `/prune` command currently invokes the same full compaction path as
+  `/compact`; it is not the selective pressure pass.
 - Before compaction, flush genuinely reusable facts to durable memory.
 - Keep a recent-turn suffix verbatim so the agent does not wake up inside a summary.
 

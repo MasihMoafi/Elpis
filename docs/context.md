@@ -24,7 +24,7 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 |                    3-LAYER PRUNING PIPELINE                      |
 |  Layer 1: RTK Shell-Output Filter (Pre-model command rewrite)   |
 |  Layer 2: Deterministic Safety Cap (Upper bound truncation)     |
-|  Layer 3: Ace Post-Turn Pass (Post-turn exploration pruning)     |
+|  Layer 3: Ace Pressure Pass (60% trigger, ~50% target)            |
 +----------+-------------------------------------------------------+
            |
            v
@@ -52,7 +52,7 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 [Active Agent Turn Execution]  -> Tool outputs remain verbatim during active turn.
            |
            v
-[Layer 3: Ace Post-Turn Pass]  -> Post-model: Distills turn into compact findings + evidence pointers.
+[Layer 3: Ace Pressure Pass]   -> Between follow-ups: selectively distills old tool evidence at 60% use.
 ```
 
 ### Pipeline Layer Comparison
@@ -61,9 +61,20 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 | :--- | :--- | :--- | :--- | :--- |
 | **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
-| **3. Ace Post-Turn Pass** | Turn completion | Turn exploration & tool history | Evaluates the completed turn. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. | A failed pass changes nothing — working context is left as-is. |
+| **3. Ace Pressure Pass** | Exact model-window use reaches 60% | Oldest eligible tool exploration | Selects only enough old tool evidence to target roughly 50% use. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely; the recent suffix stays verbatim. | A failed pass changes nothing — working context is left as-is, and native compaction remains the exhaustion fallback. |
 
-**All three layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response. Inspect the result of a pass with `/prune`, which writes `prune_report.md` alongside the session logs (`codex-rs/core/src/session/context_prune_audit.rs`).
+**All three layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
+
+The Ace pass runs between model follow-ups as well as at the end of a turn, so one
+long-running tool-driven turn cannot skip the pressure boundary. OpenAI-backed passes use
+Luna at low reasoning effort. Every successful pass immediately recomputes the working
+history estimate and writes `prune_report.md` alongside the session logs
+(`codex-rs/core/src/session/context_prune_audit.rs`).
+
+`/prune` is currently a compatibility alias for full native `/compact`; it summarizes and
+replaces conversation history, so it can legitimately leave a nearly empty working window.
+It is not the selective Ace pass and does not create its audit report. The Context Ledger's
+exact used-token number is authoritative after either path.
 
 ### Ace pass audit trail
 

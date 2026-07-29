@@ -97,7 +97,7 @@ impl SlashCommand {
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Usage => "inspect current context, continuity, and token usage",
-            SlashCommand::Prune => "run a Layer 2 context pruning pass over active working memory",
+            SlashCommand::Prune => "compact conversation history (same as /compact)",
             SlashCommand::Context => {
                 "show context usage as a grid, by category, with checkpoints and system files"
             }

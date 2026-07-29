@@ -1,5 +1,5 @@
-//! Triggers Layer 2 context pruning (`crate::context_pruner`) once uncovered
-//! turn-lifetime content has grown past the threshold. Mirrors
+//! Triggers the Ace context-pressure pass (`crate::context_pruner`) once the
+//! active working set reaches its threshold. Mirrors
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual
@@ -23,20 +23,16 @@ use super::context_prune_audit;
 use super::session::Session;
 use super::turn_context::TurnContext;
 
-pub(super) async fn maybe_run_context_prune(
-    sess: &Arc<Session>,
-    turn_context: &Arc<TurnContext>,
-    client_session: &mut ModelClientSession,
-) {
-    let context_window = turn_context
-        .model_info
-        .resolved_context_window()
-        .unwrap_or(0);
+pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    let context_window = turn_context.model_context_window().unwrap_or(0);
     if context_window <= 0 {
         return;
     }
 
     let active_context_tokens = sess.get_total_token_usage().await;
+    if !context_pruner::pressure_reached(active_context_tokens, context_window) {
+        return;
+    }
 
     let covered_call_ids = {
         let state = sess.state.lock().await;
@@ -52,16 +48,23 @@ pub(super) async fn maybe_run_context_prune(
     if !context_pruner::should_prune(active_context_tokens, uncovered, context_window) {
         return;
     }
-    let batch = context_pruner::build_prune_batch(&items, &covered_call_ids);
+    let reclaim_target =
+        context_pruner::reclaim_target_tokens(active_context_tokens, context_window);
+    let batch =
+        context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target);
     if batch.is_empty() {
         return;
     }
     let active_question = context_pruner::latest_user_message_text(&items);
+    // Keep maintenance inference isolated from the active turn's sticky routing and
+    // incremental request state. This lets the pressure check run between tool
+    // follow-ups without perturbing the user's model session.
+    let mut prune_client_session = sess.services.model_client.new_session();
 
     let Some((record, raw, model_slug)) = run_prune_pass(
         sess,
         turn_context,
-        client_session,
+        &mut prune_client_session,
         &batch,
         active_question.as_deref(),
     )
@@ -108,6 +111,10 @@ pub(super) async fn maybe_run_context_prune(
             .extend(record.covered_call_ids.iter().cloned());
     }
     context_pruner::record_applied_prune(saved);
+    // The server count describes the pre-prune request. Re-estimate from the
+    // rewritten working history immediately so every context meter reflects the pass
+    // instead of staying stale until the next model response.
+    sess.recompute_token_usage(turn_context).await;
     if let Err(err) = context_prune_audit::write_latest_report(&log_dir, &audit.report) {
         tracing::warn!(
             "Immutable pruning audit was saved at {}, but the latest report could not be updated: {err:#}",
@@ -233,7 +240,7 @@ async fn try_stream_prune_pass(
             &prompt,
             &model_info,
             &turn_context.session_telemetry,
-            Some(ReasoningEffort::Medium),
+            Some(ReasoningEffort::Low),
             turn_context.reasoning_summary,
             turn_context.config.service_tier.clone(),
             &responses_metadata,

@@ -290,21 +290,26 @@ pub(crate) async fn run_turn(
                     last_agent_message: sampling_request_last_agent_message,
                 } = sampling_request_output;
                 can_drain_pending_input = true;
-                let (has_pending_input, token_status, estimated_token_count) = async {
+                let (has_pending_input, estimated_token_count) = async {
                     let has_pending_input =
                         sess.input_queue.has_pending_input(&sess.active_turn).await;
-                    let token_status = super::context_window::context_window_token_status(
-                        sess.as_ref(),
-                        turn_context.as_ref(),
-                    )
-                    .await;
                     let estimated_token_count =
                         sess.get_estimated_token_count(turn_context.as_ref()).await;
-                    (has_pending_input, token_status, estimated_token_count)
+                    (has_pending_input, estimated_token_count)
                 }
                 .instrument(trace_span!("run_turn.collect_post_sampling_state"))
                 .await;
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
+
+                // Pressure pruning runs after every completed sampling step, not only
+                // at the end of the user turn. Long tool-driven turns therefore
+                // cannot silently grow past the 60% boundary between follow-ups.
+                super::context_prune::maybe_run_context_prune(&sess, &turn_context).await;
+                let token_status = super::context_window::context_window_token_status(
+                    sess.as_ref(),
+                    turn_context.as_ref(),
+                )
+                .await;
                 let token_limit_reached = token_status.token_limit_reached;
 
                 trace!(
@@ -390,12 +395,6 @@ pub(crate) async fn run_turn(
                         }
                     }
                     if stop_outcome.should_stop {
-                        super::context_prune::maybe_run_context_prune(
-                            &sess,
-                            &turn_context,
-                            &mut client_session,
-                        )
-                        .await;
                         break;
                     }
                     if run_legacy_after_agent_hook(
@@ -408,12 +407,6 @@ pub(crate) async fn run_turn(
                     {
                         return Ok(None);
                     }
-                    super::context_prune::maybe_run_context_prune(
-                        &sess,
-                        &turn_context,
-                        &mut client_session,
-                    )
-                    .await;
                     break;
                 }
                 continue;

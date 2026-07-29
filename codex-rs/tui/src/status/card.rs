@@ -117,7 +117,7 @@ struct StatusHistoryCell {
     forked_from: Option<String>,
     token_usage: StatusTokenUsageData,
     rate_limit_state: Arc<RwLock<StatusRateLimitState>>,
-    /// Layer 2: count of agent-authored prune passes and cumulative chars saved by
+    /// Layer 3: count of agent-authored prune passes and cumulative chars saved by
     /// them (`context_pruner::pass_count`/`saved_chars`).
     context_pruner_passes: usize,
     context_pruner_saved_chars: usize,

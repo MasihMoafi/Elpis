@@ -333,14 +333,14 @@ async fn review_restores_context_window_indicator() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
     let context_window = 13_000;
-    let pre_review_tokens = 12_700; // ~30% remaining after subtracting baseline.
-    let review_tokens = 12_030; // ~97% remaining after subtracting baseline.
+    let pre_review_tokens = 12_700; // ~2% of the exact model window remains.
+    let review_tokens = 12_030; // ~7% of the exact model window remains.
 
     handle_token_count(
         &mut chat,
         Some(make_token_info(pre_review_tokens, context_window)),
     );
-    assert_eq!(chat.bottom_pane.context_window_percent(), Some(30));
+    assert_eq!(chat.bottom_pane.context_window_percent(), Some(2));
 
     handle_entered_review_mode(&mut chat, "feature branch");
 
@@ -348,12 +348,12 @@ async fn review_restores_context_window_indicator() {
         &mut chat,
         Some(make_token_info(review_tokens, context_window)),
     );
-    assert_eq!(chat.bottom_pane.context_window_percent(), Some(97));
+    assert_eq!(chat.bottom_pane.context_window_percent(), Some(7));
 
     handle_exited_review_mode(&mut chat);
     let _ = drain_insert_history(&mut rx);
 
-    assert_eq!(chat.bottom_pane.context_window_percent(), Some(30));
+    assert_eq!(chat.bottom_pane.context_window_percent(), Some(2));
     assert!(!chat.review.is_review_mode);
 }
 

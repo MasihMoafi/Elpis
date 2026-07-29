@@ -29,10 +29,19 @@ async fn token_count_none_resets_context_indicator() {
         &mut chat,
         Some(make_token_info(pre_compact_tokens, context_window)),
     );
-    assert_eq!(chat.bottom_pane.context_window_percent(), Some(30));
+    assert_eq!(chat.bottom_pane.context_window_percent(), Some(2));
 
     handle_token_count(&mut chat, /*info*/ None);
     assert_eq!(chat.bottom_pane.context_window_percent(), None);
+}
+
+#[tokio::test]
+async fn context_indicator_uses_exact_model_window_percentage() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    handle_token_count(&mut chat, Some(make_token_info(60_000, 100_000)));
+
+    assert_eq!(chat.bottom_pane.context_window_percent(), Some(40));
 }
 
 #[tokio::test]

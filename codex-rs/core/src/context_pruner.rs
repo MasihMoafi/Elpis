@@ -1,29 +1,32 @@
-//! Layer 2 of Elpis's context pruning (see `docs/context.md`, "Masih's
-//! Ace in the Hole"). This layer handles content that requires judgment — deciding
+//! Layer 3 of Elpis's context pruning (see `docs/context.md`). The Ace pass handles
+//! content that requires judgment — deciding
 //! whether a search was a dead end (delete outright, no trace) or found something
 //! that matters (keep one evidence-pointer line). That judgment comes from a model
 //! call. It is deliberately selective distillation rather than a summary of every
 //! action: useful evidence earns one compact conclusion, while dead ends leave no
 //! model-visible trace.
 //!
-//! Trigger: once active context use reaches 1% and uncovered tool output exists, or
-//! uncovered tool output reaches 1,000 characters, one pass runs over that batch.
-//! Passes chain — each new record is appended after prior ones, never re-compressed.
+//! Trigger: once active context use reaches 60% and uncovered tool output exists, one
+//! pass selects the oldest eligible output needed to target 50% use. This preserves a
+//! recent verbatim suffix and avoids paying for a model pass after nearly every turn.
 //! On any failure (model error, timeout, unparseable output) the batch is left alone
-//! and the next request's larger uncovered total can retry.
+//! and can retry after the next completed turn.
 
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ResponseItem;
+use codex_utils_output_truncation::approx_token_count;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-/// Model used for the pruning pass — same model and `Medium` reasoning effort as the
-/// existing memory-consolidation pass (`memories/write/src/lib.rs`'s `stage_two`),
-/// reusing that precedent rather than picking a new pairing.
-pub(crate) const PRUNE_MODEL_SLUG: &str = "gpt-5.6-terra";
+pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 60;
+pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 50;
+
+/// Luna is sufficient for the pass's bounded keep/delete classification and avoids
+/// spending a larger model on routine context maintenance.
+pub(crate) const PRUNE_MODEL_SLUG: &str = "gpt-5.6-luna";
 
 /// Sentinel the model replies with when nothing in the batch is worth keeping.
 /// Kept identical to the instruction in `prompts/templates/context_prune/prompt.md`.
@@ -32,12 +35,12 @@ const NOTHING_TO_KEEP: &str = "NOTHING_TO_KEEP";
 static PRUNE_PASSES: AtomicUsize = AtomicUsize::new(0);
 static PRUNE_SAVED_CHARS: AtomicUsize = AtomicUsize::new(0);
 
-/// Number of Layer 2 pruning passes applied during this Elpis process.
+/// Number of Layer 3 pruning passes applied during this Elpis process.
 pub fn pass_count() -> usize {
     PRUNE_PASSES.load(Ordering::Relaxed)
 }
 
-/// Cumulative chars removed from request context by Layer 2 during this Elpis
+/// Cumulative chars removed from request context by Layer 3 during this Elpis
 /// process.
 pub fn saved_chars() -> usize {
     PRUNE_SAVED_CHARS.load(Ordering::Relaxed)
@@ -59,17 +62,26 @@ impl PruneRecord {
     }
 }
 
-/// True when active context use reaches 1% and uncovered tool output exists, or when
-/// uncovered tool output reaches 1,000 characters.
+/// True when active context use reaches 60% and uncovered tool output exists.
 pub(crate) fn should_prune(used_tokens: i64, uncovered_chars: usize, context_window: i64) -> bool {
-    if context_window <= 0 || uncovered_chars == 0 {
+    uncovered_chars > 0 && pressure_reached(used_tokens, context_window)
+}
+
+pub(crate) fn pressure_reached(used_tokens: i64, context_window: i64) -> bool {
+    if context_window <= 0 {
         return false;
     }
-    let used_percent = (used_tokens.max(0) * 100) / context_window;
-    if used_percent >= 1 {
-        return true;
+    used_tokens.max(0).saturating_mul(100)
+        >= context_window.saturating_mul(AUTO_PRUNE_TRIGGER_PERCENT)
+}
+
+/// Approximate number of active-context tokens the pressure pass should reclaim.
+pub(crate) fn reclaim_target_tokens(used_tokens: i64, context_window: i64) -> usize {
+    if context_window <= 0 {
+        return 0;
     }
-    uncovered_chars >= 1_000
+    let target_tokens = context_window.saturating_mul(AUTO_PRUNE_TARGET_PERCENT) / 100;
+    usize::try_from(used_tokens.saturating_sub(target_tokens).max(0)).unwrap_or(usize::MAX)
 }
 
 fn prunable_text(item: &ResponseItem) -> Option<(&str, String)> {
@@ -132,10 +144,45 @@ pub(crate) fn uncovered_transient_chars(
 
 /// Snapshot of the batch eligible for one pruning pass: `(call_id, text)` pairs not
 /// yet covered by a prior record, oldest first.
+#[cfg(test)]
 pub(crate) fn build_prune_batch(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
 ) -> Vec<(String, String)> {
+    build_prune_candidates(input, covered_call_ids)
+        .into_iter()
+        .map(|(call_id, evidence, _)| (call_id, evidence))
+        .collect()
+}
+
+/// Oldest-first subset expected to reclaim at least `target_tokens`. Newer eligible
+/// outputs remain verbatim, providing the recent-turn suffix the pressure pass must
+/// preserve.
+pub(crate) fn build_prune_batch_for_reclaim(
+    input: &[ResponseItem],
+    covered_call_ids: &HashSet<String>,
+    target_tokens: usize,
+) -> Vec<(String, String)> {
+    if target_tokens == 0 {
+        return Vec::new();
+    }
+
+    let mut selected = Vec::new();
+    let mut selected_tokens = 0usize;
+    for (call_id, evidence, output_tokens) in build_prune_candidates(input, covered_call_ids) {
+        selected.push((call_id, evidence));
+        selected_tokens = selected_tokens.saturating_add(output_tokens);
+        if selected_tokens >= target_tokens {
+            break;
+        }
+    }
+    selected
+}
+
+fn build_prune_candidates(
+    input: &[ResponseItem],
+    covered_call_ids: &HashSet<String>,
+) -> Vec<(String, String, usize)> {
     let operations = input
         .iter()
         .filter_map(|item| match item {
@@ -179,7 +226,7 @@ pub(crate) fn build_prune_batch(
                 Some(operation) => format!("{operation}\noutput:\n{text}"),
                 None => format!("tool: <invocation unavailable>\noutput:\n{text}"),
             };
-            (call_id.to_string(), evidence)
+            (call_id.to_string(), evidence, approx_token_count(&text))
         })
         .collect()
 }
@@ -365,17 +412,26 @@ mod tests {
 
     #[test]
     fn should_prune_respects_threshold() {
-        assert!(!should_prune(0, 500, 1_000_000));
-        assert!(should_prune(0, 1_000, 1_000_000));
+        assert!(!should_prune(599_999, 100_000, 1_000_000));
+        assert!(should_prune(600_000, 100_000, 1_000_000));
+        assert!(!should_prune(900_000, 0, 1_000_000));
+    }
 
-        assert!(should_prune(10_000, 100, 1_000_000));
-        assert!(!should_prune(10_000, 0, 1_000_000));
+    #[test]
+    fn pruning_model_is_luna() {
+        assert_eq!(PRUNE_MODEL_SLUG, "gpt-5.6-luna");
     }
 
     #[test]
     fn should_prune_false_for_non_positive_context_window() {
         assert!(!should_prune(200_000, 1_000_000, 0));
         assert!(!should_prune(200_000, 1_000_000, -1));
+    }
+
+    #[test]
+    fn reclaim_target_moves_sixty_percent_use_to_fifty_percent() {
+        assert_eq!(reclaim_target_tokens(600_000, 1_000_000), 100_000);
+        assert_eq!(reclaim_target_tokens(499_999, 1_000_000), 0);
     }
 
     #[test]
@@ -418,6 +474,26 @@ mod tests {
                 "b".to_string(),
                 "tool: exec_command\ninput: {\"cmd\":\"second\"}\noutput:\nbb".to_string()
             )]
+        );
+    }
+
+    #[test]
+    fn pressure_batch_selects_oldest_output_needed_and_keeps_recent_suffix() {
+        let input = vec![
+            tool_output("old", &"a".repeat(8_000)),
+            tool_output("middle", &"b".repeat(8_000)),
+            tool_output("recent", &"c".repeat(8_000)),
+        ];
+
+        let batch =
+            build_prune_batch_for_reclaim(&input, &HashSet::new(), /*target_tokens*/ 3_000);
+
+        assert_eq!(
+            batch
+                .iter()
+                .map(|(call_id, _)| call_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["old", "middle"]
         );
     }
 

@@ -7,8 +7,6 @@ use codex_protocol::num_format::format_with_separators;
 use serde::Deserialize;
 use serde::Serialize;
 
-const BASELINE_TOKENS: i64 = 12000;
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: i64,
@@ -42,14 +40,7 @@ impl TokenUsage {
     }
 
     pub(crate) fn percent_of_context_window_remaining(&self, context_window: i64) -> i64 {
-        if context_window <= BASELINE_TOKENS {
-            return 0;
-        }
-        let effective_window = context_window - BASELINE_TOKENS;
-        let used = (self.tokens_in_context_window() - BASELINE_TOKENS).max(0);
-        let remaining = (effective_window - used).max(0);
-        ((remaining as f64 / effective_window as f64) * 100.0)
-            .clamp(0.0, 100.0)
+        self.percent_of_context_window_remaining_exact(context_window)
             .round() as i64
     }
 
