@@ -166,6 +166,54 @@ fn isolated_environments_can_use_the_same_scope_in_parallel() {
 }
 
 #[test]
+fn one_environment_never_runs_two_writable_tasks_concurrently() {
+    let tasks = vec![
+        task(
+            "one",
+            0,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src/one"],
+            "shared-worktree",
+        ),
+        task(
+            "two",
+            1,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src/two"],
+            "shared-worktree",
+        ),
+    ];
+    assert_eq!(
+        select_ready_tasks(tasks.as_slice(), 2).len(),
+        1,
+        "parallel writers in one worktree cannot be attributed safely even when scopes differ"
+    );
+}
+
+#[test]
+fn writable_graph_requires_an_independent_verification_task() {
+    let args = RunAgentWorkGraphArgs {
+        name: "missing verification gate".to_string(),
+        tasks: vec![WorkTaskArgs {
+            id: "implement".to_string(),
+            title: "Implement".to_string(),
+            instruction: "Change the requested behavior.".to_string(),
+            depends_on: Vec::new(),
+            write_scopes: vec!["src".to_string()],
+            acceptance_criteria: vec!["focused check passes".to_string()],
+            environment_id: Some("task-worktree".to_string()),
+        }],
+        max_concurrency: Some(1),
+        max_runtime_seconds: Some(30),
+    };
+    let err = validate_runner_args(&args)
+        .expect_err("a writable task without an independent verifier must be rejected");
+    assert!(err.to_string().contains("verification"));
+}
+
+#[test]
 fn report_scope_validation_rejects_out_of_scope_and_read_only_changes() {
     assert_eq!(
         changed_files_outside_scopes(

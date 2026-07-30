@@ -33,6 +33,87 @@ struct SandboxEscapeResponder {
     assignment: Arc<Mutex<Option<(String, String)>>>,
 }
 
+struct UnattributedChangeResponder {
+    graph_args_json: String,
+    seen_main: AtomicBool,
+    assignment: Arc<Mutex<Option<(String, String)>>>,
+    write_tool_output: Arc<Mutex<Option<String>>>,
+}
+
+impl Respond for UnattributedChangeResponder {
+    fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+        let body: Value =
+            serde_json::from_slice(&decode_body_bytes(request)).unwrap_or(Value::Null);
+        let body_text = body.to_string();
+
+        if body_text.contains("call-worker-report") {
+            return completed_response("resp-after-report");
+        }
+        if body_text.contains("call-worker-write") {
+            *self.write_tool_output.lock().expect("write output mutex") = Some(body_text.clone());
+            let (graph_id, task_id) = self
+                .assignment
+                .lock()
+                .expect("assignment mutex")
+                .clone()
+                .expect("worker assignment should be recorded before the write");
+            let args = json!({
+                "graph_id": graph_id,
+                "task_id": task_id,
+                "outcome": "succeeded",
+                "summary": "claimed success without declaring the planted change",
+                "changed_files": [],
+                "checks": ["claimed check passed"],
+                "evidence": ["claimed evidence exists"],
+                "risks": []
+            });
+            return sse_response(sse(vec![
+                ev_response_created("resp-worker-report"),
+                ev_function_call(
+                    "call-worker-report",
+                    "report_agent_work_task",
+                    serde_json::to_string(&args)
+                        .expect("report args should serialize")
+                        .as_str(),
+                ),
+                ev_completed("resp-worker-report"),
+            ]));
+        }
+        if has_function_call_output(&body) {
+            return completed_response("resp-after-tool");
+        }
+        if let Some((graph_id, task_id)) = extract_assignment(&body) {
+            *self.assignment.lock().expect("assignment mutex") = Some((graph_id, task_id));
+            let args = json!({
+                "cmd": "printf planted-evidence > evidence/planted.txt; base64 evidence/planted.txt"
+            });
+            return sse_response(sse(vec![
+                ev_response_created("resp-worker-write"),
+                ev_function_call(
+                    "call-worker-write",
+                    "exec_command",
+                    serde_json::to_string(&args)
+                        .expect("exec args should serialize")
+                        .as_str(),
+                ),
+                ev_completed("resp-worker-write"),
+            ]));
+        }
+        if !self.seen_main.swap(true, Ordering::SeqCst) {
+            return sse_response(sse(vec![
+                ev_response_created("resp-main-unattributed"),
+                ev_function_call(
+                    "call-work-graph-unattributed",
+                    "run_agent_work_graph",
+                    self.graph_args_json.as_str(),
+                ),
+                ev_completed("resp-main-unattributed"),
+            ]));
+        }
+        completed_response("resp-default-unattributed")
+    }
+}
+
 impl Respond for SandboxEscapeResponder {
     fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
         let body: Value =
@@ -326,6 +407,79 @@ async fn work_graph_failure_blocks_dependent_without_spawning_it() -> Result<()>
     let tasks = db.list_work_graph_tasks(graph_id).await?;
     assert_eq!(tasks[0].status, codex_state::WorkGraphTaskStatus::Failed);
     assert_eq!(tasks[1].status, codex_state::WorkGraphTaskStatus::Blocked);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Result<()> {
+    let server = start_mock_server().await;
+    let assignment = Arc::new(Mutex::new(None));
+    let write_tool_output = Arc::new(Mutex::new(None));
+    let args = json!({
+        "name": "unattributed change negative proof",
+        "max_concurrency": 1,
+        "max_runtime_seconds": 30,
+        "tasks": [{
+            "id": "plant",
+            "title": "Plant evidence",
+            "instruction": "Write the planted marker, then report the task.",
+            "depends_on": [],
+            "write_scopes": ["evidence"],
+            "acceptance_criteria": ["planted marker is attributable to this task"]
+        }]
+    });
+    let responder = UnattributedChangeResponder {
+        graph_args_json: serde_json::to_string(&args)?,
+        seen_main: AtomicBool::new(false),
+        assignment: Arc::clone(&assignment),
+        write_tool_output: Arc::clone(&write_tool_output),
+    };
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::SpawnCsv)
+            .expect("fanout feature should enable");
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("sqlite feature should enable");
+    });
+    let test = builder.build(&server).await?;
+    std::fs::create_dir(test.cwd_path().join("evidence"))?;
+    std::fs::write(test.cwd_path().join("evidence/planted.txt"), "")?;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(responder)
+        .mount(&server)
+        .await;
+
+    test.submit_turn("run the unattributed change graph")
+        .await?;
+    let (graph_id, _) = assignment
+        .lock()
+        .expect("assignment mutex")
+        .clone()
+        .expect("worker assignment");
+    let db = test.codex.state_db().expect("state db");
+    let graph = db
+        .get_work_graph(graph_id.as_str())
+        .await?
+        .expect("work graph");
+    let tasks = db.list_work_graph_tasks(graph_id.as_str()).await?;
+    assert!(
+        write_tool_output
+            .lock()
+            .expect("write output mutex")
+            .as_deref()
+            .is_some_and(|output| output.contains("cGxhbnRlZC1ldmlkZW5jZQ==")),
+        "the real worker path must emit the planted marker before accountability is evaluated"
+    );
+    assert_eq!(
+        graph.status,
+        codex_state::WorkGraphStatus::Failed,
+        "a graph must not succeed when the worker omits a real change"
+    );
+    assert_eq!(tasks[0].status, codex_state::WorkGraphTaskStatus::Failed);
     Ok(())
 }
 
