@@ -13,6 +13,11 @@ const SESSION_CHECKPOINT_FILE: &str = "ES.md";
 const MAX_RESULT_CHARS: usize = 4_000;
 const MAX_COMMAND_CHARS: usize = 240;
 
+/// True for the statuses that mean the objective is over rather than paused.
+fn goal_is_finished(status: &str) -> bool {
+    matches!(status, "complete" | "completed" | "abandoned")
+}
+
 pub(crate) async fn write_goal(
     memories_root: Option<&Path>,
     cwd: &Path,
@@ -21,6 +26,12 @@ pub(crate) async fn write_goal(
     status: &str,
     updated_at: i64,
 ) -> Result<Option<PathBuf>> {
+    // A finished objective is history. Leaving the file behind meant the next session, and
+    // any agent reading the workspace, still found a goal that was already met and worked
+    // toward it.
+    if goal_is_finished(status) {
+        return clear_goal(memories_root, cwd, thread_id).await;
+    }
     let Some(goal_path) = goal_path(memories_root, cwd) else {
         return Ok(None);
     };
@@ -284,6 +295,38 @@ mod tests {
             Some(path.clone())
         );
         assert!(!path.exists());
+        Ok(())
+    }
+
+    /// A met objective left on disk is a standing instruction to redo work that is done.
+    #[tokio::test]
+    async fn completing_a_goal_removes_its_file() -> Result<()> {
+        let home = tempdir()?;
+        let memories_root = home.path().join(".elpis/memories");
+        let cwd = Path::new("/tmp/finished project");
+
+        let path = write_goal(
+            Some(&memories_root),
+            cwd,
+            "thread-one",
+            "Ship the ledger",
+            "active",
+            1,
+        )
+        .await?
+        .context("goal path")?;
+        assert!(path.exists());
+
+        write_goal(
+            Some(&memories_root),
+            cwd,
+            "thread-one",
+            "Ship the ledger",
+            "complete",
+            2,
+        )
+        .await?;
+        assert!(!path.exists(), "a completed goal must not stay on disk");
         Ok(())
     }
 

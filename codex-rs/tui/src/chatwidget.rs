@@ -634,7 +634,6 @@ pub(crate) struct ChatWidget {
     ///
     /// The nudge is only a discovery aid, so once a user dismisses it or enters Plan mode we keep it
     /// hidden for that thread instead of resurfacing it on every matching draft.
-    dismissed_plan_mode_nudge_scopes: HashSet<PlanModeNudgeScope>,
     thread_name: Option<String>,
     thread_rename_block_message: Option<String>,
     active_side_conversation: bool,
@@ -792,29 +791,10 @@ enum SessionConfiguredDisplay {
     SideConversation,
 }
 
-/// Scope used to keep Plan-mode nudge dismissal local to one conversation context.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum PlanModeNudgeScope {
-    /// Drafts entered before the server has assigned a thread id.
-    NewThread,
-    /// Drafts associated with one configured thread.
-    Thread(ThreadId),
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum TurnAbortReason {
     Interrupted,
     BudgetLimited,
-}
-
-/// Returns whether `text` contains the standalone word `plan`.
-///
-/// This intentionally mirrors the App suggestion heuristic instead of trying to infer broader
-/// planning intent from substrings such as `planning`. Slash and shell drafts still match here so
-/// callers can keep lexical matching separate from presentation policy.
-fn contains_plan_keyword(text: &str) -> bool {
-    text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
-        .any(|word| word.eq_ignore_ascii_case("plan"))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1134,7 +1114,7 @@ impl ChatWidget {
         self.update_due_hook_visibility();
         self.schedule_hook_timer_if_needed();
         self.bottom_pane.pre_draw_tick();
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
         self.refresh_goal_status_indicator_for_time_tick();
         if self.terminal_title_shows_action_required() != self.last_terminal_title_requires_action {
             self.refresh_terminal_title();

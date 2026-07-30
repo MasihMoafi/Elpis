@@ -191,7 +191,9 @@ Rules:
   and rollout summaries; do not promote them merely because they are recent or eloquent.
 - Existing durable memories are reviewed for staleness and evidence as usual; do not delete
   an existing item solely because older metadata lacks the promotion fields.
-- You should always make sure `MEMORY.md` and `memory_summary.md` exist and are up to date.
+- Keep `MEMORY.md` and `memory_summary.md` up to date. If nothing has ever been promoted,
+  leave them absent rather than writing a placeholder that says so; an empty durable memory
+  is reported by the sweep log, and a note about emptiness only occupies the reader's context.
 - `MEMORY.md` must not exceed {{ max_durable_memory_chars }} characters. When near the limit,
   remove stale, duplicated, low-utility, or weakly supported material before adding new material.
 - `memory_summary.md` must start with the exact line `v1`; if it does not, rewrite the entire

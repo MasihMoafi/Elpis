@@ -449,17 +449,42 @@ pub(crate) struct ComposerDraftSnapshot {
 
 const FOOTER_SPACING_HEIGHT: u16 = 0;
 
-/// Builds the one-line nudge that replaces the ambient footer without adding layout height.
-fn plan_mode_nudge_line() -> Line<'static> {
-    Line::from(vec![
-        "Create a plan?".magenta(),
-        "  ".into(),
-        key_hint::shift(KeyCode::Tab).into(),
-        " use Plan mode".into(),
-        "   ".into(),
-        key_hint::plain(KeyCode::Esc).into(),
-        " dismiss".into(),
-    ])
+/// Things Elpis has that its upstream does not.
+///
+/// Inherited hints were both misleading and useless here: one told the reader that shift+tab
+/// opens Plan mode when in Elpis it cycles permissions. Nothing generic belongs in this slot;
+/// a tip earns its line only by pointing at something Elpis added.
+const ELPIS_TIPS: &[(&str, &str)] = &[
+    (
+        "tab",
+        "open the Context Ledger and choose what stays in context",
+    ),
+    ("/prune", "drop stale context without losing the thread"),
+    (
+        "/auto",
+        "let the cheap model route the work to the right one",
+    ),
+    ("/model", "switch between luna, terra and sol"),
+    ("/dev", "load the development rules for this repository"),
+    ("/goal", "set an objective Elpis carries across sessions"),
+    (
+        "ES.md",
+        "the session checkpoint Elpis writes after every turn",
+    ),
+];
+
+/// Rotates the tip between composers so a long-running install eventually sees all of them.
+fn next_elpis_tip_index() -> usize {
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Builds the one-line tip that replaces the ambient footer without adding layout height.
+fn elpis_tip_line(index: usize) -> Line<'static> {
+    let (name, description) = ELPIS_TIPS[index % ELPIS_TIPS.len()];
+    Line::from(vec![name.cyan(), "  ".into(), description.dim()])
 }
 
 impl ChatComposer {
@@ -532,7 +557,8 @@ impl ChatComposer {
                 use_shift_enter_hint,
                 mode: FooterMode::ComposerEmpty,
                 hint_override: None,
-                plan_mode_nudge_visible: false,
+                elpis_tip_visible: false,
+                elpis_tip_index: next_elpis_tip_index(),
                 flash: None,
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1199,17 +1225,17 @@ impl ChatComposer {
     ///
     /// Returns `true` only when the rendered footer can change so callers can avoid scheduling
     /// redundant redraws while reevaluating nudge policy on routine composer updates.
-    pub(crate) fn set_plan_mode_nudge_visible(&mut self, visible: bool) -> bool {
-        if self.footer.plan_mode_nudge_visible == visible {
+    pub(crate) fn set_elpis_tip_visible(&mut self, visible: bool) -> bool {
+        if self.footer.elpis_tip_visible == visible {
             return false;
         }
-        self.footer.plan_mode_nudge_visible = visible;
+        self.footer.elpis_tip_visible = visible;
         true
     }
 
     #[cfg(test)]
-    pub(crate) fn plan_mode_nudge_visible(&self) -> bool {
-        self.footer.plan_mode_nudge_visible
+    pub(crate) fn elpis_tip_visible(&self) -> bool {
+        self.footer.elpis_tip_visible
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {
@@ -3964,7 +3990,7 @@ impl ChatComposer {
         self.footer.quit_shortcut_expires_at = None;
         self.footer.mode = FooterMode::ComposerEmpty;
         self.footer.hint_override = Some(Vec::new());
-        self.footer.plan_mode_nudge_visible = false;
+        self.footer.elpis_tip_visible = false;
         self.footer.flash = None;
     }
 
@@ -4292,14 +4318,14 @@ impl ChatComposer {
                 };
                 if let Some(line) = self.history_search_footer_line() {
                     render_footer_line(hint_rect, buf, line);
-                } else if self.footer.plan_mode_nudge_visible {
+                } else if self.footer.elpis_tip_visible {
                     let available_width =
                         hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
                     render_footer_line(
                         hint_rect,
                         buf,
                         truncate_line_with_ellipsis_if_overflow(
-                            plan_mode_nudge_line(),
+                            elpis_tip_line(self.footer.elpis_tip_index),
                             available_width,
                         ),
                     );

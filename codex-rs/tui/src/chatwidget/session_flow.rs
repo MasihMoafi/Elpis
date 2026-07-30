@@ -26,7 +26,7 @@ impl ChatWidget {
         if previous_thread_id != self.thread_id {
             self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
         }
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
         self.turn_lifecycle.reset_thread();
         self.clear_safety_buffering();
         self.thread_name = session.thread_name.clone();
@@ -101,7 +101,7 @@ impl ChatWidget {
                     mask.reasoning_effort = Some(session.reasoning_effort.clone());
                 }
                 self.update_collaboration_mode_indicator();
-                self.refresh_plan_mode_nudge();
+                self.refresh_elpis_tip();
             }
         }
         self.refresh_model_display();

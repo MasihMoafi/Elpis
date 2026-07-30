@@ -25,7 +25,7 @@ impl ChatWidget {
         self.bottom_pane.set_task_running(
             self.turn_lifecycle.agent_turn_running || self.mcp_startup_status.is_some(),
         );
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
         self.refresh_status_surfaces();
     }
 

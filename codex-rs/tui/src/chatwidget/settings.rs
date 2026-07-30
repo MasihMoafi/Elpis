@@ -406,46 +406,21 @@ impl ChatWidget {
         true
     }
 
-    /// Returns the dismissal scope that applies to the currently visible draft.
-    fn plan_mode_nudge_scope(&self) -> PlanModeNudgeScope {
-        self.thread_id
-            .map_or(PlanModeNudgeScope::NewThread, PlanModeNudgeScope::Thread)
-    }
-
-    /// Returns whether the current draft should replace the normal footer with the Plan-mode nudge.
+    /// Returns whether the footer should show an Elpis tip instead of ambient status.
     ///
-    /// `ChatWidget` owns this policy because it can combine lexical draft matching with mode
-    /// availability, interaction state, and thread-scoped dismissal. `ChatComposer` only renders
-    /// the resulting visibility bit. Keeping slash and shell drafts out here avoids advertising a
-    /// mode switch while the user is intentionally composing another local command.
-    pub(super) fn should_show_plan_mode_nudge(&self) -> bool {
-        let text = self.bottom_pane.composer_text();
-        let trimmed = text.trim_start();
-        self.collaboration_modes_enabled()
-            && collaboration_modes::plan_mask(self.model_catalog.as_ref()).is_some()
-            && self.active_mode_kind() != ModeKind::Plan
+    /// Only an empty, idle composer qualifies: once the reader is typing, or a turn is running,
+    /// or anything is asking for input, the footer has something more useful to say.
+    pub(super) fn should_show_elpis_tip(&self) -> bool {
+        self.bottom_pane.composer_text().trim().is_empty()
             && self.bottom_pane.composer_input_enabled()
             && !self.bottom_pane.is_task_running()
             && self.bottom_pane.no_modal_or_popup_active()
-            && !trimmed.starts_with('/')
-            && !trimmed.starts_with('!')
-            && contains_plan_keyword(&text)
-            && !self
-                .dismissed_plan_mode_nudge_scopes
-                .contains(&self.plan_mode_nudge_scope())
     }
 
-    /// Synchronizes the footer presentation with the current Plan-mode nudge policy.
-    pub(super) fn refresh_plan_mode_nudge(&mut self) {
+    /// Synchronizes the footer presentation with the current tip policy.
+    pub(super) fn refresh_elpis_tip(&mut self) {
         self.bottom_pane
-            .set_plan_mode_nudge_visible(self.should_show_plan_mode_nudge());
-    }
-
-    /// Hides the nudge for the current thread scope until the user changes conversation context.
-    pub(super) fn dismiss_plan_mode_nudge(&mut self) {
-        self.dismissed_plan_mode_nudge_scopes
-            .insert(self.plan_mode_nudge_scope());
-        self.refresh_plan_mode_nudge();
+            .set_elpis_tip_visible(self.should_show_elpis_tip());
     }
 
     pub(super) fn initial_collaboration_mask(
@@ -597,7 +572,7 @@ impl ChatWidget {
             developer_instructions: Some(settings.developer_instructions),
         });
         self.update_collaboration_mode_indicator();
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
         self.refresh_model_dependent_surfaces();
     }
 
@@ -719,13 +694,9 @@ impl ChatWidget {
         {
             mask.reasoning_effort = Some(Some(effort));
         }
-        if mask.mode == Some(ModeKind::Plan) {
-            self.dismissed_plan_mode_nudge_scopes
-                .insert(self.plan_mode_nudge_scope());
-        }
         self.active_collaboration_mask = Some(mask);
         self.update_collaboration_mode_indicator();
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
         self.refresh_model_dependent_surfaces();
         let next_mode = self.active_mode_kind();
         let next_model = self.current_model();

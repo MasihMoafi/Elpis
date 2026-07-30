@@ -872,15 +872,15 @@ impl BottomPane {
     }
 
     /// Applies the externally decided Plan-mode nudge visibility to the footer presentation.
-    pub(crate) fn set_plan_mode_nudge_visible(&mut self, visible: bool) {
-        if self.composer.set_plan_mode_nudge_visible(visible) {
+    pub(crate) fn set_elpis_tip_visible(&mut self, visible: bool) {
+        if self.composer.set_elpis_tip_visible(visible) {
             self.request_redraw();
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn plan_mode_nudge_visible(&self) -> bool {
-        self.composer.plan_mode_nudge_visible()
+    pub(crate) fn elpis_tip_visible(&self) -> bool {
+        self.composer.elpis_tip_visible()
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {

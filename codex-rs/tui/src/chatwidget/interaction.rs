@@ -161,14 +161,6 @@ impl ChatWidget {
             return;
         }
 
-        if matches!(key_event.code, KeyCode::Esc)
-            && key_event.kind == KeyEventKind::Press
-            && self.should_show_plan_mode_nudge()
-        {
-            self.dismiss_plan_mode_nudge();
-            return;
-        }
-
         if self.handle_plugins_popup_key_event(key_event) {
             return;
         }
@@ -219,7 +211,7 @@ impl ChatWidget {
 
     pub(crate) fn apply_external_edit(&mut self, text: String) {
         self.bottom_pane.apply_external_edit(text);
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
         self.request_redraw();
     }
 
@@ -237,7 +229,7 @@ impl ChatWidget {
 
     pub(crate) fn show_selection_view(&mut self, params: SelectionViewParams) {
         self.bottom_pane.show_selection_view(params);
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
         self.request_redraw();
     }
 
@@ -344,13 +336,13 @@ impl ChatWidget {
 
     pub(crate) fn handle_paste(&mut self, text: String) {
         self.bottom_pane.handle_paste(text);
-        self.refresh_plan_mode_nudge();
+        self.refresh_elpis_tip();
     }
 
     // Returns true if caller should skip rendering this frame (a future frame is scheduled).
     pub(crate) fn handle_paste_burst_tick(&mut self, frame_requester: FrameRequester) -> bool {
         if self.bottom_pane.flush_paste_burst_if_due() {
-            self.refresh_plan_mode_nudge();
+            self.refresh_elpis_tip();
             // A paste just flushed; request an immediate redraw and skip this frame.
             self.request_redraw();
             true
