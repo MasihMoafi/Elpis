@@ -77,6 +77,7 @@ src/fix_cuda.sh
 !docs/demo/elpis-end-state.webp
 !docs/demo/codex-end-state.webp
 *.svg
+!docs/assets/accountable-work-graph-eval.svg
 *.mp4
 *.mp3
 *.wav

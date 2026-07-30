@@ -54,28 +54,33 @@ There is no slash command. When enabled, the coordinator model receives the
       "id": "foundation",
       "title": "Build the narrow foundation",
       "instruction": "Implement the bounded behavior and run its focused checks.",
+      "kind": "implement",
       "depends_on": [],
       "write_scopes": ["codex-rs/state"],
       "acceptance_criteria": ["focused state test passes"],
       "environment_id": "primary"
     },
     {
-      "id": "consumer",
-      "title": "Use the accepted foundation",
-      "instruction": "Implement only the consumer.",
+      "id": "verify-foundation",
+      "title": "Verify the foundation independently",
+      "instruction": "Inspect the accepted result and run the acceptance check.",
+      "kind": "verify",
       "depends_on": ["foundation"],
-      "write_scopes": ["codex-rs/core"],
+      "write_scopes": [],
       "acceptance_criteria": ["focused core test passes"],
-      "environment_id": "consumer-worktree"
+      "environment_id": "primary"
     }
   ]
 }
 ```
 
-`environment_id` must name an environment already selected for the turn. Elpis does
-not create, merge, rebase, delete, or push branches or worktrees. Preparing and
-integrating worktrees remains coordinator-owned because those operations change durable
-user state and need deliberate review.
+Write scopes are existing repository-relative directories; a task can create, modify,
+or delete files beneath them. Exact-file mount roots are rejected because the inherited
+Linux sandbox applies directory metadata protections to writable roots.
+`environment_id` must name an environment already selected for the turn. Elpis does not
+create, merge, rebase, delete, or push branches or worktrees. Preparing and integrating
+worktrees remains coordinator-owned because those operations change durable user state
+and need deliberate review.
 
 ## Deterministic engine rules
 
@@ -83,8 +88,12 @@ Before dispatch, Elpis rejects:
 
 - empty graphs, duplicate or malformed task IDs, unknown or repeated dependencies;
 - self-dependencies and dependency cycles;
-- absolute, empty, or escaping write scopes;
+- absolute, empty, escaping, missing, or non-directory write scopes;
 - unknown selected environments;
+- missing acceptance criteria or an unknown task role;
+- write scopes on `explore` or `verify` tasks;
+- `implement` or `fix` tasks without write scopes;
+- a writable task without a directly dependent `verify` task in the same environment;
 - zero concurrency or runtime limits.
 
 At runtime:
@@ -92,8 +101,9 @@ At runtime:
 1. Tasks are persisted in declared order.
 2. Only pending tasks whose dependencies all succeeded are eligible.
 3. Eligible tasks are selected in declared order, then task-ID order.
-4. Tasks with overlapping path prefixes in one environment are serialized.
-5. The same paths may run concurrently only in different selected environments.
+4. All writable tasks in one environment are serialized, even when their declared path
+   prefixes do not overlap.
+5. Writable tasks may run concurrently only in different selected environments.
 6. Concurrency is bounded by the requested limit and the session agent limit.
 7. A failed, cancelled, or blocked prerequisite blocks its pending descendants.
 8. Each task has a runtime deadline; a worker that exits without an accepted report
@@ -108,7 +118,8 @@ scope conflict.
 
 Each worker receives:
 
-- one task, one selected environment, exact write scopes, and acceptance criteria;
+- one role, one task, one selected environment, exact write scopes, and acceptance
+  criteria;
 - accepted prerequisite result and evidence;
 - only the worker report tool from the work-graph tool pair;
 - no collaboration tools with which to create subagents.
@@ -125,14 +136,34 @@ declared write scope must already be writable by the coordinator's active profil
 Windows-style absolute paths, Git metadata paths, and scopes whose existing prefix
 resolves through a symlink outside the selected workspace are rejected.
 
-This is enforced by the sandbox, not only by the prompt. A successful
-`report_agent_work_task` is accepted only from the assigned thread, must include
-concrete evidence, and may not declare a changed file outside its scopes. The report
-stores summary, changed files, checks, risks, evidence, and failure reason.
+This is enforced by the sandbox, not only by the prompt. Before dispatching a writable
+task, Elpis records SHA-256 digests for files and symlinks under its declared scopes.
+When the assigned thread reports, Elpis measures the workspace again. A successful
+report is rejected unless its declared changed-file set exactly matches the measured
+created, modified, and deleted files.
 
-Elpis validates the report's authority and structure. It does not independently prove
-that a worker's prose is true; coordinator review and Masih's acceptance remain
-required.
+`report_agent_work_task` is accepted only from the assigned thread. Success requires
+concrete checks and evidence. Writable success requires a measured changed file.
+Every report records summary, changed files, checks, risks, edge cases considered, open
+questions, evidence, what was not checked, and failure reason. Declared paths outside
+the task's scopes are rejected.
+
+Elpis validates authority, structure, and file attribution. It cannot prove that prose,
+checks, or acceptance criteria are good. The directly dependent `verify` task,
+coordinator review, and Masih's acceptance remain required.
+
+## Visibility
+
+The app server exposes persisted graphs for a root thread through `workGraph/list`.
+Opening `/agent` fetches the newest graph and renders:
+
+- graph and task state, role, dependencies, and assigned thread;
+- summary and measured changed files;
+- checks, evidence, risks, edge cases, and open questions;
+- unchecked work and terminal failure reasons.
+
+This is a snapshot when `/agent` opens, not a live dashboard. The existing `/subagents`
+alias reaches the same view; no new slash command was added.
 
 ## Persistence and interruption
 
@@ -154,11 +185,15 @@ coordinator must inspect accepted evidence and deliberately construct the next g
 Automated coverage proves:
 
 - acyclic persistence and cycle/unknown-dependency/path-escape rejection;
-- stable dependency-ready selection and same-environment conflict serialization;
+- stable dependency-ready selection and serialization of all writers in one environment;
 - authenticated reports and evidence persistence;
+- rejection of a real file change omitted from a worker report;
+- rejection of writable tasks without a direct same-environment verifier;
 - interrupted-graph failure without requeue;
 - successful dependency handoff;
 - prerequisite failure blocks a descendant without spawning it;
 - on Linux, a real worker command cannot write outside its declared scope.
 
-These checks are agent verification. Functional acceptance remains with Masih.
+The before/after negative-check data and reproduction commands are in
+[evals/accountable-work-graphs](evals/accountable-work-graphs/README.md). These checks
+are agent verification. Functional acceptance remains with Masih.

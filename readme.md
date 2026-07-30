@@ -16,6 +16,14 @@
 
 ![Elpis demo](docs/assets/demo.gif)
 
+**Current proof:** accountable work graphs now reject omitted file changes, require an
+independent verifier, and serialize writers sharing one environment. The negative checks
+failed before the change and pass after it.
+
+![Accountable work-graph negative checks](docs/assets/accountable-work-graph-eval.svg)
+
+[Data, test names, limits, and reproduction commands](docs/evals/accountable-work-graphs/README.md)
+
 ## Quickstart
 
 Linux x86_64 and macOS on Apple Silicon:
@@ -46,15 +54,18 @@ Long sessions fill up with transcripts, file reads, searches, and dead ends. Wha
 
 Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
 
-**Controlled comparison** — same task and prompt, 10 runs per setup:
+The screenshots below are historical examples of the same prompt in Elpis and Codex.
+They are not a benchmark: the underlying per-run records were not preserved, so the
+previous approximate `~90%` versus `~70%` claim has been withdrawn.
 
-| | Free context at end |
-| --- | --- |
-| **Elpis** | **~90%** |
-| Codex | ~70% |
+A pinned, synthetic 3×10 comparison for exact recall, paraphrased recall, and negative
+controls is specified in
+[docs/evals/context-continuity](docs/evals/context-continuity/README.md). It has a
+deterministic scorer, but no score is published because the required provider runs and
+raw transcripts have not been produced.
 
 <details>
-<summary>Screenshots</summary>
+<summary>Historical screenshots</summary>
 
 Start:
 
@@ -68,8 +79,6 @@ Example end state — Elpis:
 Example end state — Codex:
 
 ![Codex end state](docs/demo/codex-end-state.webp)
-
-These are approximate 10-run results, not a claim that every task reduces the same amount.
 
 </details>
 
@@ -128,9 +137,26 @@ All three levels ship with Elpis. Inspect the result with `/prune`.
 
 Goal and checkpoint state survive compaction, model switches, and restarts, so work resumes without replaying the transcript. Exact conversations, terminal events, and artifacts remain on disk as durable evidence.
 
+### Accountable work graphs
+
+The under-development `enable_fanout` feature adds a persisted task graph above the
+inherited agent lineage graph. Tasks have explicit `explore`, `implement`, `verify`, or
+`fix` roles. Elpis measures changed files, rejects incomplete worker reports, requires a
+direct verifier for every writable task, and prevents concurrent writers in one
+environment. `/agent` shows the graph, checks, evidence, risks, open questions, and
+unchecked work alongside the inherited agent tree.
+
+The feature remains off by default and awaits Masih's functional acceptance. See
+[the contract and current boundary](docs/WORK_GRAPHS.md).
+
 ### Memory with provenance
 
-Reusable memory is selective, size-capped, and attributable — every entry records where it came from, and entries are promoted or archived rather than accumulating forever. It is on by default; `/memories` turns recall and writing off independently, and the agent you talk to has no memory-write tool of its own.
+Reusable memory is designed to be selective, size-capped, and attributable. It ships
+off, matching upstream Codex. Extraction works, but durable promotion has not produced a
+real `MEMORY.md` commit on Masih's install because the current recall threshold is not
+reached in normal use. `/memories` controls recall and writing independently; no claim
+that durable memory works is accepted without a promotion commit in the memories
+repository. See [the measured state and eval](docs/memory.md).
 
 ### MCP integrations you plug in
 
@@ -147,7 +173,6 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 
 - Windows support.
 - Structured clarification and acceptance checks before difficult work.
-- Multi-agent controls and visible task coordination.
 - `/auto` model routing after it proves a real cost benefit.
 - Voice input and LSP-backed code intelligence.
 
@@ -157,6 +182,8 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 - [Context and pruning](docs/context.md) — the three pruning layers and the Context Ledger
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
 - [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
+- [Work graphs](docs/WORK_GRAPHS.md) — deterministic dispatch, attribution, verification, and current limits
+- [Evals](docs/evals/) — source data, reproducible scorers, and publication gates
 - [Providers](docs/providers.md) — every supported route, including local inference
 - [Workspace retrieval](docs/rag.md) — how to plug in semantic search over your own documents
 - [Technical guide](docs/GUIDE.md) — product vision and architecture

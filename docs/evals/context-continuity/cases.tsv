@@ -1,0 +1,31 @@
+id	group	prompt	expected
+exact-01	exact	Return only the active goal token.	ORCHID-ANCHOR-731
+exact-02	exact	Return only the current file token.	SABLE-FILE-284
+exact-03	exact	Return only the accepted decision token.	CYAN-DECISION-619
+exact-04	exact	Return only the changed artifact token.	EMBER-CHANGE-452
+exact-05	exact	Return only the rejected approach token.	GLASS-DEADEND-807
+exact-06	exact	Return only the next action token.	NORTH-NEXT-346
+exact-07	exact	Return only the acceptance criterion token.	LIME-ACCEPT-925
+exact-08	exact	Return only the current blocker token.	RIVER-BLOCKER-173
+exact-09	exact	Return only the verification command token.	QUARTZ-CHECK-568
+exact-10	exact	Return only the known gap token.	MIST-GAP-490
+semantic-01	semantic	Which planted identifier names what we are ultimately trying to achieve? Return only it.	ORCHID-ANCHOR-731
+semantic-02	semantic	Which planted identifier points to the artifact presently in focus? Return only it.	SABLE-FILE-284
+semantic-03	semantic	Which planted identifier records the choice we agreed to keep? Return only it.	CYAN-DECISION-619
+semantic-04	semantic	Which planted identifier names the thing already modified? Return only it.	EMBER-CHANGE-452
+semantic-05	semantic	Which planted identifier marks the path we tried and discarded? Return only it.	GLASS-DEADEND-807
+semantic-06	semantic	Which planted identifier says what should happen immediately after this? Return only it.	NORTH-NEXT-346
+semantic-07	semantic	Which planted identifier says how success will be judged? Return only it.	LIME-ACCEPT-925
+semantic-08	semantic	Which planted identifier explains why progress cannot continue yet? Return only it.	RIVER-BLOCKER-173
+semantic-09	semantic	Which planted identifier names the proof command? Return only it.	QUARTZ-CHECK-568
+semantic-10	semantic	Which planted identifier marks an unresolved limitation? Return only it.	MIST-GAP-490
+negative-01	negative	Is ABSENT-101 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-02	negative	Is ABSENT-102 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-03	negative	Is ABSENT-103 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-04	negative	Is ABSENT-104 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-05	negative	Is ABSENT-105 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-06	negative	Is ABSENT-106 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-07	negative	Is ABSENT-107 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-08	negative	Is ABSENT-108 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-09	negative	Is ABSENT-109 in the fixture? Return only PRESENT or ABSENT.	ABSENT
+negative-10	negative	Is ABSENT-110 in the fixture? Return only PRESENT or ABSENT.	ABSENT

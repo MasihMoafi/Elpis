@@ -163,11 +163,16 @@ is unaffected and remains the supported way to run Claude models in Elpis.
 
 **R12. Deterministic multi-agent orchestration** — Confirmed by Masih 2026-07-29.
 Elpis owns a persisted task DAG above the existing agent lineage graph. The engine
-validates dependencies, selects ready tasks in stable order, bounds concurrency,
-serializes overlapping writes in one environment, gives workers only scoped execution
-and reporting authority, and releases dependents only after authenticated evidence.
-Branch/worktree creation and integration remain deliberate coordinator actions rather
-than automatic graph behavior. The exact contract and current verification state are in
+validates dependencies and explicit `explore`, `implement`, `verify`, and `fix` roles;
+selects ready tasks in stable order; bounds concurrency; serializes every writable task
+in one environment; measures file changes against an engine-owned baseline; rejects
+incomplete or out-of-scope reports; and requires a directly dependent read-only verifier
+for every writable task. `/agent` reads the persisted graph and shows task state,
+changed files, checks, evidence, risks, open questions, and unchecked work alongside the
+inherited lineage view. Branch/worktree creation and integration remain deliberate
+coordinator actions rather than automatic graph behavior. Recursive decomposition stays
+out of scope until these accountability gates receive Masih's functional acceptance.
+The exact contract and current verification state are in
 [WORK_GRAPHS.md](WORK_GRAPHS.md).
 
 ### First-Release Order
