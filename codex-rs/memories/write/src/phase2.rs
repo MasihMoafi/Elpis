@@ -162,7 +162,8 @@ pub async fn run(
         crate::sweep_log::record(
             &root,
             &format!(
-                "no change; {raw_memory_count} candidates, nothing new since the last sweep"
+                "no change; {raw_memory_count} candidates, nothing new since the last sweep; {}",
+                crate::storage::describe_promotion_progress(&raw_memories)
             ),
         )
         .await;
@@ -195,7 +196,10 @@ pub async fn run(
     let memory_size_before = crate::sweep_log::memory_file_size(&root).await;
     crate::sweep_log::record(
         &root,
-        &format!("reviewing {raw_memory_count} candidates"),
+        &format!(
+            "reviewing {raw_memory_count} candidates; {}",
+            crate::storage::describe_promotion_progress(&raw_memories)
+        ),
     )
     .await;
     let prompt = agent::get_prompt(&root);

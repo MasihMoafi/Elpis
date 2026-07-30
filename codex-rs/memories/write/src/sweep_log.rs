@@ -15,7 +15,8 @@ use tokio::io::AsyncWriteExt;
 const FILENAME: &str = "memory-sweeps.md";
 const HEADER: &str = "# Memory sweep log\n\n\
      One line per consolidation sweep, newest last. `no change` is a normal outcome; a long\n\
-     run of it means nothing is reaching durable memory.\n\n";
+     run of it means nothing is reaching durable memory. Each line also says how close\n\
+     anything is to being promoted, so a quiet log can be told apart from a stuck one.\n\n";
 
 /// The log lives beside the memory directory, never inside it. The memory directory is a git
 /// workspace whose dirtiness is what tells consolidation there is new material; a log written

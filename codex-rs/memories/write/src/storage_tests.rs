@@ -37,6 +37,30 @@ fn fixed_thread_id() -> ThreadId {
     ThreadId::try_from("0194f5a6-89ab-7cde-8123-456789abcdef").expect("valid thread id")
 }
 
+/// The sweep log is where Masih looks to answer "is memory working"; a bare candidate count
+/// cannot distinguish a working gate from a stuck pipeline.
+#[test]
+fn promotion_progress_says_how_far_off_the_nearest_memory_is() {
+    use super::describe_promotion_progress;
+
+    assert_eq!(describe_promotion_progress(&[]), "nothing stored yet");
+
+    let mut cold = stage1_output_with_slug(fixed_thread_id(), Some("cold"));
+    let mut warm = stage1_output_with_slug(fixed_thread_id(), Some("warm"));
+    warm.recall_count = 1;
+    assert_eq!(
+        describe_promotion_progress(&[cold.clone(), warm.clone()]),
+        "none of 2 eligible yet; most recalled memory has 1 of the 2 recalls needed"
+    );
+
+    cold.recall_count = 2;
+    cold.unique_query_count = 2;
+    assert_eq!(
+        describe_promotion_progress(&[cold, warm]),
+        "1 of 2 eligible to promote"
+    );
+}
+
 #[test]
 fn rollout_summary_file_stem_uses_uuid_timestamp_and_hash_when_slug_missing() {
     let thread_id = fixed_thread_id();

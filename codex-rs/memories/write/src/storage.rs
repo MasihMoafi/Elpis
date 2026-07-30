@@ -93,9 +93,37 @@ async fn rebuild_raw_memories_file(
     tokio::fs::write(raw_memories_file(root), body).await
 }
 
-fn promotion_eligible(memory: &Stage1Output) -> bool {
+pub(crate) fn promotion_eligible(memory: &Stage1Output) -> bool {
     memory.recall_count >= PROMOTION_MIN_RECALL_COUNT
         && memory.unique_query_count >= PROMOTION_MIN_UNIQUE_QUERIES
+}
+
+/// One sentence saying how close anything is to becoming durable memory.
+///
+/// Without this the sweep log could only say "reviewing 12 candidates" followed by
+/// "MEMORY.md unchanged", which reads like a fault when it is usually just the gate doing
+/// its job. Answering "why did nothing promote" should not require opening a database.
+pub(crate) fn describe_promotion_progress(memories: &[Stage1Output]) -> String {
+    if memories.is_empty() {
+        return "nothing stored yet".to_string();
+    }
+    let eligible = memories
+        .iter()
+        .filter(|memory| promotion_eligible(memory))
+        .count();
+    if eligible > 0 {
+        return format!("{eligible} of {} eligible to promote", memories.len());
+    }
+    let best_recalls = memories
+        .iter()
+        .map(|memory| memory.recall_count)
+        .max()
+        .unwrap_or(0);
+    format!(
+        "none of {} eligible yet; most recalled memory has {best_recalls} of the \
+         {PROMOTION_MIN_RECALL_COUNT} recalls needed",
+        memories.len()
+    )
 }
 
 async fn prune_rollout_summaries(root: &Path, keep: &HashSet<String>) -> std::io::Result<()> {
