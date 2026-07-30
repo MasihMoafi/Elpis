@@ -47,6 +47,10 @@ The installer picks the right binary for your machine and also installs
 [RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
 choose a provider and sign in or enter its API key.
 
+`v0.1.1` is the latest published release. The redesigned `/prune`, automatic pressure
+policy, and accountable work graphs described below are implemented on `main` but still
+await Masih's functional acceptance before the next release.
+
 ## What is Elpis
 
 > *You run an agent inside Elpis, and it becomes Elpis.*
