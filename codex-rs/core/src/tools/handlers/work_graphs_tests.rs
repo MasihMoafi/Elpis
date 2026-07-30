@@ -399,3 +399,15 @@ fn symlinked_scope_cannot_escape_selected_workspace() {
         .expect_err("symlink escape should fail");
     assert!(err.to_string().contains("outside the selected workspace"));
 }
+
+#[test]
+fn write_scope_rejects_a_file_mount_target() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    std::fs::write(workspace.path().join("focused.rs"), "before").expect("fixture");
+    let cwd = AbsolutePathBuf::from_absolute_path(workspace.path()).expect("absolute workspace");
+
+    let err = validate_scope_resolution(&cwd, &["focused.rs".to_string()])
+        .expect_err("bubblewrap writable roots must be directories");
+
+    assert!(err.to_string().contains("must be an existing directory"));
+}

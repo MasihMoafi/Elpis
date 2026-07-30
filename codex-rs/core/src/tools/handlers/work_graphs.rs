@@ -1128,6 +1128,11 @@ fn validate_scope_resolution(cwd: &AbsolutePathBuf, write_scopes: &[String]) -> 
                 "declared write scope `{scope}` resolves outside the selected workspace"
             ));
         }
+        if !cwd.join(scope).as_path().is_dir() {
+            return Err(anyhow::anyhow!(
+                "declared write scope `{scope}` must be an existing directory"
+            ));
+        }
     }
     Ok(())
 }

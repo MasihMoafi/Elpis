@@ -40,7 +40,7 @@ pub fn create_run_agent_work_graph_tool() -> ToolSpec {
             JsonSchema::array(
                 JsonSchema::string(None),
                 Some(
-                    "Repository-relative file or directory prefixes this task may modify. Empty means read-only."
+                    "Existing repository-relative directories this task may modify beneath. Empty means read-only."
                         .to_string(),
                 ),
             ),
