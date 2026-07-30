@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::review_prompts::resolve_review_request;
 use crate::session::spawn_review_thread;
 use crate::tasks::CompactTask;
+use crate::tasks::PruneTask;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::UserShellCommandTask;
 use crate::tasks::execute_user_shell_command;
@@ -461,6 +462,13 @@ pub async fn compact(sess: &Arc<Session>, sub_id: String) {
         .await;
 }
 
+pub async fn prune(sess: &Arc<Session>, sub_id: String) {
+    let turn_context = sess.new_default_turn_with_sub_id(sub_id).await;
+
+    sess.spawn_task(Arc::clone(&turn_context), Vec::new(), PruneTask)
+        .await;
+}
+
 pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32) {
     if num_turns == 0 {
         sess.send_event_raw(Event {
@@ -814,6 +822,10 @@ pub(super) async fn submission_loop(
                 }
                 Op::Compact => {
                     compact(&sess, sub.id.clone()).await;
+                    false
+                }
+                Op::Prune => {
+                    prune(&sess, sub.id.clone()).await;
                     false
                 }
                 Op::ThreadRollback { num_turns } => {

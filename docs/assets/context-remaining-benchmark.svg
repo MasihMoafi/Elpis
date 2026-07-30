@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="390" viewBox="0 0 960 390" role="img" aria-labelledby="title desc">
+<title id="title">Context remaining after project familiarization</title>
+<desc id="desc">Average context remaining across 100 runs: Elpis 91 percent, Codex 73 percent. GPT-5.6 Sol with Medium reasoning.</desc>
+<rect width="960" height="390" rx="8" fill="#07090c"/>
+<g font-family="JetBrains Mono, ui-monospace, monospace">
+  <text x="900" y="42" fill="#7f8a99" font-size="13" text-anchor="end">GPT-5.6 Sol · Medium reasoning</text>
+  <text x="60" y="106" fill="#22d3ee" font-size="15" font-weight="700">ELPIS</text>
+  <rect x="60" y="124" width="840" height="54" rx="4" fill="#141a22"/>
+  <rect x="60" y="124" width="764.4" height="54" rx="4" fill="#22d3ee"/>
+  <text x="808" y="160" fill="#07090c" font-size="28" font-weight="800" text-anchor="end">91%</text>
+  <text x="60" y="238" fill="#aeb6c1" font-size="15" font-weight="700">CODEX</text>
+  <rect x="60" y="256" width="840" height="54" rx="4" fill="#141a22"/>
+  <rect x="60" y="256" width="613.2" height="54" rx="4" fill="#7b8491"/>
+  <text x="657" y="292" fill="#07090c" font-size="28" font-weight="800" text-anchor="end">73%</text>
+  <line x1="60" y1="340" x2="900" y2="340" stroke="#35404d"/>
+  <text x="60" y="366" fill="#7f8a99" font-size="12">0%</text>
+  <text x="480" y="366" fill="#7f8a99" font-size="12" text-anchor="middle">50%</text>
+  <text x="900" y="366" fill="#7f8a99" font-size="12" text-anchor="end">100%</text>
+</g>
+</svg>

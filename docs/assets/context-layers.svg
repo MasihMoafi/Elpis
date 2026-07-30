@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="570" viewBox="0 0 960 570" role="img" aria-labelledby="title desc">
+<title id="title">The four layers of Elpis context control</title>
+<desc id="desc">RTK filters output, a safety cap truncates exceptional output, Ace steadily distills completed work, and pressure pruning acts at 70 percent context remaining. Full compaction is only the fallback.</desc>
+<rect width="960" height="570" rx="8" fill="#07090c"/>
+<g font-family="JetBrains Mono, ui-monospace, monospace">
+  <text x="52" y="54" fill="#f4f7fb" font-size="23" font-weight="800">KEEP THE SIGNAL. DROP THE JOURNEY.</text>
+  <text x="908" y="54" fill="#7f8a99" font-size="13" text-anchor="end">ELPIS CONTEXT CONTROL</text>
+
+  <line x1="88" y1="91" x2="88" y2="457" stroke="#22d3ee" stroke-width="2"/>
+
+  <circle cx="88" cy="128" r="22" fill="#22d3ee"/>
+  <text x="88" y="135" fill="#07090c" font-size="18" font-weight="800" text-anchor="middle">1</text>
+  <text x="132" y="120" fill="#22d3ee" font-size="16" font-weight="800">FILTER BEFORE IT ENTERS</text>
+  <text x="132" y="146" fill="#aeb6c1" font-size="14">RTK reduces noisy shell output before the model sees it.</text>
+  <text x="900" y="134" fill="#7f8a99" font-size="13" text-anchor="end">BEFORE INPUT</text>
+
+  <circle cx="88" cy="232" r="22" fill="#22d3ee"/>
+  <text x="88" y="239" fill="#07090c" font-size="18" font-weight="800" text-anchor="middle">2</text>
+  <text x="132" y="224" fill="#22d3ee" font-size="16" font-weight="800">CAP THE EXCEPTION</text>
+  <text x="132" y="250" fill="#aeb6c1" font-size="14">A deterministic ceiling contains unusually large tool output.</text>
+  <text x="900" y="238" fill="#7f8a99" font-size="13" text-anchor="end">HARD LIMIT</text>
+
+  <circle cx="88" cy="336" r="22" fill="#22d3ee"/>
+  <text x="88" y="343" fill="#07090c" font-size="18" font-weight="800" text-anchor="middle">3</text>
+  <text x="132" y="328" fill="#22d3ee" font-size="16" font-weight="800">DISTILL COMPLETED WORK</text>
+  <text x="132" y="354" fill="#aeb6c1" font-size="14">Ace keeps conclusions and evidence pointers; dead ends disappear.</text>
+  <text x="900" y="342" fill="#7f8a99" font-size="13" text-anchor="end">STEADY PASS</text>
+
+  <circle cx="88" cy="440" r="22" fill="#22d3ee"/>
+  <text x="88" y="447" fill="#07090c" font-size="18" font-weight="800" text-anchor="middle">4</text>
+  <text x="132" y="432" fill="#22d3ee" font-size="16" font-weight="800">ACT BEFORE QUALITY FALLS</text>
+  <text x="132" y="458" fill="#aeb6c1" font-size="14">At 70% remaining, Ace prunes toward 80% while preserving recent work.</text>
+  <text x="900" y="446" fill="#7f8a99" font-size="13" text-anchor="end">PRESSURE PASS</text>
+
+  <rect x="52" y="500" width="856" height="42" rx="4" fill="#141a22"/>
+  <text x="480" y="526" fill="#d4dae2" font-size="13" text-anchor="middle">/compact is the fallback only when selective pruning has nothing left to reclaim.</text>
+</g>
+</svg>

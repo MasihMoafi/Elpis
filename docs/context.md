@@ -25,7 +25,7 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 |  Layer 1: RTK Shell-Output Filter (Pre-model command rewrite)   |
 |  Layer 2: Deterministic Safety Cap (Upper bound truncation)     |
 |  Layer 3: Ace Steady Pass (1% backlog trigger, whole backlog)    |
-|  Layer 4: Ace Pressure Pass (60% trigger, ~50% target)            |
+|  Layer 4: Ace Pressure Pass (30% used trigger, 20% used target)  |
 +----------+-------------------------------------------------------+
            |
            v
@@ -36,7 +36,7 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 
 ---
 
-## 2. The 3-Layer Pruning Pipeline
+## 2. The 4-Layer Pruning Pipeline
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
@@ -56,7 +56,7 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 [Layer 3: Ace Steady Pass]     -> Between follow-ups: distills the completed-turn backlog at 1%.
            |
            v
-[Layer 4: Ace Pressure Pass]   -> Between follow-ups: reclaims to 50% once use reaches 60%.
+[Layer 4: Ace Pressure Pass]   -> Between follow-ups: at 70% remaining, reclaims toward 80%.
            |
            v
 [Native /compact]              -> Fallback only, when no layer can reclaim anything further.
@@ -66,7 +66,7 @@ Layers 3 and 4 are the same Ace pass under two triggers, and both are load-beari
 The steady pass is what keeps a long session from filling up at all; the pressure pass
 exists for the case the steady pass cannot cover — a single turn that balloons past the
 boundary before its evidence is ever eligible. Running pressure alone lets a session
-climb to 60% before anything is reclaimed, which is the state the steady pass exists to
+climb to 30% used before anything is reclaimed, which is the state the steady pass exists to
 prevent.
 
 ### Pipeline Layer Comparison
@@ -76,13 +76,13 @@ prevent.
 | **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
 | **3. Ace Steady Pass** | Completed turns hold ≥1% of the context window in uncovered tool output | The whole uncovered backlog from completed turns | Distills routine exploration the turn after it lands, so the working set stays flat instead of accumulating. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely; the current turn stays verbatim. | A failed pass changes nothing — the same backlog stays eligible for the next pass. |
-| **4. Ace Pressure Pass** | Exact model-window use reaches 60% | Oldest eligible tool exploration from completed turns | Selects only enough old tool evidence to target roughly 50% use. Same keep/delete judgment as the steady pass; the current turn and recent suffix stay verbatim. Outranks the steady trigger, so at 60% the reclaim target governs. | A failed pass changes nothing. When nothing reclaimable remains at this boundary, Elpis requests native compaction rather than let the window drift toward the model's hard limit. |
+| **4. Ace Pressure Pass** | Exact model-window use reaches 30% (70% remaining) | Oldest eligible tool exploration from completed turns | Selects only enough old tool evidence to target roughly 20% use (80% remaining). Same keep/delete judgment as the steady pass; the current turn and recent suffix stay verbatim. Outranks the steady trigger, so at 30% use the reclaim target governs. | A failed pass changes nothing. When nothing reclaimable remains at this boundary, Elpis requests native compaction rather than let the window drift toward the model's hard limit. |
 
 **All four layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
 The Ace pass runs between model follow-ups as well as at the end of a turn, so one
 long-running tool-driven turn cannot skip either trigger. Each pass records which
-trigger fired (`steady` or `pressure`) in its manifest and report. OpenAI-backed passes use
+trigger fired (`manual`, `steady`, or `pressure`) in its manifest and report. OpenAI-backed passes use
 Luna at low reasoning effort. Every successful pass immediately recomputes the working
 history estimate and writes `prune_report.md` alongside the session logs
 (`codex-rs/core/src/session/context_prune_audit.rs`).
@@ -90,9 +90,9 @@ The pass may run during a current turn, but it only receives and rewrites tool e
 from earlier completed turns; current-turn observations remain intact for the next
 follow-up.
 
-`/prune` is currently a compatibility alias for full native `/compact`; it summarizes and
-replaces conversation history, so it can legitimately leave a nearly empty working window.
-It is not the selective Ace pass and does not create its audit report. The Context Ledger's
+`/prune` runs the Ace pass on demand across eligible tool evidence from completed turns.
+It keeps user and assistant messages, the current turn, and durable rollout evidence.
+`/compact` remains the full native summary-and-new-window operation. The Context Ledger's
 exact used-token number is authoritative after either path.
 
 ### Ace pass audit trail

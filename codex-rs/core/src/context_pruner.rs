@@ -1,4 +1,4 @@
-//! Layer 3 of Elpis's context pruning (see `docs/context.md`). The Ace pass handles
+//! Layers 3 and 4 of Elpis's context pruning (see `docs/context.md`). The Ace pass handles
 //! content that requires judgment — deciding
 //! whether a search was a dead end (delete outright, no trace) or found something
 //! that matters (keep one evidence-pointer line). That judgment comes from a model
@@ -10,9 +10,9 @@
 //! whenever completed turns hold at least 1% of the context window in uncovered tool
 //! output, and takes that whole backlog: this is what keeps a long session from
 //! filling up in the first place. The pressure trigger fires once active use reaches
-//! 60% and takes only the oldest output needed to get back to 50%, preserving a recent
+//! 30% and takes only the oldest output needed to get back to 20%, preserving a recent
 //! verbatim suffix. Steady alone cannot catch a single turn that balloons past the
-//! boundary; pressure alone lets a session climb to 60% before anything is reclaimed,
+//! boundary; pressure alone lets a session climb to 30% before anything is reclaimed,
 //! which is the state the steady pass exists to prevent.
 //!
 //! Neither trigger ever touches the current turn. On any failure (model error,
@@ -28,8 +28,8 @@ use std::collections::HashSet;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 60;
-pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 50;
+pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 30;
+pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 20;
 
 /// Floor for the steady pass, as a percentage of the context window. Low enough that
 /// routine exploration is distilled the turn after it lands, high enough that a couple
@@ -47,12 +47,12 @@ const NOTHING_TO_KEEP: &str = "NOTHING_TO_KEEP";
 static PRUNE_PASSES: AtomicUsize = AtomicUsize::new(0);
 static PRUNE_SAVED_CHARS: AtomicUsize = AtomicUsize::new(0);
 
-/// Number of Layer 3 pruning passes applied during this Elpis process.
+/// Number of Ace pruning passes applied during this Elpis process.
 pub fn pass_count() -> usize {
     PRUNE_PASSES.load(Ordering::Relaxed)
 }
 
-/// Cumulative chars removed from request context by Layer 3 during this Elpis
+/// Cumulative chars removed from request context by Ace during this Elpis
 /// process.
 pub fn saved_chars() -> usize {
     PRUNE_SAVED_CHARS.load(Ordering::Relaxed)
@@ -75,9 +75,11 @@ impl PruneRecord {
 }
 
 /// Which trigger a pass is running under. Pressure outranks steady: when use is
-/// already at 60% the reclaim target is what matters, not the backlog size.
+/// already at 30% the reclaim target is what matters, not the backlog size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PruneTrigger {
+    /// The user explicitly requested a selective pass with `/prune`.
+    Manual,
     /// Completed turns hold at least `STEADY_PRUNE_FLOOR_PERCENT` of the window.
     Steady,
     /// Active use reached `AUTO_PRUNE_TRIGGER_PERCENT`.
@@ -87,6 +89,7 @@ pub(crate) enum PruneTrigger {
 impl PruneTrigger {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
+            Self::Manual => "manual",
             Self::Steady => "steady",
             Self::Pressure => "pressure",
         }
@@ -212,6 +215,19 @@ pub(crate) fn build_steady_prune_batch(
     covered_call_ids: &HashSet<String>,
 ) -> Vec<(String, String)> {
     build_prune_candidates(completed_turn_items(input), covered_call_ids)
+        .into_iter()
+        .map(|(call_id, evidence, _)| (call_id, evidence))
+        .collect()
+}
+
+/// The whole uncovered backlog for an explicit `/prune`. Unlike automatic pruning,
+/// this runs as a standalone task between turns, so the latest finished turn is also
+/// eligible.
+pub(crate) fn build_manual_prune_batch(
+    input: &[ResponseItem],
+    covered_call_ids: &HashSet<String>,
+) -> Vec<(String, String)> {
+    build_prune_candidates(input, covered_call_ids)
         .into_iter()
         .map(|(call_id, evidence, _)| (call_id, evidence))
         .collect()
@@ -487,9 +503,10 @@ mod tests {
     }
 
     #[test]
-    fn pressure_trigger_wins_at_sixty_percent_use() {
+    fn pressure_trigger_starts_at_thirty_percent_use() {
+        assert_eq!(select_trigger(299_999, 9_999, 1_000_000), None);
         assert_eq!(
-            select_trigger(600_000, 100_000, 1_000_000),
+            select_trigger(300_000, 9_999, 1_000_000),
             Some(PruneTrigger::Pressure)
         );
         assert_eq!(select_trigger(900_000, 0, 1_000_000), None);
@@ -498,7 +515,7 @@ mod tests {
     #[test]
     fn steady_trigger_fires_below_pressure_once_backlog_reaches_one_percent() {
         // The regression this guards: under pressure-only gating, a session with a
-        // real backlog but modest use pruned nothing and grew until it hit 60%.
+        // real backlog but modest use pruned nothing and grew until it hit 30% used.
         assert_eq!(
             select_trigger(200_000, 10_000, 1_000_000),
             Some(PruneTrigger::Steady)
@@ -519,9 +536,9 @@ mod tests {
     }
 
     #[test]
-    fn reclaim_target_moves_sixty_percent_use_to_fifty_percent() {
-        assert_eq!(reclaim_target_tokens(600_000, 1_000_000), 100_000);
-        assert_eq!(reclaim_target_tokens(499_999, 1_000_000), 0);
+    fn reclaim_target_moves_thirty_percent_use_to_twenty_percent() {
+        assert_eq!(reclaim_target_tokens(300_000, 1_000_000), 100_000);
+        assert_eq!(reclaim_target_tokens(199_999, 1_000_000), 0);
     }
 
     #[test]
@@ -583,6 +600,25 @@ mod tests {
                 .map(|(call_id, _)| call_id.as_str())
                 .collect::<Vec<_>>(),
             vec!["old"]
+        );
+    }
+
+    #[test]
+    fn manual_batch_includes_the_latest_finished_turn() {
+        let input = vec![
+            user_message("latest finished turn"),
+            tool_call("latest", "exec_command", r#"{"cmd":"inspect"}"#),
+            tool_output("latest", "latest output"),
+        ];
+
+        let batch = build_manual_prune_batch(&input, &HashSet::new());
+
+        assert_eq!(
+            batch
+                .iter()
+                .map(|(call_id, _)| call_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["latest"]
         );
     }
 

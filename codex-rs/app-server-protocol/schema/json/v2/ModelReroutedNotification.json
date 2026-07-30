@@ -3,7 +3,8 @@
   "definitions": {
     "ModelRerouteReason": {
       "enum": [
-        "highRiskCyberActivity"
+        "highRiskCyberActivity",
+        "autoModelRouting"
       ],
       "type": "string"
     }

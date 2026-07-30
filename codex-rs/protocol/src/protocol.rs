@@ -577,6 +577,9 @@ pub enum Op {
         thread_settings: ThreadSettingsOverrides,
     },
 
+    /// Selectively distill old tool output while preserving conversation messages.
+    Prune,
+
     /// Inter-agent communication that should be recorded as agent-message history
     /// while still using the normal thread submission lifecycle.
     InterAgentCommunication {
@@ -874,6 +877,7 @@ impl Op {
             Self::RealtimeConversationListVoices => "realtime_conversation_list_voices",
             Self::UserInput { .. } => "user_input",
             Self::ThreadSettings { .. } => "thread_settings",
+            Self::Prune => "prune",
             Self::InterAgentCommunication { .. } => "inter_agent_communication",
             Self::ExecApproval { .. } => "exec_approval",
             Self::PatchApproval { .. } => "patch_approval",
@@ -1745,6 +1749,7 @@ pub enum AgentStatus {
 pub enum NonSteerableTurnKind {
     Review,
     Compact,
+    Prune,
 }
 
 /// Codex errors that we expose to clients.

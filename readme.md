@@ -4,7 +4,11 @@
 
 <br>
 
-**Terminal environment for coding agents that keeps the working context small.**
+# Never lose the thread.
+
+**You run an agent inside Elpis, and it becomes Elpis.**
+
+More **QUALITY**. More **QUANTITY**.
 
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
@@ -14,15 +18,22 @@
 
 </div>
 
-![Elpis demo](docs/assets/demo.gif)
+## One prompt. More room to think.
 
-**Current proof:** accountable work graphs now reject omitted file changes, require an
-independent verifier, and serialize writers sharing one environment. The negative checks
-failed before the change and pass after it.
+The same project-familiarization prompt was run 100 times. With GPT-5.6 Sol at Medium
+reasoning, Elpis finished with **91% of its context remaining** on average, compared with
+**73% for Codex**.
 
-![Accountable work-graph negative checks](docs/assets/accountable-work-graph-eval.svg)
+![Context remaining after project familiarization: Elpis 91%, Codex 73%](docs/assets/context-remaining-benchmark.svg)
 
-[Data, test names, limits, and reproduction commands](docs/evals/accountable-work-graphs/README.md)
+These are the reported aggregate results. The original per-run traces were not retained,
+so the chart does not invent a per-run distribution.
+
+### See one run
+
+The demo below is one representative run of that prompt—not the complete 100-run dataset.
+
+![One Elpis project-familiarization run](docs/assets/demo.gif)
 
 ## Quickstart
 
@@ -55,8 +66,8 @@ Long sessions fill up with transcripts, file reads, searches, and dead ends. Wha
 Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
 
 The screenshots below are historical examples of the same prompt in Elpis and Codex.
-They are not a benchmark: the underlying per-run records were not preserved, so the
-previous approximate `~90%` versus `~70%` claim has been withdrawn.
+They illustrate the setup, but they do not prove the 100-run aggregate reported above;
+the original per-run records were not preserved.
 
 A pinned, synthetic 3×10 comparison for exact recall, paraphrased recall, and negative
 controls is specified in
@@ -84,35 +95,19 @@ Example end state — Codex:
 
 ## Core Features
 
-### Context pruning on three levels
+### Context control in four layers
 
 | Level | What it does | When |
 | --- | --- | --- |
 | **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook, before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. The installer installs [RTK](https://github.com/rtk-ai/rtk) and Elpis registers the hook on first launch, where you trust it like any other hook. | Before the agent sees it |
 | **2. Safety cap** | Deterministic truncation bounds exceptionally large tool output. Inherited from Codex, unchanged. | Before the agent sees it |
-| **3. Ace post-turn pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After the work is done |
+| **3. Ace steady pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After completed work creates enough eligible output |
+| **4. Ace pressure pass** | Runs the same selective process earlier, at 70% remaining, and aims to return the session to 80% remaining. | Before context pressure harms the next turn |
 
-All three levels ship with Elpis. Inspect the result with `/prune`.
+![The four layers of Elpis context control](docs/assets/context-layers.svg)
 
-```text
-[tool output]
-     |
-     v
-[1. RTK filter]         compact output, exact output on demand
-     |
-     v
-[2. safety cap]         deterministic; only exceptionally large output
-     |
-     v
-[3. active agent turn]  result stays available while the agent works
-     |
-     v
-[4. Ace post-turn pass] meaning-aware; runs after the work is complete
-     |
-     +-- useful -----> compact conclusion + rollout evidence pointer
-     +-- dead end ---> removed from the next working context
-     +-- failure ----> original history unchanged
-```
+`/prune` runs Ace selectively on demand while keeping the conversation intact.
+`/compact` replaces the conversation with a full summary and starts a new context window.
 
 ### Context Ledger
 
@@ -145,6 +140,10 @@ inherited agent lineage graph. Tasks have explicit `explore`, `implement`, `veri
 direct verifier for every writable task, and prevents concurrent writers in one
 environment. `/agent` shows the graph, checks, evidence, risks, open questions, and
 unchecked work alongside the inherited agent tree.
+
+![Accountable work-graph negative checks](docs/assets/accountable-work-graph-eval.svg)
+
+[Data, test names, limits, and reproduction commands](docs/evals/accountable-work-graphs/README.md)
 
 The feature remains off by default and awaits Masih's functional acceptance. See
 [the contract and current boundary](docs/WORK_GRAPHS.md).
@@ -179,7 +178,7 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 
 ## Documentation
 
-- [Context and pruning](docs/context.md) — the three pruning layers and the Context Ledger
+- [Context and pruning](docs/context.md) — the four context-control layers and the Context Ledger
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
 - [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
 - [Work graphs](docs/WORK_GRAPHS.md) — deterministic dispatch, attribution, verification, and current limits

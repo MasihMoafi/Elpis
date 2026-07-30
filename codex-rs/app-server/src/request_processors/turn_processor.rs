@@ -924,6 +924,9 @@ impl TurnRequestProcessor {
                             codex_protocol::protocol::NonSteerableTurnKind::Compact => {
                                 "cannot steer a compact turn".to_string()
                             }
+                            codex_protocol::protocol::NonSteerableTurnKind::Prune => {
+                                "cannot steer a prune turn".to_string()
+                            }
                         };
                         let error = TurnError {
                             message: message.clone(),

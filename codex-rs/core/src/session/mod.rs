@@ -195,7 +195,7 @@ use codex_protocol::exec_output::StreamOutput;
 mod auto_model_routing;
 mod code_mode_warning;
 mod config_lock;
-mod context_prune;
+pub(crate) mod context_prune;
 mod context_prune_audit;
 pub(crate) mod context_window;
 mod handlers;
@@ -260,6 +260,7 @@ impl SteerInputError {
                 let turn_kind_label = match turn_kind {
                     NonSteerableTurnKind::Review => "review",
                     NonSteerableTurnKind::Compact => "compact",
+                    NonSteerableTurnKind::Prune => "prune",
                 };
                 ErrorEvent {
                     message: format!("cannot steer a {turn_kind_label} turn"),
@@ -3816,6 +3817,11 @@ impl Session {
             crate::state::TaskKind::Compact => {
                 return Err(SteerInputError::ActiveTurnNotSteerable {
                     turn_kind: NonSteerableTurnKind::Compact,
+                });
+            }
+            crate::state::TaskKind::Prune => {
+                return Err(SteerInputError::ActiveTurnNotSteerable {
+                    turn_kind: NonSteerableTurnKind::Prune,
                 });
             }
         }

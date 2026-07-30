@@ -547,6 +547,30 @@
             },
             "method": {
               "enum": [
+                "thread/prune/start"
+              ],
+              "title": "Thread/prune/startRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ThreadPruneStartParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/prune/startRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/shellCommand"
               ],
               "title": "Thread/shellCommandRequestMethod",
@@ -682,6 +706,30 @@
             "params"
           ],
           "title": "Thread/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "workGraph/list"
+              ],
+              "title": "WorkGraph/listRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/WorkGraphListParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "WorkGraph/listRequest",
           "type": "object"
         },
         {
@@ -12745,7 +12793,8 @@
       },
       "ModelRerouteReason": {
         "enum": [
-          "highRiskCyberActivity"
+          "highRiskCyberActivity",
+          "autoModelRouting"
         ],
         "type": "string"
       },
@@ -13109,7 +13158,8 @@
       "NonSteerableTurnKind": {
         "enum": [
           "review",
-          "compact"
+          "compact",
+          "prune"
         ],
         "type": "string"
       },
@@ -19043,6 +19093,24 @@
         "title": "ThreadNameUpdatedNotification",
         "type": "object"
       },
+      "ThreadPruneStartParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "title": "ThreadPruneStartParams",
+        "type": "object"
+      },
+      "ThreadPruneStartResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ThreadPruneStartResponse",
+        "type": "object"
+      },
       "ThreadReadParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -21218,6 +21286,129 @@
           "samplePaths"
         ],
         "title": "WindowsWorldWritableWarningNotification",
+        "type": "object"
+      },
+      "WorkGraphListParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "rootThreadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rootThreadId"
+        ],
+        "title": "WorkGraphListParams",
+        "type": "object"
+      },
+      "WorkGraphListResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/definitions/v2/WorkGraphSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "WorkGraphListResponse",
+        "type": "object"
+      },
+      "WorkGraphSummary": {
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eventCount": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "maxConcurrency": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/definitions/v2/WorkGraphTaskSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "eventCount",
+          "id",
+          "maxConcurrency",
+          "name",
+          "status",
+          "tasks"
+        ],
+        "type": "object"
+      },
+      "WorkGraphTaskSummary": {
+        "properties": {
+          "assignedThreadId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dependencies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "result": true,
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dependencies",
+          "evidence",
+          "id",
+          "kind",
+          "status",
+          "title"
+        ],
         "type": "object"
       },
       "WorkspaceMessage": {

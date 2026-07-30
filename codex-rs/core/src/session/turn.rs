@@ -309,7 +309,7 @@ pub(crate) async fn run_turn(
 
                 // Pressure pruning runs after every completed sampling step, not only
                 // at the end of the user turn. Long tool-driven turns therefore
-                // cannot silently grow past the 60% boundary between follow-ups.
+                // cannot silently grow past the 30%-used boundary between follow-ups.
                 super::context_prune::maybe_run_context_prune(&sess, &turn_context).await;
                 let token_status = super::context_window::context_window_token_status(
                     sess.as_ref(),

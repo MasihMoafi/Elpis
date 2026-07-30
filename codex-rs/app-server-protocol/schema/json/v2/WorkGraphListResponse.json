@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "WorkGraphSummary": {
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "eventCount": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "maxConcurrency": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/definitions/WorkGraphTaskSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "eventCount",
+        "id",
+        "maxConcurrency",
+        "name",
+        "status",
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "WorkGraphTaskSummary": {
+      "properties": {
+        "assignedThreadId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "result": true,
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dependencies",
+        "evidence",
+        "id",
+        "kind",
+        "status",
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "data": {
+      "items": {
+        "$ref": "#/definitions/WorkGraphSummary"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "data"
+  ],
+  "title": "WorkGraphListResponse",
+  "type": "object"
+}

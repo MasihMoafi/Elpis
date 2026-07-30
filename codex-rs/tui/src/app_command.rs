@@ -88,6 +88,7 @@ pub(crate) enum AppCommand {
         force_reload: bool,
     },
     Compact,
+    Prune,
     SetThreadName {
         name: String,
     },
@@ -107,6 +108,10 @@ impl AppCommand {
 
     pub(crate) fn clean_background_terminals() -> Self {
         Self::CleanBackgroundTerminals
+    }
+
+    pub(crate) fn prune() -> Self {
+        Self::Prune
     }
 
     pub(crate) fn run_user_shell_command(command: String) -> Self {

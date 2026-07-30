@@ -59,6 +59,7 @@ pub(super) const fn default_enabled() -> bool {
 pub enum NonSteerableTurnKind {
     Review,
     Compact,
+    Prune,
 }
 
 /// This translation layer make sure that we expose codex error code in camel case.
@@ -152,6 +153,7 @@ impl From<CoreNonSteerableTurnKind> for NonSteerableTurnKind {
         match value {
             CoreNonSteerableTurnKind::Review => Self::Review,
             CoreNonSteerableTurnKind::Compact => Self::Compact,
+            CoreNonSteerableTurnKind::Prune => Self::Prune,
         }
     }
 }

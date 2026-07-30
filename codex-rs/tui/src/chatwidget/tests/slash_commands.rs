@@ -144,6 +144,19 @@ async fn slash_compact_eagerly_queues_follow_up_before_turn_start() {
 }
 
 #[tokio::test]
+async fn slash_prune_submits_selective_prune_instead_of_compaction() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Prune);
+
+    assert!(chat.bottom_pane.is_task_running());
+    match rx.try_recv() {
+        Ok(AppEvent::CodexOp(Op::Prune)) => {}
+        other => panic!("expected selective prune op to be submitted, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn queued_slash_compact_dispatches_after_active_turn() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());

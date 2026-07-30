@@ -1,5 +1,5 @@
 //! Runs the Ace pass (`crate::context_pruner`) under whichever trigger applies: the
-//! steady backlog floor, or the 60% pressure boundary. Mirrors
+//! steady backlog floor, the 30% pressure boundary, or a manual `/prune`. Mirrors
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual
@@ -24,8 +24,25 @@ use super::session::Session;
 use super::turn_context::TurnContext;
 
 pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    run_context_prune(sess, turn_context, None).await;
+}
+
+pub(crate) async fn run_manual_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    run_context_prune(
+        sess,
+        turn_context,
+        Some(context_pruner::PruneTrigger::Manual),
+    )
+    .await;
+}
+
+async fn run_context_prune(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    requested_trigger: Option<context_pruner::PruneTrigger>,
+) {
     let context_window = turn_context.model_context_window().unwrap_or(0);
-    if context_window <= 0 {
+    if requested_trigger.is_none() && context_window <= 0 {
         return;
     }
 
@@ -42,8 +59,13 @@ pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &
         .clone()
         .for_prompt(&turn_context.model_info.input_modalities);
     let uncovered = context_pruner::uncovered_completed_turn_tokens(&items, &covered_call_ids);
-    let trigger = context_pruner::select_trigger(active_context_tokens, uncovered, context_window);
+    let trigger = requested_trigger.or_else(|| {
+        context_pruner::select_trigger(active_context_tokens, uncovered, context_window)
+    });
     let batch = match trigger {
+        Some(context_pruner::PruneTrigger::Manual) => {
+            context_pruner::build_manual_prune_batch(&items, &covered_call_ids)
+        }
         Some(context_pruner::PruneTrigger::Steady) => {
             context_pruner::build_steady_prune_batch(&items, &covered_call_ids)
         }
@@ -60,7 +82,9 @@ pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &
         // evidence — so the working set would climb from here with no layer left to
         // stop it. Hand off to compaction instead of letting it drift toward the
         // model's hard limit. The turn loop performs the rollover on its next step.
-        if context_pruner::pressure_reached(active_context_tokens, context_window) {
+        if requested_trigger.is_none()
+            && context_pruner::pressure_reached(active_context_tokens, context_window)
+        {
             tracing::info!(
                 "Context pruning is exhausted at {active_context_tokens} tokens; requesting compaction"
             );

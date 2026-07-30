@@ -579,7 +579,8 @@
     "NonSteerableTurnKind": {
       "enum": [
         "review",
-        "compact"
+        "compact",
+        "prune"
       ],
       "type": "string"
     },
