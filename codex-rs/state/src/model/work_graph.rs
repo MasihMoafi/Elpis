@@ -1,6 +1,8 @@
 use anyhow::Result;
 use chrono::DateTime;
 use chrono::Utc;
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -50,6 +52,40 @@ pub enum WorkGraphTaskStatus {
     Failed,
     Blocked,
     Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkGraphTaskKind {
+    Explore,
+    Implement,
+    Verify,
+    Fix,
+}
+
+impl WorkGraphTaskKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Explore => "explore",
+            Self::Implement => "implement",
+            Self::Verify => "verify",
+            Self::Fix => "fix",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "explore" => Ok(Self::Explore),
+            "implement" => Ok(Self::Implement),
+            "verify" => Ok(Self::Verify),
+            "fix" => Ok(Self::Fix),
+            _ => Err(anyhow::anyhow!("invalid work graph task kind: {value}")),
+        }
+    }
+
+    pub const fn is_writable(self) -> bool {
+        matches!(self, Self::Implement | Self::Fix)
+    }
 }
 
 impl WorkGraphTaskStatus {
@@ -105,6 +141,7 @@ pub struct WorkGraphTask {
     pub ordinal: i64,
     pub title: String,
     pub instruction: String,
+    pub kind: WorkGraphTaskKind,
     pub status: WorkGraphTaskStatus,
     pub dependencies: Vec<String>,
     pub write_scopes: Vec<String>,
@@ -113,6 +150,7 @@ pub struct WorkGraphTask {
     pub workspace_path: Option<String>,
     pub assigned_thread_id: Option<String>,
     pub attempt_count: i64,
+    pub baseline: Option<Value>,
     pub result: Option<Value>,
     pub evidence: Vec<String>,
     pub failure_reason: Option<String>,
@@ -146,6 +184,7 @@ pub struct WorkGraphTaskCreateParams {
     pub ordinal: i64,
     pub title: String,
     pub instruction: String,
+    pub kind: WorkGraphTaskKind,
     pub dependencies: Vec<String>,
     pub write_scopes: Vec<String>,
     pub acceptance_criteria: Vec<String>,
@@ -180,6 +219,7 @@ pub(crate) struct WorkGraphTaskRow {
     pub(crate) ordinal: i64,
     pub(crate) title: String,
     pub(crate) instruction: String,
+    pub(crate) task_kind: String,
     pub(crate) status: String,
     pub(crate) write_scopes_json: String,
     pub(crate) acceptance_criteria_json: String,
@@ -187,6 +227,7 @@ pub(crate) struct WorkGraphTaskRow {
     pub(crate) workspace_path: Option<String>,
     pub(crate) assigned_thread_id: Option<String>,
     pub(crate) attempt_count: i64,
+    pub(crate) baseline_json: Option<String>,
     pub(crate) result_json: Option<String>,
     pub(crate) evidence_json: Option<String>,
     pub(crate) failure_reason: Option<String>,
@@ -234,6 +275,7 @@ impl WorkGraphTaskRow {
             ordinal: self.ordinal,
             title: self.title,
             instruction: self.instruction,
+            kind: WorkGraphTaskKind::parse(self.task_kind.as_str())?,
             status: WorkGraphTaskStatus::parse(self.status.as_str())?,
             dependencies,
             write_scopes: serde_json::from_str(self.write_scopes_json.as_str())?,
@@ -242,6 +284,11 @@ impl WorkGraphTaskRow {
             workspace_path: self.workspace_path,
             assigned_thread_id: self.assigned_thread_id,
             attempt_count: self.attempt_count,
+            baseline: self
+                .baseline_json
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()?,
             result: self
                 .result_json
                 .as_deref()
@@ -307,6 +354,32 @@ pub fn validate_work_graph_tasks(tasks: &[WorkGraphTaskCreateParams]) -> Result<
                 task.task_id
             ));
         }
+        if task.acceptance_criteria.is_empty()
+            || task
+                .acceptance_criteria
+                .iter()
+                .any(|criterion| criterion.trim().is_empty())
+        {
+            return Err(anyhow::anyhow!(
+                "work graph task `{}` must have non-empty acceptance criteria",
+                task.task_id
+            ));
+        }
+        validate_write_scopes(task.task_id.as_str(), task.write_scopes.as_slice())?;
+        if !task.kind.is_writable() && !task.write_scopes.is_empty() {
+            return Err(anyhow::anyhow!(
+                "work graph task `{}` is {} and must be read-only",
+                task.task_id,
+                task.kind.as_str()
+            ));
+        }
+        if task.kind.is_writable() && task.write_scopes.is_empty() {
+            return Err(anyhow::anyhow!(
+                "work graph task `{}` is {} and must declare write scopes",
+                task.task_id,
+                task.kind.as_str()
+            ));
+        }
         let mut dependencies = BTreeSet::new();
         for dependency in &task.dependencies {
             if dependency == &task.task_id {
@@ -322,7 +395,6 @@ pub fn validate_work_graph_tasks(tasks: &[WorkGraphTaskCreateParams]) -> Result<
                 ));
             }
         }
-        validate_write_scopes(task.task_id.as_str(), task.write_scopes.as_slice())?;
     }
 
     for task in tasks {
@@ -333,6 +405,34 @@ pub fn validate_work_graph_tasks(tasks: &[WorkGraphTaskCreateParams]) -> Result<
                     task.task_id
                 ));
             }
+        }
+    }
+
+    for task in tasks {
+        if task.kind.is_writable() {
+            let has_verifier = tasks.iter().any(|candidate| {
+                candidate.kind == WorkGraphTaskKind::Verify
+                    && candidate.dependencies.contains(&task.task_id)
+                    && candidate.environment_id == task.environment_id
+            });
+            if !has_verifier {
+                return Err(anyhow::anyhow!(
+                    "writable work graph task `{}` requires an independent verification task in the same environment",
+                    task.task_id
+                ));
+            }
+        }
+        if task.kind == WorkGraphTaskKind::Verify
+            && !task.dependencies.iter().any(|dependency| {
+                tasks.iter().any(|candidate| {
+                    &candidate.task_id == dependency && candidate.kind.is_writable()
+                })
+            })
+        {
+            return Err(anyhow::anyhow!(
+                "verification task `{}` must directly depend on an implement or fix task",
+                task.task_id
+            ));
         }
     }
 
@@ -430,11 +530,12 @@ mod tests {
             ordinal: 0,
             title: id.to_string(),
             instruction: format!("Implement {id}"),
+            kind: WorkGraphTaskKind::Explore,
             dependencies: dependencies
                 .iter()
                 .map(|value| (*value).to_string())
                 .collect(),
-            write_scopes: vec![format!("src/{id}")],
+            write_scopes: Vec::new(),
             acceptance_criteria: vec!["focused test passes".to_string()],
             environment_id: None,
             workspace_path: None,

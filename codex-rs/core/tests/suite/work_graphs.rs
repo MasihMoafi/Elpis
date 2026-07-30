@@ -65,7 +65,10 @@ impl Respond for UnattributedChangeResponder {
                 "changed_files": [],
                 "checks": ["claimed check passed"],
                 "evidence": ["claimed evidence exists"],
-                "risks": []
+                "risks": [],
+                "edge_cases_considered": [],
+                "open_questions": [],
+                "what_i_did_not_check": []
             });
             return sse_response(sse(vec![
                 ev_response_created("resp-worker-report"),
@@ -190,6 +193,9 @@ impl Respond for WorkGraphResponder {
                     "checks": ["negative path exercised"],
                     "evidence": [],
                     "risks": [],
+                    "edge_cases_considered": [],
+                    "open_questions": [],
+                    "what_i_did_not_check": [],
                     "failure_reason": "deliberate worker failure"
                 })
             } else {
@@ -201,7 +207,10 @@ impl Respond for WorkGraphResponder {
                     "changed_files": [],
                     "checks": ["focused check passed"],
                     "evidence": ["worker-only marker delivered"],
-                    "risks": []
+                    "risks": [],
+                    "edge_cases_considered": [],
+                    "open_questions": [],
+                    "what_i_did_not_check": []
                 })
             };
             return sse_response(sse(vec![
@@ -309,6 +318,7 @@ fn graph_args() -> Value {
         "tasks": [
             {
                 "id": "foundation",
+                "kind": "explore",
                 "title": "Foundation",
                 "instruction": "Return the planted marker.",
                 "depends_on": [],
@@ -317,6 +327,7 @@ fn graph_args() -> Value {
             },
             {
                 "id": "dependent",
+                "kind": "explore",
                 "title": "Dependent",
                 "instruction": "Use accepted prerequisite evidence.",
                 "depends_on": ["foundation"],
@@ -421,11 +432,20 @@ async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Re
         "max_runtime_seconds": 30,
         "tasks": [{
             "id": "plant",
+            "kind": "implement",
             "title": "Plant evidence",
             "instruction": "Write the planted marker, then report the task.",
             "depends_on": [],
             "write_scopes": ["evidence"],
             "acceptance_criteria": ["planted marker is attributable to this task"]
+        }, {
+            "id": "verify-plant",
+            "kind": "verify",
+            "title": "Verify planted evidence",
+            "instruction": "Independently verify the planted marker and attribution.",
+            "depends_on": ["plant"],
+            "write_scopes": [],
+            "acceptance_criteria": ["marker and attribution are independently checked"]
         }]
     });
     let responder = UnattributedChangeResponder {
@@ -494,11 +514,20 @@ async fn work_graph_worker_cannot_write_outside_declared_scope() -> Result<()> {
         "max_runtime_seconds": 30,
         "tasks": [{
             "id": "escape",
+            "kind": "implement",
             "title": "Attempt escape",
             "instruction": "Try the requested write.",
             "depends_on": [],
             "write_scopes": ["allowed"],
             "acceptance_criteria": ["outside write is denied"]
+        }, {
+            "id": "verify-escape",
+            "kind": "verify",
+            "title": "Verify sandbox",
+            "instruction": "Independently verify the sandbox result.",
+            "depends_on": ["escape"],
+            "write_scopes": [],
+            "acceptance_criteria": ["sandbox result is independently checked"]
         }]
     });
     let responder = SandboxEscapeResponder {

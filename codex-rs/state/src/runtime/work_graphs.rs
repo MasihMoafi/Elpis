@@ -54,11 +54,11 @@ INSERT INTO work_graphs (
             sqlx::query(
                 r#"
 INSERT INTO work_graph_tasks (
-    graph_id, task_id, ordinal, title, instruction, status,
+    graph_id, task_id, ordinal, title, instruction, task_kind, status,
     write_scopes_json, acceptance_criteria_json, environment_id, workspace_path,
-    assigned_thread_id, attempt_count, result_json, evidence_json,
+    assigned_thread_id, attempt_count, baseline_json, result_json, evidence_json,
     failure_reason, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, NULL, ?, ?, NULL, NULL)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL)
                 "#,
             )
             .bind(params.id.as_str())
@@ -66,6 +66,7 @@ INSERT INTO work_graph_tasks (
             .bind(task.ordinal)
             .bind(task.title.as_str())
             .bind(task.instruction.as_str())
+            .bind(task.kind.as_str())
             .bind(WorkGraphTaskStatus::Pending.as_str())
             .bind(write_scopes_json)
             .bind(acceptance_criteria_json)
@@ -157,9 +158,9 @@ ORDER BY task_id ASC, depends_on_task_id ASC
         let rows = sqlx::query_as::<_, WorkGraphTaskRow>(
             r#"
 SELECT
-    graph_id, task_id, ordinal, title, instruction, status,
+    graph_id, task_id, ordinal, title, instruction, task_kind, status,
     write_scopes_json, acceptance_criteria_json, environment_id, workspace_path,
-    assigned_thread_id, attempt_count, result_json, evidence_json,
+    assigned_thread_id, attempt_count, baseline_json, result_json, evidence_json,
     failure_reason, created_at_ms, updated_at_ms, started_at_ms, completed_at_ms
 FROM work_graph_tasks
 WHERE graph_id = ?
@@ -266,15 +267,17 @@ WHERE id = ? AND status = ?
         graph_id: &str,
         task_id: &str,
         thread_id: &str,
+        baseline: Option<&Value>,
     ) -> anyhow::Result<bool> {
         let now = Utc::now().timestamp_millis();
+        let baseline_json = baseline.map(serde_json::to_string).transpose()?;
         let mut tx = self.pool.begin().await?;
         let result = sqlx::query(
             r#"
 UPDATE work_graph_tasks
 SET status = ?, assigned_thread_id = ?, attempt_count = attempt_count + 1,
     updated_at_ms = ?, started_at_ms = COALESCE(started_at_ms, ?),
-    completed_at_ms = NULL, failure_reason = NULL
+    completed_at_ms = NULL, failure_reason = NULL, baseline_json = ?
 WHERE graph_id = ? AND task_id = ? AND status = ?
             "#,
         )
@@ -282,6 +285,7 @@ WHERE graph_id = ? AND task_id = ? AND status = ?
         .bind(thread_id)
         .bind(now)
         .bind(now)
+        .bind(baseline_json)
         .bind(graph_id)
         .bind(task_id)
         .bind(WorkGraphTaskStatus::Pending.as_str())
@@ -592,6 +596,7 @@ mod tests {
             ordinal,
             title: task_id.to_string(),
             instruction: format!("Implement {task_id}"),
+            kind: WorkGraphTaskKind::Implement,
             dependencies: dependencies
                 .iter()
                 .map(|value| (*value).to_string())
@@ -615,6 +620,11 @@ mod tests {
                 &[
                     task("foundation", 0, &[], &["src/core"]),
                     task("ui", 1, &["foundation"], &["src/ui"]),
+                    WorkGraphTaskCreateParams {
+                        kind: WorkGraphTaskKind::Verify,
+                        write_scopes: Vec::new(),
+                        ..task("verify", 2, &["foundation", "ui"], &[])
+                    },
                 ],
             )
             .await
@@ -631,7 +641,7 @@ mod tests {
             .list_work_graph_tasks(graph.id.as_str())
             .await
             .expect("tasks should load");
-        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[1].dependencies, vec!["foundation"]);
         assert_eq!(tasks[0].write_scopes, vec!["src/core"]);
 
@@ -656,6 +666,7 @@ mod tests {
                 graph.id.as_str(),
                 "foundation",
                 "assigned-thread",
+                None,
             )
             .await
             .expect("task should start");
@@ -701,6 +712,7 @@ mod tests {
                 graph.id.as_str(),
                 "foundation",
                 "lost-thread",
+                None,
             )
             .await
             .expect("task should start");
@@ -737,6 +749,7 @@ mod tests {
                 graph.id.as_str(),
                 "foundation",
                 "assigned-thread",
+                None,
             )
             .await
             .expect("task should start");

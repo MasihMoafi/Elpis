@@ -22,6 +22,11 @@ fn task(
         ordinal,
         title: id.to_string(),
         instruction: format!("Implement {id}"),
+        kind: if scopes.is_empty() {
+            codex_state::WorkGraphTaskKind::Explore
+        } else {
+            codex_state::WorkGraphTaskKind::Implement
+        },
         status,
         dependencies: dependencies
             .iter()
@@ -33,6 +38,7 @@ fn task(
         workspace_path: Some(format!("/tmp/{environment_id}")),
         assigned_thread_id: None,
         attempt_count: 0,
+        baseline: None,
         result: None,
         evidence: Vec::new(),
         failure_reason: None,
@@ -77,12 +83,12 @@ fn scheduler_selects_only_dependency_ready_tasks_in_stable_order() {
             .iter()
             .map(|task| task.task_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["first", "second"]
+        vec!["first"]
     );
 }
 
 #[test]
-fn scheduler_serializes_overlapping_path_prefixes() {
+fn scheduler_serializes_all_writers_in_one_environment() {
     let tasks = vec![
         task(
             "broad",
@@ -115,7 +121,7 @@ fn scheduler_serializes_overlapping_path_prefixes() {
             .iter()
             .map(|task| task.task_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["broad", "independent"]
+        vec!["broad"]
     );
 }
 
@@ -198,6 +204,7 @@ fn writable_graph_requires_an_independent_verification_task() {
         name: "missing verification gate".to_string(),
         tasks: vec![WorkTaskArgs {
             id: "implement".to_string(),
+            kind: codex_state::WorkGraphTaskKind::Implement,
             title: "Implement".to_string(),
             instruction: "Change the requested behavior.".to_string(),
             depends_on: Vec::new(),
@@ -238,6 +245,38 @@ fn repository_paths_cannot_escape() {
     assert!(err.to_string().contains("invalid repository-relative path"));
     let err = normalize_repo_path(".git/config").expect_err("git metadata should fail");
     assert!(err.to_string().contains("invalid repository-relative path"));
+}
+
+#[test]
+fn engine_snapshot_identifies_modified_created_and_deleted_files() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    std::fs::create_dir(workspace.path().join("src")).expect("scope");
+    std::fs::write(workspace.path().join("src/modified.rs"), "before").expect("seed modified");
+    std::fs::write(workspace.path().join("src/deleted.rs"), "delete me").expect("seed deleted");
+    let mut task = task(
+        "measure",
+        0,
+        codex_state::WorkGraphTaskStatus::Running,
+        &[],
+        &["src"],
+        "repo",
+    );
+    task.workspace_path = Some(workspace.path().display().to_string());
+    let baseline = snapshot_task_scopes(&task).expect("baseline");
+
+    std::fs::write(workspace.path().join("src/modified.rs"), "after").expect("modify");
+    std::fs::write(workspace.path().join("src/created.rs"), "new").expect("create");
+    std::fs::remove_file(workspace.path().join("src/deleted.rs")).expect("delete");
+
+    let current = snapshot_task_scopes(&task).expect("current");
+    assert_eq!(
+        changed_paths(&baseline, &current).expect("changed paths"),
+        BTreeSet::from([
+            "src/created.rs".to_string(),
+            "src/deleted.rs".to_string(),
+            "src/modified.rs".to_string(),
+        ])
+    );
 }
 
 #[test]

@@ -12,6 +12,13 @@ pub fn create_run_agent_work_graph_tool() -> ToolSpec {
             )),
         ),
         (
+            "kind".to_string(),
+            JsonSchema::string(Some(
+                "Task role: `explore`, `implement`, `verify`, or `fix`. Explore and verify are read-only; every implement/fix requires a same-environment verifier that directly depends on it."
+                    .to_string(),
+            )),
+        ),
+        (
             "title".to_string(),
             JsonSchema::string(Some("Short human-facing task title.".to_string())),
         ),
@@ -57,6 +64,7 @@ pub fn create_run_agent_work_graph_tool() -> ToolSpec {
         task_properties,
         Some(vec![
             "id".to_string(),
+            "kind".to_string(),
             "title".to_string(),
             "instruction".to_string(),
             "depends_on".to_string(),
@@ -154,6 +162,27 @@ pub fn create_report_agent_work_task_tool() -> ToolSpec {
             "failure_reason".to_string(),
             JsonSchema::string(Some("Required for a failed outcome.".to_string())),
         ),
+        (
+            "edge_cases_considered".to_string(),
+            JsonSchema::array(
+                JsonSchema::string(None),
+                Some("Edge cases explicitly considered.".to_string()),
+            ),
+        ),
+        (
+            "open_questions".to_string(),
+            JsonSchema::array(
+                JsonSchema::string(None),
+                Some("Questions still unresolved after the task.".to_string()),
+            ),
+        ),
+        (
+            "what_i_did_not_check".to_string(),
+            JsonSchema::array(
+                JsonSchema::string(None),
+                Some("Checks or behavior explicitly left unverified.".to_string()),
+            ),
+        ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
@@ -174,6 +203,9 @@ pub fn create_report_agent_work_task_tool() -> ToolSpec {
                 "checks".to_string(),
                 "evidence".to_string(),
                 "risks".to_string(),
+                "edge_cases_considered".to_string(),
+                "open_questions".to_string(),
+                "what_i_did_not_check".to_string(),
             ]),
             Some(false.into()),
         ),

@@ -64,6 +64,7 @@ pub use model::WorkGraphEvent;
 pub use model::WorkGraphStatus;
 pub use model::WorkGraphTask;
 pub use model::WorkGraphTaskCreateParams;
+pub use model::WorkGraphTaskKind;
 pub use model::WorkGraphTaskReport;
 pub use model::WorkGraphTaskStatus;
 pub use model::validate_work_graph_tasks;

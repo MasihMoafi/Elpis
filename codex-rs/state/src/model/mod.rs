@@ -45,6 +45,7 @@ pub(crate) use work_graph::WorkGraphRow;
 pub use work_graph::WorkGraphStatus;
 pub use work_graph::WorkGraphTask;
 pub use work_graph::WorkGraphTaskCreateParams;
+pub use work_graph::WorkGraphTaskKind;
 pub use work_graph::WorkGraphTaskReport;
 pub(crate) use work_graph::WorkGraphTaskRow;
 pub use work_graph::WorkGraphTaskStatus;

@@ -37,8 +37,13 @@ use futures::stream::FuturesUnordered;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
+use sha2::Digest;
+use sha2::Sha256;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch::Receiver;
 use tokio::time::Duration;
@@ -64,6 +69,7 @@ struct RunAgentWorkGraphArgs {
 #[derive(Debug, Deserialize)]
 struct WorkTaskArgs {
     id: String,
+    kind: codex_state::WorkGraphTaskKind,
     title: String,
     instruction: String,
     #[serde(default)]
@@ -89,6 +95,9 @@ struct ReportAgentWorkTaskArgs {
     evidence: Vec<String>,
     #[serde(default)]
     risks: Vec<String>,
+    edge_cases_considered: Vec<String>,
+    open_questions: Vec<String>,
+    what_i_did_not_check: Vec<String>,
     failure_reason: Option<String>,
 }
 
@@ -106,6 +115,7 @@ struct WorkGraphToolResult {
 #[derive(Debug, Serialize)]
 struct WorkGraphTaskToolResult {
     id: String,
+    kind: String,
     status: String,
     assigned_thread_id: Option<String>,
     workspace_path: Option<String>,
@@ -265,6 +275,7 @@ async fn run_work_graph(
                 })?,
                 title: task.title.clone(),
                 instruction: task.instruction.clone(),
+                kind: task.kind,
                 dependencies: task.depends_on.clone(),
                 write_scopes: normalize_scopes(task.write_scopes.as_slice())?,
                 acceptance_criteria: task.acceptance_criteria.clone(),
@@ -359,16 +370,58 @@ async fn report_work_task(
             )),
         });
     }
+    if task.kind.is_writable() {
+        let baseline = task.baseline.as_ref().ok_or_else(|| {
+            FunctionCallError::Fatal(format!(
+                "writable task `{}` has no engine-owned baseline",
+                task.task_id
+            ))
+        })?;
+        let current = snapshot_task_scopes(task).map_err(|err| {
+            FunctionCallError::Fatal(format!(
+                "failed to measure changed files for task `{}`: {err}",
+                task.task_id
+            ))
+        })?;
+        let actual = changed_paths(baseline, &current)?;
+        let declared = args
+            .changed_files
+            .iter()
+            .map(|path| normalize_repo_path(path))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if actual != declared {
+            return tool_json(&ReportToolResult {
+                accepted: false,
+                reason: Some(format!(
+                    "declared changed files do not match engine measurement; measured: [{}], declared: [{}]",
+                    actual.iter().cloned().collect::<Vec<_>>().join(", "),
+                    declared.iter().cloned().collect::<Vec<_>>().join(", ")
+                )),
+            });
+        }
+    }
 
     let result = serde_json::json!({
         "summary": args.summary,
         "changed_files": args.changed_files,
         "checks": args.checks,
         "risks": args.risks,
+        "edge_cases_considered": args.edge_cases_considered,
+        "open_questions": args.open_questions,
+        "what_i_did_not_check": args.what_i_did_not_check,
     });
     let thread_id = session.thread_id.to_string();
     let accepted = match args.outcome.as_str() {
         "succeeded" => {
+            if task.kind.is_writable() && args.changed_files.is_empty() {
+                return tool_json(&ReportToolResult {
+                    accepted: false,
+                    reason: Some(
+                        "successful implement and fix reports require at least one attributable changed file"
+                            .to_string(),
+                    ),
+                });
+            }
             if args.evidence.is_empty()
                 || args.evidence.iter().any(|item| item.trim().is_empty())
                 || args.checks.is_empty()
@@ -444,6 +497,20 @@ fn validate_runner_args(args: &RunAgentWorkGraphArgs) -> Result<(), FunctionCall
             "work graph has {} tasks; maximum is {MAX_WORK_GRAPH_TASKS}",
             args.tasks.len()
         )));
+    }
+    for task in &args.tasks {
+        if task.kind.is_writable()
+            && !args.tasks.iter().any(|candidate| {
+                candidate.kind == codex_state::WorkGraphTaskKind::Verify
+                    && candidate.depends_on.contains(&task.id)
+                    && candidate.environment_id == task.environment_id
+            })
+        {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "writable task `{}` requires an independent verification task in the same environment",
+                task.id
+            )));
+        }
     }
     if args.max_concurrency == Some(0) {
         return Err(FunctionCallError::RespondToModel(
@@ -554,9 +621,14 @@ async fn run_scheduler(
                     task_environment_selection(&turn, task.environment_id.as_deref())?;
                 let spawn_config =
                     scoped_spawn_config(&options.spawn_config, &task, &environments[0])?;
-                Ok::<_, anyhow::Error>((prompt, environments, spawn_config))
+                let baseline = task
+                    .kind
+                    .is_writable()
+                    .then(|| snapshot_task_scopes(&task))
+                    .transpose()?;
+                Ok::<_, anyhow::Error>((prompt, environments, spawn_config, baseline))
             })();
-            let (prompt, environments, spawn_config) = match setup {
+            let (prompt, environments, spawn_config, baseline) = match setup {
                 Ok(setup) => setup,
                 Err(err) => {
                     db.mark_work_graph_task_failed(
@@ -608,6 +680,7 @@ async fn run_scheduler(
                     graph_id,
                     task.task_id.as_str(),
                     thread_id.to_string().as_str(),
+                    baseline.as_ref(),
                 )
                 .await;
             match assigned {
@@ -765,25 +838,7 @@ fn tasks_have_write_conflict(
     if first.environment_id != second.environment_id {
         return false;
     }
-    first.write_scopes.iter().any(|first_scope| {
-        second
-            .write_scopes
-            .iter()
-            .any(|second_scope| scopes_overlap(first_scope, second_scope))
-    })
-}
-
-fn scopes_overlap(first: &str, second: &str) -> bool {
-    let first = first.to_ascii_lowercase();
-    let second = second.to_ascii_lowercase();
-    path_prefix(first.as_str(), second.as_str()) || path_prefix(second.as_str(), first.as_str())
-}
-
-fn path_prefix(prefix: &str, path: &str) -> bool {
-    prefix == path
-        || path
-            .strip_prefix(prefix)
-            .is_some_and(|remainder| remainder.starts_with('/'))
+    !first.write_scopes.is_empty() && !second.write_scopes.is_empty()
 }
 
 async fn reap_terminal_and_stale_tasks(
@@ -915,6 +970,7 @@ fn build_worker_prompt(
         "You are a bounded worker in a deterministic Elpis work graph.\n\
 Graph ID: {graph_id}\n\
 Task ID: {task_id}\n\
+Task kind: {task_kind}\n\
 Title: {title}\n\
 Workspace: {workspace}\n\n\
 Instruction:\n{instruction}\n\n\
@@ -927,9 +983,10 @@ Authority limits:\n\
 - Do not modify files outside the declared write scopes.\n\
 - Do not delegate or spawn another agent.\n\
 - Stop after one terminal report.\n\n\
-Before stopping, call `report_agent_work_task` exactly once with graph_id `{graph_id}`, task_id `{task_id}`, outcome `succeeded` or `failed`, a concise summary, repository-relative changed_files, checks, concrete evidence, risks, and failure_reason when failed. A success report without evidence or with out-of-scope files is rejected.",
+Before stopping, call `report_agent_work_task` exactly once with graph_id `{graph_id}`, task_id `{task_id}`, outcome `succeeded` or `failed`, a concise summary, repository-relative changed_files, checks, concrete evidence, risks, edge_cases_considered, open_questions, what_i_did_not_check, and failure_reason when failed. A writable success without changed files, a success without evidence, or a report with out-of-scope files is rejected.",
         graph_id = task.graph_id,
         task_id = task.task_id,
+        task_kind = task.kind.as_str(),
         title = task.title,
         workspace = task
             .workspace_path
@@ -1113,6 +1170,85 @@ fn changed_files_outside_scopes(
         .collect())
 }
 
+fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Value> {
+    let workspace = task
+        .workspace_path
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("task has no native workspace path"))?;
+    let root = Path::new(workspace);
+    let mut files = BTreeMap::<String, String>::new();
+    for scope in &task.write_scopes {
+        let scoped_path = root.join(scope);
+        if !scoped_path.exists() {
+            continue;
+        }
+        snapshot_path(root, &scoped_path, &mut files)?;
+    }
+    Ok(serde_json::to_value(files)?)
+}
+
+fn snapshot_path(
+    root: &Path,
+    path: &Path,
+    files: &mut BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            snapshot_path(root, &entry?.path(), files)?;
+        }
+        return Ok(());
+    }
+    if !metadata.is_file() && !metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    let relative = path
+        .strip_prefix(root)?
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("workspace path is not valid UTF-8"))?
+        .replace('\\', "/");
+    let digest = if metadata.file_type().is_symlink() {
+        Sha256::digest(std::fs::read_link(path)?.to_string_lossy().as_bytes()).to_vec()
+    } else {
+        let mut hasher = Sha256::new();
+        let mut file = std::fs::File::open(path)?;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+        hasher.finalize().to_vec()
+    };
+    files.insert(
+        relative,
+        digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+    );
+    Ok(())
+}
+
+fn changed_paths(baseline: &Value, current: &Value) -> Result<BTreeSet<String>, FunctionCallError> {
+    let baseline: BTreeMap<String, String> =
+        serde_json::from_value(baseline.clone()).map_err(|err| {
+            FunctionCallError::Fatal(format!("invalid persisted work graph baseline: {err}"))
+        })?;
+    let current: BTreeMap<String, String> =
+        serde_json::from_value(current.clone()).map_err(|err| {
+            FunctionCallError::Fatal(format!("invalid current work graph snapshot: {err}"))
+        })?;
+    Ok(baseline
+        .keys()
+        .chain(current.keys())
+        .filter(|path| baseline.get(*path) != current.get(*path))
+        .cloned()
+        .collect())
+}
+
 fn normalize_repo_path(path: &str) -> Result<String, FunctionCallError> {
     let normalized = path.trim().trim_end_matches('/');
     if normalized.is_empty()
@@ -1132,6 +1268,13 @@ fn normalize_repo_path(path: &str) -> Result<String, FunctionCallError> {
         )));
     }
     Ok(normalized.to_string())
+}
+
+fn path_prefix(prefix: &str, path: &str) -> bool {
+    prefix == path
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|remainder| remainder.starts_with('/'))
 }
 
 async fn render_graph_result(
@@ -1160,6 +1303,7 @@ async fn render_graph_result(
             .into_iter()
             .map(|task| WorkGraphTaskToolResult {
                 id: task.task_id,
+                kind: task.kind.as_str().to_string(),
                 status: task.status.as_str().to_string(),
                 assigned_thread_id: task.assigned_thread_id,
                 workspace_path: task.workspace_path,
