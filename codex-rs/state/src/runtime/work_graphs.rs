@@ -594,6 +594,7 @@ INSERT INTO work_graph_events (
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::WorkGraphTaskKind;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
