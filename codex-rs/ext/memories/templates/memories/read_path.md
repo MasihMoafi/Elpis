@@ -38,9 +38,8 @@ Quick memory pass (when applicable):
 2. Search {{ base_path }}/MEMORY.md using those keywords.
 3. If MEMORY.md has no relevant hit, search `raw_memories.md` for recent short-term
    evidence. Do not read the whole file; use targeted terms from the request.
-4. If exact memory searches miss because the wording is unclear, run at most one semantic
-   query with Elpis RAG scoped to `{{ base_path }}`. Treat RAG as discovery only: open the
-   exact returned memory file before relying on it or citing it.
+4. If exact searches miss because the wording is unclear, retry once with looser terms or
+   synonyms across `{{ base_path }}` before giving up.
 5. Only when MEMORY.md or raw_memories.md points to rollout summaries/skills, open the
    1-2 most relevant files under {{ base_path }}/rollout_summaries/ or
    {{ base_path }}/skills/.

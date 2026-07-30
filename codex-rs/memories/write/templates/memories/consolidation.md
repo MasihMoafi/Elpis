@@ -186,8 +186,8 @@ Rules:
 
 - If there is no meaningful signal to add beyond what already exists, keep outputs minimal.
 - Treat `raw_memories.md` as short-term evidence. A new item may enter durable `MEMORY.md`
-  only when its metadata says `promotion_eligible: true` (at least three recalls across at
-  least two distinct query contexts). Ineligible items remain available through raw memory
+  only when its metadata says `promotion_eligible: true`. Trust that flag; do not recompute
+  it from the recall numbers printed beside it. Ineligible items remain available through raw memory
   and rollout summaries; do not promote them merely because they are recent or eloquent.
 - Existing durable memories are reviewed for staleness and evidence as usual; do not delete
   an existing item solely because older metadata lacks the promotion fields.

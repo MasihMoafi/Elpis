@@ -421,3 +421,32 @@ fn ordinary_tool_calls_are_not_scanned_for_slugs() {
     let args = r#"{"command":["cat","/home/u/project/src/main.rs"]}"#;
     assert!(super::rollout_summary_slugs_in(args).is_empty());
 }
+
+/// A memory the model found by searching is named only in the result, never in the call.
+/// Watching calls alone is why recall counts stayed at zero.
+#[test]
+fn a_memory_surfaced_by_a_search_result_is_a_retrieval() {
+    let output = ResponseItem::FunctionCallOutput {
+        id: None,
+        call_id: "call-1".to_string(),
+        output: codex_protocol::models::FunctionCallOutputPayload::from_text(
+            "memories/rollout_summaries/2026-07-26T13-54-10-yZ1q-elpis_state_separation.md:4: ledger"
+                .to_string(),
+        ),
+        internal_chat_message_metadata_passthrough: None,
+    };
+    let text = super::memory_retrieval_text(&output).expect("tool results carry text");
+    assert_eq!(
+        super::rollout_summary_slugs_in(&text),
+        vec!["elpis_state_separation".to_string()]
+    );
+}
+
+#[test]
+fn the_same_retrieval_text_yields_the_same_query_key() {
+    let first = super::retrieval_query_key("search memories for the ledger");
+    let repeat = super::retrieval_query_key("search memories for the ledger");
+    let other = super::retrieval_query_key("search memories for the router");
+    assert_eq!(first, repeat);
+    assert_ne!(first, other);
+}

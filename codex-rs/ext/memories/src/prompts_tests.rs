@@ -26,8 +26,9 @@ async fn build_memory_tool_developer_instructions_renders_embedded_template() {
         memories_dir.display()
     )));
     assert!(instructions.contains("Short memory summary for tests."));
-    assert!(instructions.contains("run at most one semantic"));
-    assert!(instructions.contains("Treat RAG as discovery only"));
+    // RAG was removed; the fallback is a looser retry, not a semantic query.
+    assert!(instructions.contains("retry once with looser terms"));
+    assert!(!instructions.contains("RAG"));
     assert_eq!(
         instructions
             .matches("========= MEMORY_SUMMARY BEGINS =========")

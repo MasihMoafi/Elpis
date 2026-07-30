@@ -49,10 +49,13 @@ impl MemoryStore {
         clear_memory_data_in_pool(self.pool.as_ref()).await
     }
 
-    /// Record usage for cited stage-1 outputs.
+    /// Record a retrieval of stage-1 outputs.
     ///
-    /// Each thread id increments `usage_count` by one and sets `last_usage` to
-    /// the current Unix timestamp. Missing rows are ignored.
+    /// A recall is one distinct retrieval context on one day. The same question
+    /// asked twice in an afternoon is one recall; the same question asked again
+    /// tomorrow is a second. Repeats therefore leave `usage_count` alone, which
+    /// keeps the count a measure of how often a memory was genuinely useful
+    /// rather than of how chatty the session was. Missing rows are ignored.
     pub async fn record_stage1_output_usage(
         &self,
         thread_ids: &[ThreadId],
@@ -63,11 +66,42 @@ impl MemoryStore {
         }
 
         let now = Utc::now().timestamp();
+        let day_bucket = Utc::now().format("%Y-%m-%d").to_string();
+        let query_key = query_key.filter(|value| !value.is_empty());
         let mut tx = self.pool.begin().await?;
         let mut updated_rows = 0;
 
         for thread_id in thread_ids {
             let thread_id = thread_id.to_string();
+
+            // Without a retrieval context there is nothing to deduplicate against, so the
+            // call still counts; that path only remains for callers that cannot name one.
+            let is_first_today = match query_key {
+                Some(query_key) => {
+                    sqlx::query(
+                        r#"
+INSERT OR IGNORE INTO stage1_recall_queries (thread_id, query_key, day_bucket, recalled_at)
+SELECT ?, ?, ?, ?
+WHERE EXISTS (SELECT 1 FROM stage1_outputs WHERE thread_id = ?)
+                        "#,
+                    )
+                    .bind(thread_id.as_str())
+                    .bind(query_key)
+                    .bind(day_bucket.as_str())
+                    .bind(now)
+                    .bind(thread_id.as_str())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        > 0
+                }
+                None => true,
+            };
+
+            if !is_first_today {
+                continue;
+            }
+
             updated_rows += sqlx::query(
                 r#"
 UPDATE stage1_outputs
@@ -82,22 +116,6 @@ WHERE thread_id = ?
             .execute(&mut *tx)
             .await?
             .rows_affected() as usize;
-
-            if let Some(query_key) = query_key.filter(|value| !value.is_empty()) {
-                sqlx::query(
-                    r#"
-INSERT OR IGNORE INTO stage1_recall_queries (thread_id, query_key, recalled_at)
-SELECT ?, ?, ?
-WHERE EXISTS (SELECT 1 FROM stage1_outputs WHERE thread_id = ?)
-                    "#,
-                )
-                .bind(thread_id.as_str())
-                .bind(query_key)
-                .bind(now)
-                .bind(thread_id.as_str())
-                .execute(&mut *tx)
-                .await?;
-            }
         }
 
         tx.commit().await?;
@@ -408,7 +426,7 @@ SELECT
     COALESCE(so.usage_count, 0) AS recall_count,
     so.last_usage,
     (
-        SELECT COUNT(*)
+        SELECT COUNT(DISTINCT rq.query_key)
         FROM stage1_recall_queries AS rq
         WHERE rq.thread_id = so.thread_id
     ) AS unique_query_count
@@ -570,7 +588,7 @@ SELECT
     COALESCE(so.usage_count, 0) AS recall_count,
     so.last_usage,
     (
-        SELECT COUNT(*)
+        SELECT COUNT(DISTINCT rq.query_key)
         FROM stage1_recall_queries AS rq
         WHERE rq.thread_id = so.thread_id
     ) AS unique_query_count
@@ -4459,11 +4477,12 @@ VALUES (?, ?, ?, ?, ?)
                 .expect("mark stage1 succeeded b")
         );
 
+        // `thread_a` appears twice under one query: that is one retrieval, not two.
         let updated_rows = runtime
             .record_stage1_output_usage(&[thread_a, thread_a, thread_b, missing], Some("query-1"))
             .await
             .expect("record stage1 output usage");
-        assert_eq!(updated_rows, 3);
+        assert_eq!(updated_rows, 2);
         runtime
             .record_stage1_output_usage(&[thread_a], Some("query-1"))
             .await
@@ -4486,11 +4505,12 @@ VALUES (?, ?, ?, ?, ?)
                 .await
                 .expect("load stage1 usage row b");
 
+        // One count for `query-1` and one for `query-2`; the repeat of `query-1` adds nothing.
         assert_eq!(
             row_a
                 .try_get::<i64, _>("usage_count")
                 .expect("usage_count a"),
-            4
+            2
         );
         assert_eq!(
             row_b
@@ -4520,6 +4540,88 @@ VALUES (?, ?, ?, ?, ?)
         .expect("count unique queries b");
         assert_eq!(unique_queries_a, 2);
         assert_eq!(unique_queries_b, 1);
+
+        let _ = tokio::fs::remove_dir_all(codex_home).await;
+    }
+
+    /// Needing the same memory again tomorrow is the signal promotion is looking for, so a
+    /// repeat on a later day counts; it is still one question, so it does not widen the
+    /// distinct-query count that the second half of the gate asks for.
+    #[tokio::test]
+    async fn record_stage1_output_usage_counts_the_same_query_again_on_a_later_day() {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+            .await
+            .expect("initialize runtime");
+
+        let thread = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
+        let owner = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
+        runtime
+            .upsert_thread(&test_thread_metadata(
+                &codex_home,
+                thread,
+                codex_home.join("workspace"),
+            ))
+            .await
+            .expect("upsert thread");
+        let claim = runtime
+            .try_claim_stage1_job(
+                thread, owner, /*source_updated_at*/ 100, /*lease_seconds*/ 3600,
+                /*max_running_jobs*/ 64,
+            )
+            .await
+            .expect("claim stage1");
+        let token = match claim {
+            Stage1JobClaimOutcome::Claimed { ownership_token } => ownership_token,
+            other => panic!("unexpected stage1 claim outcome: {other:?}"),
+        };
+        assert!(
+            runtime
+                .mark_stage1_job_succeeded(
+                    thread,
+                    token.as_str(),
+                    /*source_updated_at*/ 100,
+                    "raw",
+                    "sum",
+                    /*rollout_slug*/ None
+                )
+                .await
+                .expect("mark stage1 succeeded")
+        );
+
+        runtime
+            .record_stage1_output_usage(&[thread], Some("query-1"))
+            .await
+            .expect("record first recall");
+        sqlx::query(
+            "UPDATE stage1_recall_queries SET day_bucket = '2000-01-01' WHERE thread_id = ?",
+        )
+        .bind(thread.to_string())
+        .execute(memory_pool(&runtime))
+        .await
+        .expect("age the recall into an earlier day");
+        runtime
+            .record_stage1_output_usage(&[thread], Some("query-1"))
+            .await
+            .expect("record recall on a later day");
+
+        let usage_count = sqlx::query_scalar::<_, i64>(
+            "SELECT usage_count FROM stage1_outputs WHERE thread_id = ?",
+        )
+        .bind(thread.to_string())
+        .fetch_one(memory_pool(&runtime))
+        .await
+        .expect("load usage count");
+        assert_eq!(usage_count, 2);
+
+        let unique_queries = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(DISTINCT query_key) FROM stage1_recall_queries WHERE thread_id = ?",
+        )
+        .bind(thread.to_string())
+        .fetch_one(memory_pool(&runtime))
+        .await
+        .expect("count distinct queries");
+        assert_eq!(unique_queries, 1);
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }

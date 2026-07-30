@@ -143,28 +143,17 @@ pub(crate) async fn record_completed_response_item_with_finalized_facts(
             .await;
     }
     mark_thread_memory_mode_polluted_if_external_context(sess, turn_context, item).await;
-    record_stage1_output_usage_for_summary_reads(
-        sess.services.state_db.as_ref(),
-        item,
-        Some(turn_context.sub_id.as_str()),
-    )
-    .await;
     let has_memory_citation = if let Some(memory_citation) =
         finalized_facts.and_then(|facts| facts.memory_citation.as_ref())
     {
         record_stage1_output_usage_for_memory_citation(
             sess.services.state_db.as_ref(),
             memory_citation,
-            Some(turn_context.sub_id.as_str()),
         )
         .await
     } else {
-        record_stage1_output_usage_and_detect_memory_citation(
-            sess.services.state_db.as_ref(),
-            item,
-            Some(turn_context.sub_id.as_str()),
-        )
-        .await
+        record_stage1_output_usage_and_detect_memory_citation(sess.services.state_db.as_ref(), item)
+            .await
     };
     if has_memory_citation {
         sess.record_memory_citation_for_turn(&turn_context.sub_id)
@@ -211,10 +200,13 @@ pub(crate) fn rollout_summary_slugs_in(text: &str) -> Vec<String> {
 
     let mut slugs = Vec::new();
     for candidate in text.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ',')) {
+        // Search results append `:<line>:` to the filename, so the name is what precedes
+        // `.md` rather than the whole token.
         let Some(stem) = candidate
             .rsplit('/')
             .next()
-            .and_then(|name| name.strip_suffix(".md"))
+            .and_then(|name| name.split_once(".md"))
+            .map(|(stem, _)| stem)
         else {
             continue;
         };
@@ -228,44 +220,71 @@ pub(crate) fn rollout_summary_slugs_in(text: &str) -> Vec<String> {
     slugs
 }
 
-/// Counts a recall when the model reads a memory's rollout summary. This is the
-/// retrieval signal promotion needs: citations alone almost never fire, so recall counts
-/// never reached the promotion threshold.
-async fn record_stage1_output_usage_for_summary_reads(
-    state_db_ctx: Option<&state_db::StateDbHandle>,
-    item: &ResponseItem,
-    query_key: Option<&str>,
-) {
-    let text = match item {
-        ResponseItem::FunctionCall { arguments, .. } => arguments.clone(),
-        ResponseItem::CustomToolCall { input, .. } => input.clone(),
-        _ => return,
-    };
-
-    let slugs = rollout_summary_slugs_in(&text);
-    if slugs.is_empty() {
-        return;
+/// Text in which a memory retrieval can show itself.
+///
+/// Both halves of a tool round-trip qualify. A summary the model asks for by name appears
+/// in the call; a summary that a search or a listing turned up appears only in the result,
+/// and surfacing a memory in a search result is exactly the event openclaw counts as a
+/// recall. Watching calls alone missed every retrieval the model did not already know the
+/// filename for, which is most of them.
+fn memory_retrieval_text(item: &ResponseItem) -> Option<String> {
+    match item {
+        ResponseItem::FunctionCall { arguments, .. } => Some(arguments.clone()),
+        ResponseItem::CustomToolCall { input, .. } => Some(input.clone()),
+        ResponseItem::FunctionCallOutput { output, .. }
+        | ResponseItem::CustomToolCallOutput { output, .. } => output.body.to_text(),
+        _ => None,
     }
+}
 
+/// Identifies the retrieval context so repeats can be told apart from fresh interest.
+///
+/// The text that produced the hit is the closest thing Elpis has to openclaw's query
+/// string: re-running the same command returns the same text, while a different question
+/// produces different text. Only the digest is stored, so nothing the model read is
+/// persisted here.
+fn retrieval_query_key(text: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(text.as_bytes());
+    format!("{digest:x}")
+}
+
+/// Counts a recall when a memory surfaces in a tool call or its result.
+///
+/// Citations alone almost never fire, so before this the recall counts feeding promotion
+/// stayed at zero and nothing could ever become durable.
+pub(crate) async fn record_stage1_output_usage_for_retrieval(
+    state_db_ctx: Option<&state_db::StateDbHandle>,
+    items: &[ResponseItem],
+) {
     let Some(db) = state_db_ctx else {
         return;
     };
-    let Ok(thread_ids) = db.memories().thread_ids_for_rollout_slugs(&slugs).await else {
-        return;
-    };
-    if thread_ids.is_empty() {
-        return;
+
+    for item in items {
+        let Some(text) = memory_retrieval_text(item) else {
+            continue;
+        };
+        let slugs = rollout_summary_slugs_in(&text);
+        if slugs.is_empty() {
+            continue;
+        }
+        let Ok(thread_ids) = db.memories().thread_ids_for_rollout_slugs(&slugs).await else {
+            continue;
+        };
+        if thread_ids.is_empty() {
+            continue;
+        }
+        let _ = db
+            .memories()
+            .record_stage1_output_usage(&thread_ids, Some(&retrieval_query_key(&text)))
+            .await;
     }
-    let _ = db
-        .memories()
-        .record_stage1_output_usage(&thread_ids, query_key)
-        .await;
 }
 
 async fn record_stage1_output_usage_and_detect_memory_citation(
     state_db_ctx: Option<&state_db::StateDbHandle>,
     item: &ResponseItem,
-    query_key: Option<&str>,
 ) -> bool {
     let Some(raw_text) = raw_assistant_output_text_from_item(item) else {
         return false;
@@ -275,13 +294,12 @@ async fn record_stage1_output_usage_and_detect_memory_citation(
     let Some(memory_citation) = parse_memory_citation(citations) else {
         return false;
     };
-    record_stage1_output_usage_for_memory_citation(state_db_ctx, &memory_citation, query_key).await
+    record_stage1_output_usage_for_memory_citation(state_db_ctx, &memory_citation).await
 }
 
 async fn record_stage1_output_usage_for_memory_citation(
     state_db_ctx: Option<&state_db::StateDbHandle>,
     memory_citation: &MemoryCitation,
-    query_key: Option<&str>,
 ) -> bool {
     let thread_ids = thread_ids_from_memory_citation(memory_citation);
     if thread_ids.is_empty() {
@@ -289,9 +307,12 @@ async fn record_stage1_output_usage_for_memory_citation(
     }
 
     if let Some(db) = state_db_ctx {
+        // What the model cited is the retrieval context here; two answers leaning on the
+        // same memory for the same reason on one day are one recall, not two.
+        let cited = memory_citation.rollout_ids.join("\n");
         let _ = db
             .memories()
-            .record_stage1_output_usage(&thread_ids, query_key)
+            .record_stage1_output_usage(&thread_ids, Some(&retrieval_query_key(&cited)))
             .await;
     }
     true

@@ -192,8 +192,8 @@ use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::exec_output::StreamOutput;
 
-mod code_mode_warning;
 mod auto_model_routing;
+mod code_mode_warning;
 mod config_lock;
 mod context_prune;
 mod context_prune_audit;
@@ -2726,6 +2726,13 @@ impl Session {
             );
         }
         self.persist_rollout_response_items(items).await;
+        // Every tool result passes through here, which is the only place a memory surfaced
+        // by a search rather than named by the model can be seen.
+        crate::stream_events_utils::record_stage1_output_usage_for_retrieval(
+            self.services.state_db.as_ref(),
+            items,
+        )
+        .await;
         self.send_raw_response_items(turn_context, items).await;
     }
 
