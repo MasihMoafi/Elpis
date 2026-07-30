@@ -8,8 +8,8 @@ independent verification. It contains three negative checks:
 3. Two writable tasks target one environment. They must not become runnable together,
    even when their declared paths do not overlap.
 
-The checks were added at commit `067046e` and run against the then-current engine. All
-three failed. The production change at `14f1c6a` makes all three pass. The raw values are
+The checks were added at commit `f77d53f` and run against the then-current engine. All
+three failed. The production change at `750a0e8` makes all three pass. The raw values are
 in [results.csv](results.csv); the chart is generated from that file, not edited by
 hand.
 
