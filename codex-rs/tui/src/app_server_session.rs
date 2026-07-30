@@ -107,6 +107,8 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
+use codex_app_server_protocol::WorkGraphListParams;
+use codex_app_server_protocol::WorkGraphListResponse;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::GuardianAssessmentEvent;
@@ -664,6 +666,22 @@ impl AppServerSession {
             .await
             .wrap_err("thread/read failed during TUI session lookup")?;
         Ok(response.thread)
+    }
+
+    pub(crate) async fn work_graph_list(
+        &mut self,
+        root_thread_id: ThreadId,
+    ) -> Result<WorkGraphListResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::WorkGraphList {
+                request_id,
+                params: WorkGraphListParams {
+                    root_thread_id: root_thread_id.to_string(),
+                },
+            })
+            .await
+            .wrap_err("workGraph/list failed during agent graph lookup")
     }
 
     pub(crate) async fn thread_archive(&mut self, thread_id: ThreadId) -> Result<()> {

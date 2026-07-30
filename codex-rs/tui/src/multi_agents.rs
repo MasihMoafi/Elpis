@@ -14,6 +14,7 @@ use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::WorkGraphSummary;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use crossterm::event::KeyCode;
@@ -71,6 +72,108 @@ struct AgentLabel<'a> {
 pub(crate) struct SpawnRequestSummary {
     pub(crate) model: String,
     pub(crate) reasoning_effort: ReasoningEffortConfig,
+}
+
+pub(crate) fn work_graph_history_cell(graph: &WorkGraphSummary) -> PlainHistoryCell {
+    let mut lines = vec![Line::from(vec![
+        "Work graph ".bold(),
+        Span::from(graph.name.clone()).bold(),
+        Span::from(format!(" [{}]", graph.status)).dim(),
+    ])];
+    for (index, task) in graph.tasks.iter().enumerate() {
+        let branch = if index + 1 == graph.tasks.len() {
+            "└─ "
+        } else {
+            "├─ "
+        };
+        let status = match task.status.as_str() {
+            "succeeded" => "✓".green(),
+            "failed" | "blocked" | "cancelled" => "✕".red(),
+            "running" => "●".yellow(),
+            _ => "○".dim(),
+        };
+        lines.push(Line::from(vec![
+            Span::from(branch).dim(),
+            status,
+            " ".into(),
+            Span::from(task.kind.clone()).cyan(),
+            " ".into(),
+            Span::from(task.title.clone()),
+        ]));
+        if let Some(summary) = task
+            .result
+            .as_ref()
+            .and_then(|result| result.get("summary"))
+            .and_then(serde_json::Value::as_str)
+        {
+            lines.push(Line::from(vec![
+                "   summary: ".dim(),
+                Span::from(summary.to_string()),
+            ]));
+        }
+        for (label, field) in [
+            ("changed", "changed_files"),
+            ("checks", "checks"),
+            ("risks", "risks"),
+            ("questions", "open_questions"),
+        ] {
+            if let Some(values) = task
+                .result
+                .as_ref()
+                .and_then(|result| result.get(field))
+                .and_then(serde_json::Value::as_array)
+            {
+                let values = values
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect::<Vec<_>>();
+                if !values.is_empty() {
+                    lines.push(Line::from(vec![
+                        Span::from(format!("   {label}: ")).dim(),
+                        Span::from(values.join("; ")),
+                    ]));
+                }
+            }
+        }
+        for evidence in &task.evidence {
+            lines.push(Line::from(vec![
+                "   evidence: ".dim(),
+                Span::from(evidence.clone()),
+            ]));
+        }
+        if let Some(unchecked) = task
+            .result
+            .as_ref()
+            .and_then(|result| result.get("what_i_did_not_check"))
+            .and_then(serde_json::Value::as_array)
+        {
+            let unchecked = unchecked
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>();
+            lines.push(Line::from(vec![
+                "   unchecked: ".dim(),
+                Span::from(if unchecked.is_empty() {
+                    "none reported".to_string()
+                } else {
+                    unchecked.join("; ")
+                }),
+            ]));
+        }
+        if let Some(reason) = task.failure_reason.as_deref() {
+            lines.push(Line::from(vec![
+                "   failure: ".red(),
+                Span::from(reason.to_string()),
+            ]));
+        }
+    }
+    if let Some(error) = graph.error.as_deref() {
+        lines.push(Line::from(vec![
+            "Graph error: ".red(),
+            Span::from(error.to_string()),
+        ]));
+    }
+    PlainHistoryCell::new(lines)
 }
 
 pub(crate) fn agent_picker_status_dot_spans(is_closed: bool) -> Vec<Span<'static>> {
@@ -674,6 +777,37 @@ mod tests {
     use ratatui::style::Color;
     use ratatui::style::Modifier;
     use std::collections::HashMap;
+
+    #[test]
+    fn accountable_work_graph_renders_evidence_and_unchecked_work() {
+        let graph = WorkGraphSummary {
+            id: "graph-1".to_string(),
+            name: "Accountable change".to_string(),
+            status: "failed".to_string(),
+            max_concurrency: 2,
+            error: Some("verification failed".to_string()),
+            event_count: 6,
+            tasks: vec![codex_app_server_protocol::WorkGraphTaskSummary {
+                id: "implement".to_string(),
+                kind: "implement".to_string(),
+                title: "Implement behavior".to_string(),
+                status: "succeeded".to_string(),
+                dependencies: Vec::new(),
+                assigned_thread_id: Some("00000000-0000-0000-0000-000000000002".to_string()),
+                result: Some(serde_json::json!({
+                    "what_i_did_not_check": ["production data"]
+                })),
+                evidence: vec!["focused test passed".to_string()],
+                failure_reason: None,
+            }],
+        };
+        let rendered = cell_to_text(&work_graph_history_cell(&graph));
+        assert!(rendered.contains("Work graph Accountable change [failed]"));
+        assert!(rendered.contains("implement Implement behavior"));
+        assert!(rendered.contains("evidence: focused test passed"));
+        assert!(rendered.contains("unchecked: production data"));
+        assert!(rendered.contains("Graph error: verification failed"));
+    }
 
     #[test]
     fn collab_events_snapshot() {

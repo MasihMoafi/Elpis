@@ -641,6 +641,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadReadResponse,
     },
+    WorkGraphList => "workGraph/list" {
+        params: v2::WorkGraphListParams,
+        serialization: thread_id(params.root_thread_id),
+        response: v2::WorkGraphListResponse,
+    },
     #[experimental("thread/turns/list")]
     ThreadTurnsList => "thread/turns/list" {
         params: v2::ThreadTurnsListParams,

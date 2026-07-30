@@ -16,6 +16,22 @@ pub(super) enum ThreadAttachPresentation {
 impl App {
     pub(super) async fn open_agent_picker(&mut self, app_server: &mut AppServerSession) {
         self.backfill_loaded_subagent_threads(app_server).await;
+        if let Some(root_thread_id) = self.primary_thread_id {
+            match app_server.work_graph_list(root_thread_id).await {
+                Ok(response) => {
+                    if let Some(graph) = response.data.first() {
+                        self.chat_widget
+                            .add_to_history(crate::multi_agents::work_graph_history_cell(graph));
+                    }
+                }
+                Err(err) => {
+                    self.chat_widget.add_info_message(
+                        format!("Unable to load accountable work graph: {err}"),
+                        /*hint*/ None,
+                    );
+                }
+            }
+        }
         // V2 subagents are identified by canonical paths observed from activity events or loaded
         // thread metadata. Prefer local buffered turn state for liveness, and fall back to
         // thread/read only when no local event channel exists.

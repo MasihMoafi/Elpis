@@ -130,6 +130,26 @@ WHERE id = ?
         row.map(WorkGraph::try_from).transpose()
     }
 
+    pub async fn list_work_graphs_for_root(
+        &self,
+        root_thread_id: &str,
+    ) -> anyhow::Result<Vec<WorkGraph>> {
+        let rows = sqlx::query_as::<_, WorkGraphRow>(
+            r#"
+SELECT
+    id, root_thread_id, name, status, max_concurrency,
+    created_at_ms, updated_at_ms, started_at_ms, completed_at_ms, last_error
+FROM work_graphs
+WHERE root_thread_id = ?
+ORDER BY created_at_ms DESC, id ASC
+            "#,
+        )
+        .bind(root_thread_id)
+        .fetch_all(self.pool.as_ref())
+        .await?;
+        rows.into_iter().map(WorkGraph::try_from).collect()
+    }
+
     pub async fn list_work_graph_tasks(
         &self,
         graph_id: &str,
@@ -644,6 +664,23 @@ mod tests {
         assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[1].dependencies, vec!["foundation"]);
         assert_eq!(tasks[0].write_scopes, vec!["src/core"]);
+        assert_eq!(
+            runtime
+                .list_work_graphs_for_root("root-thread")
+                .await
+                .expect("graphs for root")
+                .into_iter()
+                .map(|graph| graph.id)
+                .collect::<Vec<_>>(),
+            vec!["graph-1"]
+        );
+        assert!(
+            runtime
+                .list_work_graphs_for_root("another-root")
+                .await
+                .expect("graphs for another root")
+                .is_empty()
+        );
 
         let events = runtime
             .list_work_graph_events(graph.id.as_str())
