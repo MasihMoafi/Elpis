@@ -47,9 +47,9 @@ The installer picks the right binary for your machine and also installs
 [RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
 choose a provider and sign in or enter its API key.
 
-`v0.1.1` is the latest published release. The redesigned `/prune`, automatic pressure
-policy, and accountable work graphs described below are implemented on `main` but still
-await Masih's functional acceptance before the next release.
+`v0.1.1` is the latest published release. The redesigned `/prune` and automatic pressure
+policy described below are implemented on `main` but still await Masih's functional
+acceptance before the next release.
 
 ## What is Elpis
 
@@ -136,22 +136,6 @@ Example end state — Codex:
 
 Goal and checkpoint state survive compaction, model switches, and restarts, so work resumes without replaying the transcript. Exact conversations, terminal events, and artifacts remain on disk as durable evidence.
 
-### Accountable work graphs
-
-The under-development `enable_fanout` feature adds a persisted task graph above the
-inherited agent lineage graph. Tasks have explicit `explore`, `implement`, `verify`, or
-`fix` roles. Elpis measures changed files, rejects incomplete worker reports, requires a
-direct verifier for every writable task, and prevents concurrent writers in one
-environment. `/agent` shows the graph, checks, evidence, risks, open questions, and
-unchecked work alongside the inherited agent tree.
-
-![Accountable work-graph negative checks](docs/assets/accountable-work-graph-eval.svg)
-
-[Data, test names, limits, and reproduction commands](docs/evals/accountable-work-graphs/README.md)
-
-The feature remains off by default and awaits Masih's functional acceptance. See
-[the contract and current boundary](docs/WORK_GRAPHS.md).
-
 ### Memory with provenance
 
 Reusable memory is designed to be selective, size-capped, and attributable. It ships
@@ -185,7 +169,6 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 - [Context and pruning](docs/context.md) — the four context-control layers and the Context Ledger
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
 - [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
-- [Work graphs](docs/WORK_GRAPHS.md) — deterministic dispatch, attribution, verification, and current limits
 - [Evals](docs/evals/) — source data, reproducible scorers, and publication gates
 - [Providers](docs/providers.md) — every supported route, including local inference
 - [Workspace retrieval](docs/rag.md) — how to plug in semantic search over your own documents
