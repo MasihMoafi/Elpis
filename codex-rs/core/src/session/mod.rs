@@ -629,7 +629,11 @@ impl Session {
         );
         let mut provider = config.model_provider.clone();
         let initial_model = collaboration_mode.model();
-        if initial_model.contains('/')
+        if config.model_provider_id == "anthropic" || (initial_model.starts_with("claude") && !initial_model.contains('/')) {
+            provider = codex_model_provider_info::ModelProviderInfo::create_anthropic_provider();
+        } else if config.model_provider_id == "gemini" || (initial_model.starts_with("gemini") && !initial_model.contains('/')) {
+            provider = codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider();
+        } else if initial_model.contains('/')
             || initial_model.contains(":free")
             || !codex_model_provider_info::openrouter_free_fallback_candidates(initial_model).is_empty()
         {

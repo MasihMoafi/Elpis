@@ -246,13 +246,19 @@ impl SessionConfiguration {
                 });
         if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
             let model = collaboration_mode.model();
-            if model.contains('/')
+            if model.starts_with("claude") && !model.contains('/') {
+                next_configuration.provider =
+                    codex_model_provider_info::ModelProviderInfo::create_anthropic_provider();
+            } else if model.starts_with("gemini") && !model.contains('/') {
+                next_configuration.provider =
+                    codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider();
+            } else if model.contains('/')
                 || model.contains(":free")
                 || !codex_model_provider_info::openrouter_free_fallback_candidates(model).is_empty()
             {
                 next_configuration.provider =
                     codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
-            } else if next_configuration.provider.is_openrouter() {
+            } else if !next_configuration.provider.is_openai() {
                 next_configuration.provider =
                     codex_model_provider_info::ModelProviderInfo::create_openai_provider(None);
             }
