@@ -245,6 +245,17 @@ impl SessionConfiguration {
                         )
                 });
         if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
+            let model = collaboration_mode.model();
+            if model.contains('/')
+                || model.contains(":free")
+                || !codex_model_provider_info::openrouter_free_fallback_candidates(model).is_empty()
+            {
+                next_configuration.provider =
+                    codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
+            } else if next_configuration.provider.is_openrouter() {
+                next_configuration.provider =
+                    codex_model_provider_info::ModelProviderInfo::create_openai_provider(None);
+            }
             next_configuration.collaboration_mode = collaboration_mode;
         }
         if let Some(summary) = updates.reasoning_summary {

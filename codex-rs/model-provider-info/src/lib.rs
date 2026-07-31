@@ -460,16 +460,14 @@ impl ModelProviderInfo {
     pub fn api_key(&self) -> CodexResult<Option<String>> {
         match &self.env_key {
             Some(env_key) => {
-                let api_key = std::env::var(env_key)
-                    .ok()
-                    .filter(|v| !v.trim().is_empty())
-                    .ok_or_else(|| {
-                        CodexErr::EnvVar(EnvVarError {
-                            var: env_key.clone(),
-                            instructions: self.env_key_instructions.clone(),
-                        })
-                    })?;
-                Ok(Some(api_key))
+                let val = std::env::var(env_key).ok().filter(|v| !v.trim().is_empty());
+                if val.is_none() && self.requires_openai_auth {
+                    return Err(CodexErr::EnvVar(EnvVarError {
+                        var: env_key.clone(),
+                        instructions: self.env_key_instructions.clone(),
+                    }));
+                }
+                Ok(val)
             }
             None => Ok(None),
         }
@@ -664,6 +662,10 @@ impl ModelProviderInfo {
 
     pub fn is_amazon_bedrock(&self) -> bool {
         self.name == AMAZON_BEDROCK_PROVIDER_NAME
+    }
+
+    pub fn is_openrouter(&self) -> bool {
+        self.name == OPENROUTER_PROVIDER_NAME
     }
 
     pub fn supports_remote_compaction(&self) -> bool {

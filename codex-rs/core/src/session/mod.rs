@@ -627,10 +627,18 @@ impl Session {
             fast_mode_enabled,
             &model_info,
         );
+        let mut provider = config.model_provider.clone();
+        let initial_model = collaboration_mode.model();
+        if initial_model.contains('/')
+            || initial_model.contains(":free")
+            || !codex_model_provider_info::openrouter_free_fallback_candidates(initial_model).is_empty()
+        {
+            provider = codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
+        }
         let service_tier =
             get_service_tier(config.service_tier.clone(), fast_mode_enabled, &model_info);
         let session_configuration = SessionConfiguration {
-            provider: config.model_provider.clone(),
+            provider,
             collaboration_mode,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
