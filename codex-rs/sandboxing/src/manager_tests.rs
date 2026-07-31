@@ -106,6 +106,7 @@ fn unsandboxed_transform_preserves_foreign_cwd_and_unrestricted_file_system_poli
             use_legacy_landlock: false,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             windows_sandbox_private_desktop: false,
+            arg0: None,
         })
         .expect("transform");
 
@@ -162,6 +163,7 @@ fn transform_additional_permissions_enable_network_for_external_sandbox() {
             use_legacy_landlock: false,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             windows_sandbox_private_desktop: false,
+            arg0: None,
         })
         .expect("transform");
 
@@ -233,6 +235,7 @@ fn transform_additional_permissions_preserves_denied_entries() {
             use_legacy_landlock: false,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             windows_sandbox_private_desktop: false,
+            arg0: None,
         })
         .expect("transform");
 
@@ -331,6 +334,7 @@ fn transform_linux_seccomp_request(
             use_legacy_landlock: false,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             windows_sandbox_private_desktop: false,
+            arg0: None,
         })
         .expect("transform")
 }
@@ -524,6 +528,7 @@ fn transform_for_direct_spawn_windows_materializes_inner_helper() {
                     use_legacy_landlock: false,
                     windows_sandbox_level: WindowsSandboxLevel::Elevated,
                     windows_sandbox_private_desktop: false,
+                    arg0: None,
                 },
             },
             codex_home.path(),

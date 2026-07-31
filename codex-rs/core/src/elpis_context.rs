@@ -91,6 +91,24 @@ fn goal_is_complete(goal_path: &Path) -> bool {
         })
 }
 
+/// True when `ES.md` records a finished or failed session checkpoint.
+fn checkpoint_is_complete(checkpoint_path: &Path) -> bool {
+    let Ok(contents) = std::fs::read_to_string(checkpoint_path) else {
+        return false;
+    };
+    contents
+        .lines()
+        .take(12)
+        .filter_map(|line| line.trim().strip_prefix("- Status:"))
+        .any(|status| {
+            let status = status.trim();
+            status.eq_ignore_ascii_case("complete")
+                || status.eq_ignore_ascii_case("completed")
+                || status.eq_ignore_ascii_case("failed")
+                || status.eq_ignore_ascii_case("abandoned")
+        })
+}
+
 pub fn workspace_context_dir(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
     let elpis_home = memories_root?.parent()?;
     Some(
@@ -281,12 +299,13 @@ pub fn continuity_sources(
     let checkpoint_path = workspace_dir.join("ES.md");
     // ES.md sits with GOAL.md, not under evidence. Both exist to carry the session
     // forward; neither is a tool observation, which is what the evidence category means.
+    let checkpoint_admitted = admission.checkpoint && !checkpoint_is_complete(&checkpoint_path);
     if let Some(source) = existing_file_source(
         "ES.md".to_string(),
         checkpoint_path.clone(),
         ContinuitySourceCategory::Files,
         "lean session checkpoint",
-        admission.checkpoint,
+        checkpoint_admitted,
     ) {
         if let Ok(canonical) = checkpoint_path.canonicalize() {
             canonical_paths.insert(canonical);

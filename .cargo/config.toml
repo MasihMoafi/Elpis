@@ -1,0 +1,18 @@
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "target-feature=+crt-static"]
+
+# MSVC emits a warning about code that may trip "Cortex-A53 MPCore processor bug #843419" (see
+# https://developer.arm.com/documentation/epm048406/latest) which is sometimes emitted by LLVM.
+# Since Arm64 Windows 10+ isn't supported on that processor, it's safe to disable the warning.
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "link-arg=/arm64hazardfree"]
+
+[target.'cfg(all(windows, target_env = "gnu"))']
+rustflags = ["-C", "link-arg=-Wl,--stack,8388608"]
+
+# Debug test binaries carry large async state machines, and the default 2 MiB thread
+# stack overflows on the context-pruning integration suite before it can assert
+# anything. The tests are sound; the stack was not. Raising it here keeps `cargo test`
+# working without every caller having to remember the environment variable.
+[env]
+RUST_MIN_STACK = "16777216"

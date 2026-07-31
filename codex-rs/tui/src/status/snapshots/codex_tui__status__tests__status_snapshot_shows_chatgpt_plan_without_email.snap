@@ -1,15 +1,16 @@
 ---
 source: tui/src/status/tests.rs
+assertion_line: 385
 expression: sanitized
 ---
 /usage
 
-╭──────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.0)                                                           │
-│  Model          : gpt-5.1-codex-max (reasoning none, summaries auto)         │
-│  Directory      : /workspace/tests                                           │
-│  Permissions    : Custom (workspace with network access, Ask for approval)   │
-│  Account        : Enterprise                                                 │
-│  Context pruning: ~0 tokens saved — 0 Ace passes                             │
-│  Limits         : data not available yet                                     │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────────────────────────────────╮
+│  >_ Elpis (v0.1.1)                                                         │
+│  Model          : gpt-5.1-codex-max (reasoning none, summaries auto)       │
+│  Directory      : /workspace/tests                                         │
+│  Permissions    : Custom (workspace with network access, Ask for approval) │
+│  Account        : Enterprise                                               │
+│  Context pruning: ~0 tokens saved — 0 Ace passes                           │
+│  Limits         : data not available yet                                   │
+╰────────────────────────────────────────────────────────────────────────────╯

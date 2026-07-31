@@ -73,6 +73,7 @@ pub(crate) async fn clear_goal(
     cwd: &Path,
     thread_id: &str,
 ) -> Result<Option<PathBuf>> {
+    let _ = clear_session_checkpoint(memories_root, cwd).await;
     let Some(goal_path) = goal_path(memories_root, cwd) else {
         return Ok(None);
     };
@@ -91,6 +92,24 @@ pub(crate) async fn clear_goal(
         .await
         .with_context(|| format!("remove Elpis goal file {}", goal_path.display()))?;
     Ok(Some(goal_path))
+}
+
+pub(crate) async fn clear_session_checkpoint(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+) -> Result<Option<PathBuf>> {
+    let Some(workspace_dir) = workspace_dir(memories_root, cwd) else {
+        return Ok(None);
+    };
+    let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
+    if checkpoint_path.exists() {
+        tokio::fs::remove_file(&checkpoint_path)
+            .await
+            .with_context(|| format!("remove Elpis checkpoint file {}", checkpoint_path.display()))?;
+        Ok(Some(checkpoint_path))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Rebuild a completed turn from streamed `ItemCompleted` items.

@@ -278,7 +278,7 @@ async fn try_stream_prune_pass(
             &prompt,
             &model_info,
             &turn_context.session_telemetry,
-            Some(ReasoningEffort::Low),
+            Some(ReasoningEffort::High),
             turn_context.reasoning_summary,
             turn_context.config.service_tier.clone(),
             &responses_metadata,
