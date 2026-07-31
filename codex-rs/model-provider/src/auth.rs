@@ -220,6 +220,10 @@ pub(crate) fn resolve_provider_auth(
         return Ok(Arc::new(auth));
     }
 
+    if !provider.requires_openai_auth {
+        return Ok(unauthenticated_auth_provider());
+    }
+
     Ok(match auth {
         Some(auth) => auth_provider_from_auth(auth),
         None => unauthenticated_auth_provider(),
