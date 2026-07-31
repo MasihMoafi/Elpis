@@ -46,6 +46,50 @@ Elpis maintains a **Provider-Neutral Architecture**: Elpis owns context admissio
 
 ---
 
+## 2.1 Bring Your Own Key (BYOK) & Zero-API Local Testing
+
+Elpis supports **Bring Your Own Key (BYOK)** across all major foundation providers and local engines. Setting environment variables or selecting model IDs dynamically switches active provider routing and UI display.
+
+### 1. Bring Your Own Key (BYOK) Setup
+
+- **Anthropic / Claude:**
+  ```bash
+  export ANTHROPIC_API_KEY="sk-ant-..."
+  elpis --model claude-3-7-sonnet-20250219
+  ```
+- **OpenRouter (All Models / Universal Routing):**
+  ```bash
+  export OPENROUTER_API_KEY="sk-or-..."
+  elpis --model anthropic/claude-3.7-sonnet
+  ```
+- **Google Gemini:**
+  ```bash
+  export GEMINI_API_KEY="..."
+  elpis --model-provider google-gemini --model gemini-2.5-pro
+  ```
+- **OpenAI API Key:**
+  ```bash
+  export OPENAI_API_KEY="sk-proj-..."
+  elpis --model gpt-4o
+  ```
+
+### 2. Testing UI Model Banner Without Paid API Keys
+
+You can verify model switching, UI model banner rendering, and TUI state changes without an active paid API key using any of the following:
+
+1. **Local Engines (Ollama / LMStudio - No API Key Required):**
+   ```bash
+   elpis --model-provider ollama --model llama3
+   # or
+   elpis --model-provider lmstudio --model local-model
+   ```
+2. **OpenRouter Free Tier Models:**
+   ```bash
+   elpis --model tencent/hy3:free
+   ```
+3. **Interactive TUI Model Picker:**
+   Inside Elpis, type `/model` at any time to open the model & reasoning tier picker and verify that the active model name updates immediately in the upper header banner.
+
 ## 3. Provider Wire Protocol Translation
 
 Elpis translates canonical turn objects into vendor-native HTTP payloads and translates vendor stream chunks back into unified `ResponseEvent` streams (`codex-rs/core/src/chat_completions.rs`):

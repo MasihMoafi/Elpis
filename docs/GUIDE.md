@@ -439,11 +439,8 @@ terminal interface. The selected provider owns inference. Provider changes must 
 discard the Elpis state around them, and a native-provider selection must never be
 redirected through another provider.
 
-Routes, credentials, wire-protocol translation, compatibility aliases, protocol
-limitations, and the manual smoke tests all live in [providers.md](providers.md).
-Elpis's native provider IDs never install an OpenRouter model override; the
-`claude`, `gemini`, and `gemini-flash` launcher values are compatibility aliases
-that deliberately route through OpenRouter.
+Routes, credentials, Bring Your Own Key (BYOK) setup, wire-protocol translation, compatibility aliases, protocol limitations, and manual smoke tests all live in [providers.md](providers.md).
+Elpis supports native provider routing for OpenAI (`OPENAI_API_KEY`), Anthropic (`ANTHROPIC_API_KEY`), Google Gemini (`GEMINI_API_KEY`), OpenRouter (`OPENROUTER_API_KEY`), Amazon Bedrock, and zero-key local engines (`ollama` / `lmstudio`). Elpis's native provider IDs never install an OpenRouter model override; the `claude`, `gemini`, and `gemini-flash` launcher values are compatibility aliases that deliberately route through OpenRouter.
 
 ## Context Contract
 
