@@ -123,7 +123,6 @@ pub const AMAZON_BEDROCK_DEFAULT_BASE_URL: &str =
     "https://bedrock-mantle.us-east-1.api.aws/openai/v1";
 const AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_HEADER: &str = "x-amzn-mantle-client-agent";
 const AMAZON_BEDROCK_MANTLE_CLIENT_AGENT_VALUE: &str = "codex";
-const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
 
@@ -138,6 +137,8 @@ pub enum WireApi {
     AnthropicMessages,
     /// Google's native Gemini `streamGenerateContent` API.
     GeminiGenerateContent,
+    /// Standard OpenAI Chat Completions API at `/v1/chat/completions`.
+    Chat,
 }
 
 impl fmt::Display for WireApi {
@@ -146,6 +147,7 @@ impl fmt::Display for WireApi {
             Self::Responses => "responses",
             Self::AnthropicMessages => "anthropic_messages",
             Self::GeminiGenerateContent => "gemini_generate_content",
+            Self::Chat => "chat",
         };
         f.write_str(value)
     }
@@ -161,10 +163,15 @@ impl<'de> Deserialize<'de> for WireApi {
             "responses" => Ok(Self::Responses),
             "anthropic_messages" => Ok(Self::AnthropicMessages),
             "gemini_generate_content" => Ok(Self::GeminiGenerateContent),
-            "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
+            "chat" | "chat_completions" => Ok(Self::Chat),
             _ => Err(serde::de::Error::unknown_variant(
                 &value,
-                &["responses", "anthropic_messages", "gemini_generate_content"],
+                &[
+                    "responses",
+                    "anthropic_messages",
+                    "gemini_generate_content",
+                    "chat",
+                ],
             )),
         }
     }
@@ -264,7 +271,7 @@ pub fn provider_metadata(provider_id: &str) -> Option<ProviderMetadata> {
             display_name: OPENROUTER_PROVIDER_NAME,
             api_base_url: OPENROUTER_BASE_URL,
             environment_variable: Some("OPENROUTER_API_KEY"),
-            wire_protocol: WireApi::Responses,
+            wire_protocol: WireApi::Chat,
             default_model: "openai/gpt-5.4",
         }),
         ANTHROPIC_PROVIDER_ID => Some(ProviderMetadata {
@@ -544,7 +551,7 @@ impl ModelProviderInfo {
             experimental_bearer_token: None,
             auth: None,
             aws: None,
-            wire_api: WireApi::Responses,
+            wire_api: WireApi::Chat,
             query_params: None,
             http_headers: Some(HashMap::from([(
                 "X-OpenRouter-Title".to_string(),

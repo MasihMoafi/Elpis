@@ -304,7 +304,7 @@ fn api_key_auth_provider(wire_api: WireApi, api_key: String) -> SharedAuthProvid
             HeaderName::from_static("x-goog-api-key"),
             api_key,
         )),
-        WireApi::Responses => Arc::new(BearerAuthProvider::new(api_key)),
+        WireApi::Responses | WireApi::Chat => Arc::new(BearerAuthProvider::new(api_key)),
     }
 }
 

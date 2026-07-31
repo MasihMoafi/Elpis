@@ -49,6 +49,10 @@ pub(crate) async fn stream_native_request(
                 gemini_request(&request)?,
             )
         }
+        WireApi::Chat => (
+            "chat/completions".to_string(),
+            chat_completions_request(&request)?,
+        ),
         WireApi::Responses => {
             return Err(ApiError::InvalidRequest {
                 message: "native provider adapter called for the Responses protocol".to_string(),
@@ -111,6 +115,9 @@ pub(crate) async fn stream_native_request(
             }
             WireApi::GeminiGenerateContent => {
                 stream_gemini_events(&mut events, &tx, idle_timeout).await
+            }
+            WireApi::Chat => {
+                stream_chat_completions_events(&mut events, &tx, idle_timeout).await
             }
             WireApi::Responses => unreachable!("validated before spawning stream"),
         };
@@ -901,6 +908,184 @@ fn gemini_end_turn(reason: Option<&str>) -> Option<bool> {
         ) => Some(false),
         Some(_) | None => None,
     }
+}
+
+fn chat_completions_request(request: &ResponsesApiRequest) -> Result<Value, ApiError> {
+    let mut messages = Vec::<Value>::new();
+
+    if !request.instructions.trim().is_empty() {
+        messages.push(json!({
+            "role": "system",
+            "content": request.instructions.trim(),
+        }));
+    }
+
+    for item in &request.input {
+        match item {
+            ResponseItem::Message { role, content, .. } => {
+                let text = content_text(content)?;
+                if !text.is_empty() {
+                    let mapped_role = match role.as_str() {
+                        "developer" => "system",
+                        r => r,
+                    };
+                    messages.push(json!({
+                        "role": mapped_role,
+                        "content": text,
+                    }));
+                }
+            }
+            ResponseItem::FunctionCall {
+                name,
+                arguments,
+                call_id,
+                ..
+            } => {
+                messages.push(json!({
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": arguments,
+                        }
+                    }]
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    let mut body = json!({
+        "model": request.model,
+        "messages": messages,
+        "stream": true,
+        "stream_options": { "include_usage": true }
+    });
+
+    if let Some(tools) = request.tools.as_deref()
+        && !tools.is_empty()
+    {
+        let declarations = translate_gemini_tools(tools)?;
+        let openai_tools: Vec<Value> = declarations
+            .into_iter()
+            .map(|decl| {
+                json!({
+                    "type": "function",
+                    "function": decl
+                })
+            })
+            .collect();
+        body["tools"] = json!(openai_tools);
+    }
+
+    Ok(body)
+}
+
+async fn stream_chat_completions_events<S>(
+    events: &mut S,
+    tx: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    idle_timeout: Duration,
+) -> Result<(), ApiError>
+where
+    S: futures::Stream<
+            Item = Result<
+                eventsource_stream::Event,
+                eventsource_stream::EventStreamError<reqwest::Error>,
+            >,
+        > + Unpin,
+{
+    let mut response_id = String::new();
+    let mut text = String::new();
+    let mut input_tokens = 0_i64;
+    let mut output_tokens = 0_i64;
+    let mut finish_reason: Option<String> = None;
+
+    loop {
+        let next = tokio::select! {
+            _ = tx.closed() => return Ok(()),
+            next = tokio::time::timeout(idle_timeout, events.next()) => next.map_err(|_| {
+                ApiError::Stream("ChatCompletions stream idle timeout".to_string())
+            })?,
+        };
+        let Some(event) = next else { break };
+        let event = event.map_err(|error| ApiError::Stream(format!("OpenAI Chat SSE error: {error}")))?;
+        let data = event.data.trim();
+        if data.is_empty() {
+            continue;
+        }
+        if data == "[DONE]" {
+            break;
+        }
+        let value: Value = serde_json::from_str(data)
+            .map_err(|error| ApiError::Stream(format!("invalid OpenAI Chat SSE payload: {error}")))?;
+
+        if response_id.is_empty() {
+            response_id = value["id"].as_str().unwrap_or("chat_response").to_string();
+        }
+
+        if let Some(choices) = value["choices"].as_array()
+            && let Some(candidate) = choices.first()
+        {
+            if let Some(reason) = candidate["finish_reason"].as_str() {
+                finish_reason = Some(reason.to_string());
+            }
+            if let Some(delta) = candidate["delta"]["content"].as_str()
+                && !delta.is_empty()
+            {
+                text.push_str(delta);
+                send(tx, ResponseEvent::OutputTextDelta(delta.to_string())).await?;
+            }
+        }
+
+        if let Some(usage) = value.get("usage") {
+            input_tokens = usage["prompt_tokens"].as_i64().unwrap_or(input_tokens);
+            output_tokens = usage["completion_tokens"].as_i64().unwrap_or(output_tokens);
+        }
+    }
+
+    if !text.is_empty() {
+        send(
+            tx,
+            ResponseEvent::OutputItemDone(ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: std::mem::take(&mut text),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            }),
+        )
+        .await?;
+    }
+
+    let token_usage = if input_tokens > 0 || output_tokens > 0 {
+        Some(TokenUsage {
+            input_tokens,
+            output_tokens,
+            total_tokens: input_tokens + output_tokens,
+            cached_input_tokens: 0,
+            reasoning_output_tokens: 0,
+        })
+    } else {
+        None
+    };
+
+    let end_turn = finish_reason.as_deref().map(|r| r != "tool_calls");
+    send(
+        tx,
+        ResponseEvent::Completed {
+            response_id,
+            token_usage,
+            end_turn,
+        },
+    )
+    .await?;
+
+    Ok(())
 }
 
 #[cfg(test)]

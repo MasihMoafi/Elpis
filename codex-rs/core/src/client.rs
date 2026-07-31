@@ -1822,7 +1822,7 @@ impl ModelClientSession {
                 )
                 .await
             }
-            WireApi::AnthropicMessages | WireApi::GeminiGenerateContent => {
+            WireApi::AnthropicMessages | WireApi::GeminiGenerateContent | WireApi::Chat => {
                 self.stream_native_api(
                     prompt,
                     model_info,

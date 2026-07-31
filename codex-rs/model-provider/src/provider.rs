@@ -268,7 +268,7 @@ fn native_default_model(info: &ModelProviderInfo) -> Option<&'static str> {
     match info.wire_api {
         WireApi::AnthropicMessages => Some(ANTHROPIC_DEFAULT_MODEL),
         WireApi::GeminiGenerateContent => Some(GOOGLE_GEMINI_DEFAULT_MODEL),
-        WireApi::Responses => None,
+        WireApi::Responses | WireApi::Chat => None,
     }
 }
 
@@ -340,12 +340,12 @@ fn native_model_catalog(info: &ModelProviderInfo) -> Option<ModelsResponse> {
     let display_name = match info.wire_api {
         WireApi::AnthropicMessages => "Claude Sonnet 4.6",
         WireApi::GeminiGenerateContent => "Gemini 3.5 Flash",
-        WireApi::Responses => return None,
+        WireApi::Responses | WireApi::Chat => return None,
     };
     let context_window = match info.wire_api {
         WireApi::AnthropicMessages => 200_000,
         WireApi::GeminiGenerateContent => 1_000_000,
-        WireApi::Responses => return None,
+        WireApi::Responses | WireApi::Chat => return None,
     };
     let model_info: ModelInfo = serde_json::from_value(serde_json::json!({
         "slug": model,
@@ -386,11 +386,13 @@ impl ModelProvider for ConfiguredModelProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         match self.info.wire_api {
             WireApi::Responses => ProviderCapabilities::default(),
-            WireApi::AnthropicMessages | WireApi::GeminiGenerateContent => ProviderCapabilities {
-                namespace_tools: false,
-                image_generation: false,
-                web_search: false,
-            },
+            WireApi::AnthropicMessages | WireApi::GeminiGenerateContent | WireApi::Chat => {
+                ProviderCapabilities {
+                    namespace_tools: false,
+                    image_generation: false,
+                    web_search: false,
+                }
+            }
         }
     }
 
