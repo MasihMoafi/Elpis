@@ -351,6 +351,21 @@ pub(super) fn status_line_text(chat: &ChatWidget) -> Option<String> {
     chat.status_line_text()
 }
 
+/// The configured part of the status line, with the Elpis identity prefix removed.
+///
+/// Every status line now leads with `ELPIS · provider … · model … · context …`; the
+/// items chosen through `/statusline` follow it. Tests about item rendering want the
+/// items, not the banner in front of them. Returns `None` when the line carries no
+/// configured items at all, which is what an item that has no value yet produces.
+pub(super) fn status_line_items_text(chat: &ChatWidget) -> Option<String> {
+    let text = chat.status_line_text()?;
+    let (identity, items) = text.split_once(" · context ")?;
+    debug_assert!(identity.starts_with("ELPIS"), "unexpected status line: {text}");
+    items
+        .split_once(" · ")
+        .map(|(_context_value, rest)| rest.to_string())
+}
+
 pub(super) fn make_token_info(total_tokens: i64, context_window: i64) -> TokenUsageInfo {
     fn usage(total_tokens: i64) -> TokenUsage {
         TokenUsage {

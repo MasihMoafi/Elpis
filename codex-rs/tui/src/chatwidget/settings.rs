@@ -218,6 +218,9 @@ impl ChatWidget {
         // Account-update notifications are the identity boundary. The visible account fields can
         // be identical across two accounts, so always invalidate account-scoped requests and data.
         self.clear_pending_token_activity_refreshes();
+        // Rate-limit snapshots are account-scoped; carrying them across an identity
+        // change would show the previous account's limits.
+        self.rate_limit_snapshots_by_limit_id.clear();
         self.codex_rate_limit_reached_type = None;
         self.codex_spend_control_reached = None;
         self.rate_limit_warnings = RateLimitWarningState::default();

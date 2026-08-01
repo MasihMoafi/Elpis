@@ -104,6 +104,15 @@ fn read_runtime_identity() -> RuntimeIdentity {
         .clone()
 }
 
+/// Restores the process-wide identity to its startup state.
+///
+/// The banner is global, so a test that renders it sees whatever earlier tests left
+/// behind. Identity-dependent tests reset it first and run under `#[serial]`.
+#[cfg(test)]
+pub(crate) fn reset_runtime_identity_for_tests() {
+    mutate_runtime_identity(|state| *state = RuntimeIdentity::default());
+}
+
 fn mutate_runtime_identity<T>(f: impl FnOnce(&mut RuntimeIdentity) -> T) -> T {
     let mut state = runtime_identity()
         .write()
@@ -223,10 +232,14 @@ pub(crate) fn decorate_status_line(
 }
 
 fn identity_spans(state: &RuntimeIdentity, model_hint: Option<&str>) -> Vec<Span<'static>> {
-    let model = if state.model == "starting" {
-        model_hint.unwrap_or(state.model.as_str())
-    } else {
-        state.model.as_str()
+    // The hint is the status line's own model item, which carries reasoning effort and
+    // fast mode alongside the name. Prefer it whenever it describes the same model the
+    // runtime reports, otherwise selecting "model with reasoning" would change nothing
+    // once the runtime learns the model: the banner owns this field, and the tail
+    // deliberately drops it.
+    let model = match model_hint {
+        Some(hint) if state.model == "starting" || hint.starts_with(state.model.as_str()) => hint,
+        _ => state.model.as_str(),
     };
     let context = state
         .context_used_percent

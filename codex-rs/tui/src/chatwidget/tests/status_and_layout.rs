@@ -2455,14 +2455,23 @@ async fn status_line_invalid_items_warn_once() {
 }
 
 #[tokio::test]
+#[serial]
 async fn status_line_context_used_renders_labeled_percent() {
+    crate::branding::reset_runtime_identity_for_tests();
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.config.tui_status_line = Some(vec!["context-used".to_string()]);
 
     chat.refresh_status_line();
 
-    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
+    // Context lives in the identity banner, so selecting the item is reflected there
+    // rather than repeated in the configured tail.
+    assert!(
+        status_line_text(&chat).is_some_and(|line| line.contains("context ")),
+        "expected context in the identity banner, got {:?}",
+        status_line_text(&chat)
+    );
+    assert_eq!(status_line_items_text(&chat), None);
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "context-used should remain a valid status line item"
@@ -2470,17 +2479,21 @@ async fn status_line_context_used_renders_labeled_percent() {
 }
 
 #[tokio::test]
+#[serial]
 async fn status_line_context_remaining_renders_labeled_percent() {
+    crate::branding::reset_runtime_identity_for_tests();
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.config.tui_status_line = Some(vec!["context-remaining".to_string()]);
 
     chat.refresh_status_line();
 
-    assert_eq!(
-        status_line_text(&chat),
-        Some("Context 100% left".to_string())
+    assert!(
+        status_line_text(&chat).is_some_and(|line| line.contains("context ")),
+        "expected context in the identity banner, got {:?}",
+        status_line_text(&chat)
     );
+    assert_eq!(status_line_items_text(&chat), None);
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "context-remaining should remain a valid status line item"
@@ -2488,14 +2501,21 @@ async fn status_line_context_remaining_renders_labeled_percent() {
 }
 
 #[tokio::test]
+#[serial]
 async fn status_line_legacy_context_usage_renders_context_used_percent() {
+    crate::branding::reset_runtime_identity_for_tests();
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.config.tui_status_line = Some(vec!["context-usage".to_string()]);
 
     chat.refresh_status_line();
 
-    assert_eq!(status_line_text(&chat), Some("Context 0% used".to_string()));
+    assert!(
+        status_line_text(&chat).is_some_and(|line| line.contains("context ")),
+        "expected context in the identity banner, got {:?}",
+        status_line_text(&chat)
+    );
+    assert_eq!(status_line_items_text(&chat), None);
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "legacy context-usage should remain a valid status line item"
@@ -2512,7 +2532,7 @@ async fn status_line_workspace_headline_renders_cached_value() {
     chat.refresh_status_line();
 
     assert_eq!(
-        status_line_text(&chat),
+        status_line_items_text(&chat),
         Some("Workspace maintenance starts at 5pm".to_string())
     );
     assert!(
@@ -2532,7 +2552,7 @@ async fn status_line_workspace_headline_omits_when_unavailable() {
 
     chat.refresh_status_line();
 
-    assert_eq!(status_line_text(&chat), Some("Ready".to_string()));
+    assert_eq!(status_line_items_text(&chat), Some("Ready".to_string()));
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "workspace-headline should be omitted without warning when no headline is cached"
@@ -2552,7 +2572,7 @@ async fn workspace_headline_update_applies_feature_disabled_result() {
         Ok(crate::workspace_messages::WorkspaceHeadlineFetchResult::FeatureDisabled),
     ));
 
-    assert_eq!(status_line_text(&chat), None);
+    assert_eq!(status_line_items_text(&chat), None);
     assert!(chat.status_line_workspace_messages_disabled);
 }
 
@@ -2573,7 +2593,7 @@ async fn workspace_headline_update_applies_available_headline() {
     ));
 
     assert_eq!(
-        status_line_text(&chat),
+        status_line_items_text(&chat),
         Some("Fresh workspace headline".to_string())
     );
     assert!(!chat.status_line_workspace_messages_disabled);
@@ -2595,7 +2615,7 @@ async fn account_update_clears_workspace_headline_state() {
 
     assert_eq!(
         (
-            status_line_text(&chat),
+            status_line_items_text(&chat),
             chat.status_line_workspace_headline_pending_request_id,
             chat.status_line_workspace_headline_last_requested_at,
             chat.status_line_workspace_messages_disabled,
@@ -2680,7 +2700,7 @@ async fn account_update_discards_stale_workspace_headline_results() {
     ));
     assert_eq!(
         (
-            status_line_text(&chat),
+            status_line_items_text(&chat),
             chat.status_line_workspace_headline_pending_request_id,
             chat.status_line_workspace_messages_disabled,
         ),
@@ -2818,11 +2838,11 @@ async fn status_line_fast_mode_renders_on_and_off() {
     chat.config.tui_status_line = Some(vec!["fast-mode".to_string()]);
 
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
+    assert_eq!(status_line_items_text(&chat), Some("Fast off".to_string()));
 
     chat.set_service_tier(Some(ServiceTier::Fast.request_value().to_string()));
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
+    assert_eq!(status_line_items_text(&chat), Some("Fast on".to_string()));
 }
 
 #[tokio::test]
@@ -2849,7 +2869,9 @@ async fn status_line_fast_mode_footer_snapshot() {
 }
 
 #[tokio::test]
+#[serial]
 async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models() {
+    crate::branding::reset_runtime_identity_for_tests();
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     set_fast_mode_test_catalog(&mut chat);
     assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
@@ -2867,18 +2889,24 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
     chat.refresh_status_line();
     let test_cwd = test_path_display("/tmp/project");
 
-    assert_eq!(
-        status_line_text(&chat),
-        Some(format!("gpt-5.4 xhigh fast · Context 0% used · {test_cwd}"))
+    assert!(
+        status_line_text(&chat)
+            .is_some_and(|line| line.contains("model gpt-5.4 xhigh fast")),
+        "expected model and reasoning in the identity banner, got {:?}",
+        status_line_text(&chat)
     );
+    assert_eq!(status_line_items_text(&chat), Some(test_cwd.to_string()));
 
     chat.set_model("gpt-5.2");
     chat.refresh_status_line();
 
-    assert_eq!(
-        status_line_text(&chat),
-        Some(format!("gpt-5.2 xhigh · Context 0% used · {test_cwd}"))
+    assert!(
+        status_line_text(&chat).is_some_and(|line| line.contains("model gpt-5.2 xhigh")
+            && !line.contains("fast")),
+        "expected the banner to drop fast for a model without it, got {:?}",
+        status_line_text(&chat)
     );
+    assert_eq!(status_line_items_text(&chat), Some(test_cwd.to_string()));
 }
 
 #[tokio::test]
@@ -2905,7 +2933,7 @@ async fn status_line_and_terminal_title_reasoning_render_only_effort() {
     chat.refresh_status_line();
     chat.refresh_terminal_title();
 
-    assert_eq!(status_line_text(&chat), Some("xhigh".to_string()));
+    assert_eq!(status_line_items_text(&chat), Some("xhigh".to_string()));
     assert_eq!(chat.last_terminal_title, Some("xhigh".to_string()));
 }
 
@@ -2916,39 +2944,55 @@ async fn status_line_reasoning_updates_on_mode_switch_without_manual_refresh() {
     chat.config.tui_status_line = Some(vec!["reasoning".to_string()]);
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
 
-    assert_eq!(status_line_text(&chat), Some("high".to_string()));
+    assert_eq!(status_line_items_text(&chat), Some("high".to_string()));
 
     let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
         .expect("expected plan collaboration mode");
     chat.set_collaboration_mask(plan_mask);
 
-    assert_eq!(status_line_text(&chat), Some("medium".to_string()));
+    assert_eq!(status_line_items_text(&chat), Some("medium".to_string()));
 }
 
 #[tokio::test]
+#[serial]
 async fn status_line_model_with_reasoning_updates_on_mode_switch_without_manual_refresh() {
+    crate::branding::reset_runtime_identity_for_tests();
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
     chat.config.tui_status_line = Some(vec!["model-with-reasoning".to_string()]);
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
 
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
+    assert!(
+        status_line_text(&chat).is_some_and(|line| line.contains("model gpt-5.2 high")),
+        "expected gpt-5.2 high in the identity banner, got {:?}",
+        status_line_text(&chat)
+    );
 
     let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
         .expect("expected plan collaboration mode");
     chat.set_collaboration_mask(plan_mask);
 
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 medium".to_string()));
+    assert!(
+        status_line_text(&chat).is_some_and(|line| line.contains("model gpt-5.2 medium")),
+        "expected gpt-5.2 medium in the identity banner, got {:?}",
+        status_line_text(&chat)
+    );
 
     let default_mask = collaboration_modes::default_mask(chat.model_catalog.as_ref())
         .expect("expected default collaboration mode");
     chat.set_collaboration_mask(default_mask);
 
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
+    assert!(
+        status_line_text(&chat).is_some_and(|line| line.contains("model gpt-5.2 high")),
+        "expected gpt-5.2 high in the identity banner, got {:?}",
+        status_line_text(&chat)
+    );
 }
 
 #[tokio::test]
+#[serial]
 async fn status_line_model_with_reasoning_plan_mode_footer_snapshot() {
+    crate::branding::reset_runtime_identity_for_tests();
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
