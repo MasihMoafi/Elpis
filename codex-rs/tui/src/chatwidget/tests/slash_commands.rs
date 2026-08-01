@@ -151,8 +151,76 @@ async fn slash_prune_submits_selective_prune_instead_of_compaction() {
 
     assert!(chat.bottom_pane.is_task_running());
     match rx.try_recv() {
-        Ok(AppEvent::CodexOp(Op::Prune)) => {}
+        Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => {}
         other => panic!("expected selective prune op to be submitted, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn slash_prune_takes_no_arguments_so_a_bare_prune_always_runs() {
+    // The regression this guards: `/prune` accepted an optional percentage, so a
+    // bare `/prune` went through the argument path and could be swallowed there
+    // instead of running a pass. Force-pruning lives in `/force-prune` now.
+    assert!(!SlashCommand::Prune.supports_inline_args());
+    assert!(SlashCommand::ForcePrune.supports_inline_args());
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.dispatch_command_with_args(SlashCommand::Prune, String::new(), Vec::new());
+
+    assert!(chat.bottom_pane.is_task_running());
+    loop {
+        match rx.try_recv() {
+            Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => break,
+            Ok(_) => continue,
+            other => panic!("expected a bare prune to run a pass, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn slash_force_prune_with_percentage_submits_target_to_runtime() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::ForcePrune, "20%".to_string(), Vec::new());
+
+    assert!(chat.bottom_pane.is_task_running());
+    loop {
+        match rx.try_recv() {
+            Ok(AppEvent::CodexOp(Op::Prune {
+                target_pct: Some(20),
+            })) => break,
+            Ok(_) => continue,
+            other => panic!("expected targeted prune op, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn slash_force_prune_rejects_invalid_percentage_without_starting_task() {
+    for invalid in ["0%", "101%", "banana"] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+        chat.dispatch_command_with_args(SlashCommand::ForcePrune, invalid.to_string(), Vec::new());
+
+        assert!(
+            !chat.bottom_pane.is_task_running(),
+            "invalid input: {invalid}"
+        );
+        let event = rx.try_recv().expect("expected invalid prune error");
+        match event {
+            AppEvent::InsertHistoryCell(cell) => {
+                let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+                assert!(
+                    rendered.contains("Usage: /force-prune <1-100>"),
+                    "unexpected error for {invalid}: {rendered:?}"
+                );
+            }
+            other => panic!("expected invalid prune error, got {other:?}"),
+        }
+        assert!(
+            rx.try_recv().is_err(),
+            "invalid prune dispatched work: {invalid}"
+        );
     }
 }
 

@@ -44,6 +44,8 @@ pub enum SlashCommand {
     Init,
     Compact,
     Prune,
+    #[strum(to_string = "force-prune")]
+    ForcePrune,
     Plan,
     Goal,
     Agent,
@@ -97,8 +99,9 @@ impl SlashCommand {
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Usage => "inspect current context, continuity, and token usage",
-            SlashCommand::Prune => {
-                "distill tool output or force pressure prune: /prune [<pct>] (e.g. /prune 30%)"
+            SlashCommand::Prune => "distill completed tool output out of the context window",
+            SlashCommand::ForcePrune => {
+                "force a prune down to a target of remaining context: /force-prune <1-100>"
             }
             SlashCommand::Context => {
                 "show context usage as a grid, by category, with checkpoints and system files"
@@ -148,7 +151,7 @@ impl SlashCommand {
     pub fn supports_inline_args(self) -> bool {
         matches!(
             self,
-            SlashCommand::Prune
+            SlashCommand::ForcePrune
                 | SlashCommand::Review
                 | SlashCommand::Add
                 | SlashCommand::Rename
@@ -189,6 +192,7 @@ impl SlashCommand {
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Prune
+            | SlashCommand::ForcePrune
             | SlashCommand::Keymap
             | SlashCommand::Vim
             | SlashCommand::ElevateSandbox
@@ -249,6 +253,7 @@ impl SlashCommand {
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Prune
+            | SlashCommand::ForcePrune
             | SlashCommand::Diff
             | SlashCommand::Usage
             | SlashCommand::Context

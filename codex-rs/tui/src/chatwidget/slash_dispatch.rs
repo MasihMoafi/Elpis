@@ -259,11 +259,20 @@ impl ChatWidget {
                 self.submit_user_message(INIT_PROMPT.to_string().into());
             }
             SlashCommand::Prune => {
+                self.begin_context_prune_tracking();
                 self.clear_token_usage();
                 if !self.bottom_pane.is_task_running() {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
                 self.app_event_tx.prune(None);
+            }
+            // `/force-prune` needs its target; without one there is nothing to force,
+            // so say so rather than silently running an ordinary prune.
+            SlashCommand::ForcePrune => {
+                self.add_error_message(
+                    "Usage: /force-prune <1-100> — the percentage of the context window to prune down to. Use /prune for an ordinary pass."
+                        .to_string(),
+                );
             }
             SlashCommand::Compact => {
                 self.clear_token_usage();
@@ -857,21 +866,27 @@ impl ChatWidget {
                 );
                 self.request_side_conversation(parent_thread_id, Some(user_message));
             }
-            SlashCommand::Prune if !trimmed.is_empty() => {
+            SlashCommand::ForcePrune if !trimmed.is_empty() => {
+                let Some(target_pct) = trimmed
+                    .strip_suffix('%')
+                    .unwrap_or(trimmed)
+                    .parse::<i64>()
+                    .ok()
+                    .filter(|target_pct| (1..=100).contains(target_pct))
+                else {
+                    self.add_error_message("Usage: /force-prune <1-100>".to_string());
+                    return;
+                };
+                self.begin_context_prune_tracking();
                 self.clear_token_usage();
                 if !self.bottom_pane.is_task_running() {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
-                let pct = trimmed.trim_end_matches('%').parse::<u32>().ok();
-                if let Some(target) = pct {
-                    self.add_info_message(
-                        format!(
-                            "Running force pressure prune targeting {target}% context remaining..."
-                        ),
-                        None,
-                    );
-                }
-                self.app_event_tx.prune(None);
+                self.add_info_message(
+                    format!("Force pruning down to {target_pct}% of the context window..."),
+                    None,
+                );
+                self.app_event_tx.prune(Some(target_pct));
             }
             SlashCommand::Review if !trimmed.is_empty() => {
                 self.submit_op(AppCommand::review(ReviewTarget::Custom {
@@ -1052,6 +1067,7 @@ impl ChatWidget {
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Prune
+            | SlashCommand::ForcePrune
             | SlashCommand::Review
             | SlashCommand::Model
             | SlashCommand::Personality
