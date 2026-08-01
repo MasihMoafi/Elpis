@@ -7,6 +7,7 @@ use codex_sandboxing::policy_transforms::merge_permission_profiles;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::time::Instant;
 
 use super::AdditionalContextStore;
 use super::auto_compact_window::AutoCompactWindow;
@@ -46,6 +47,14 @@ pub(crate) struct SessionState {
     /// prune record, so a later pass never re-litigates them. See
     /// `crate::session::context_prune`.
     pub(crate) context_prune_covered: HashSet<String>,
+    /// Cumulative estimated tokens reclaimed by applied context-pruning passes.
+    pub(crate) context_prune_saved_tokens: u64,
+    /// Failed pruning passes since the last applied one. A failed pass covers
+    /// nothing, so the next turn rebuilds the identical batch; this drives the
+    /// backoff that stops one bad batch from retrying on every turn forever.
+    pub(crate) context_prune_consecutive_failures: u32,
+    /// Earliest instant an automatic pruning pass may run again. `/prune` ignores it.
+    pub(crate) context_prune_retry_after: Option<Instant>,
 }
 
 impl SessionState {
@@ -77,7 +86,31 @@ impl SessionState {
             pending_session_start_sources: VecDeque::new(),
             granted_permissions_by_environment_id: HashMap::new(),
             context_prune_covered: HashSet::new(),
+            context_prune_saved_tokens: 0,
+            context_prune_consecutive_failures: 0,
+            context_prune_retry_after: None,
         }
+    }
+
+    /// True when automatic pruning is still inside the backoff left by a failed pass.
+    pub(crate) fn context_prune_backoff_active(&self) -> bool {
+        self.context_prune_retry_after
+            .is_some_and(|retry_after| Instant::now() < retry_after)
+    }
+
+    pub(crate) fn record_context_prune_failure(&mut self) -> u32 {
+        self.context_prune_consecutive_failures =
+            self.context_prune_consecutive_failures.saturating_add(1);
+        let delay = crate::context_pruner::retry_delay_after_failures(
+            self.context_prune_consecutive_failures,
+        );
+        self.context_prune_retry_after = Some(Instant::now() + delay);
+        self.context_prune_consecutive_failures
+    }
+
+    pub(crate) fn clear_context_prune_failures(&mut self) {
+        self.context_prune_consecutive_failures = 0;
+        self.context_prune_retry_after = None;
     }
 
     // History helpers

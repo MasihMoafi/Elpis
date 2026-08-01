@@ -10,26 +10,34 @@
 //! whenever completed turns hold at least 1% of the context window in uncovered tool
 //! output, and takes that whole backlog: this is what keeps a long session from
 //! filling up in the first place. The pressure trigger fires once active use reaches
-//! 30% and takes only the oldest output needed to get back to 20%, preserving a recent
+//! 30% and takes only the oldest output needed to get back to 25%, preserving a recent
 //! verbatim suffix. Steady alone cannot catch a single turn that balloons past the
 //! boundary; pressure alone lets a session climb to 30% before anything is reclaimed,
 //! which is the state the steady pass exists to prevent.
 //!
 //! Neither trigger ever touches the current turn. On any failure (model error,
-//! timeout, unparseable output) the batch is left alone and can retry after the next
-//! completed turn.
+//! timeout, unparseable output) the batch is left alone and can retry after the
+//! backoff in `retry_delay_after_failures` elapses — an untouched batch is otherwise
+//! re-selected identically on the next turn, so without the backoff one unluckily
+//! shaped batch retries forever and pruning never advances.
 
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_output_truncation::approx_token_count;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 30;
-pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 20;
+/// Where a pressure pass stops reclaiming. Deliberately close to the 30% trigger:
+/// the pass buys headroom, it does not empty the window. Driving it lower would
+/// distill recent, still-relevant evidence and cost answer quality for context the
+/// session has not yet needed to give up.
+pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 25;
 
 /// Floor for the steady pass, as a percentage of the context window. Low enough that
 /// routine exploration is distilled the turn after it lands, high enough that a couple
@@ -39,6 +47,17 @@ pub(crate) const STEADY_PRUNE_FLOOR_PERCENT: i64 = 1;
 /// Luna is sufficient for the pass's bounded keep/delete classification and avoids
 /// spending a larger model on routine context maintenance.
 pub(crate) const PRUNE_MODEL_SLUG: &str = "gpt-5.6-luna";
+
+/// Effort for the pruning pass. Keep/delete judgement over raw tool output is the
+/// step that decides what the session can still see, so it runs at the model's
+/// maximum rather than inheriting the user's turn setting.
+pub(crate) const PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Max;
+
+/// Upper bound on one pass's batch, in approximate tokens. Beyond this a single pass
+/// stops being a bounded maintenance call: latency grows, and a reply covering
+/// hundreds of ids is far likelier to come back truncated or unparseable — which
+/// reclaims nothing at all. Whatever is left over is simply the next pass's batch.
+pub(crate) const MAX_PRUNE_BATCH_TOKENS: usize = 24_000;
 
 /// Sentinel the model replies with when nothing in the batch is worth keeping.
 /// Kept identical to the instruction in `prompts/templates/context_prune/prompt.md`.
@@ -128,13 +147,32 @@ pub(crate) fn pressure_reached(used_tokens: i64, context_window: i64) -> bool {
         >= context_window.saturating_mul(AUTO_PRUNE_TRIGGER_PERCENT)
 }
 
-/// Approximate number of active-context tokens the pressure pass should reclaim.
-pub(crate) fn reclaim_target_tokens(used_tokens: i64, context_window: i64) -> usize {
+/// Approximate number of active-context tokens a pressure pass should reclaim: the
+/// distance from what the window currently holds down to `target_percent` of it, and
+/// nothing beyond that. This is the amount to *remove*, not the amount to keep.
+pub(crate) fn reclaim_target_tokens(
+    used_tokens: i64,
+    context_window: i64,
+    target_percent: i64,
+) -> usize {
     if context_window <= 0 {
         return 0;
     }
-    let target_tokens = context_window.saturating_mul(AUTO_PRUNE_TARGET_PERCENT) / 100;
+    let target_percent = target_percent.clamp(1, 100);
+    let target_tokens = context_window.saturating_mul(target_percent) / 100;
     usize::try_from(used_tokens.saturating_sub(target_tokens).max(0)).unwrap_or(usize::MAX)
+}
+
+/// How long automatic pruning waits after `consecutive_failures` failed passes.
+/// A failed pass covers nothing, so the very same batch is what the next turn
+/// selects; retrying it immediately just spends another model call to fail the same
+/// way. Backing off keeps a session usable while whatever caused the failure clears,
+/// and the ceiling keeps the layer alive rather than disabling it for good.
+pub(crate) fn retry_delay_after_failures(consecutive_failures: u32) -> Duration {
+    const BASE_SECS: u64 = 30;
+    const MAX_SECS: u64 = 600;
+    let shift = consecutive_failures.saturating_sub(1).min(8);
+    Duration::from_secs((BASE_SECS << shift).min(MAX_SECS))
 }
 
 fn prunable_text(item: &ResponseItem) -> Option<(&str, String)> {
@@ -214,10 +252,10 @@ pub(crate) fn build_steady_prune_batch(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
 ) -> Vec<(String, String)> {
-    build_prune_candidates(completed_turn_items(input), covered_call_ids)
-        .into_iter()
-        .map(|(call_id, evidence, _)| (call_id, evidence))
-        .collect()
+    take_within_batch_budget(build_prune_candidates(
+        completed_turn_items(input),
+        covered_call_ids,
+    ))
 }
 
 /// The whole uncovered backlog for an explicit `/prune`. Unlike automatic pruning,
@@ -227,10 +265,25 @@ pub(crate) fn build_manual_prune_batch(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
 ) -> Vec<(String, String)> {
-    build_prune_candidates(input, covered_call_ids)
-        .into_iter()
-        .map(|(call_id, evidence, _)| (call_id, evidence))
-        .collect()
+    take_within_batch_budget(build_prune_candidates(input, covered_call_ids))
+}
+
+/// Oldest-first prefix of `candidates` that fits one pass. The first candidate is
+/// always taken, so an oversized single output is still eligible instead of jamming
+/// the queue behind an item no batch can ever accept.
+fn take_within_batch_budget(candidates: Vec<(String, String, usize)>) -> Vec<(String, String)> {
+    let mut selected = Vec::new();
+    let mut selected_tokens = 0usize;
+    for (call_id, evidence, output_tokens) in candidates {
+        if !selected.is_empty()
+            && selected_tokens.saturating_add(output_tokens) > MAX_PRUNE_BATCH_TOKENS
+        {
+            break;
+        }
+        selected.push((call_id, evidence));
+        selected_tokens = selected_tokens.saturating_add(output_tokens);
+    }
+    selected
 }
 
 /// Oldest-first subset expected to reclaim at least `target_tokens`. Newer eligible
@@ -250,6 +303,11 @@ pub(crate) fn build_prune_batch_for_reclaim(
     for (call_id, evidence, output_tokens) in
         build_prune_candidates(completed_turn_items(input), covered_call_ids)
     {
+        if !selected.is_empty()
+            && selected_tokens.saturating_add(output_tokens) > MAX_PRUNE_BATCH_TOKENS
+        {
+            break;
+        }
         selected.push((call_id, evidence));
         selected_tokens = selected_tokens.saturating_add(output_tokens);
         if selected_tokens >= target_tokens {
@@ -536,9 +594,62 @@ mod tests {
     }
 
     #[test]
-    fn reclaim_target_moves_thirty_percent_use_to_twenty_percent() {
-        assert_eq!(reclaim_target_tokens(300_000, 1_000_000), 100_000);
-        assert_eq!(reclaim_target_tokens(199_999, 1_000_000), 0);
+    fn reclaim_target_is_the_distance_down_to_the_target_not_the_whole_window() {
+        // The regression this guards: a pressure pass that asked for
+        // `window * (1 - target)` tokens selected essentially the entire backlog on
+        // every trigger, distilling recent evidence the session still needed.
+        assert_eq!(
+            reclaim_target_tokens(300_000, 1_000_000, AUTO_PRUNE_TARGET_PERCENT),
+            50_000
+        );
+        assert_eq!(
+            reclaim_target_tokens(249_999, 1_000_000, AUTO_PRUNE_TARGET_PERCENT),
+            0
+        );
+        // An explicit `/prune <pct>` targets that much context remaining.
+        assert_eq!(reclaim_target_tokens(300_000, 1_000_000, 10), 200_000);
+        assert_eq!(reclaim_target_tokens(300_000, 1_000_000, 90), 0);
+    }
+
+    #[test]
+    fn pressure_pass_never_reclaims_past_the_target() {
+        let window = 1_000_000;
+        let used = 300_000;
+        let reclaim = reclaim_target_tokens(used, window, AUTO_PRUNE_TARGET_PERCENT);
+        assert!(reclaim < used as usize);
+        assert_eq!(
+            used - reclaim as i64,
+            window * AUTO_PRUNE_TARGET_PERCENT / 100
+        );
+    }
+
+    #[test]
+    fn prune_runs_at_max_effort() {
+        assert_eq!(PRUNE_REASONING_EFFORT, ReasoningEffort::Max);
+    }
+
+    #[test]
+    fn failed_passes_back_off_and_then_hold_at_the_ceiling() {
+        assert_eq!(retry_delay_after_failures(1), Duration::from_secs(30));
+        assert_eq!(retry_delay_after_failures(2), Duration::from_secs(60));
+        assert_eq!(retry_delay_after_failures(3), Duration::from_secs(120));
+        assert_eq!(retry_delay_after_failures(50), Duration::from_secs(600));
+    }
+
+    #[test]
+    fn a_batch_stays_within_the_pass_budget_but_never_starves() {
+        let big = "x".repeat(MAX_PRUNE_BATCH_TOKENS * 8);
+        let input = vec![
+            user_message("previous turn"),
+            tool_output("a", &big),
+            tool_output("b", &big),
+            user_message("current turn"),
+        ];
+        let batch = build_steady_prune_batch(&input, &HashSet::new());
+        // One oversized output is still eligible on its own; it does not drag a
+        // second one into the same call, and it never jams the queue behind itself.
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch[0].0, "a");
     }
 
     #[test]

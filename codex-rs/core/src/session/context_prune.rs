@@ -15,8 +15,14 @@ use crate::responses_metadata::CodexResponsesRequestKind;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::CompactedItem;
+use codex_protocol::protocol::RolloutItem;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
+
+/// Upper bound on the passes one `/prune` sweep will run, so an explicit sweep is
+/// bounded even if the backlog keeps producing eligible batches.
+const MAX_MANUAL_PRUNE_PASSES: usize = 12;
 
 use super::context_prune_audit;
 use super::session::Session;
@@ -35,11 +41,31 @@ pub(crate) async fn run_manual_context_prune_with_target(
     turn_context: &Arc<TurnContext>,
     target_pct: Option<i64>,
 ) {
-    let trigger = match target_pct {
-        Some(_) => Some(context_pruner::PruneTrigger::Pressure),
-        None => Some(context_pruner::PruneTrigger::Manual),
-    };
-    run_context_prune(sess, turn_context, trigger, target_pct).await;
+    if let Some(pct) = target_pct {
+        run_context_prune(
+            sess,
+            turn_context,
+            Some(context_pruner::PruneTrigger::Pressure),
+            Some(pct),
+        )
+        .await;
+        return;
+    }
+    // A single pass is capped so one model call stays bounded, but a bare `/prune` is
+    // an explicit request to clear the backlog — so sweep it in bounded passes rather
+    // than leaving the user with a partial reclaim and no indication why.
+    for _ in 0..MAX_MANUAL_PRUNE_PASSES {
+        if !run_context_prune(
+            sess,
+            turn_context,
+            Some(context_pruner::PruneTrigger::Manual),
+            None,
+        )
+        .await
+        {
+            break;
+        }
+    }
 }
 
 async fn run_context_prune(
@@ -47,16 +73,21 @@ async fn run_context_prune(
     turn_context: &Arc<TurnContext>,
     requested_trigger: Option<context_pruner::PruneTrigger>,
     target_pct: Option<i64>,
-) {
+) -> bool {
     let context_window = turn_context.model_context_window().unwrap_or(0);
     if requested_trigger.is_none() && context_window <= 0 {
-        return;
+        return false;
     }
 
     let active_context_tokens = sess.get_total_token_usage().await;
 
     let covered_call_ids = {
         let state = sess.state.lock().await;
+        // A failed pass leaves its batch uncovered, so the next turn selects exactly
+        // the same batch. Without this gate that repeats every turn indefinitely.
+        if requested_trigger.is_none() && state.context_prune_backoff_active() {
+            return false;
+        }
         state.context_prune_covered.clone()
     };
 
@@ -78,8 +109,11 @@ async fn run_context_prune(
         }
         Some(context_pruner::PruneTrigger::Pressure) => {
             let pct = target_pct.unwrap_or(context_pruner::AUTO_PRUNE_TARGET_PERCENT);
-            let reclaim_target = (context_window as f64 * (1.0 - (pct as f64 / 100.0))) as usize;
-            context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target.max(1))
+            // Reclaim the distance from what the window holds now down to `pct`, and
+            // no further. Anything larger distills evidence the session still needs.
+            let reclaim_target =
+                context_pruner::reclaim_target_tokens(active_context_tokens, context_window, pct);
+            context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target)
         }
         None => Vec::new(),
     };
@@ -97,7 +131,7 @@ async fn run_context_prune(
             );
             sess.request_new_context_window().await;
         }
-        return;
+        return false;
     };
     let active_question = context_pruner::latest_user_message_text(&items);
     // Keep maintenance inference isolated from the active turn's sticky routing and
@@ -115,8 +149,14 @@ async fn run_context_prune(
     .await
     else {
         // Fail open. A failed or malformed pruning pass must not alter history or
-        // mark any item as covered; the same batch remains eligible for a later pass.
-        return;
+        // mark any item as covered; the same batch remains eligible for a later pass,
+        // once the backoff this records has elapsed.
+        let failures = sess.state.lock().await.record_context_prune_failure();
+        tracing::warn!(
+            "Context prune pass failed ({failures} in a row); retrying after {:?}",
+            context_pruner::retry_delay_after_failures(failures)
+        );
+        return false;
     };
 
     let mut after_items = items;
@@ -144,17 +184,39 @@ async fn run_context_prune(
         Ok(audit) => audit,
         Err(err) => {
             tracing::warn!("Context prune audit failed; preserving history: {err:#}");
-            return;
+            sess.state.lock().await.record_context_prune_failure();
+            return false;
         }
     };
 
-    {
+    let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(saved);
+    let (context_prune_saved_tokens, window_number, window_ids) = {
         let mut state = sess.state.lock().await;
-        state.history.replace(after_items);
+        state.history.replace(after_items.clone());
         state
             .context_prune_covered
             .extend(record.covered_call_ids.iter().cloned());
-    }
+        state.context_prune_saved_tokens = state
+            .context_prune_saved_tokens
+            .saturating_add(saved_tokens);
+        state.clear_context_prune_failures();
+        (
+            state.context_prune_saved_tokens,
+            state.auto_compact_window_number(),
+            state.auto_compact_window_ids(),
+        )
+    };
+    // Persist the rewritten working set as an append-only replacement checkpoint.
+    // Raw rollout evidence remains intact, while resume starts from this compact base.
+    sess.persist_rollout_items(&[RolloutItem::Compacted(CompactedItem {
+        message: CompactedItem::context_prune_checkpoint_message(context_prune_saved_tokens),
+        replacement_history: Some(after_items),
+        window_number: Some(window_number),
+        first_window_id: Some(window_ids.first_window_id.to_string()),
+        previous_window_id: window_ids.previous_window_id.map(|id| id.to_string()),
+        window_id: Some(window_ids.window_id.to_string()),
+    })])
+    .await;
     context_pruner::record_applied_prune(saved);
     // The server count describes the pre-prune request. Re-estimate from the
     // rewritten working history immediately so every context meter reflects the pass
@@ -166,6 +228,7 @@ async fn run_context_prune(
             audit.pass_dir.display()
         );
     }
+    true
 }
 
 async fn run_prune_pass(
@@ -234,7 +297,14 @@ async fn try_validated_prune_pass(
             "Context prune response was malformed for model {prune_model_slug}; preserving history"
         );
         let input_text = context_pruner::build_prune_input(batch, active_question);
-        log_prune_debug(sess, prune_model_slug, &input_text, Some(&output)).await;
+        log_prune_debug(
+            sess,
+            prune_model_slug,
+            &input_text,
+            "response did not parse as a decision manifest",
+            Some(&output),
+        )
+        .await;
         return None;
     };
     Some((record, output))
@@ -285,7 +355,7 @@ async fn try_stream_prune_pass(
             &prompt,
             &model_info,
             &turn_context.session_telemetry,
-            None,
+            Some(context_pruner::PRUNE_REASONING_EFFORT),
             turn_context.reasoning_summary,
             turn_context.config.service_tier.clone(),
             &responses_metadata,
@@ -296,31 +366,60 @@ async fn try_stream_prune_pass(
         Ok(stream) => stream,
         Err(err) => {
             tracing::warn!("Context prune stream failed for model {prune_model_slug}: {err}");
-            log_prune_debug(sess, prune_model_slug, &input_text, None).await;
+            log_prune_debug(
+                sess,
+                prune_model_slug,
+                &input_text,
+                &format!("stream could not be opened: {err}"),
+                None,
+            )
+            .await;
             return None;
         }
     };
 
+    // Some model transports deliver the answer only as text deltas, with no
+    // `OutputItemDone` message item; reading item events alone throws that reply away
+    // and reports the pass as producing nothing.
     let mut collected: Vec<ResponseItem> = Vec::new();
+    let mut streamed_text = String::new();
+    let mut safety_buffering = false;
     loop {
         match stream.next().await {
             Some(Ok(ResponseEvent::OutputItemDone(item))) => collected.push(item),
+            Some(Ok(ResponseEvent::OutputTextDelta(delta))) => streamed_text.push_str(&delta),
+            Some(Ok(ResponseEvent::SafetyBuffering(_))) => {
+                safety_buffering = true;
+            }
             Some(Ok(ResponseEvent::Completed { .. })) => break,
             Some(Ok(_)) => continue,
             Some(Err(err)) => {
                 tracing::warn!("Context prune stream error for model {prune_model_slug}: {err}");
-                log_prune_debug(sess, prune_model_slug, &input_text, None).await;
+                log_prune_debug(
+                    sess,
+                    prune_model_slug,
+                    &input_text,
+                    &format!("stream ended with an error: {err}"),
+                    None,
+                )
+                .await;
                 return None;
             }
             None => break,
         }
     }
-    let result = super::turn::get_last_assistant_message_from_turn(&collected);
+    let result = super::turn::get_last_assistant_message_from_turn(&collected)
+        .or_else(|| (!streamed_text.trim().is_empty()).then(|| streamed_text.clone()));
     if let Some(ref text) = result {
         tracing::info!("Context prune LLM response received ({prune_model_slug}): {text}");
     } else {
         tracing::warn!("Context prune LLM stream returned no assistant text ({prune_model_slug})");
-        log_prune_debug(sess, prune_model_slug, &input_text, None).await;
+        let reason = if safety_buffering {
+            "stream completed with no assistant text after safety buffering"
+        } else {
+            "stream completed with no assistant text and no text deltas"
+        };
+        log_prune_debug(sess, prune_model_slug, &input_text, reason, None).await;
     }
     result
 }
@@ -329,6 +428,7 @@ async fn log_prune_debug(
     sess: &Arc<Session>,
     model_slug: &str,
     input_text: &str,
+    reason: &str,
     output_text: Option<&str>,
 ) {
     let log_dir = sess.codex_home().await.join("logs");
@@ -344,10 +444,10 @@ async fn log_prune_debug(
     {
         use std::io::Write;
         let ts = chrono::Utc::now().to_rfc3339();
-        let out_str = output_text.unwrap_or("<NO OUTPUT / FAILED>");
+        let out_str = output_text.unwrap_or("<none>");
         let _ = writeln!(
             file,
-            "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {model_slug}\n--- INPUT BATCH SENT TO LLM ---\n{input_text}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n"
+            "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {model_slug}\nFAILURE: {reason}\n--- INPUT BATCH SENT TO LLM ---\n{input_text}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n"
         );
     }
 }
