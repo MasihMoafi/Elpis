@@ -165,27 +165,34 @@ impl ChatWidget {
             return;
         }
 
-        match key_event {
+        let is_shift_tab = match key_event {
             KeyEvent {
                 code: KeyCode::BackTab,
                 kind: KeyEventKind::Press,
                 ..
-            } if !self.bottom_pane.is_task_running()
-                && self.bottom_pane.no_modal_or_popup_active() =>
-            {
-                self.cycle_approval_preset();
-            }
-            _ => {
-                let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
-                let should_pause_active_goal =
-                    self.bottom_pane.should_interrupt_running_task(key_event);
-                let input_result = self.bottom_pane.handle_key_event(key_event);
-                if should_pause_active_goal {
-                    self.pause_active_goal_for_interrupt();
-                }
-                self.handle_composer_input_result(input_result, had_modal_or_popup);
-            }
+            } => true,
+            KeyEvent {
+                code: KeyCode::Tab,
+                kind: KeyEventKind::Press,
+                modifiers,
+                ..
+            } => modifiers.contains(KeyModifiers::SHIFT),
+            _ => false,
+        };
+
+        if is_shift_tab && self.bottom_pane.no_modal_or_popup_active() {
+            self.cycle_approval_preset();
+            return;
         }
+
+        let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
+        let should_pause_active_goal =
+            self.bottom_pane.should_interrupt_running_task(key_event);
+        let input_result = self.bottom_pane.handle_key_event(key_event);
+        if should_pause_active_goal {
+            self.pause_active_goal_for_interrupt();
+        }
+        self.handle_composer_input_result(input_result, had_modal_or_popup);
     }
 
     /// Attach a local image to the composer when the active model supports image inputs.
