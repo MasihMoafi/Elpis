@@ -2,13 +2,16 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: loaded_popup
 ---
-  Plugins
-  Workspace.
-  This section loaded successfully.
-
-  All Plugins  Installed (0)  OpenAI Curated  [Workspace]  Add Marketplace
-
-  Type to search plugins
-› No workspace plugins available  No workspace directory plugins are available.
-
-  space enable/disable · ←/→ select marketplace · enter view details · esc close
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Plugins                                                  ││admitted
+│ Workspace.                                               ││i = select/deselect all · backspace =
+│ This section loaded successfully.                        ││remove added file
+│                                                          ││
+│ All Plugins  Installed (0)  OpenAI Curated  [Workspace]  ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+│ Add Marketplace                                          ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+│                                                          ││■ Conversation (messages)   ≈0 tokens
+│ Type to search plugins                                   ││
+› No workspace plugins available  No workspace directory … ││No portable context is available.
+└──────────────────────────────────────────────────────────┘
+  space enable/disable · ←/→ select marketplace · enter view

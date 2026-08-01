@@ -105,7 +105,9 @@ pub(crate) async fn clear_session_checkpoint(
     if checkpoint_path.exists() {
         tokio::fs::remove_file(&checkpoint_path)
             .await
-            .with_context(|| format!("remove Elpis checkpoint file {}", checkpoint_path.display()))?;
+            .with_context(|| {
+                format!("remove Elpis checkpoint file {}", checkpoint_path.display())
+            })?;
         Ok(Some(checkpoint_path))
     } else {
         Ok(None)

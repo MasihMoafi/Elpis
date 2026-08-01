@@ -31,7 +31,10 @@ fn skill_scope_label(scope: SkillScope) -> &'static str {
     }
 }
 
-pub(crate) fn skill_display_name(skill: &SkillMetadata, colliding_names: &HashSet<String>) -> String {
+pub(crate) fn skill_display_name(
+    skill: &SkillMetadata,
+    colliding_names: &HashSet<String>,
+) -> String {
     let qualifier = colliding_names
         .contains(&skill.name)
         .then(|| format!(" ({})", skill_scope_label(skill.scope)))
@@ -83,8 +86,8 @@ pub(crate) fn match_skill(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_path_buf;
     use crate::test_support::PathBufExt;
+    use crate::test_support::test_path_buf;
 
     fn skill(name: &str, scope: SkillScope) -> SkillMetadata {
         SkillMetadata {

@@ -2,10 +2,17 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Skills
-  Choose an action
-
-› 1. List skills            Tip: press @ to open this list directly.
-  2. Enable/Disable Skills  Enable or disable skills.
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Skills                                       ││admitted
+│ Choose an action                             ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. List skills            Tip: press @ to    ││
+                            open this list     ││CONTEXT WINDOW  ≈0 of 258.4k
+                            directly.          ││used (0%)
+  2. Enable/Disable Skills  Enable or disable  ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                            skills.            ││■ Conversation (messages) ≈0
+└──────────────────────────────────────────────┘│tokens
+  Press enter to confirm or esc to go back      │
+                                                │No portable context is
+                                                │available.

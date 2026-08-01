@@ -688,7 +688,9 @@ impl App {
                 Ok(true)
             }
             AppCommand::Prune { target_pct } => {
-                app_server.thread_prune_start(thread_id, *target_pct).await?;
+                app_server
+                    .thread_prune_start(thread_id, *target_pct)
+                    .await?;
                 Ok(true)
             }
             AppCommand::SetThreadName { name } => {

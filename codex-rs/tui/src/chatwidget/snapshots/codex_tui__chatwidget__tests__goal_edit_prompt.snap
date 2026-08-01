@@ -2,8 +2,14 @@
 source: tui/src/chatwidget/tests/goal_menu.rs
 expression: "render_bottom_popup(&chat, 100)"
 ---
-▌ Edit goal
-▌
-▌ Keep improving the bare goal command until it feels calm and useful.
-
-Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/project
+▌ Edit goal                                                 │CONTEXT LEDGER  Total ≈0 tokens
+▌                                                           │admitted
+▌ Keep improving the bare goal command until it feels calm  │i = select/deselect all · backspace =
+▌ and useful.                                               │remove added file
+▌                                                           │
+                                                            │CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+Press enter to confirm or esc to go back                    │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                            │■ Conversation (messages)   ≈0 tokens
+                                                            │
+                                                            │No portable context is available.

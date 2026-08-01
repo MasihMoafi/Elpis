@@ -22,23 +22,23 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 
 
-
-
-
-
-
-
-
 • I’m going to search the repo for where “Change Approved” is rendered to update
   that view.
-• Explored                                      │CONTEXT LEDGER  Total ≈0 tokens
-  └ Search Change Approved                      │admitted
-    Read diff_render.rs                         │
-• Investigating rendering code (0s • esc to int…│No portable context is
+• Explored
+  └ Search Change Approved
+    Read diff_render.rs
+
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+• Investigating rendering code (0s • esc to int…│CONTEXT LEDGER  Total ≈0 tokens
+┌──────────────────────────────────────────────┐│admitted
+› Summarize recent commits                     ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+│                                              ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+  tab to queue message                          │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
                                                 │available.
-┌──────────────────────────────────────────────┐│ACTIVE FILES  ≈0 tokens
-› Summarize recent commits                     ││admitted
-└──────────────────────────────────────────────┘│No sources available.
-  tab to queue message                          │
-                                                │DURABLE MEMORY  ≈0 tokens
- Elpis · model gpt-5.6-sol · location /tmp/proje│admitted

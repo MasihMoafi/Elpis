@@ -10,7 +10,7 @@ expression: sanitized
 │  Directory      : /workspace/tests                                 │
 │  Permissions    : Custom (workspace with network access, Ask for a │
 │  Token usage    : 1.9K total  (1K input + 900 output)              │
-│  Context window : 100% left (2.25K used / 272K)                    │
+│  Context window : 99% left (2.25K used / 272K)                     │
 │  Context pruning: ~0 tokens saved — 0 Ace passes                   │
 │  5h limit       : [██████░░░░░░░░░░░░░░] 28% left (resets 03:14)   │
 ╰────────────────────────────────────────────────────────────────────╯

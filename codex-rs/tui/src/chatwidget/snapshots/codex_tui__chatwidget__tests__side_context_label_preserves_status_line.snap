@@ -2,9 +2,18 @@
 source: tui/src/chatwidget/tests/side.rs
 expression: terminal.backend()
 ---
+"                                                                                "
+" Elpis · model gpt-5.6-sol · location /tmp/proje                                "
 "┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens"
 "› Check recently modified functions for compati││admitted                       "
+"│                                              ││i = select/deselect all ·      "
+"│                                              ││backspace = remove added file  "
 "└──────────────────────────────────────────────┘│                               "
-"      Side from main thread · Ctrl+C to return  │No portable context is         "
+"      Side from main thread · Ctrl+C to return  │CONTEXT WINDOW  ≈0 of 258.4k   "
+"                                                │used (0%)                      "
+"                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  "
+"                                                │■ Conversation (messages) ≈0   "
+"                                                │tokens                         "
+"                                                │                               "
+"                                                │No portable context is         "
 "                                                │available.                     "
-" Elpis · model gpt-5.6-sol · location /tmp/proje│ACTIVE FILES  ≈0 tokens        "

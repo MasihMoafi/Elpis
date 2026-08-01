@@ -2,10 +2,17 @@
 source: tui/src/chatwidget/tests/slash_commands.rs
 expression: popup
 ---
-  Delete this session?
-  Cannot be undone. Subagent threads will also be deleted.
-
-› 1. No, keep this session  Return to the current session
-  2. Yes, delete and exit   Permanently delete this session now
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Delete this session?                         ││admitted
+│ Cannot be undone. Subagent threads will also ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. No, keep this session  Return to the      ││
+                            current session    ││CONTEXT WINDOW  ≈0 of 258.4k
+  2. Yes, delete and exit   Permanently delete ││used (0%)
+                            this session now   ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+└──────────────────────────────────────────────┘│■ Conversation (messages) ≈0
+  Press enter to confirm or esc to go back      │tokens
+                                                │
+                                                │No portable context is
+                                                │available.

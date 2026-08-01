@@ -2,11 +2,14 @@
 source: tui/src/chatwidget/tests/permissions.rs
 expression: "render_bottom_popup(&chat, 120)"
 ---
-  Your organization requires the default Codex agent sandbox to continue. Set it up to protect your files and control
-  network access.
-  Learn more <https://developers.openai.com/codex/windows>
-
-› 1. Set up default sandbox (requires Administrator permissions)
-  2. Quit
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens admitted
+│ Your organization requires the default Codex agent sandbox to        ││i = select/deselect all · backspace = remove
+│ continue. Set it up to protect your files and control network        ││added file
+│ access.                                                              ││
+│ Learn more <https://developers.openai.com/codex/windows>             ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+│                                                                      ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+› 1. Set up default sandbox (requires Administrator permissions)       ││■ Conversation (messages)           ≈0 tokens
+  2. Quit                                                              ││
+└──────────────────────────────────────────────────────────────────────┘│No portable context is available.
   Press enter to confirm or esc to go back

@@ -2,12 +2,21 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Select Reasoning Level for gpt-5.4
-
-  1. Low               Fast responses with lighter reasoning
-  2. Medium (default)  Balances speed and reasoning depth for everyday tasks
-› 3. High (current)    Greater reasoning depth for complex problems
-  4. Extra high        Extra high reasoning depth for complex problems
-  5. More reasoning…   Max and Ultra consume usage limits faster
-
+ Elpis · model gpt-5.4 · location /tmp/project
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Select Reasoning Level for gpt-5.4           ││admitted
+│                                              ││i = select/deselect all ·
+  1. Low               Fast responses with     ││backspace = remove added file
+                       lighter reasoning       ││
+  2. Medium (default)  Balances speed and      ││CONTEXT WINDOW  ≈0 of 258.4k
+                       reasoning depth for     ││used (0%)
+                       everyday tasks          ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+› 3. High (current)    Greater reasoning depth ││■ Conversation (messages) ≈0
+                       for complex problems    ││tokens
+  4. Extra high        Extra high reasoning    ││
+                       depth for complex       ││No portable context is
+                       problems                ││available.
+  5. More reasoning…   Max and Ultra consume   │
+                       usage limits faster     │
+└──────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

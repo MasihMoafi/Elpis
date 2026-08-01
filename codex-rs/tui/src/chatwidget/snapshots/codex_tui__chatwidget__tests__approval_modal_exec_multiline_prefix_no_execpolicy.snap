@@ -3,14 +3,15 @@ source: tui/src/chatwidget/tests/exec_flow.rs
 expression: contents
 ---
 
-
-  Would you like to run the following command?
-
-  $ python - <<'PY'
-  print('hello')
-  PY
-
-› 1. Yes, proceed (y)
-  2. No, and tell Codex what to do differently (esc)
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Would you like to run the following command?             ││admitted
+│                                                          ││i = select/deselect all · backspace =
+│ $ python - <<'PY'                                        ││remove added file
+│ print('hello')                                           ││
+│ PY                                                       ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+│                                                          ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+› 1. Yes, proceed (y)                                      ││■ Conversation (messages)   ≈0 tokens
+  2. No, and tell Codex what to do differently (esc)       ││
+└──────────────────────────────────────────────────────────┘│No portable context is available.
   Press enter to confirm or esc to cancel

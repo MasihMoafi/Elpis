@@ -2,10 +2,14 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Plugins
-  Failed to load plugin details.
-
-     Plugin detail unavailable  Failed to load plugin details.
-› 1. Back to plugins            Return to the plugin list.
-
-  Press esc to close.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Plugins                                                  ││admitted
+│ Failed to load plugin details.                           ││i = select/deselect all · backspace =
+│                                                          ││remove added file
+     Plugin detail unavailable  Failed to load plugin      ││
+                                details.                   ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+› 1. Back to plugins            Return to the plugin list. ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+└──────────────────────────────────────────────────────────┘│■ Conversation (messages)   ≈0 tokens
+  Press esc to close.                                       │
+                                                            │No portable context is available.

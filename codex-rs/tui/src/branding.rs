@@ -33,7 +33,9 @@ impl ProviderRoute {
         custom_openai_base_url: bool,
     ) -> Self {
         match wire_api {
-            WireApi::AnthropicMessages | WireApi::GeminiGenerateContent | WireApi::Chat => Self::Native,
+            WireApi::AnthropicMessages | WireApi::GeminiGenerateContent | WireApi::Chat => {
+                Self::Native
+            }
             WireApi::Responses => {
                 let is_openai = provider_id.trim().eq_ignore_ascii_case("openai")
                     || provider_name.trim().eq_ignore_ascii_case("openai");

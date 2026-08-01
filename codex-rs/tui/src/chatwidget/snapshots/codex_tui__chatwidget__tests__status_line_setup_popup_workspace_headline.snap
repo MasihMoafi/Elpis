@@ -2,22 +2,21 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: status_line_popup_snapshot(&mut chat)
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
                                                             │CONTEXT LEDGER  Total ≈0 tokens
   Configure Status Line                                     │admitted
-  Select which items to display in the status line.         │
-                                                            │No portable context is available.
-  Type to search                                            │ACTIVE FILES  ≈0 tokens admitted
-  >                                                         │No sources available.
-› [x] Use theme colors      Apply colors from the active …  │
-  ───────────────────────                                   │DURABLE MEMORY  ≈0 tokens admitted
-  [x] workspace-headline    Workspace notification headli…  │No sources available.
-  [ ] model                 Current model name              │
-  [ ] model-with-reasoning  Current model name with reaso…  │INSTRUCTIONS  ≈0 tokens admitted
-  [ ] reasoning             Current reasoning level         │No sources available.
-  [ ] current-dir           Current working directory       │
-  [ ] project-name          Project name (omitted when un…  │TOOL EVIDENCE  ≈0 tokens admitted
+  Select which items to display in the status line.         │i = select/deselect all · backspace =
+                                                            │remove added file
+  Type to search                                            │
+  >                                                         │CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+› [x] Use theme colors      Apply colors from the active …  │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  ───────────────────────                                   │■ Conversation (messages)   ≈0 tokens
+  [x] workspace-headline    Workspace notification headli…  │
+  [ ] model                 Current model name              │No portable context is available.
+  [ ] model-with-reasoning  Current model name with reaso…
+  [ ] reasoning             Current reasoning level
+  [ ] current-dir           Current working directory
+  [ ] project-name          Project name (omitted when un…
 
-  ELPIS · provider openai · model gpt-5.6-sol · context 0…
+  ELPIS · provider openai · model gpt-5.6-sol · context 9…
   Press space to toggle; ←/→ to move; enter to confirm and c
-
- Elpis · model gpt-5.6-sol · location /tmp/project

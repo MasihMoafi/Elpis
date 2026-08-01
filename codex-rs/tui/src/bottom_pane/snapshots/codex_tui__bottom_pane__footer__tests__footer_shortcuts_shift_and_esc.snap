@@ -10,4 +10,4 @@ expression: terminal.backend()
 "  ⌥ + , reasoning down                       ⌥ + . reasoning up                 "
 "  ctrl + t to view transcript                                                   "
 "                                                                                "
-"  customize shortcuts with /keymap                                              "
+"  customize shortcuts with /hotkeys                                             "

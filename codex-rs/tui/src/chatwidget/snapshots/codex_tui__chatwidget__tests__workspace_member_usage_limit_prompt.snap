@@ -2,13 +2,14 @@
 source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: popup
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
 ┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
 │ Usage limit reached                                      ││admitted
-│ Request a limit increase from your owner to continue usi ││
-│                                                          ││No portable context is available.
-  1. Yes (y)                                               ││ACTIVE FILES  ≈0 tokens admitted
-› 2. No (default) (n)                                      ││No sources available.
-└──────────────────────────────────────────────────────────┘│
-  Press enter to confirm or esc to go back                  │DURABLE MEMORY  ≈0 tokens admitted
-                                                            │No sources available.
- Elpis · model gpt-5.6-sol · location /tmp/project          │
+│ Request a limit increase from your owner to continue usi ││i = select/deselect all · backspace =
+│                                                          ││remove added file
+  1. Yes (y)                                               ││
+› 2. No (default) (n)                                      ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+└──────────────────────────────────────────────────────────┘│░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  Press enter to confirm or esc to go back                  │■ Conversation (messages)   ≈0 tokens
+                                                            │
+                                                            │No portable context is available.

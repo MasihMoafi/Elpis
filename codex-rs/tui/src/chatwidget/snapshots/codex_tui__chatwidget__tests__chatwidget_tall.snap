@@ -2,27 +2,27 @@
 source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
-• Working (0s • esc to interrupt)               │CONTEXT LEDGER  Total ≈0 tokens
+
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+• elpising… (0s • esc to interrupt)             │CONTEXT LEDGER  Total ≈0 tokens
                                                 │admitted
-• Queued follow-up inputs                       │
-  ↳ Hello, world! 0                             │No portable context is
-  ↳ Hello, world! 1                             │available.
-  ↳ Hello, world! 2                             │ACTIVE FILES  ≈0 tokens
-  ↳ Hello, world! 3                             │admitted
-  ↳ Hello, world! 4                             │No sources available.
-  ↳ Hello, world! 5                             │
-  ↳ Hello, world! 6                             │DURABLE MEMORY  ≈0 tokens
-  ↳ Hello, world! 7                             │admitted
-  ↳ Hello, world! 8                             │No sources available.
-  ↳ Hello, world! 9                             │
-  ↳ Hello, world! 10                            │INSTRUCTIONS  ≈0 tokens
+• Queued follow-up inputs                       │i = select/deselect all ·
+  ↳ Hello, world! 0                             │backspace = remove added file
+  ↳ Hello, world! 1                             │
+  ↳ Hello, world! 2                             │CONTEXT WINDOW  ≈0 of 258.4k
+  ↳ Hello, world! 3                             │used (0%)
+  ↳ Hello, world! 4                             │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  ↳ Hello, world! 5                             │■ Conversation (messages) ≈0
+  ↳ Hello, world! 6                             │tokens
+  ↳ Hello, world! 7                             │
+  ↳ Hello, world! 8                             │No portable context is
+  ↳ Hello, world! 9                             │available.
+  ↳ Hello, world! 10
   ↳ Hello, world! 11
   ↳ Hello, world! 12
-  ↳ Hello, world! 13
-  ↳ Hello, world! 14
-  ↳ Hello, world! 15
-  ↳ Hello, world! 16
 ┌──────────────────────────────────────────────┐
 › Ask Codex to do anything                     │
+│                                              │
+│                                              │
 └──────────────────────────────────────────────┘
         100% context left · Tab Context Ledger

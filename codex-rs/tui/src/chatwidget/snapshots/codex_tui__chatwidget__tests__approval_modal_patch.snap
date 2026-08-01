@@ -2,12 +2,18 @@
 source: tui/src/chatwidget/tests/exec_flow.rs
 expression: contents
 ---
-  Would you like to make the following edits?
 
-  Reason: The model wants to apply changes
-
-› 1. Yes, proceed (y)
-  2. Yes, and don't ask again for these files (a)
-  3. No, and tell Codex what to do differently (esc)
-
-  Press enter to confirm or esc to cancel
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Would you like to make the following edits?  ││admitted
+│                                              ││i = select/deselect all ·
+│ Reason: The model wants to apply changes     ││backspace = remove added file
+│                                              ││
+› 1. Yes, proceed (y)                          ││CONTEXT WINDOW  ≈0 of 258.4k
+  2. Yes, and don't ask again for these files  ││used (0%)
+     (a)                                       ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  3. No, and tell Codex what to do differently ││■ Conversation (messages) ≈0
+     (esc)                                     ││tokens
+└──────────────────────────────────────────────┘│
+  Press enter to confirm or esc to cancel       │No portable context is
+                                                │available.

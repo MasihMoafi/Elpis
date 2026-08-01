@@ -235,17 +235,24 @@ fn permissions_text_for(config: &Config) -> Option<String> {
         /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
-    render_lines(&composite.display_lines(/*width*/ 80))
-        .iter()
-        .find(|line| line.contains("Permissions:"))
-        .and_then(|line| {
-            line.split("Permissions:")
-                .nth(1)
-                .map(str::trim)
-                .map(|text| text.trim_end_matches('│'))
-                .map(str::trim)
-                .map(ToString::to_string)
-        })
+    status_field_value(&composite.display_lines(/*width*/ 80), "Permissions")
+}
+
+/// Read one `Label: value` row out of a rendered status card.
+///
+/// Two things make a naive `contains("Label:")` unreliable here: the card pads every
+/// label out to the width of the longest one, so the colon does not sit flush against
+/// the label text, and rows are wrapped in the card's border. Either one silently
+/// finds nothing, which turns a value assertion into an assertion about `None`.
+fn status_field_value(lines: &[Line<'static>], label: &str) -> Option<String> {
+    fn strip_border(text: &str) -> &str {
+        text.trim().trim_start_matches('│').trim_end_matches('│').trim()
+    }
+
+    render_lines(lines).iter().find_map(|line| {
+        let (prefix, value) = line.split_once(':')?;
+        (strip_border(prefix) == label).then(|| strip_border(value).to_string())
+    })
 }
 
 #[tokio::test]
@@ -701,7 +708,7 @@ async fn status_snapshot_shows_active_user_defined_profile() {
 }
 
 #[tokio::test]
-async fn status_model_provider_uses_bedrock_runtime_base_url_and_gates_usage_link() {
+async fn status_model_provider_uses_bedrock_runtime_base_url_and_stays_provider_neutral() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home).await;
     config.model_provider_id = "amazon-bedrock".to_string();
@@ -787,28 +794,30 @@ async fn status_model_provider_uses_bedrock_runtime_base_url_and_gates_usage_lin
     let rendered = render_lines(&composite.display_lines(/*width*/ 120)).join("\n");
 
     assert!(
-        rendered.contains("https://chatgpt.com/codex/settings/usage"),
-        "expected /usage to show ChatGPT usage link for OpenAI-auth proxy, got: {rendered}"
+        rendered.contains("OpenAI Proxy"),
+        "expected /usage to name the configured provider, got: {rendered}"
+    );
+    // Elpis routes to whichever provider is configured, so the status card carries no
+    // account link belonging to one vendor — not even for a provider that authenticates
+    // against OpenAI.
+    assert!(
+        !rendered.contains("chatgpt.com"),
+        "expected /usage to stay provider-neutral, got: {rendered}"
     );
 
-    let wide_destinations: Vec<String> = composite
-        .display_hyperlink_lines(/*width*/ 120)
-        .into_iter()
-        .flat_map(|line| line.hyperlinks.into_iter())
-        .map(|link| link.destination)
-        .collect();
-    assert_eq!(
-        wide_destinations,
-        vec!["https://chatgpt.com/codex/settings/usage"]
-    );
-
-    let narrow_destinations: Vec<String> = composite
-        .display_hyperlink_lines(/*width*/ 24)
-        .into_iter()
-        .flat_map(|line| line.hyperlinks.into_iter())
-        .map(|link| link.destination)
-        .collect();
-    assert_eq!(narrow_destinations, Vec::<String>::new());
+    for width in [120, 24] {
+        let destinations: Vec<String> = composite
+            .display_hyperlink_lines(width)
+            .into_iter()
+            .flat_map(|line| line.hyperlinks.into_iter())
+            .map(|link| link.destination)
+            .collect();
+        assert_eq!(
+            destinations,
+            Vec::<String>::new(),
+            "unexpected status hyperlink at width {width}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1213,12 +1222,10 @@ async fn status_snapshot_shows_unlimited_credits() {
         /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
-    let rendered = render_lines(&composite.display_lines(/*width*/ 120));
+    let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
     assert!(
-        rendered
-            .iter()
-            .any(|line| line.contains("Credits:") && line.contains("Unlimited")),
-        "expected Credits: Unlimited line, got {rendered:?}"
+        credits.as_deref().is_some_and(|value| value.contains("Unlimited")),
+        "expected Credits: Unlimited line, got {credits:?}"
     );
 }
 
@@ -1265,12 +1272,10 @@ async fn status_snapshot_shows_positive_credits() {
         /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
-    let rendered = render_lines(&composite.display_lines(/*width*/ 120));
+    let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
     assert!(
-        rendered
-            .iter()
-            .any(|line| line.contains("Credits:") && line.contains("13 credits")),
-        "expected Credits line with rounded credits, got {rendered:?}"
+        credits.as_deref().is_some_and(|value| value.contains("13 credits")),
+        "expected Credits line with rounded credits, got {credits:?}"
     );
 }
 
@@ -1324,12 +1329,10 @@ async fn status_snapshot_shows_available_credits_without_display_balance() {
             /*collaboration_mode*/ None,
             /*reasoning_effort_override*/ None,
         );
-        let rendered = render_lines(&composite.display_lines(/*width*/ 120));
+        let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
         assert!(
-            rendered
-                .iter()
-                .any(|line| line.contains("Credits:") && line.contains("Available")),
-            "expected Credits: Available line, got {rendered:?}"
+            credits.as_deref().is_some_and(|value| value.contains("Available")),
+            "expected Credits: Available line, got {credits:?}"
         );
     }
 }
@@ -1377,12 +1380,10 @@ async fn status_snapshot_respects_unlimited_without_has_credits_flag() {
         /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
-    let rendered = render_lines(&composite.display_lines(/*width*/ 120));
+    let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
     assert!(
-        rendered
-            .iter()
-            .any(|line| line.contains("Credits:") && line.contains("Unlimited")),
-        "expected Credits: Unlimited line, got {rendered:?}"
+        credits.as_deref().is_some_and(|value| value.contains("Unlimited")),
+        "expected Credits: Unlimited line, got {credits:?}"
     );
 }
 

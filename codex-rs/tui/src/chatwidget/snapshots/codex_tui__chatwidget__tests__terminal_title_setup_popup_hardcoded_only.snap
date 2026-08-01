@@ -2,22 +2,21 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: terminal_title_popup_snapshot(&mut chat)
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
                                                             │CONTEXT LEDGER  Total ≈0 tokens
   Configure Terminal Title                                  │admitted
-  Select which items to display in the terminal title.      │
-                                                            │No portable context is available.
-  Type to search                                            │ACTIVE FILES  ≈0 tokens admitted
-  >                                                         │No sources available.
-› [x] thread-title   Current thread title, or thread iden…  │
-  [x] git-branch     Current Git branch (omitted when una…  │DURABLE MEMORY  ≈0 tokens admitted
-  [x] task-progress  Latest task progress from update_pla…  │No sources available.
-  [ ] app-name       Codex app name                         │
-  [ ] project-name   Project name (falls back to current …  │INSTRUCTIONS  ≈0 tokens admitted
-  [ ] current-dir    Current working directory              │No sources available.
-  [ ] activity       Spinner while working, action-requir…  │
-  [ ] run-state      Compact session run-state text (Read…  │TOOL EVIDENCE  ≈0 tokens admitted
+  Select which items to display in the terminal title.      │i = select/deselect all · backspace =
+                                                            │remove added file
+  Type to search                                            │
+  >                                                         │CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+› [x] thread-title   Current thread title, or thread iden…  │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  [x] git-branch     Current Git branch (omitted when una…  │■ Conversation (messages)   ≈0 tokens
+  [x] task-progress  Latest task progress from update_pla…  │
+  [ ] app-name       Codex app name                         │No portable context is available.
+  [ ] project-name   Project name (falls back to current …
+  [ ] current-dir    Current working directory
+  [ ] activity       Spinner while working, action-requir…
+  [ ] run-state      Compact session run-state text (Read…
 
   thread title | feat/awesome-feature | Tasks 0/0
   Press space to toggle; ←/→ to move; enter to confirm and c
-
- Elpis · model gpt-5.6-sol · location /tmp/project

@@ -2,11 +2,17 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Reset all memories?
-
-› Reset all memories  Delete local memory files and rollout summaries.
-  Go back             Return to memory settings.
-
-
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+                                                │CONTEXT LEDGER  Total ≈0 tokens
+  Reset all memories?                           │admitted
+                                                │i = select/deselect all ·
+› Reset all memories  Delete local memory       │backspace = remove added file
+                      files and rollout         │
+                      summaries.                │CONTEXT WINDOW  ≈0 of 258.4k
+  Go back             Return to memory          │used (0%)
+                      settings.                 │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+  Press enter to confirm or esc to go back      │No portable context is
+                                                │available.

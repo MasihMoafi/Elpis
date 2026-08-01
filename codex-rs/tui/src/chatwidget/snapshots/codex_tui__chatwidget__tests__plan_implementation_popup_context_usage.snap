@@ -2,10 +2,18 @@
 source: tui/src/chatwidget/tests/plan_mode.rs
 expression: popup
 ---
-  Implement this plan?
-
-› 1. Yes, implement this plan          Switch to Default and start coding.
-  2. Yes, clear context and implement  Fresh thread. Context: 89% used.
-  3. No, stay in Plan mode             Continue planning with the model.
-
+ Elpis · model gpt-5 · location /tmp/project
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Implement this plan?                         ││admitted
+│                                              ││i = select/deselect all ·
+› 1. Yes, implement this plan   Switch to      ││backspace = remove added file
+                                Default and    ││
+                                start coding.  ││CONTEXT WINDOW  ≈90.0k of
+  2. Yes, clear context and im… Fresh thread.  ││100.0k used (90%)
+                                Context: 90%   ││██████████████████████████░░░
+                                used.          ││■ Conversation (messages)
+  3. No, stay in Plan mode      Continue       ││≈90.0k tokens
+                                planning with  ││
+                                the model.     ││No portable context is
+└──────────────────────────────────────────────┘│available.
   Press enter to confirm or esc to go back

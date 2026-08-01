@@ -2,13 +2,13 @@
 source: tui/src/chatwidget/tests/guardian.rs
 expression: normalize_snapshot_paths(rendered)
 ---
+ Elpis · model gpt-5.6-sol · location /tmp/project
 • Reviewing 2 approval requests (0s • esc to interrupt)
   └ • rm -rf '/tmp/guardian target 1'
     • rm -rf '/tmp/guardian target 2'
-
 ┌──────────────────────────────────────────────────────────────────────┐
 › Ask Codex to do anything                                             │
+│                                                                      │
+│                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
   ? for shortcuts               100% context left · Tab Context Ledger
-
- Elpis · model gpt-5.6-sol · location /tmp/project

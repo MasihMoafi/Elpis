@@ -2,5 +2,5 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: snapshot
 ---
-status line: ELPIS · provider openai · model gpt-5.6-sol · context 0% · my-project · feature/mixed-preview · Mixed preview thread
-terminal title: project | Mixed preview thread | Tasks 0/0
+status line: ELPIS · provider openai · model gpt-5.6-sol · context 97% · tmp · feature/mixed-preview · Mixed preview thread
+terminal title: tmp | Mixed preview thread | Tasks 0/0

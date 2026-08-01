@@ -4830,6 +4830,7 @@ fn token_usage_notification(
                 reasoning_output_tokens: 0,
             },
             model_context_window,
+            context_prune_saved_tokens: 0,
         },
     })
 }

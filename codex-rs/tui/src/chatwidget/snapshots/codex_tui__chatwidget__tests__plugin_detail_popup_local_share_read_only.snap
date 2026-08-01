@@ -2,18 +2,22 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: strip_osc8_for_snapshot(&popup)
 ---
-  Plugins
-  Docs · Can be installed · Local
-  Data shared with this app is subject to the app's terms of service and privacy policy. Learn more.
-  Workspace docs.
-
-› 1. Back to plugins  Return to the plugin list.
-  2. Install plugin   Install this plugin now.
-     Source           Local
-     Auth             Auth on install
-     Version          remote 7
-     Sharing          Private · creator Test User · https://chatgpt.com/codex/plugins/share/docs
-     Skills           No plugin skills.
-     Hooks            No plugin hooks.
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens admitted
+│ Plugins                                                              ││i = select/deselect all · backspace = remove
+│ Docs · Can be installed · Local                                      ││added file
+│ Data shared with this app is subject to the app's terms of service   ││
+│ and privacy policy. Learn more.                                      ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+│ Workspace docs.                                                      ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+│                                                                      ││■ Conversation (messages)           ≈0 tokens
+› 1. Back to plugins  Return to the plugin list.                       ││
+  2. Install plugin   Install this plugin now.                         ││No portable context is available.
+     Source           Local                                            │
+     Auth             Auth on install                                  │
+     Version          remote 7                                         │
+     Sharing          Private · creator Test User · https://           │
+                      chatgpt.com/codex/plugins/share/docs             │
+     Skills           No plugin skills.                                │
+     Hooks            No plugin hooks.                                 │
+└──────────────────────────────────────────────────────────────────────┘
   Press esc to close.

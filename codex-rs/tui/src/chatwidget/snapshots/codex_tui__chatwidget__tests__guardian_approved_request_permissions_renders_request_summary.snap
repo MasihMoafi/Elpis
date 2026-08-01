@@ -3,14 +3,14 @@ source: tui/src/chatwidget/tests/guardian.rs
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
-
-
-✔ Request approved for permission request: Need write access for generated
-  report assets.
-
-• Working (0s • esc to interrupt)
-
-
-› Ask Codex to do anything
-
-  gpt-5.6-sol default · /tmp/project
+✔
+ Elpis · model gpt-5.6-sol · location /tmp/project
+• elpising… (0s • esc to interrupt)                               │CONTEXT LEDGER  Total ≈0 tokens admitted
+┌────────────────────────────────────────────────────────────────┐│i = select/deselect all · backspace =
+› Ask Codex to do anything                                       ││remove added file
+│                                                                ││
+│                                                                ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+└────────────────────────────────────────────────────────────────┘│░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  ? for shortcuts         100% context left · Tab Context Ledger  │■ Conversation (messages)       ≈0 tokens
+                                                                  │
+                                                                  │No portable context is available.

@@ -2,16 +2,18 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Plugins
-  Browse plugins from available marketplaces.
-  Installed 1 of 4 available plugins.
-
-  [All Plugins]  Installed (1)  OpenAI Curated  Workspace  Repo Marketplace  Add Marketplace
-
-  Type to search plugins
-› [ ] Alpha Sync          Disabled         Space to enable; Enter view details.
-  [-] Bravo Search        Available      · OpenAI Curated · Search docs and tickets.
-  [-] Hidden Repo Plugin  Available      · Repo Marketplace · Should not be shown in /plugins.
-  [-] Starter             Admin assigned · OpenAI Curated · Included by default.
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens admitted
+│ Plugins                                                                                                                                                                                                                                                                  ││i = select/deselect all · backspace = remove added
+│ Browse plugins from available marketplaces.                                                                                                                                                                                                                              ││file
+│ Installed 1 of 4 available plugins.                                                                                                                                                                                                                                      ││
+│                                                                                                                                                                                                                                                                          ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+│ [All Plugins]  Installed (1)  OpenAI Curated  Workspace  Repo Marketplace  Add Marketplace                                                                                                                                                                               ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+│                                                                                                                                                                                                                                                                          ││■ Conversation (messages)               ≈0 tokens
+│ Type to search plugins                                                                                                                                                                                                                                                   ││
+› [ ] Alpha Sync          Disabled         Space to enable; Enter view details.                                                                                                                                                                                            ││No portable context is available.
+  [-] Bravo Search        Available      · OpenAI Curated · Search docs and tickets.                                                                                                                                                                                       │
+  [-] Hidden Repo Plugin  Available      · Repo Marketplace · Should not be shown in /plugins.                                                                                                                                                                             │
+  [-] Starter             Admin assigned · OpenAI Curated · Included by default.                                                                                                                                                                                           │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
   space enable/disable · ←/→ select marketplace · enter view details · esc close

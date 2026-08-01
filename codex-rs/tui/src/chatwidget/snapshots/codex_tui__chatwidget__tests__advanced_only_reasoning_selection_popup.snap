@@ -2,8 +2,17 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Select Reasoning Level for gpt-5.4
-
-› 1. More reasoning…  Ultra consumes usage limits faster
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Select Reasoning Level for gpt-5.4           ││admitted
+│                                              ││i = select/deselect all ·
+› 1. More reasoning…  Ultra consumes usage     ││backspace = remove added file
+                      limits faster            ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+  Press enter to confirm or esc to go back      │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.

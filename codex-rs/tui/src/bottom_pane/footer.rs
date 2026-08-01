@@ -2097,7 +2097,11 @@ mod tests {
         };
 
         let line = passive_footer_status_line(&props).expect("approval mode line");
-        let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
+        let text: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
         assert_eq!(text, "Approve for me");
     }
 
@@ -2120,7 +2124,11 @@ mod tests {
         };
 
         let line = passive_footer_status_line(&props).expect("combined footer line");
-        let text: String = line.spans.iter().map(|span| span.content.as_ref()).collect();
+        let text: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
         assert_eq!(text, "Robie [explorer] · Auto");
     }
 

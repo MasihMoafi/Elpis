@@ -3,13 +3,15 @@ source: tui/src/chatwidget/tests/exec_flow.rs
 expression: terminal.backend().vt100().screen().contents()
 ---
 
-
-  Would you like to run the following command?
-
-  $ echo hello world
-
-› 1. Yes, proceed (y)
-  2. Yes, and don't ask again for commands that start with `echo hello world` (p)
-  3. No, and tell Codex what to do differently (esc)
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Would you like to run the following command?             ││admitted
+│                                                          ││i = select/deselect all · backspace =
+│ $ echo hello world                                       ││remove added file
+│                                                          ││
+› 1. Yes, proceed (y)                                      ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+  2. Yes, and don't ask again for commands that start with ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+     `echo hello world` (p)                                ││■ Conversation (messages)   ≈0 tokens
+  3. No, and tell Codex what to do differently (esc)       ││
+└──────────────────────────────────────────────────────────┘│No portable context is available.
   Press enter to confirm or esc to cancel

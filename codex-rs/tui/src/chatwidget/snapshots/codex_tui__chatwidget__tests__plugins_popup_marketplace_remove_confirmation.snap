@@ -1,13 +1,15 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 411
 expression: confirmation
 ---
-  Plugins
-  Remove Repo Marketplace marketplace?
-  This removes the configured marketplace from Codex.
-
-› 1. Remove marketplace  Remove this marketplace from the available plugin list.
-  2. Back to plugins     Keep this marketplace installed.
-
-  enter select · esc close
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Plugins                                                  ││admitted
+│ Remove Repo Marketplace marketplace?                     ││i = select/deselect all · backspace =
+│ This removes the configured marketplace from Codex.      ││remove added file
+│                                                          ││
+› 1. Remove marketplace  Remove this marketplace from the  ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+                         available plugin list.            ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  2. Back to plugins     Keep this marketplace installed.  ││■ Conversation (messages)   ≈0 tokens
+└──────────────────────────────────────────────────────────┘│
+  enter select · esc close                                  │No portable context is available.

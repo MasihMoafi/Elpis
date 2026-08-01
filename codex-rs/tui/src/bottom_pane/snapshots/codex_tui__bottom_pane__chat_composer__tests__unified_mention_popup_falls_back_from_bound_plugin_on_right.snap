@@ -2,9 +2,9 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"                                                                                                    "
-"› @left  @bound                                                                                     "
-"                                                                                                    "
+"┌──────────────────────────────────────────────────────────────────────────────────────────────────┐"
+"› @left  @bound                                                                                    │"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
 "> left  Plugin used to test bound mention fallback.                                           Plugin"
 "                                                                                                    "
 "                                                                                                    "

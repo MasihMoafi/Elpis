@@ -81,6 +81,10 @@ impl ChatWidget {
         }
         match notification {
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
+                self.update_context_prune_savings(
+                    notification.token_usage.context_prune_saved_tokens,
+                    from_replay,
+                );
                 crate::branding::record_context_usage(
                     notification.token_usage.last.total_tokens,
                     notification.token_usage.model_context_window,

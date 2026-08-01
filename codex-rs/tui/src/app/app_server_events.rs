@@ -12,6 +12,7 @@ use crate::app_info::app_info_from_api;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::status_account_display_from_auth_mode;
 use codex_app_server_client::AppServerEvent;
+use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::AuthMode;
 use codex_app_server_protocol::RateLimitReachedType;
 use codex_app_server_protocol::ServerNotification;
@@ -19,6 +20,36 @@ use codex_app_server_protocol::ServerRequest;
 use codex_protocol::ThreadId;
 
 impl App {
+    pub(super) async fn resolve_full_access_approvals(
+        &mut self,
+        app_server_client: &AppServerSession,
+    ) {
+        for approval in self.pending_app_server_requests.full_access_approval_ops() {
+            let thread_id = match ThreadId::from_string(&approval.thread_id) {
+                Ok(thread_id) => thread_id,
+                Err(err) => {
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to resolve Full Access approval for thread {}: {err}",
+                        approval.thread_id
+                    ));
+                    continue;
+                }
+            };
+            match self
+                .try_resolve_app_server_request(app_server_client, thread_id, &approval.op)
+                .await
+            {
+                Ok(true) => self
+                    .chat_widget
+                    .dismiss_app_server_request(&approval.resolved),
+                Ok(false) => {}
+                Err(err) => self.chat_widget.add_error_message(format!(
+                    "Failed to resolve Full Access approval for thread {thread_id}: {err}"
+                )),
+            }
+        }
+    }
+
     pub(super) fn refresh_mcp_startup_expected_servers_from_config(&mut self) {
         let enabled_config_mcp_servers: Vec<String> = self
             .config
@@ -303,6 +334,18 @@ impl App {
             {
                 tracing::warn!("{err}");
             }
+            return;
+        }
+
+        if self.runtime_approval_policy_override == Some(AskForApproval::Never)
+            && matches!(
+                &request,
+                ServerRequest::CommandExecutionRequestApproval { .. }
+                    | ServerRequest::FileChangeRequestApproval { .. }
+                    | ServerRequest::PermissionsRequestApproval { .. }
+            )
+        {
+            self.resolve_full_access_approvals(app_server_client).await;
             return;
         }
 

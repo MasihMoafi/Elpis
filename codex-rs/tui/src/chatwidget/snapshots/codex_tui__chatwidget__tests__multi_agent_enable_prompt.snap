@@ -2,10 +2,17 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Enable subagents?
-  Subagents are currently disabled in your config.
-
-› 1. Yes, enable  Save the setting now. You will need a new session to use it.
-  2. Not now      Keep subagents disabled.
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Enable subagents?                            ││admitted
+│ Subagents are currently disabled in your con ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Yes, enable  Save the setting now. You    ││
+                  will need a new session to   ││CONTEXT WINDOW  ≈0 of 258.4k
+                  use it.                      ││used (0%)
+  2. Not now      Keep subagents disabled.     ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+└──────────────────────────────────────────────┘│■ Conversation (messages) ≈0
+  Press enter to confirm or esc to go back      │tokens
+                                                │
+                                                │No portable context is
+                                                │available.

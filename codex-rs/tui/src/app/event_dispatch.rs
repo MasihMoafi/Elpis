@@ -1049,10 +1049,9 @@ impl App {
                 )
                 .await
                 {
-                    Ok(_) => self.chat_widget.add_info_message(
-                        "Auto model routing enabled.".to_string(),
-                        None,
-                    ),
+                    Ok(_) => self
+                        .chat_widget
+                        .add_info_message("Auto model routing enabled.".to_string(), None),
                     Err(err) => self.chat_widget.add_error_message(format!(
                         "Failed to save Auto model routing: {}",
                         format_config_error(&err)
@@ -1740,6 +1739,9 @@ impl App {
                     AskForApproval::from(self.config.permissions.approval_policy.value());
                 self.runtime_approval_policy_override = Some(approval_policy);
                 self.chat_widget.set_approval_policy(approval_policy);
+                if approval_policy == AskForApproval::Never {
+                    self.resolve_full_access_approvals(app_server).await;
+                }
                 self.sync_active_thread_permission_settings_to_cached_session()
                     .await;
             }

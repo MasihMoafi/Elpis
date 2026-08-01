@@ -2,10 +2,10 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"                                                                        "
-"› $goog                                                                 "
-"                                                                        "
-"                                                                        "
+"┌──────────────────────────────────────────────────────────────────────┐"
+"› $goog                                                                │"
+"│                                                                      │"
+"└──────────────────────────────────────────────────────────────────────┘"
 "  Google Calendar  [Plugin] Connect Google Calendar for scheduling, ava…"
 "  Google Calendar  [Skill] Find availability and plan event changes     "
 "  Google Calendar  [App] Look up events and availability                "

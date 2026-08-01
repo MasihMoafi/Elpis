@@ -2,17 +2,20 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: strip_osc8_for_snapshot(&popup)
 ---
-  Plugins
-  Figma · Installed by admin · ChatGPT Marketplace
-  Turn Figma files into implementation context.
-
-› 1. Back to plugins     Return to the plugin list.
-     Installed by admin  This plugin is installed by your workspace admin.
-     Source              Local
-     Auth                Auth on install
-     Skills              design-review, extract-copy
-     Hooks               PreToolUse (1), Stop (2)
-     Apps                Figma, Slack
-     MCP Servers         figma-mcp, docs-mcp
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Plugins                                                  ││admitted
+│ Figma · Installed by admin · ChatGPT Marketplace         ││i = select/deselect all · backspace =
+│ Turn Figma files into implementation context.            ││remove added file
+│                                                          ││
+› 1. Back to plugins     Return to the plugin list.        ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+     Installed by admin  This plugin is installed by your  ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                         workspace admin.                  ││■ Conversation (messages)   ≈0 tokens
+     Source              Local                             ││
+     Auth                Auth on install                   ││No portable context is available.
+     Skills              design-review, extract-copy       │
+     Hooks               PreToolUse (1), Stop (2)          │
+     Apps                Figma, Slack                      │
+     MCP Servers         figma-mcp, docs-mcp               │
+└──────────────────────────────────────────────────────────┘
   Press esc to close.

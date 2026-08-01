@@ -313,13 +313,12 @@ impl ChatWidget {
 
         // Auto always begins with Terra. Core asks Terra to choose from the live
         // catalog, then rebuilds this turn for the selected model before sampling.
-        let selected_model = if self.auto_model_routing_enabled()
-            && self.auto_model_routing_available()
-        {
-            crate::chatwidget::model_routing::TERRA_MODEL.to_string()
-        } else {
-            effective_mode.model().to_string()
-        };
+        let selected_model =
+            if self.auto_model_routing_enabled() && self.auto_model_routing_available() {
+                crate::chatwidget::model_routing::TERRA_MODEL.to_string()
+            } else {
+                effective_mode.model().to_string()
+            };
         let selected_effort = effective_mode.reasoning_effort();
 
         self.maybe_apply_ide_context(&mut items);

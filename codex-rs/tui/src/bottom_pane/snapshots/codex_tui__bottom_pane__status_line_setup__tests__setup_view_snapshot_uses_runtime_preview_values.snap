@@ -17,5 +17,5 @@ expression: "render_lines(&view, 72)"
   [ ] reasoning             Current reasoning level                     
   [ ] project-name          Project name (omitted when unavailable)     
                                                                         
-  ELPIS · provider openai · model gpt-5.6-sol · context admitted · ~/…  
+  ELPIS · provider safety-retry-test · model gpt-5.4 · context 0% · ~…  
   Press space to toggle; ←/→ to move; enter to confirm and close; esc to

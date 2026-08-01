@@ -98,6 +98,29 @@ impl HistoryCell for ContextUsageHistoryCell {
 }
 
 impl ChatWidget {
+    pub(super) fn begin_context_prune_tracking(&mut self) {
+        self.context_prune_report_pending = true;
+    }
+
+    pub(super) fn finish_context_prune_tracking(&mut self) {
+        if !std::mem::take(&mut self.context_prune_report_pending) {
+            return;
+        }
+        self.app_event_tx
+            .send(crate::app_event::AppEvent::RequestContextUsageReport);
+    }
+
+    pub(super) fn update_context_prune_savings(&mut self, saved_tokens: u64, from_replay: bool) {
+        if saved_tokens == 0 {
+            return;
+        }
+        let newly_saved = newly_reclaimed_tokens(self.last_prune_saved_tokens, saved_tokens);
+        self.last_prune_saved_tokens = Some(saved_tokens);
+        if !from_replay && let Some(line) = saved_context_flash_line(newly_saved) {
+            self.bottom_pane.show_saved_context_flash(line);
+        }
+    }
+
     pub(crate) fn add_context_usage_output(&mut self, totals: ContextUsageTranscriptTotals) {
         let sources = self.continuity_sources();
         // Only admitted sources are actually in context; non-admitted discovered
@@ -176,8 +199,7 @@ impl ChatWidget {
             conversation[largest] += other;
             other = 0;
         }
-        let pruner_saved = crate::legacy_core::context_pruner::saved_chars();
-        let saved_tokens = estimate(pruner_saved);
+        let saved_tokens = self.last_prune_saved_tokens.unwrap_or(0);
 
         let mut categories = vec![
             CategoryUsage {
@@ -289,8 +311,7 @@ impl ChatWidget {
 
         let mut after_chart = vec![Line::default()];
         after_chart.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
-        let pruner_passes = crate::legacy_core::context_pruner::pass_count();
-        if pruner_passes == 0 && saved_tokens == 0 {
+        if self.last_prune_saved_tokens.is_none() {
             after_chart.push(Line::from(
                 "   No Ace pruning passes run yet — context is below trigger floor.".dim(),
             ));
@@ -298,7 +319,7 @@ impl ChatWidget {
             after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
                 Span::styled(
-                    format!("{pruner_passes} pass(es) applied"),
+                    "latest pass applied",
                     Style::default().fg(Color::Cyan).bold(),
                 ),
                 Span::from(" · "),
@@ -494,8 +515,7 @@ fn build_grid_with_legend(
     lines
 }
 
-pub(super) fn saved_context_flash_line(saved_chars: usize) -> Option<Line<'static>> {
-    let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(saved_chars) as u64;
+pub(super) fn saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static>> {
     (saved_tokens > 0).then(|| {
         Line::from(vec![
             Span::styled("✨ ", Style::default().fg(Color::Green)),
@@ -508,6 +528,10 @@ pub(super) fn saved_context_flash_line(saved_chars: usize) -> Option<Line<'stati
             ),
         ])
     })
+}
+
+fn newly_reclaimed_tokens(previous_total: Option<u64>, current_total: u64) -> u64 {
+    current_total.saturating_sub(previous_total.unwrap_or(0))
 }
 
 fn fmt_tokens(tokens: u64) -> String {
@@ -574,7 +598,7 @@ mod tests {
 
     #[test]
     fn saved_context_flash_reports_real_reclaimed_size() {
-        let line = saved_context_flash_line(241_600).expect("saved context line");
+        let line = saved_context_flash_line(60_400).expect("saved context line");
         let text = line
             .spans
             .iter()
@@ -582,6 +606,13 @@ mod tests {
             .collect::<String>();
         assert_eq!(text, "✨ Saved Context: ~60.4k tokens reclaimed");
         assert!(saved_context_flash_line(0).is_none());
+    }
+
+    #[test]
+    fn newly_reclaimed_tokens_only_reports_growth() {
+        assert_eq!(newly_reclaimed_tokens(None, 4_200), 4_200);
+        assert_eq!(newly_reclaimed_tokens(Some(4_200), 7_000), 2_800);
+        assert_eq!(newly_reclaimed_tokens(Some(7_000), 4_200), 0);
     }
 
     #[test]

@@ -396,6 +396,7 @@ pub(super) fn handle_token_count(chat: &mut ChatWidget, info: Option<TokenUsageI
                             total: token_usage_breakdown(info.total_token_usage),
                             last: token_usage_breakdown(info.last_token_usage),
                             model_context_window: info.model_context_window,
+                            context_prune_saved_tokens: 0,
                         },
                     },
                 ),

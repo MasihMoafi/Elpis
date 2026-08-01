@@ -2,14 +2,14 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"                                                                                                    "
-"› Ask Codex to do anything                                                                          "
-"                                                                                                    "
-"                                                                                                    "
-"                                                                                                    "
-"                                                                                                    "
-"                                                                                                    "
-"                                                                                                    "
+"┌──────────────────────────────────────────────────────────────────────────────────────────────────┐"
+"› Ask Codex to do anything                                                                         │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"│                                                                                                  │"
+"└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
 "  / for commands                             ! for shell commands                                   "
 "  shift + enter for newline                  tab to submit message                                  "
 "  @ for file paths                           ctrl + v to paste images                               "
@@ -18,4 +18,4 @@ expression: terminal.backend()
 "  ⌥ + , reasoning down                       ⌥ + . reasoning up                                     "
 "  ctrl + t to view transcript                                                                       "
 "                                                                                                    "
-"  customize shortcuts with /keymap                                                                  "
+"  customize shortcuts with /hotkeys                                                                 "

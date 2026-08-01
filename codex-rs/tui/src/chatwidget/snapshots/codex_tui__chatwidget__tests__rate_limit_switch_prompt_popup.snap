@@ -2,22 +2,21 @@
 source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: popup
 ---
+ Elpis · model gpt-5 · location /tmp/project
 ┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
 │ Approaching rate limits                      ││admitted
-│ Switch to gpt-5.6-luna for lower credit usag ││
-│                                              ││No portable context is
-› 1. Switch to gpt-5.6-luna     Fast and       ││available.
-                                affordable     ││ACTIVE FILES  ≈0 tokens
-                                agentic coding ││admitted
-                                model.         ││No sources available.
-  2. Keep current model                        ││
-  3. Keep current model (never… Hide future    ││DURABLE MEMORY  ≈0 tokens
-                                rate limit     ││admitted
-                                reminders      ││No sources available.
-                                about          ││
-                                switching      ││INSTRUCTIONS  ≈0 tokens
+│ Switch to gpt-5.6-luna for lower credit usag ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Switch to gpt-5.6-luna     Fast and       ││
+                                affordable     ││CONTEXT WINDOW  ≈0 of 258.4k
+                                agentic coding ││used (0%)
+                                model.         ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  2. Keep current model                        ││■ Conversation (messages) ≈0
+  3. Keep current model (never… Hide future    ││tokens
+                                rate limit     ││
+                                reminders      ││No portable context is
+                                about          ││available.
+                                switching      │
                                 models.        │
 └──────────────────────────────────────────────┘
   Press enter to confirm or esc to go back
-
- Elpis · model gpt-5 · location /tmp/project

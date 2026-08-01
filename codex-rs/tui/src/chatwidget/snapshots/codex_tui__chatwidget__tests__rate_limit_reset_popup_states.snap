@@ -2,72 +2,152 @@
 source: tui/src/chatwidget/tests/usage.rs
 expression: "states.join(\"\\n---\\n\")"
 ---
-  Usage limit resets
-  Checking your available resets...
-
-›    Loading...
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ Checking your available resets...            ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+›    Loading...                                ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+  Press enter to confirm or esc to go back      │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  2 usage limit resets available.
-
-› 1. Cancel
-  2. Full reset (Weekly + 5 hr)  Expires 09:39 on 18 Jun 2026.
-  3. Full reset (Weekly + 5 hr)  Expires 08:59 on 27 Jun 2026.
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ 2 usage limit resets available.              ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Cancel                                    ││
+  2. Full reset (Weekly + 5 hr… Expires 09:39  ││CONTEXT WINDOW  ≈0 of 258.4k
+                                on 18 Jun      ││used (0%)
+                                2026.          ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  3. Full reset (Weekly + 5 hr… Expires 08:59  ││■ Conversation (messages) ≈0
+                                on 27 Jun      ││tokens
+                                2026.          ││
+└──────────────────────────────────────────────┘│No portable context is
+  Press enter to confirm or esc to go back      │available.
 ---
-  Usage limit resets
-  You don't have any usage limit resets available.
-
-› 1. Close
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ You don't have any usage limit resets availa ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Close                                     ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+  Press enter to confirm or esc to go back      │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  Couldn't load usage limit resets. Please try again.
-
-› 1. Try again
-  2. Close
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ Couldn't load usage limit resets. Please try ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Try again                                 ││
+  2. Close                                     ││CONTEXT WINDOW  ≈0 of 258.4k
+└──────────────────────────────────────────────┘│used (0%)
+  Press enter to confirm or esc to go back      │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  Resetting your usage...
-
-›    Using a reset...
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ Resetting your usage...                      ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+›    Using a reset...                          ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+                                                │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  Couldn't reset usage. Please try again.
-
-› 1. Try again
-  2. Close
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ Couldn't reset usage. Please try again.      ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Try again                                 ││
+  2. Close                                     ││CONTEXT WINDOW  ≈0 of 258.4k
+└──────────────────────────────────────────────┘│used (0%)
+  Press enter to confirm or esc to go back      │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  Your usage does not need a reset right now.
-
-› 1. Close
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ Your usage does not need a reset right now.  ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Close                                     ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+  Press enter to confirm or esc to go back      │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  No usage limit resets are available.
-
-› 1. Close
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ No usage limit resets are available.         ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Close                                     ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+  Press enter to confirm or esc to go back      │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  Usage reset. Checking your remaining resets...
-
-›    Refreshing...
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ Usage reset. Checking your remaining resets. ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+›    Refreshing...                             ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+                                                │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.
 ---
-  Usage limit resets
-  Usage reset. You have 1 usage limit reset left.
-
-› 1. Close
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/proje
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Usage limit resets                           ││admitted
+│ Usage reset. You have 1 usage limit reset le ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+› 1. Close                                     ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k
+  Press enter to confirm or esc to go back      │used (0%)
+                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+                                                │■ Conversation (messages) ≈0
+                                                │tokens
+                                                │
+                                                │No portable context is
+                                                │available.

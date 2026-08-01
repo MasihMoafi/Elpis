@@ -2,10 +2,14 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Plugins
-  Loading available plugins...
-  This updates when the marketplace list is ready.
-
-›    Loading plugins...  This updates when the marketplace list is ready.
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Plugins                                                  ││admitted
+│ Loading available plugins...                             ││i = select/deselect all · backspace =
+│ This updates when the marketplace list is ready.         ││remove added file
+│                                                          ││
+›    Loading plugins...  This updates when the marketplace ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+                         list is ready.                    ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+└──────────────────────────────────────────────────────────┘│■ Conversation (messages)   ≈0 tokens
+  Press enter to confirm or esc to go back                  │
+                                                            │No portable context is available.

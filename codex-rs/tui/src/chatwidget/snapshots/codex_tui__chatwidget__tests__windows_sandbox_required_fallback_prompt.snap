@@ -2,12 +2,15 @@
 source: tui/src/chatwidget/tests/permissions.rs
 expression: popup
 ---
-  Couldn't set up your sandbox with Administrator permissions
-
-  Your organization requires the default sandbox before Codex can continue.
-  Learn more <https://developers.openai.com/codex/windows>
-
-› 1. Try setting up admin sandbox again
-  2. Quit
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens admitted
+│ Couldn't set up your sandbox with Administrator permissions          ││i = select/deselect all · backspace = remove
+│                                                                      ││added file
+│ Your organization requires the default sandbox before Codex can      ││
+│ continue.                                                            ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+│ Learn more <https://developers.openai.com/codex/windows>             ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+│                                                                      ││■ Conversation (messages)           ≈0 tokens
+› 1. Try setting up admin sandbox again                                ││
+  2. Quit                                                              ││No portable context is available.
+└──────────────────────────────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

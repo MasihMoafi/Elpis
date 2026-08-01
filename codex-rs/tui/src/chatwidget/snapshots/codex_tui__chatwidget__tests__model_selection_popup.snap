@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 3088
 expression: popup
 ---
  Elpis · model gpt-5.2 · location /tmp/project
@@ -9,20 +8,16 @@ expression: popup
 │ Provider: OpenAI                             ││i = select/deselect all ·
 │ Route: direct provider connection            ││backspace = remove added file
 │ Protocol: responses                          ││
-│ Credential: OpenAI/ChatGPT credential store  ││CONTEXT WINDOW  ≈0 of 200.0k
+│ Credential: OpenAI/ChatGPT credential store  ││CONTEXT WINDOW  ≈0 of 258.4k
 │ Codex model: gpt-5.2                         ││used (0%)
 │ Provider, protocol, route, and credential so ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-│                                              ││■ Conversation (messages)  ≈0
-     OPENAI                                    ││
-  1. Auto                       Terra by       ││No portable context is
-                                default; Luna  ││available.
-                                only for       │
-                                plainly        │
-                                mechanical     │
-                                work; Sol for  │
-                                critical or    │
-                                long-horizon   │
-                                work.          │
+│                                              ││■ Conversation (messages) ≈0
+     OPENAI                                    ││tokens
+  1. Auto                       Elpis          ││
+                                automatically  ││No portable context is
+                                chooses the    ││available.
+                                right model    │
+                                for the task   │
 › 2. All models (current)       Browse this    │
                                 provider's     │
                                 full catalog   │

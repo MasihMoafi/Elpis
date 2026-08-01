@@ -2,19 +2,21 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: strip_osc8_for_snapshot(&popup)
 ---
-  Plugins
-  Figma · Can be installed · Local
-  Data shared with this app is subject to the app's terms of service and privacy policy. Learn
-  more.
-  Turn Figma files into implementation context.
-
-› 1. Back to plugins  Return to the plugin list.
-  2. Install plugin   Install this plugin now.
-     Source           Local
-     Auth             Auth on install
-     Skills           design-review, extract-copy
-     Hooks            PreToolUse (1), Stop (2)
-     Apps             Figma, Slack
-     MCP Servers      figma-mcp, docs-mcp
-
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Plugins                                                  ││admitted
+│ Figma · Can be installed · Local                         ││i = select/deselect all · backspace =
+│ Data shared with this app is subject to the app's terms  ││remove added file
+│ of service and privacy policy. Learn more.               ││
+│ Turn Figma files into implementation context.            ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
+│                                                          ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+› 1. Back to plugins  Return to the plugin list.           ││■ Conversation (messages)   ≈0 tokens
+  2. Install plugin   Install this plugin now.             ││
+     Source           Local                                ││No portable context is available.
+     Auth             Auth on install                      │
+     Skills           design-review, extract-copy          │
+     Hooks            PreToolUse (1), Stop (2)             │
+     Apps             Figma, Slack                         │
+     MCP Servers      figma-mcp, docs-mcp                  │
+└──────────────────────────────────────────────────────────┘
   Press esc to close.

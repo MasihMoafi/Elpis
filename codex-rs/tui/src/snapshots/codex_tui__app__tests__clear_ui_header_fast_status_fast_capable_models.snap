@@ -3,7 +3,7 @@ source: tui/src/app/tests.rs
 expression: rendered
 ---
 ╭────────────────────────────────────────────────────╮
-│ >_ Elpis (v<VERSION>)                              │
+│ >_ Elpis (v<VERSION>)   DEBUG BUILD                │
 │                                                    │
 │ model:     gpt-5.4 xhigh   fast   /model to change │
 │ directory: /tmp/project                            │

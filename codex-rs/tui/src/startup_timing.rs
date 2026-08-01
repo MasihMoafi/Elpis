@@ -61,7 +61,8 @@ fn time_before_main() -> Option<Duration> {
     let uptime_secs: f64 = uptime.split_whitespace().next()?.parse().ok()?;
     let elapsed = uptime_secs - (starttime_ticks / CLOCK_TICKS_PER_SEC);
     // Reject anything implausible rather than reporting a nonsense launch time.
-    (elapsed.is_finite() && (0.0..60.0).contains(&elapsed)).then(|| Duration::from_secs_f64(elapsed))
+    (elapsed.is_finite() && (0.0..60.0).contains(&elapsed))
+        .then(|| Duration::from_secs_f64(elapsed))
 }
 
 #[cfg(not(target_os = "linux"))]

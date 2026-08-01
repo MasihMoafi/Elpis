@@ -16,7 +16,11 @@ pub(crate) fn build_search_catalog(
     let mut candidates = Vec::new();
     if let Some(skills) = skills {
         let colliding_names = crate::skills_helpers::skill_name_collisions(skills);
-        candidates.extend(skills.iter().map(|skill| skill_candidate(skill, &colliding_names)));
+        candidates.extend(
+            skills
+                .iter()
+                .map(|skill| skill_candidate(skill, &colliding_names)),
+        );
     }
 
     if let Some(plugins) = plugins {
@@ -26,7 +30,10 @@ pub(crate) fn build_search_catalog(
     candidates
 }
 
-fn skill_candidate(skill: &SkillMetadata, colliding_names: &std::collections::HashSet<String>) -> Candidate {
+fn skill_candidate(
+    skill: &SkillMetadata,
+    colliding_names: &std::collections::HashSet<String>,
+) -> Candidate {
     let display_name = skill_display_name(skill, colliding_names);
     let description = optional_skill_description(skill);
     let skill_name = skill.name.clone();

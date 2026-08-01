@@ -2,10 +2,10 @@
 source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
-╭─────────────────────────────────────────────────╮
-│ ✨ Update available! 0.0.0 -> 9.9.9             │
-│ Run pnpm add -g @openai/codex to update.        │
-│                                                 │
-│ See full release notes:                         │
-│ https://github.com/openai/codex/releases/latest │
-╰─────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────╮
+│ ✨ Update available! 0.1.1 -> 9.9.9                 │
+│ Run pnpm add -g @openai/codex to update.            │
+│                                                     │
+│ See full release notes:                             │
+│ https://github.com/MasihMoafi/Elpis/releases/latest │
+╰─────────────────────────────────────────────────────╯

@@ -459,7 +459,10 @@ const ELPIS_TIPS: &[(&str, &str)] = &[
         "tab",
         "open the Context Ledger and choose what stays in context",
     ),
-    ("/prune", "distill stale tool output or force pressure prune: /prune [<pct>]"),
+    (
+        "/prune",
+        "distill stale tool output or force pressure prune: /prune [<pct>]",
+    ),
     (
         "/auto",
         "let the cheap model route the work to the right one",
@@ -4326,7 +4329,7 @@ impl ChatComposer {
                 };
                 if let Some(line) = self.history_search_footer_line() {
                     render_footer_line(hint_rect, buf, line);
-                } else if self.footer.elpis_tip_visible {
+                } else if self.footer.elpis_tip_visible && !self.footer.flash_visible() {
                     let available_width =
                         hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
                     render_footer_line(
@@ -4712,6 +4715,7 @@ mod tests {
             /*disable_paste_burst*/ false,
         );
         composer.set_footer_hint_override(Some(vec![("K".to_string(), "label".to_string())]));
+        composer.footer.elpis_tip_visible = true;
         composer.show_footer_flash(Line::from("FLASH"), Duration::from_secs(10));
 
         let area = Rect::new(0, 0, 60, 6);

@@ -2,4 +2,7 @@
 source: tui/src/chatwidget/tests/slash_commands.rs
 expression: rendered
 ---
-■ Sign in with ChatGPT to use /usage.
+• Unrecognized command '/usage'. Type "/" for a list of supported commands.
+
+
+• Unrecognized command '/usage'. Type "/" for a list of supported commands.

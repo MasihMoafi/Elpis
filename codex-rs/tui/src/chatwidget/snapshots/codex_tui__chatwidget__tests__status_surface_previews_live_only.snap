@@ -2,5 +2,5 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: snapshot
 ---
-status line: ELPIS · provider openai · model gpt-5.6-sol · context 0% · preview-live-root · feature/live-preview-branch · Live preview thread
+status line: ELPIS · provider openai · model gpt-5.6-sol · context 97% · preview-live-root · feature/live-preview-branch · Live preview thread
 terminal title: preview-live-root | Live preview thread | feature/live-preview-branch | Tasks 2/5

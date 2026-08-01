@@ -1,9 +1,9 @@
 ---
-source: tui/src/history_cell.rs
+source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
 ╭───────────────────────────────────────╮
-│ >_ OpenAI Codex (vtest)               │
+│ >_ Elpis (vtest)   DEBUG BUILD        │
 │                                       │
 │ model:       gpt-5   /model to change │
 │ directory:   /tmp/project             │

@@ -2,5 +2,5 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: "format!(\"text:    {text}\\nmagenta: {magenta}\")"
 ---
-text:    › @sample plugin
+text:    › @sample plugin                       │
 magenta:   ^^^^^^^

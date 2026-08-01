@@ -650,8 +650,9 @@ pub(crate) fn context_usage_totals(
             return;
         }
         if kind == TypeId::of::<crate::history_cell::CompositeHistoryCell>() {
-            if let Some(composite) =
-                cell.as_any().downcast_ref::<crate::history_cell::CompositeHistoryCell>()
+            if let Some(composite) = cell
+                .as_any()
+                .downcast_ref::<crate::history_cell::CompositeHistoryCell>()
             {
                 for part in &composite.parts {
                     classify_and_tally(part.as_ref(), totals);

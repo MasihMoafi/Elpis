@@ -5,7 +5,9 @@ use super::App;
 use crate::app_command::AppCommand;
 use crate::app_server_approval_conversions::granted_permission_profile_from_request;
 use crate::app_server_session::AppServerSession;
+use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
+use codex_app_server_protocol::FileChangeApprovalDecision;
 use codex_app_server_protocol::FileChangeRequestApprovalResponse;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::McpServerElicitationRequestResponse;
@@ -47,6 +49,13 @@ pub(super) struct UnsupportedAppServerRequest {
     pub(super) message: String,
 }
 
+#[derive(Debug)]
+pub(super) struct FullAccessApproval {
+    pub(super) thread_id: String,
+    pub(super) op: AppCommand,
+    pub(super) resolved: ResolvedAppServerRequest,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResolvedAppServerRequest {
     ExecApproval {
@@ -69,9 +78,9 @@ pub(crate) enum ResolvedAppServerRequest {
 
 #[derive(Debug, Default)]
 pub(super) struct PendingAppServerRequests {
-    exec_approvals: HashMap<String, AppServerRequestId>,
-    file_change_approvals: HashMap<String, AppServerRequestId>,
-    permissions_approvals: HashMap<String, AppServerRequestId>,
+    exec_approvals: HashMap<String, PendingExecApproval>,
+    file_change_approvals: HashMap<String, PendingApproval>,
+    permissions_approvals: HashMap<String, PendingPermissionsApproval>,
     user_inputs: HashMap<String, VecDeque<PendingUserInputRequest>>,
     mcp_requests: HashMap<McpRequestKey, AppServerRequestId>,
 }
@@ -95,12 +104,24 @@ impl PendingAppServerRequests {
                     .approval_id
                     .clone()
                     .unwrap_or_else(|| params.item_id.clone());
-                self.exec_approvals.insert(approval_id, request_id.clone());
+                self.exec_approvals.insert(
+                    approval_id,
+                    PendingExecApproval {
+                        request_id: request_id.clone(),
+                        thread_id: params.thread_id.clone(),
+                        turn_id: params.turn_id.clone(),
+                    },
+                );
                 None
             }
             ServerRequest::FileChangeRequestApproval { request_id, params } => {
-                self.file_change_approvals
-                    .insert(params.item_id.clone(), request_id.clone());
+                self.file_change_approvals.insert(
+                    params.item_id.clone(),
+                    PendingApproval {
+                        request_id: request_id.clone(),
+                        thread_id: params.thread_id.clone(),
+                    },
+                );
                 None
             }
             ServerRequest::PermissionsRequestApproval { request_id, params } => {
@@ -109,15 +130,26 @@ impl PendingAppServerRequests {
                 // yet have an ingress validation step, so validate them here before recording the
                 // request as pending. Discovering an invalid path later in a UI delivery path
                 // would leave the app-server RPC waiting without a clean rejection path.
-                if let Err(err) = CoreRequestPermissionProfile::try_from(params.permissions.clone())
-                {
-                    return Some(UnsupportedAppServerRequest {
+                let permissions =
+                    match CoreRequestPermissionProfile::try_from(params.permissions.clone()) {
+                        Ok(permissions) => permissions,
+                        Err(err) => {
+                            return Some(UnsupportedAppServerRequest {
+                                request_id: request_id.clone(),
+                                message: format!(
+                                    "failed to localize requested filesystem paths: {err}"
+                                ),
+                            });
+                        }
+                    };
+                self.permissions_approvals.insert(
+                    params.item_id.clone(),
+                    PendingPermissionsApproval {
                         request_id: request_id.clone(),
-                        message: format!("failed to localize requested filesystem paths: {err}"),
-                    });
-                }
-                self.permissions_approvals
-                    .insert(params.item_id.clone(), request_id.clone());
+                        thread_id: params.thread_id.clone(),
+                        permissions,
+                    },
+                );
                 None
             }
             ServerRequest::ToolRequestUserInput { request_id, params } => {
@@ -176,6 +208,52 @@ impl PendingAppServerRequests {
         }
     }
 
+    pub(super) fn full_access_approval_ops(&self) -> Vec<FullAccessApproval> {
+        let mut approvals = Vec::with_capacity(
+            self.exec_approvals.len()
+                + self.file_change_approvals.len()
+                + self.permissions_approvals.len(),
+        );
+        approvals.extend(
+            self.exec_approvals
+                .iter()
+                .map(|(id, pending)| FullAccessApproval {
+                    thread_id: pending.thread_id.clone(),
+                    op: AppCommand::ExecApproval {
+                        id: id.clone(),
+                        turn_id: Some(pending.turn_id.clone()),
+                        decision: CommandExecutionApprovalDecision::Accept,
+                    },
+                    resolved: ResolvedAppServerRequest::ExecApproval { id: id.clone() },
+                }),
+        );
+        approvals.extend(self.file_change_approvals.iter().map(|(id, pending)| {
+            FullAccessApproval {
+                thread_id: pending.thread_id.clone(),
+                op: AppCommand::PatchApproval {
+                    id: id.clone(),
+                    decision: FileChangeApprovalDecision::Accept,
+                },
+                resolved: ResolvedAppServerRequest::FileChangeApproval { id: id.clone() },
+            }
+        }));
+        approvals.extend(self.permissions_approvals.iter().map(|(id, pending)| {
+            FullAccessApproval {
+                thread_id: pending.thread_id.clone(),
+                op: AppCommand::RequestPermissionsResponse {
+                    id: id.clone(),
+                    response: codex_protocol::request_permissions::RequestPermissionsResponse {
+                        permissions: pending.permissions.clone(),
+                        scope: codex_protocol::request_permissions::PermissionGrantScope::Session,
+                        strict_auto_review: false,
+                    },
+                },
+                resolved: ResolvedAppServerRequest::PermissionsApproval { id: id.clone() },
+            }
+        }));
+        approvals
+    }
+
     pub(super) fn take_resolution<T>(
         &mut self,
         op: T,
@@ -188,9 +266,9 @@ impl PendingAppServerRequests {
             AppCommand::ExecApproval { id, decision, .. } => self
                 .exec_approvals
                 .remove(id)
-                .map(|request_id| {
+                .map(|pending| {
                     Ok::<AppServerRequestResolution, String>(AppServerRequestResolution {
-                        request_id,
+                        request_id: pending.request_id,
                         result: serde_json::to_value(CommandExecutionRequestApprovalResponse {
                             decision: decision.clone(),
                         })
@@ -205,9 +283,9 @@ impl PendingAppServerRequests {
             AppCommand::PatchApproval { id, decision } => self
                 .file_change_approvals
                 .remove(id)
-                .map(|request_id| {
+                .map(|pending| {
                     Ok::<AppServerRequestResolution, String>(AppServerRequestResolution {
-                        request_id,
+                        request_id: pending.request_id,
                         result: serde_json::to_value(FileChangeRequestApprovalResponse {
                             decision: decision.clone(),
                         })
@@ -220,9 +298,9 @@ impl PendingAppServerRequests {
             AppCommand::RequestPermissionsResponse { id, response } => self
                 .permissions_approvals
                 .remove(id)
-                .map(|request_id| {
+                .map(|pending| {
                     Ok::<AppServerRequestResolution, String>(AppServerRequestResolution {
-                        request_id,
+                        request_id: pending.request_id,
                         result: serde_json::to_value(PermissionsRequestApprovalResponse {
                             permissions: granted_permission_profile_from_request(
                                 response.permissions.clone(),
@@ -285,7 +363,7 @@ impl PendingAppServerRequests {
         if let Some(id) = self
             .exec_approvals
             .iter()
-            .find_map(|(id, value)| (value == request_id).then(|| id.clone()))
+            .find_map(|(id, pending)| (pending.request_id == *request_id).then(|| id.clone()))
         {
             self.exec_approvals.remove(&id);
             return Some(ResolvedAppServerRequest::ExecApproval { id });
@@ -294,7 +372,7 @@ impl PendingAppServerRequests {
         if let Some(id) = self
             .file_change_approvals
             .iter()
-            .find_map(|(id, value)| (value == request_id).then(|| id.clone()))
+            .find_map(|(id, pending)| (pending.request_id == *request_id).then(|| id.clone()))
         {
             self.file_change_approvals.remove(&id);
             return Some(ResolvedAppServerRequest::FileChangeApproval { id });
@@ -303,7 +381,7 @@ impl PendingAppServerRequests {
         if let Some(id) = self
             .permissions_approvals
             .iter()
-            .find_map(|(id, value)| (value == request_id).then(|| id.clone()))
+            .find_map(|(id, pending)| (pending.request_id == *request_id).then(|| id.clone()))
         {
             self.permissions_approvals.remove(&id);
             return Some(ResolvedAppServerRequest::PermissionsApproval { id });
@@ -335,15 +413,15 @@ impl PendingAppServerRequests {
             ServerRequest::CommandExecutionRequestApproval { request_id, .. } => self
                 .exec_approvals
                 .values()
-                .any(|pending_request_id| pending_request_id == request_id),
+                .any(|pending| &pending.request_id == request_id),
             ServerRequest::FileChangeRequestApproval { request_id, .. } => self
                 .file_change_approvals
                 .values()
-                .any(|pending_request_id| pending_request_id == request_id),
+                .any(|pending| &pending.request_id == request_id),
             ServerRequest::PermissionsRequestApproval { request_id, .. } => self
                 .permissions_approvals
                 .values()
-                .any(|pending_request_id| pending_request_id == request_id),
+                .any(|pending| &pending.request_id == request_id),
             ServerRequest::ToolRequestUserInput { request_id, .. } => {
                 self.user_inputs.values().any(|queue| {
                     queue
@@ -399,6 +477,26 @@ impl PendingAppServerRequests {
         }
         removed
     }
+}
+
+#[derive(Debug)]
+struct PendingExecApproval {
+    request_id: AppServerRequestId,
+    thread_id: String,
+    turn_id: String,
+}
+
+#[derive(Debug)]
+struct PendingApproval {
+    request_id: AppServerRequestId,
+    thread_id: String,
+}
+
+#[derive(Debug)]
+struct PendingPermissionsApproval {
+    request_id: AppServerRequestId,
+    thread_id: String,
+    permissions: CoreRequestPermissionProfile,
 }
 
 #[derive(Debug)]
@@ -485,6 +583,135 @@ mod tests {
 
         assert_eq!(resolution.request_id, AppServerRequestId::Integer(41));
         assert_eq!(resolution.result, json!({ "decision": "accept" }));
+    }
+
+    #[test]
+    fn full_access_accepts_approvals_but_leaves_questions_pending() {
+        let mut pending = PendingAppServerRequests::default();
+        let cwd = AbsolutePathBuf::try_from(PathBuf::from(if cfg!(windows) {
+            r"C:\tmp"
+        } else {
+            "/tmp"
+        }))
+        .expect("path must be absolute");
+        let requests = [
+            ServerRequest::CommandExecutionRequestApproval {
+                request_id: AppServerRequestId::Integer(41),
+                params: CommandExecutionRequestApprovalParams {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    item_id: "call-1".to_string(),
+                    started_at_ms: 0,
+                    approval_id: Some("approval-1".to_string()),
+                    environment_id: None,
+                    reason: None,
+                    network_approval_context: None,
+                    command: Some("ls".to_string()),
+                    cwd: None,
+                    command_actions: None,
+                    additional_permissions: None,
+                    proposed_execpolicy_amendment: None,
+                    proposed_network_policy_amendments: None,
+                    available_decisions: None,
+                },
+            },
+            ServerRequest::FileChangeRequestApproval {
+                request_id: AppServerRequestId::Integer(42),
+                params: FileChangeRequestApprovalParams {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    item_id: "patch-1".to_string(),
+                    started_at_ms: 0,
+                    reason: None,
+                    grant_root: None,
+                },
+            },
+            ServerRequest::PermissionsRequestApproval {
+                request_id: AppServerRequestId::Integer(43),
+                params: PermissionsRequestApprovalParams {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    item_id: "perm-1".to_string(),
+                    environment_id: None,
+                    started_at_ms: 0,
+                    cwd,
+                    reason: None,
+                    permissions: serde_json::from_value(json!({
+                        "network": { "enabled": true }
+                    }))
+                    .expect("valid permissions"),
+                },
+            },
+            ServerRequest::ToolRequestUserInput {
+                request_id: AppServerRequestId::Integer(44),
+                params: ToolRequestUserInputParams {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    item_id: "question-1".to_string(),
+                    questions: Vec::new(),
+                    auto_resolution_ms: None,
+                },
+            },
+            ServerRequest::McpServerElicitationRequest {
+                request_id: AppServerRequestId::Integer(45),
+                params: McpServerElicitationRequestParams {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: Some("turn-1".to_string()),
+                    server_name: "example".to_string(),
+                    request: McpServerElicitationRequest::Form {
+                        meta: None,
+                        message: "Need input".to_string(),
+                        requested_schema: McpElicitationSchema {
+                            schema_uri: None,
+                            type_: McpElicitationObjectType::Object,
+                            properties: BTreeMap::new(),
+                            required: None,
+                        },
+                    },
+                },
+            },
+        ];
+        for request in &requests {
+            assert_eq!(pending.note_server_request(request), None);
+        }
+
+        let approvals = pending.full_access_approval_ops();
+
+        assert_eq!(approvals.len(), 3);
+        assert!(
+            approvals
+                .iter()
+                .all(|approval| approval.thread_id == "thread-1")
+        );
+        assert!(approvals.iter().any(|approval| matches!(
+            approval.op,
+            Op::ExecApproval {
+                decision: CommandExecutionApprovalDecision::Accept,
+                ..
+            }
+        )));
+        assert!(approvals.iter().any(|approval| matches!(
+            approval.op,
+            Op::PatchApproval {
+                decision: FileChangeApprovalDecision::Accept,
+                ..
+            }
+        )));
+        assert!(
+            approvals
+                .iter()
+                .any(|approval| matches!(approval.op, Op::RequestPermissionsResponse { .. }))
+        );
+        for approval in approvals {
+            assert!(
+                pending
+                    .take_resolution(approval.op)
+                    .expect("approval should serialize")
+                    .is_some()
+            );
+        }
+        assert!(pending.contains_server_request(&requests[3]));
+        assert!(pending.contains_server_request(&requests[4]));
     }
 
     #[test]

@@ -2,11 +2,17 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Advanced Reasoning
-  ⚠ Consumes usage limits faster
-
-  1. Max              For difficult problems when quality matters more than
-                      speed · higher usage
-› 2. Ultra (current)  For demanding work using multiple agents · highest usage
-
-  Press enter to confirm or esc to go back
+ Elpis · model gpt-5.4 · location /tmp/project
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
+│ Advanced Reasoning                           ││admitted
+│ ⚠ Consumes usage limits faster               ││i = select/deselect all ·
+│                                              ││backspace = remove added file
+  1. Max              For difficult problems   ││
+                      when quality matters     ││CONTEXT WINDOW  ≈0 of 258.4k
+                      more than speed · higher ││used (0%)
+                      usage                    ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+› 2. Ultra (current)  For demanding work using ││■ Conversation (messages) ≈0
+                      multiple agents ·        ││tokens
+                      highest usage            ││
+└──────────────────────────────────────────────┘│No portable context is
+  Press enter to confirm or esc to go back      │available.
