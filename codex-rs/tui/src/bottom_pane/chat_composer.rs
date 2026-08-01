@@ -1256,9 +1256,17 @@ impl ChatComposer {
         urls
     }
 
-    #[cfg(test)]
     pub(crate) fn show_footer_flash(&mut self, line: Line<'static>, duration: Duration) {
-        self.footer.show_flash(line, duration);
+        self.footer.show_flash(line, duration, None);
+    }
+
+    pub(crate) fn show_pulsing_footer_flash(
+        &mut self,
+        line: Line<'static>,
+        duration: Duration,
+        pulse_duration: Duration,
+    ) {
+        self.footer.show_flash(line, duration, Some(pulse_duration));
     }
 
     /// Replace the entire composer content with `text` and reset cursor.
@@ -4481,7 +4489,15 @@ impl ChatComposer {
                         }
                     } else if self.footer.flash_visible() {
                         if let Some(flash) = self.footer.flash.as_ref() {
-                            flash.line.render(inset_footer_hint_area(hint_rect), buf);
+                            let now = Instant::now();
+                            let mut line = flash.line.clone();
+                            if flash.pulse_until.is_some_and(|until| now < until)
+                                && now.duration_since(flash.started_at).as_millis() / 250 % 2 == 1
+                                && let Some(icon) = line.spans.first_mut()
+                            {
+                                icon.content = "  ".into();
+                            }
+                            line.render(inset_footer_hint_area(hint_rect), buf);
                         }
                     } else if let Some(items) = active_footer_hint_override {
                         render_footer_hint_items(hint_rect, buf, items);

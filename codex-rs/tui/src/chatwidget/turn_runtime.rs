@@ -181,6 +181,9 @@ impl ChatWidget {
         self.last_unified_wait = None;
         self.unified_exec_wait_streak = None;
         if !from_replay {
+            self.maybe_show_saved_context_flash();
+        }
+        if !from_replay {
             let body = Notification::agent_turn_preview(&notification_response);
         }
         self.request_redraw();
@@ -213,6 +216,18 @@ impl ChatWidget {
         }
 
         self.maybe_show_pending_rate_limit_prompt();
+    }
+
+    fn maybe_show_saved_context_flash(&mut self) {
+        let pass_count = crate::legacy_core::context_pruner::pass_count();
+        if pass_count <= self.last_saved_context_flash_pass_count {
+            return;
+        }
+        self.last_saved_context_flash_pass_count = pass_count;
+        let saved_chars = crate::legacy_core::context_pruner::saved_chars();
+        if let Some(line) = super::context_usage::saved_context_flash_line(saved_chars) {
+            self.bottom_pane.show_saved_context_flash(line);
+        }
     }
 
     pub(super) fn maybe_prompt_plan_implementation(&mut self) {

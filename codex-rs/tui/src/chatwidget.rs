@@ -551,6 +551,7 @@ pub(crate) struct ChatWidget {
     runtime_model_provider_base_url: Option<String>,
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     token_info: Option<TokenUsageInfo>,
+    last_saved_context_flash_pass_count: usize,
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
     refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
     next_status_refresh_request_id: u64,

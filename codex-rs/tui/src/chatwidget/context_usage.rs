@@ -19,20 +19,82 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use std::time::Duration;
+use std::time::Instant;
 
 use super::ChatWidget;
 use crate::app_backtrack::ContextUsageTranscriptTotals;
-use crate::history_cell::PlainHistoryCell;
+use crate::history_cell::HistoryCell;
 use crate::legacy_core::elpis_context::ContinuitySourceCategory;
 
 const GRID_COLUMNS: usize = 26;
 const GRID_ROWS: usize = 10;
 const GRID_CELLS: usize = GRID_COLUMNS * GRID_ROWS;
 
+#[derive(Clone, Debug)]
 struct CategoryUsage {
     label: &'static str,
     tokens: u64,
+    saved_tokens: u64,
     color: Color,
+}
+
+#[derive(Debug)]
+struct ContextUsageHistoryCell {
+    before_chart: Vec<Line<'static>>,
+    categories: Vec<CategoryUsage>,
+    used: u64,
+    window: u64,
+    after_chart: Vec<Line<'static>>,
+    started_at: Instant,
+    animations_enabled: bool,
+}
+
+impl ContextUsageHistoryCell {
+    const ANIMATION_DURATION: Duration = Duration::from_millis(900);
+
+    fn animation_progress(&self) -> u64 {
+        if !self.animations_enabled {
+            return 1_000;
+        }
+        let elapsed = self.started_at.elapsed().as_millis() as u64;
+        (elapsed.saturating_mul(1_000) / Self::ANIMATION_DURATION.as_millis() as u64).min(1_000)
+    }
+
+    fn rendered_lines(&self) -> Vec<Line<'static>> {
+        let mut lines = self.before_chart.clone();
+        lines.extend(build_category_bar_chart(
+            &self.categories,
+            self.used,
+            self.window,
+            self.animation_progress(),
+        ));
+        lines.extend(self.after_chart.clone());
+        lines
+    }
+}
+
+impl HistoryCell for ContextUsageHistoryCell {
+    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        self.rendered_lines()
+    }
+
+    fn raw_lines(&self) -> Vec<Line<'static>> {
+        let mut lines = self.before_chart.clone();
+        lines.extend(build_category_bar_chart(
+            &self.categories,
+            self.used,
+            self.window,
+            1_000,
+        ));
+        lines.extend(self.after_chart.clone());
+        lines
+    }
+
+    fn transcript_animation_tick(&self) -> Option<u64> {
+        (self.animations_enabled && self.started_at.elapsed() < Self::ANIMATION_DURATION)
+            .then(|| (self.started_at.elapsed().as_millis() / 60) as u64)
+    }
 }
 
 impl ChatWidget {
@@ -114,31 +176,38 @@ impl ChatWidget {
             conversation[largest] += other;
             other = 0;
         }
+        let pruner_saved = crate::legacy_core::context_pruner::saved_chars();
+        let saved_tokens = estimate(pruner_saved);
 
         let mut categories = vec![
             CategoryUsage {
                 label: "User messages",
                 tokens: conversation[0],
+                saved_tokens: 0,
                 color: Color::Blue,
             },
             CategoryUsage {
                 label: "Agent responses",
                 tokens: conversation[1],
+                saved_tokens: 0,
                 color: Color::Green,
             },
             CategoryUsage {
                 label: "Tool calls",
                 tokens: conversation[2],
+                saved_tokens,
                 color: Color::Yellow,
             },
             CategoryUsage {
                 label: "System prompt",
                 tokens: fixed_system,
+                saved_tokens: 0,
                 color: Color::Magenta,
             },
             CategoryUsage {
                 label: "Skills",
                 tokens: fixed_skills,
+                saved_tokens: 0,
                 color: Color::Cyan,
             },
         ];
@@ -146,6 +215,7 @@ impl ChatWidget {
             categories.push(CategoryUsage {
                 label: "Other (overhead)",
                 tokens: other,
+                saved_tokens: 0,
                 color: Color::DarkGray,
             });
         }
@@ -195,13 +265,14 @@ impl ChatWidget {
             ))
             .dim(),
         ]));
-        let pruner_saved = crate::legacy_core::context_pruner::saved_chars();
-        let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(pruner_saved) as u64;
         if saved_tokens > 0 {
             legend.push(Line::from(vec![
                 Span::styled("✨ ", Style::default().fg(Color::Green)),
                 Span::styled(
-                    format!("Saved Context: ~{} tokens reclaimed", fmt_tokens(saved_tokens)),
+                    format!(
+                        "Saved Context: ~{} tokens reclaimed",
+                        fmt_tokens(saved_tokens)
+                    ),
                     Style::default().fg(Color::Green).bold(),
                 ),
                 Span::styled(" (Ace Pass ⚡)", Style::default().fg(Color::Cyan)),
@@ -211,23 +282,20 @@ impl ChatWidget {
             legend.push("(estimated — no request sent yet)".dim().into());
         }
 
-        let mut lines: Vec<Line<'static>> = Vec::new();
-        lines.push(" Context Usage".bold().into());
-        lines.extend(build_grid_with_legend(&categories, used, window, legend));
-        lines.push(Line::default());
+        let mut before_chart: Vec<Line<'static>> = Vec::new();
+        before_chart.push(" Context Usage".bold().into());
+        before_chart.extend(build_grid_with_legend(&categories, used, window, legend));
+        before_chart.push(Line::default());
 
-        lines.extend(build_category_bar_chart(&categories, used, window));
-        lines.push(Line::default());
-
-        lines.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
+        let mut after_chart = vec![Line::default()];
+        after_chart.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
         let pruner_passes = crate::legacy_core::context_pruner::pass_count();
         if pruner_passes == 0 && saved_tokens == 0 {
-            lines.push(Line::from(
-                "   No Ace pruning passes run yet — context is below trigger floor."
-                    .dim(),
+            after_chart.push(Line::from(
+                "   No Ace pruning passes run yet — context is below trigger floor.".dim(),
             ));
         } else {
-            lines.push(Line::from(vec![
+            after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
                 Span::styled(
                     format!("{pruner_passes} pass(es) applied"),
@@ -240,22 +308,23 @@ impl ChatWidget {
                 ),
                 Span::styled(" ⚡", Style::default().fg(Color::Yellow)),
             ]));
-            lines.push(Line::from(
-                "   Low-level action: Oldest finished tool outputs distilled to evidence pointers; recent turn preserved verbatim."
-                    .dim(),
-            ));
+            after_chart.push(
+                "   Ace only rewrites completed tool-call evidence; the 0-saved rows were not touched."
+                    .dim()
+                    .into(),
+            );
         }
-        lines.push(Line::default());
+        after_chart.push(Line::default());
 
-        lines.push(" Checkpoints · Esc Esc to backtrack".bold().into());
+        after_chart.push(" Checkpoints · Esc Esc to backtrack".bold().into());
         if totals.checkpoints == 0 {
-            lines.push(
+            after_chart.push(
                 "   No backtrack points yet — send a message first."
                     .dim()
                     .into(),
             );
         } else {
-            lines.push(
+            after_chart.push(
                 format!(
                     "   {} backtrack point(s) available — Esc Esc jumps to a prior message and forks from it.",
                     totals.checkpoints
@@ -264,7 +333,25 @@ impl ChatWidget {
                 .into(),
             );
         }
-        self.add_to_history(PlainHistoryCell::new(lines));
+        let cell = ContextUsageHistoryCell {
+            before_chart,
+            categories,
+            used,
+            window,
+            after_chart,
+            started_at: Instant::now(),
+            animations_enabled: self.config.animations,
+        };
+        self.flush_active_cell();
+        self.transcript.active_cell = Some(Box::new(cell));
+        self.bump_active_cell_revision();
+        if self.config.animations {
+            for tick in 1..=15 {
+                self.bottom_pane
+                    .request_redraw_in(Duration::from_millis(60 * tick));
+            }
+        }
+        self.request_redraw();
     }
 }
 
@@ -272,10 +359,13 @@ fn build_category_bar_chart(
     categories: &[CategoryUsage],
     used: u64,
     window: u64,
+    savings_progress: u64,
 ) -> Vec<Line<'static>> {
     let bar_width = 24usize;
     let mut lines = Vec::new();
-    lines.push(Line::from(" Category Breakdown (Relative Share)".bold()));
+    lines.push(Line::from(
+        " Category Breakdown · retained █  reclaimed ✨".bold(),
+    ));
 
     let overall_cells = if window > 0 {
         (((used * bar_width as u64) / window) as usize).min(bar_width)
@@ -298,27 +388,55 @@ fn build_category_bar_chart(
         )),
     ]));
 
-    for cat in categories {
-        let cells = if used > 0 {
-            (((cat.tokens * bar_width as u64) / used) as usize).min(bar_width)
+    let largest_before = categories
+        .iter()
+        .map(|category| category.tokens.saturating_add(category.saved_tokens))
+        .max()
+        .unwrap_or(0)
+        .max(1);
+    let progress = savings_progress.min(1_000);
+    for category in categories {
+        let before = category.tokens.saturating_add(category.saved_tokens);
+        let retained_cells = ((category.tokens * bar_width as u64) / largest_before) as usize;
+        let final_saved_cells =
+            ((category.saved_tokens * bar_width as u64) / largest_before) as usize;
+        let saved_cells = final_saved_cells * progress as usize / 1_000;
+        let empty_cells = bar_width.saturating_sub(retained_cells + saved_cells);
+        let animated_saved = category.saved_tokens.saturating_mul(progress) / 1_000;
+        let saved_percent = if before > 0 {
+            fmt_percent(category.saved_tokens, before)
         } else {
-            0
+            "0.0%".to_string()
         };
-        let filled = "█".repeat(cells);
-        let empty = "░".repeat(bar_width - cells);
-        let pct_of_used = if used > 0 {
-            fmt_percent(cat.tokens, used)
-        } else {
-            "0%".to_string()
-        };
+        let sparkle = if progress / 80 % 2 == 0 { "✨" } else { "  " };
         lines.push(Line::from(vec![
-            Span::from(format!("   {:16} ", cat.label)),
-            Span::styled(format!("[{filled}{empty}] "), Style::default().fg(cat.color)),
+            Span::from(format!("   {:16} [", category.label)),
+            Span::styled(
+                "█".repeat(retained_cells),
+                Style::default().fg(category.color),
+            ),
+            Span::styled(
+                "▓".repeat(saved_cells),
+                Style::default().fg(Color::LightGreen).bold(),
+            ),
+            Span::from("░".repeat(empty_cells)).dim(),
+            Span::from("] "),
             Span::from(format!(
-                "{} ({} of used)",
-                fmt_tokens(cat.tokens),
-                pct_of_used
+                "{} → {}",
+                fmt_tokens(before),
+                fmt_tokens(category.tokens)
             )),
+            if category.saved_tokens > 0 {
+                Span::styled(
+                    format!(
+                        "  {sparkle} ~{} saved ({saved_percent})",
+                        fmt_tokens(animated_saved)
+                    ),
+                    Style::default().fg(Color::LightGreen).bold(),
+                )
+            } else {
+                Span::from("  · 0 saved").dim()
+            },
         ]));
     }
     lines
@@ -376,6 +494,22 @@ fn build_grid_with_legend(
     lines
 }
 
+pub(super) fn saved_context_flash_line(saved_chars: usize) -> Option<Line<'static>> {
+    let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(saved_chars) as u64;
+    (saved_tokens > 0).then(|| {
+        Line::from(vec![
+            Span::styled("✨ ", Style::default().fg(Color::Green)),
+            Span::styled(
+                format!(
+                    "Saved Context: ~{} tokens reclaimed",
+                    fmt_tokens(saved_tokens)
+                ),
+                Style::default().fg(Color::Green).bold(),
+            ),
+        ])
+    })
+}
+
 fn fmt_tokens(tokens: u64) -> String {
     if tokens >= 1_000_000 {
         let value = format!("{:.1}", tokens as f64 / 1_000_000.0);
@@ -410,6 +544,7 @@ mod tests {
         let categories = vec![CategoryUsage {
             label: "User messages",
             tokens: 500,
+            saved_tokens: 0,
             color: Color::Blue,
         }];
         let lines = build_grid_with_legend(&categories, 500, 1_000, Vec::new());
@@ -422,6 +557,7 @@ mod tests {
         let categories = vec![CategoryUsage {
             label: "Tool calls",
             tokens: 10_000_000,
+            saved_tokens: 0,
             color: Color::Yellow,
         }];
         let lines = build_grid_with_legend(&categories, 120, 1_000, Vec::new());
@@ -434,5 +570,60 @@ mod tests {
         assert_eq!(fmt_tokens(39_700), "39.7k");
         assert_eq!(fmt_tokens(1_000_000), "1m");
         assert_eq!(fmt_percent(305, 1_000), "30.5%");
+    }
+
+    #[test]
+    fn saved_context_flash_reports_real_reclaimed_size() {
+        let line = saved_context_flash_line(241_600).expect("saved context line");
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert_eq!(text, "✨ Saved Context: ~60.4k tokens reclaimed");
+        assert!(saved_context_flash_line(0).is_none());
+    }
+
+    #[test]
+    fn category_chart_attributes_and_reveals_saved_tokens() {
+        let categories = vec![
+            CategoryUsage {
+                label: "User messages",
+                tokens: 20_000,
+                saved_tokens: 0,
+                color: Color::Blue,
+            },
+            CategoryUsage {
+                label: "Tool calls",
+                tokens: 24_100,
+                saved_tokens: 60_400,
+                color: Color::Yellow,
+            },
+        ];
+
+        let initial = build_category_bar_chart(&categories, 44_100, 258_400, 0);
+        let complete = build_category_bar_chart(&categories, 44_100, 258_400, 1_000);
+        let text = complete
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert!(text.contains("84.5k → 24.1k"));
+        assert!(text.contains("~60.4k saved (71.4%)"));
+        assert_eq!(
+            initial
+                .iter()
+                .flat_map(|line| line.spans.iter())
+                .filter(|span| span.content.contains('▓'))
+                .count(),
+            0
+        );
+        assert!(
+            complete
+                .iter()
+                .flat_map(|line| line.spans.iter())
+                .any(|span| span.content.contains('▓'))
+        );
     }
 }

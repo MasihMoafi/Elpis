@@ -1,5 +1,6 @@
 //! Footer and status-row presentation state for the chat composer.
 
+use std::time::Duration;
 use std::time::Instant;
 
 use ratatui::text::Line;
@@ -8,8 +9,6 @@ use crate::bottom_pane::footer::CollaborationModeIndicator;
 use crate::bottom_pane::footer::FooterMode;
 use crate::bottom_pane::footer::GoalStatusIndicator;
 use crate::key_hint::KeyBinding;
-#[cfg(test)]
-use std::time::Duration;
 
 pub(super) struct FooterState {
     pub(super) quit_shortcut_expires_at: Option<Instant>,
@@ -47,7 +46,9 @@ pub(super) struct FooterState {
 #[derive(Clone, Debug)]
 pub(super) struct FooterFlash {
     pub(super) line: Line<'static>,
+    pub(super) started_at: Instant,
     pub(super) expires_at: Instant,
+    pub(super) pulse_until: Option<Instant>,
 }
 
 impl FooterState {
@@ -57,12 +58,23 @@ impl FooterState {
             .is_some_and(|flash| Instant::now() < flash.expires_at)
     }
 
-    #[cfg(test)]
-    pub(super) fn show_flash(&mut self, line: Line<'static>, duration: Duration) {
-        let expires_at = Instant::now()
+    pub(super) fn show_flash(
+        &mut self,
+        line: Line<'static>,
+        duration: Duration,
+        pulse_duration: Option<Duration>,
+    ) {
+        let started_at = Instant::now();
+        let expires_at = started_at
             .checked_add(duration)
             .unwrap_or_else(Instant::now);
-        self.flash = Some(FooterFlash { line, expires_at });
+        let pulse_until = pulse_duration.and_then(|duration| started_at.checked_add(duration));
+        self.flash = Some(FooterFlash {
+            line,
+            started_at,
+            expires_at,
+            pulse_until,
+        });
     }
 
     #[cfg(test)]

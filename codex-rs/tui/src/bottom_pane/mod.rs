@@ -1060,6 +1060,24 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub(crate) fn show_saved_context_flash(&mut self, line: Line<'static>) {
+        const FLASH_DURATION: Duration = Duration::from_secs(4);
+        const PULSE_DURATION: Duration = Duration::from_millis(1_500);
+        const PULSE_STEP: Duration = Duration::from_millis(250);
+
+        if self.animations_enabled {
+            self.composer
+                .show_pulsing_footer_flash(line, FLASH_DURATION, PULSE_DURATION);
+            for tick in 1..=6 {
+                self.request_redraw_in(PULSE_STEP * tick);
+            }
+        } else {
+            self.composer.show_footer_flash(line, FLASH_DURATION);
+        }
+        self.request_redraw_in(FLASH_DURATION);
+        self.request_redraw();
+    }
+
     /// Show a generic list selection view with the provided items.
     pub(crate) fn show_selection_view(
         &mut self,
