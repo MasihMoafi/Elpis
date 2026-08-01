@@ -629,13 +629,19 @@ impl Session {
         );
         let mut provider = config.model_provider.clone();
         let initial_model = collaboration_mode.model();
-        if config.model_provider_id == "anthropic" || (initial_model.starts_with("claude") && !initial_model.contains('/')) {
+        if config.model_provider_id == "anthropic"
+            || (initial_model.starts_with("claude") && !initial_model.contains('/'))
+        {
             provider = codex_model_provider_info::ModelProviderInfo::create_anthropic_provider();
-        } else if config.model_provider_id == "gemini" || (initial_model.starts_with("gemini") && !initial_model.contains('/')) {
-            provider = codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider();
+        } else if config.model_provider_id == "gemini"
+            || (initial_model.starts_with("gemini") && !initial_model.contains('/'))
+        {
+            provider =
+                codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider();
         } else if initial_model.contains('/')
             || initial_model.contains(":free")
-            || !codex_model_provider_info::openrouter_free_fallback_candidates(initial_model).is_empty()
+            || !codex_model_provider_info::openrouter_free_fallback_candidates(initial_model)
+                .is_empty()
         {
             provider = codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
         }
@@ -1186,6 +1192,11 @@ impl Session {
         state.token_info()
     }
 
+    pub(crate) async fn context_prune_saved_tokens(&self) -> u64 {
+        let state = self.state.lock().await;
+        state.context_prune_saved_tokens
+    }
+
     pub(crate) async fn get_estimated_token_count(
         &self,
         turn_context: &TurnContext,
@@ -1313,6 +1324,7 @@ impl Session {
             first_window_id,
             previous_window_id,
             window_id,
+            context_prune_saved_tokens,
         } = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
@@ -1338,6 +1350,7 @@ impl Session {
                 },
             );
             state.set_previous_turn_settings(previous_turn_settings.clone());
+            state.context_prune_saved_tokens = context_prune_saved_tokens;
         }
         let prefix_tokens = if matches!(
             turn_context.config.model_auto_compact_token_limit_scope,
@@ -3659,12 +3672,21 @@ impl Session {
                 model_context_window: None,
             });
 
+            // `get_total_token_usage` adds the turn's trailing items — and prior
+            // reasoning, when the server does not account for it — on top of whatever
+            // is stored here, because that field normally holds a server count taken
+            // before those items existed. `estimated_total_tokens` already covers
+            // them, so store the estimate net of that addition; storing it raw makes
+            // every reader report a total larger than the history it just measured.
             info.last_token_usage = TokenUsage {
                 input_tokens: 0,
                 cached_input_tokens: 0,
                 output_tokens: 0,
                 reasoning_output_tokens: 0,
-                total_tokens: estimated_total_tokens.max(0),
+                total_tokens: history.last_usage_for_estimated_total(
+                    estimated_total_tokens,
+                    state.server_reasoning_included(),
+                ),
             };
 
             if let Some(model_context_window) = turn_context.model_context_window() {
@@ -3716,11 +3738,16 @@ impl Session {
     }
 
     pub(crate) async fn send_token_count_event(&self, turn_context: &TurnContext) {
-        let (info, rate_limits) = {
+        let (info, rate_limits, context_prune_saved_tokens) = {
             let state = self.state.lock().await;
-            state.token_info_and_rate_limits()
+            let (info, rate_limits) = state.token_info_and_rate_limits();
+            (info, rate_limits, state.context_prune_saved_tokens)
         };
-        let event = EventMsg::TokenCount(TokenCountEvent { info, rate_limits });
+        let event = EventMsg::TokenCount(TokenCountEvent {
+            info,
+            rate_limits,
+            context_prune_saved_tokens,
+        });
         self.send_event(turn_context, event).await;
     }
 

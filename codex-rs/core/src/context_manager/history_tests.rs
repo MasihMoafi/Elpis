@@ -471,6 +471,56 @@ fn total_token_usage_includes_all_items_after_last_model_generated_item() {
 }
 
 #[test]
+fn storing_an_estimated_total_reports_that_exact_total_back() {
+    // The regression this guards: a rewritten history was measured end to end and
+    // stored raw, then read back with the trailing items added on top a second time.
+    // Every reader — the context meter and the pruning triggers alike — then saw a
+    // total larger than the history actually held, so reclaimed context did not show
+    // up as reclaimed.
+    let mut history = create_history_with_items(vec![assistant_msg("model reply")]);
+    history.update_token_info(
+        &TokenUsage {
+            total_tokens: 100,
+            ..Default::default()
+        },
+        /*model_context_window*/ None,
+    );
+    let added_user = user_msg("new user message");
+    let added_tool_output = custom_tool_call_output("tool-tail", "new tool output");
+    history.record_items(
+        [&added_user, &added_tool_output],
+        TruncationPolicy::Tokens(10_000),
+    );
+
+    let estimated_total = history
+        .estimate_token_count_with_base_instructions(&BaseInstructions {
+            text: "base".to_string(),
+        })
+        .expect("estimate");
+    let tail_tokens =
+        estimate_item_token_count(&added_user) + estimate_item_token_count(&added_tool_output);
+    assert!(
+        tail_tokens > 0,
+        "the tail must be non-empty for this to prove anything"
+    );
+
+    let stored = history
+        .last_usage_for_estimated_total(estimated_total, /*server_reasoning_included*/ true);
+    history.update_token_info(
+        &TokenUsage {
+            total_tokens: stored,
+            ..Default::default()
+        },
+        /*model_context_window*/ None,
+    );
+
+    assert_eq!(
+        history.get_total_token_usage(/*server_reasoning_included*/ true),
+        estimated_total
+    );
+}
+
+#[test]
 fn for_prompt_strips_images_when_model_does_not_support_images() {
     let items = vec![
         ResponseItem::Message {
@@ -2042,6 +2092,23 @@ fn encrypted_function_output_uses_plaintext_byte_estimate() {
         + estimate_encrypted_function_output_length(encrypted_content.len()) as i64;
 
     assert_eq!(estimated, expected);
+
+    let agent_message = InterAgentCommunication::new_encrypted(
+        AgentPath::root(),
+        AgentPath::root().join("worker").expect("valid worker path"),
+        Vec::new(),
+        encrypted_content.clone(),
+        /*trigger_turn*/ true,
+    )
+    .to_model_input_item();
+    let agent_raw_len = serde_json::to_string(&agent_message).unwrap().len() as i64;
+    let expected_agent = agent_raw_len - encrypted_content.len() as i64
+        + estimate_encrypted_function_output_length(encrypted_content.len()) as i64;
+
+    assert_eq!(
+        estimate_response_item_model_visible_bytes(&agent_message),
+        expected_agent
+    );
 }
 
 #[test]
