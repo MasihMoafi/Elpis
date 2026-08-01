@@ -462,11 +462,15 @@ pub async fn compact(sess: &Arc<Session>, sub_id: String) {
         .await;
 }
 
-pub async fn prune(sess: &Arc<Session>, sub_id: String) {
+pub async fn prune(sess: &Arc<Session>, sub_id: String, target_pct: Option<i64>) {
     let turn_context = sess.new_default_turn_with_sub_id(sub_id).await;
 
-    sess.spawn_task(Arc::clone(&turn_context), Vec::new(), PruneTask)
-        .await;
+    sess.spawn_task(
+        Arc::clone(&turn_context),
+        Vec::new(),
+        PruneTask { target_pct },
+    )
+    .await;
 }
 
 pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32) {
@@ -824,8 +828,8 @@ pub(super) async fn submission_loop(
                     compact(&sess, sub.id.clone()).await;
                     false
                 }
-                Op::Prune => {
-                    prune(&sess, sub.id.clone()).await;
+                Op::Prune { target_pct } => {
+                    prune(&sess, sub.id.clone(), target_pct).await;
                     false
                 }
                 Op::ThreadRollback { num_turns } => {

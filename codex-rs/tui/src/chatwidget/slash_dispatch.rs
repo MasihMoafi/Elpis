@@ -263,7 +263,7 @@ impl ChatWidget {
                 if !self.bottom_pane.is_task_running() {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
-                self.app_event_tx.prune();
+                self.app_event_tx.prune(None);
             }
             SlashCommand::Compact => {
                 self.clear_token_usage();
@@ -871,7 +871,7 @@ impl ChatWidget {
                         None,
                     );
                 }
-                self.app_event_tx.prune();
+                self.app_event_tx.prune(None);
             }
             SlashCommand::Review if !trimmed.is_empty() => {
                 self.submit_op(AppCommand::review(ReviewTarget::Custom {

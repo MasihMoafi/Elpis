@@ -578,7 +578,9 @@ pub enum Op {
     },
 
     /// Selectively distill old tool output while preserving conversation messages.
-    Prune,
+    Prune {
+        target_pct: Option<i64>,
+    },
 
     /// Inter-agent communication that should be recorded as agent-message history
     /// while still using the normal thread submission lifecycle.
@@ -877,7 +879,7 @@ impl Op {
             Self::RealtimeConversationListVoices => "realtime_conversation_list_voices",
             Self::UserInput { .. } => "user_input",
             Self::ThreadSettings { .. } => "thread_settings",
-            Self::Prune => "prune",
+            Self::Prune { .. } => "prune",
             Self::InterAgentCommunication { .. } => "inter_agent_communication",
             Self::ExecApproval { .. } => "exec_approval",
             Self::PatchApproval { .. } => "patch_approval",

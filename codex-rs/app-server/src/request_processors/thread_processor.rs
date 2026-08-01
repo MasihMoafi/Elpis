@@ -1905,10 +1905,13 @@ impl ThreadRequestProcessor {
         request_id: &ConnectionRequestId,
         params: ThreadPruneStartParams,
     ) -> Result<ThreadPruneStartResponse, JSONRPCErrorError> {
-        let ThreadPruneStartParams { thread_id } = params;
+        let ThreadPruneStartParams {
+            thread_id,
+            target_pct,
+        } = params;
 
         let (_, thread) = self.load_thread(&thread_id).await?;
-        self.submit_core_op(request_id, thread.as_ref(), Op::Prune)
+        self.submit_core_op(request_id, thread.as_ref(), Op::Prune { target_pct })
             .await
             .map_err(|err| internal_error(format!("failed to start pruning: {err}")))?;
         Ok(ThreadPruneStartResponse {})

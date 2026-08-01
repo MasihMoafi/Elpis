@@ -9,7 +9,9 @@ use crate::state::TaskKind;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct PruneTask;
+pub(crate) struct PruneTask {
+    pub(crate) target_pct: Option<i64>,
+}
 
 impl SessionTask for PruneTask {
     fn kind(&self) -> TaskKind {
@@ -27,8 +29,12 @@ impl SessionTask for PruneTask {
         _input: Vec<TurnInput>,
         _cancellation_token: CancellationToken,
     ) -> SessionTaskResult {
-        crate::session::context_prune::run_manual_context_prune(&session.clone_session(), &ctx)
-            .await;
+        crate::session::context_prune::run_manual_context_prune_with_target(
+            &session.clone_session(),
+            &ctx,
+            self.target_pct,
+        )
+        .await;
         Ok(None)
     }
 }

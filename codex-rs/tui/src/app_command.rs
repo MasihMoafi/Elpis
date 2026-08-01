@@ -88,7 +88,9 @@ pub(crate) enum AppCommand {
         force_reload: bool,
     },
     Compact,
-    Prune,
+    Prune {
+        target_pct: Option<i64>,
+    },
     SetThreadName {
         name: String,
     },
@@ -110,8 +112,8 @@ impl AppCommand {
         Self::CleanBackgroundTerminals
     }
 
-    pub(crate) fn prune() -> Self {
-        Self::Prune
+    pub(crate) fn prune(target_pct: Option<i64>) -> Self {
+        Self::Prune { target_pct }
     }
 
     pub(crate) fn run_user_shell_command(command: String) -> Self {

@@ -969,6 +969,8 @@ pub struct ThreadCompactStartResponse {}
 #[ts(export_to = "v2/")]
 pub struct ThreadPruneStartParams {
     pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_pct: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

@@ -23,22 +23,30 @@ use super::session::Session;
 use super::turn_context::TurnContext;
 
 pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_context_prune(sess, turn_context, None).await;
+    run_context_prune(sess, turn_context, None, None).await;
 }
 
 pub(crate) async fn run_manual_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_context_prune(
-        sess,
-        turn_context,
-        Some(context_pruner::PruneTrigger::Manual),
-    )
-    .await;
+    run_manual_context_prune_with_target(sess, turn_context, None).await;
+}
+
+pub(crate) async fn run_manual_context_prune_with_target(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    target_pct: Option<i64>,
+) {
+    let trigger = match target_pct {
+        Some(_) => Some(context_pruner::PruneTrigger::Pressure),
+        None => Some(context_pruner::PruneTrigger::Manual),
+    };
+    run_context_prune(sess, turn_context, trigger, target_pct).await;
 }
 
 async fn run_context_prune(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     requested_trigger: Option<context_pruner::PruneTrigger>,
+    target_pct: Option<i64>,
 ) {
     let context_window = turn_context.model_context_window().unwrap_or(0);
     if requested_trigger.is_none() && context_window <= 0 {
@@ -69,9 +77,9 @@ async fn run_context_prune(
             context_pruner::build_steady_prune_batch(&items, &covered_call_ids)
         }
         Some(context_pruner::PruneTrigger::Pressure) => {
-            let reclaim_target =
-                context_pruner::reclaim_target_tokens(active_context_tokens, context_window);
-            context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target)
+            let pct = target_pct.unwrap_or(context_pruner::AUTO_PRUNE_TARGET_PERCENT);
+            let reclaim_target = (context_window as f64 * (1.0 - (pct as f64 / 100.0))) as usize;
+            context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target.max(1))
         }
         None => Vec::new(),
     };

@@ -50,8 +50,8 @@ impl AppEventSender {
         self.send(AppEvent::CodexOp(AppCommand::compact()));
     }
 
-    pub(crate) fn prune(&self) {
-        self.send(AppEvent::CodexOp(AppCommand::prune()));
+    pub(crate) fn prune(&self, target_pct: Option<i64>) {
+        self.send(AppEvent::CodexOp(AppCommand::prune(target_pct)));
     }
 
     pub(crate) fn set_thread_name(&self, name: String) {
