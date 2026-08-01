@@ -65,7 +65,9 @@ Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
-Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters gets buried in the story of how the agent got there, and every request pays for it.
+Long sessions fill up with transcripts, file reads, searches, and dead ends. Agents consume massive token budgets and execute dense sequences of tool calls to gather context—most of which is redundant and unnecessary. What matters gets buried in the story of how the agent got there, and every request pays for it.
+
+![Agents using excessive tool calls and tokens to gather redundant context](docs/assets/showcase-of-how-much-tool-calls.png)
 
 Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
 
