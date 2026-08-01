@@ -67,16 +67,25 @@ pub(crate) struct BuiltinCommandFlags {
     pub(crate) side_conversation_active: bool,
 }
 
+/// Whether a feature gate makes this command genuinely unavailable, as opposed to
+/// the presentation rules — popup visibility and the side-conversation subset — that
+/// only decide what gets *listed*. A gated-off command does not exist for this build;
+/// a merely unlisted one still dispatches when typed.
+fn enabled_by_feature_gates(cmd: SlashCommand, flags: BuiltinCommandFlags) -> bool {
+    (flags.allow_elevate_sandbox || cmd != SlashCommand::ElevateSandbox)
+        && (flags.collaboration_modes_enabled || cmd != SlashCommand::Plan)
+        && (flags.connectors_enabled || cmd != SlashCommand::Apps)
+        && (flags.plugins_command_enabled || cmd != SlashCommand::Plugins)
+        && (flags.goal_command_enabled || cmd != SlashCommand::Goal)
+        && (flags.personality_command_enabled || cmd != SlashCommand::Personality)
+        && (flags.token_activity_command_enabled || cmd != SlashCommand::Usage)
+}
+
 /// Return the built-ins that should be visible/usable for the current input.
 pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static str, SlashCommand)> {
     built_in_slash_commands()
         .into_iter()
-        .filter(|(_, cmd)| flags.allow_elevate_sandbox || *cmd != SlashCommand::ElevateSandbox)
-        .filter(|(_, cmd)| flags.collaboration_modes_enabled || *cmd != SlashCommand::Plan)
-        .filter(|(_, cmd)| flags.connectors_enabled || *cmd != SlashCommand::Apps)
-        .filter(|(_, cmd)| flags.plugins_command_enabled || *cmd != SlashCommand::Plugins)
-        .filter(|(_, cmd)| flags.goal_command_enabled || *cmd != SlashCommand::Goal)
-        .filter(|(_, cmd)| flags.personality_command_enabled || *cmd != SlashCommand::Personality)
+        .filter(|(_, cmd)| enabled_by_feature_gates(*cmd, flags))
         .filter(|(_, cmd)| !flags.side_conversation_active || cmd.available_in_side_conversation())
         .collect()
 }
@@ -106,23 +115,17 @@ pub(crate) fn commands_for_input(
 
 /// Find a single built-in command by a recognized name or alias, after applying feature gating.
 ///
-/// Side-conversation and token-activity gating are intentionally enforced by dispatch rather than
-/// command lookup so a typed command can produce a specific unavailable message while the popup
-/// still hides it.
+/// Lookup applies feature gates only. Popup visibility and the side-conversation subset are
+/// presentation rules, so a typed command that is merely unlisted still resolves here and lets
+/// dispatch answer with a specific message — routing lookup through the popup's list instead
+/// makes every hidden-but-working command behave as though it does not exist.
 pub(crate) fn find_builtin_command(name: &str, flags: BuiltinCommandFlags) -> Option<SlashCommand> {
     let cmd = SlashCommand::from_str(name).ok().or_else(|| {
         let repeated_os = name.strip_prefix('g')?.strip_suffix("al")?;
         (!repeated_os.is_empty() && repeated_os.bytes().all(|byte| byte == b'o'))
             .then_some(SlashCommand::Goal)
     })?;
-    builtins_for_input(BuiltinCommandFlags {
-        token_activity_command_enabled: true,
-        side_conversation_active: false,
-        ..flags
-    })
-    .into_iter()
-    .any(|(_, visible_cmd)| visible_cmd == cmd)
-    .then_some(cmd)
+    enabled_by_feature_gates(cmd, flags).then_some(cmd)
 }
 
 pub(crate) fn find_slash_command(
@@ -301,6 +304,7 @@ mod tests {
                 SlashCommand::Copy,
                 SlashCommand::Diff,
                 SlashCommand::Usage,
+                SlashCommand::Context,
             ]
         );
     }
