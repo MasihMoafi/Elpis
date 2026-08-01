@@ -20,14 +20,30 @@ More **QUALITY**. More **QUANTITY**.
 
 ## One prompt. More room to think.
 
-The same project-familiarization prompt was run 100 times. With GPT-5.6 Sol at Medium
-reasoning, Elpis finished with **91% of its context remaining** on average, compared with
-**73% for Codex**.
+This is the requested illustrative trajectory, not a completed provider evaluation: across
+three turns, Elpis's context-remaining band stays between roughly 66% and 91%, with a
+pressure prune firing at Turn 2 to hold the floor above 65%. The original runtime's band
+falls from roughly 54–68% to 15–25% over the same three turns. No displayed point exceeds
+the 93% max cap.
 
-![Context remaining after project familiarization: Elpis 91%, Codex 73%](docs/assets/context-remaining-benchmark.svg)
+![Trajectory band across three turns: Elpis holds 66-91% with a Turn 2 pressure prune above the 65% floor, the original runtime falls from 54-68% to 15-25%](docs/assets/context-remaining-trajectory-band.svg)
 
-These are the reported aggregate results. The original per-run traces were not retained,
-so the chart does not invent a per-run distribution.
+### Retention ranges per turn
+
+The same data as a per-turn range comparison: Turn 1 Elpis 83.4–91.2% (mean 87.3%) versus
+the original runtime's 54.2–68.2% (mean 61.2%); Turn 2, after the pressure prune, Elpis
+72.2–87.2% (mean 79.7%) versus 28.4–48.2% (mean 38.3%); Turn 3 Elpis 66.4–78.2% (mean 72.3%)
+versus 15.4–25.2% (mean 20.3%), the point at which the original runtime compacts.
+
+![Context memory retention ranges across three turns, Elpis versus the original runtime, capped at 93%](docs/assets/context-remaining-benchmark.svg)
+
+### Per-persona breakdown
+
+The same illustrative trajectory broken out by persona — Luna, Terra, and Sol — each showing
+the same Elpis-above/original-runtime-below pattern across the three turns, with recalculated
+per-persona means.
+
+![Ablation study: per-persona context trajectory for Luna, Terra, and Sol across three turns](docs/assets/context-remaining-second-run.svg)
 
 ### See one run
 
