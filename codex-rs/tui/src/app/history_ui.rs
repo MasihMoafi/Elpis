@@ -48,9 +48,6 @@ impl App {
         if let Some(cell) = self.chat_widget.take_completed_token_activity_output() {
             self.insert_history_cell(tui, Box::new(cell));
         }
-        if let Some(cell) = self.chat_widget.take_pending_rate_limit_reset_hint() {
-            self.insert_history_cell(tui, Box::new(cell));
-        }
     }
 
     pub(super) fn insert_pending_usage_output_if_ready(&mut self, tui: &mut tui::Tui) {
@@ -170,7 +167,6 @@ impl App {
         self.has_emitted_history_lines = false;
         self.transcript_reflow.clear();
         self.chat_widget.clear_pending_token_activity_refreshes();
-        self.chat_widget.clear_pending_rate_limit_reset_hint();
         self.initial_history_replay_buffer = None;
         self.backtrack = BacktrackState::default();
         self.backtrack_render_pending = false;

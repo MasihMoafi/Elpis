@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/status_surface_previews.rs
+assertion_line: 233
+expression: snapshot
+---
+status line: ELPIS · provider openai · model gpt-5.6-sol · context 0% · monthly 65% left · weekly 50% left
+terminal title: monthly 65% left | weekly 50% left

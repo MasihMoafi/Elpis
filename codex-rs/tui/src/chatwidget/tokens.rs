@@ -257,17 +257,13 @@ impl ChatWidget {
     /// This is used after stream or history lifecycle events that may have cleared
     /// the insertion barriers without directly owning the completed output.
     pub(crate) fn request_pending_usage_output_insertion(&self) {
-        if self.completed_token_activity_output.is_some()
-            || self.pending_rate_limit_reset_hint().is_some()
-        {
+        if self.completed_token_activity_output.is_some() {
             self.app_event_tx.send(AppEvent::CommitPendingUsageOutput);
         }
     }
 
     pub(crate) fn request_pending_usage_output_insertion_after_stream_shutdown(&self) {
-        if self.completed_token_activity_output.is_some()
-            || self.pending_rate_limit_reset_hint().is_some()
-        {
+        if self.completed_token_activity_output.is_some() {
             self.app_event_tx
                 .send(AppEvent::CommitPendingUsageOutputAfterStreamShutdown);
         }

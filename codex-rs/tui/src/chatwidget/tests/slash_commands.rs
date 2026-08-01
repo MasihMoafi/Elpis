@@ -56,11 +56,17 @@ fn recall_latest_after_clearing(chat: &mut ChatWidget) -> String {
     chat.bottom_pane.composer_text()
 }
 
-fn dispatch_usage_and_expect_refresh(
+/// Open the token-activity card directly.
+///
+/// `/usage` renders the status card; the token-activity card is reached through its
+/// own entry point. These tests are about the insertion gating that keeps a settled
+/// card from landing mid-stream, which is shared machinery, so they drive the card
+/// rather than a command that no longer opens it.
+fn open_token_activity_and_expect_refresh(
     chat: &mut ChatWidget,
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
 ) -> u64 {
-    chat.dispatch_command_with_args(SlashCommand::Usage, "daily".to_string(), Vec::new());
+    chat.add_token_activity_output(crate::chatwidget::TokenActivityView::Daily);
     expect_token_activity_refresh(rx)
 }
 
@@ -1383,7 +1389,7 @@ async fn clearing_pending_token_activity_refreshes_discards_late_result() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     assert_eq!(
         chat.pending_token_activity_output()
             .map(|cell| lines_to_single_string(&cell.display_lines(u16::MAX))),
@@ -1410,7 +1416,7 @@ async fn account_state_change_discards_pending_token_activity_refresh() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     assert!(chat.pending_token_activity_output().is_some());
 
     chat.update_account_state(
@@ -1437,7 +1443,7 @@ async fn pending_token_activity_refresh_renders_above_composer_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    open_token_activity_and_expect_refresh(&mut chat, &mut rx);
 
     let width: u16 = 80;
     let height = chat.desired_height(width);
@@ -1459,7 +1465,7 @@ async fn completed_token_activity_refresh_returns_one_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     assert!(chat.pending_token_activity_output().is_some());
 
     assert!(
@@ -1485,7 +1491,7 @@ async fn completed_token_activity_refresh_waits_for_active_stream() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     chat.on_agent_message_delta("partial response".to_string());
     assert!(chat.usage_history_insertion_blocked());
 
@@ -1515,7 +1521,7 @@ async fn completed_token_activity_refresh_waits_for_queued_stream_consolidation(
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     chat.on_agent_message_delta("partial response".to_string());
     chat.finalize_completed_assistant_message(/*message*/ None);
     assert!(chat.pending_stream_consolidations > 0);
@@ -1538,7 +1544,7 @@ async fn completed_token_activity_refresh_waits_for_active_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     chat.transcript.active_cell = Some(Box::new(PlainHistoryCell::new(vec![Line::from(
         "active tool",
     )])));
@@ -1571,7 +1577,7 @@ async fn completed_token_activity_refresh_waits_for_active_hook() {
         ),
     );
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     assert!(
         chat.finish_token_activity_refresh(
             request_id,
@@ -1603,7 +1609,7 @@ async fn completed_token_activity_refresh_retries_after_plan_item_completion() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
     let mut controller = crate::streaming::controller::PlanStreamController::new(
         /*width*/ None,
         &chat.config.cwd,
@@ -1634,7 +1640,7 @@ async fn pending_token_activity_refresh_keeps_composer_visible_in_short_viewport
         std::iter::repeat_n(Line::from("active output"), /*n*/ 20).collect(),
     )));
 
-    dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    open_token_activity_and_expect_refresh(&mut chat, &mut rx);
 
     let width: u16 = 80;
     let height: u16 = 8;
@@ -1660,7 +1666,7 @@ async fn repeated_token_activity_refreshes_keep_only_latest_card() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
 
-    let first_request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
+    let first_request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
 
     chat.dispatch_command_with_args(SlashCommand::Usage, "weekly".to_string(), Vec::new());
     let second_request_id = expect_token_activity_refresh(&mut rx);

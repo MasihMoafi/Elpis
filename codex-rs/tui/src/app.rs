@@ -1126,16 +1126,9 @@ See the Elpis keymap documentation for supported actions and examples."
         );
         app.refresh_startup_skills(&app_server);
         // Kick off a non-blocking rate-limit prefetch so the first `/usage`
-        // already has data and available reset credits can be surfaced, without
-        // delaying the initial frame render.
+        // already has data, without delaying the initial frame render.
         if requires_openai_auth && has_chatgpt_account {
-            let reset_hint_request_id = app.chat_widget.start_rate_limit_reset_startup_check();
-            app.refresh_rate_limits(
-                &app_server,
-                RateLimitRefreshOrigin::StartupPrefetch {
-                    reset_hint_request_id,
-                },
-            );
+            app.refresh_rate_limits(&app_server, RateLimitRefreshOrigin::StartupPrefetch);
         }
 
         let mut listen_for_app_server_events = true;

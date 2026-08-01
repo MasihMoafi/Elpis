@@ -125,17 +125,11 @@ pub(crate) struct PluginRemoteSectionError {
 /// rows before showing redemption choices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RateLimitRefreshOrigin {
-    /// Eagerly fetched after bootstrap for `/usage` data and reset availability.
-    StartupPrefetch { reset_hint_request_id: u64 },
+    /// Eagerly fetched after bootstrap so `/usage` has limits to show.
+    StartupPrefetch,
     /// User-initiated via `/usage`; the `request_id` correlates with the
     /// status card that should be updated when the fetch completes.
     UsageCommand { request_id: u64 },
-    /// User reopened `/usage` while the cached reset-credit count was zero.
-    UsageMenu { request_id: u64 },
-    /// User opened the reset-credit picker.
-    ResetPicker { request_id: u64 },
-    /// Refresh requested after a reset credit was successfully consumed.
-    ResetConsume { request_id: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,26 +323,6 @@ pub(crate) enum AppEvent {
         origin: RateLimitRefreshOrigin,
         hard_stop_generation: u64,
         result: Result<GetAccountRateLimitsResponse, String>,
-    },
-
-    /// Open the default token-activity view selected from the `/usage` menu.
-    OpenTokenActivity,
-
-    /// Open the reset-credit flow selected from the `/usage` menu.
-    OpenRateLimitResetCredits,
-
-    /// Consume one reset credit using a stable idempotency key.
-    ConsumeRateLimitResetCredit {
-        idempotency_key: String,
-        credit_id: Option<String>,
-    },
-
-    /// Result of consuming one reset credit.
-    RateLimitResetCreditConsumed {
-        request_id: u64,
-        idempotency_key: String,
-        credit_id: Option<String>,
-        result: Result<ConsumeAccountRateLimitResetCreditResponse, String>,
     },
 
     /// Fetch account-wide token activity for a `/usage` history card.

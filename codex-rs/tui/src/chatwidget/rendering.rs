@@ -37,16 +37,6 @@ impl ChatWidget {
                 })),
             );
         }
-        if let Some(cell) = self.pending_rate_limit_reset_hint() {
-            flex.push(
-                /*flex*/ 1,
-                RenderableItem::Owned(Box::new(TranscriptAreaRenderable {
-                    child: cell,
-                    top: 0,
-                    right: active_cell_right_reserve,
-                })),
-            );
-        }
         flex.push(
             /*flex*/ 0,
             RenderableItem::Owned(Box::new(IdentityLineRenderable { chat_widget: self })).inset(

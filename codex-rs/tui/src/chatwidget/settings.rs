@@ -218,7 +218,6 @@ impl ChatWidget {
         // Account-update notifications are the identity boundary. The visible account fields can
         // be identical across two accounts, so always invalidate account-scoped requests and data.
         self.clear_pending_token_activity_refreshes();
-        self.clear_pending_rate_limit_reset_requests();
         self.codex_rate_limit_reached_type = None;
         self.codex_spend_control_reached = None;
         self.rate_limit_warnings = RateLimitWarningState::default();

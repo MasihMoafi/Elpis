@@ -162,13 +162,7 @@ async fn rolling_workspace_hard_stops_invalidate_older_rate_limit_reads() -> Res
 #[tokio::test]
 async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_origin() -> Result<()>
 {
-    for origin_name in [
-        "startup",
-        "status",
-        "usage",
-        "reset-picker",
-        "reset-consume",
-    ] {
+    for origin_name in ["startup", "status", "usage"] {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
         set_chatgpt_auth(&mut app.chat_widget);
         let mut tui = crate::tui::test_support::make_test_tui()?;
@@ -178,9 +172,7 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
         .await?;
 
         let origin = match origin_name {
-            "startup" => RateLimitRefreshOrigin::StartupPrefetch {
-                reset_hint_request_id: app.chat_widget.start_rate_limit_reset_startup_check(),
-            },
+            "startup" => RateLimitRefreshOrigin::StartupPrefetch,
             "status" => {
                 let request_id = 7;
                 app.chat_widget
@@ -188,15 +180,6 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
                 RateLimitRefreshOrigin::UsageCommand { request_id }
             }
             "usage" => {
-                let startup_request_id = app.chat_widget.start_rate_limit_reset_startup_check();
-                app.chat_widget.finish_rate_limit_reset_hint_refresh(
-                    startup_request_id,
-                    Vec::new(),
-                    Ok(RateLimitResetCreditsSummary {
-                        available_count: 0,
-                        credits: None,
-                    }),
-                );
                 app.chat_widget.insert_str("/usage");
                 app.chat_widget
                     .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -210,12 +193,6 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
                     }
                 }
             }
-            "reset-picker" => RateLimitRefreshOrigin::ResetPicker {
-                request_id: app.chat_widget.show_rate_limit_reset_loading_popup(),
-            },
-            "reset-consume" => RateLimitRefreshOrigin::ResetConsume {
-                request_id: app.chat_widget.show_rate_limit_reset_consuming_popup(),
-            },
             _ => unreachable!("unknown refresh origin"),
         };
         let read_generation = app.rate_limit_hard_stop_generation;
@@ -224,9 +201,6 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
             Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached),
             Some(true),
         );
-        if origin_name == "reset-picker" {
-            rolling_snapshot.limit_id = Some("codex_other".to_string());
-        }
         deliver_rolling_rate_limit_snapshot(&mut app, &app_server, rolling_snapshot).await;
         assert_ne!(read_generation, app.rate_limit_hard_stop_generation);
 

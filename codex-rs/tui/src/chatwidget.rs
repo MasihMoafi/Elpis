@@ -419,7 +419,6 @@ use self::transcript::TranscriptState;
 mod turn_lifecycle;
 mod turn_runtime;
 use self::turn_lifecycle::TurnLifecycleState;
-mod usage;
 mod user_messages;
 use self::user_messages::PendingSteer;
 use self::user_messages::PendingSteerCompareKey;
@@ -1773,12 +1772,7 @@ impl ChatWidget {
         let cell = self.transcript.active_cell.as_ref();
         let hook_cell = self.active_hook_cell.as_ref();
         let token_activity_cell = self.pending_token_activity_output();
-        let rate_limit_reset_hint = self.pending_rate_limit_reset_hint();
-        if cell.is_none()
-            && hook_cell.is_none()
-            && token_activity_cell.is_none()
-            && rate_limit_reset_hint.is_none()
-        {
+        if cell.is_none() && hook_cell.is_none() && token_activity_cell.is_none() {
             return None;
         }
         Some(ActiveCellTranscriptKey {
@@ -1822,13 +1816,6 @@ impl ChatWidget {
                 lines.push(HyperlinkLine::from(""));
             }
             lines.extend(token_activity_lines);
-        }
-        if let Some(rate_limit_reset_hint) = self.pending_rate_limit_reset_hint() {
-            let hint_lines = rate_limit_reset_hint.transcript_hyperlink_lines(width);
-            if !hint_lines.is_empty() && !lines.is_empty() {
-                lines.push(HyperlinkLine::from(""));
-            }
-            lines.extend(hint_lines);
         }
         (!lines.is_empty()).then_some(lines)
     }
