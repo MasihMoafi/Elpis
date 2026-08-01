@@ -10,7 +10,7 @@ expression: normalized_backend_snapshot(terminal.backend())
 "│                                              ││i = select/deselect all ·      "
 "│                                              ││backspace = remove added file  "
 "└──────────────────────────────────────────────┘│                               "
-"  /model  switch between luna, terra and sol    │CONTEXT WINDOW  ≈0 of 258.4k   "
+"  ES.md  the session checkpoint Elpis writes af…│CONTEXT WINDOW  ≈0 of 258.4k   "
 "                                                │used (0%)                      "
 "                                                │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  "
 "                                                │■ Conversation (messages) ≈0   "

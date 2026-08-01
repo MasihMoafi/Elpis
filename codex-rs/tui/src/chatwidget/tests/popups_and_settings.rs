@@ -2672,7 +2672,7 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
     );
 
     chat.add_connectors_output();
-    let loading_popup = render_bottom_popup(&chat, /*width*/ 80);
+    let loading_popup = render_bottom_popup(&chat, /*width*/ 160);
     assert!(
         loading_popup.contains("Loading installed and available apps..."),
         "expected /apps to keep showing loading before the final result, got:\n{loading_popup}"
@@ -2688,7 +2688,7 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
         ConnectorsCacheState::Ready(snapshot) if snapshot.connectors.len() == 1
     );
 
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let popup = render_bottom_popup(&chat, /*width*/ 160);
     assert!(
         popup.contains("Installed 1 of 1 available apps."),
         "expected /apps to fall back to the installed apps snapshot, got:\n{popup}"
@@ -2733,7 +2733,7 @@ async fn apps_popup_shows_disabled_status_for_installed_but_disabled_apps() {
     );
 
     chat.add_connectors_output();
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let popup = render_bottom_popup(&chat, /*width*/ 160);
     assert!(
         popup.contains("Installed · Disabled. Press Enter to open the app page"),
         "expected selected app description to include disabled status, got:\n{popup}"
@@ -2812,7 +2812,7 @@ async fn apps_refresh_preserves_toggled_enabled_state() {
     );
 
     chat.add_connectors_output();
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let popup = render_bottom_popup(&chat, /*width*/ 160);
     assert!(
         popup.contains("Installed · Disabled. Press Enter to open the app page"),
         "expected disabled status to persist after reload, got:\n{popup}"
@@ -2853,7 +2853,7 @@ async fn apps_popup_for_not_installed_app_uses_install_only_selected_description
     );
 
     chat.add_connectors_output();
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let popup = render_bottom_popup(&chat, /*width*/ 160);
     assert!(
         popup.contains("Can be installed. Press Enter to open the app page to install"),
         "expected selected app description to be install-only for not-installed apps, got:\n{popup}"
@@ -3749,12 +3749,12 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     let preset = get_available_model(&chat, "gpt-5.4");
     chat.open_reasoning_popup(preset);
 
-    let before_escape = render_bottom_popup(&chat, /*width*/ 80);
+    let before_escape = render_bottom_popup(&chat, /*width*/ 160);
     assert!(before_escape.contains("Select Reasoning Level"));
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
-    let after_escape = render_bottom_popup(&chat, /*width*/ 80);
+    let after_escape = render_bottom_popup(&chat, /*width*/ 160);
     assert!(after_escape.contains("Select Model"));
     assert!(!after_escape.contains("Select Reasoning Level"));
 }
