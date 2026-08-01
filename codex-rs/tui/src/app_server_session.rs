@@ -1058,7 +1058,11 @@ impl AppServerSession {
         Ok(())
     }
 
-    pub(crate) async fn thread_prune_start(&mut self, thread_id: ThreadId) -> Result<()> {
+    pub(crate) async fn thread_prune_start(
+        &mut self,
+        thread_id: ThreadId,
+        target_pct: Option<i64>,
+    ) -> Result<()> {
         let request_id = self.next_request_id();
         let _: ThreadPruneStartResponse = self
             .client
@@ -1066,6 +1070,7 @@ impl AppServerSession {
                 request_id,
                 params: ThreadPruneStartParams {
                     thread_id: thread_id.to_string(),
+                    target_pct,
                 },
             })
             .await
