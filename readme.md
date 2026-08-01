@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/elpis.webp" alt="Elpis" width="450">
+<img src="docs/assets/codex-vs-elpis.png" alt="A confused Codex robot beside a confident Elpis robot" width="720">
 
 <br>
 
