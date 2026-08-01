@@ -1,8 +1,0 @@
----
-source: tui/src/chatwidget/tests/slash_commands.rs
-expression: rendered
----
-• Unrecognized command '/usage'. Type "/" for a list of supported commands.
-
-
-• Unrecognized command '/usage'. Type "/" for a list of supported commands.

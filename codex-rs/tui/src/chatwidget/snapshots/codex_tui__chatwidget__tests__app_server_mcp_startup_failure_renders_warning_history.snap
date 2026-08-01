@@ -10,7 +10,7 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 │                                                                      ││added file
 │                                                                      ││
 └──────────────────────────────────────────────────────────────────────┘│CONTEXT WINDOW  ≈0 of 258.4k used (0%)
-  /dev  load the development rules for this repository                  │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  /goal  set an objective Elpis carries across sessions                 │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
                                                                         │■ Conversation (messages)           ≈0 tokens
                                                                         │
                                                                         │No portable context is available.

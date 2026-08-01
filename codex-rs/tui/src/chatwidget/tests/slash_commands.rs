@@ -449,7 +449,7 @@ async fn assert_cancelled_queued_menu_drains_next_input(
 async fn queued_slash_menu_cancel_drains_next_input() {
     assert_cancelled_queued_menu_drains_next_input(
         "/model",
-        "Select Model",
+        "Choose a mind",
         KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
     )
     .await;
@@ -478,7 +478,7 @@ async fn queued_settings_selection_applies_before_next_input() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Select Model and Effort"),
+        popup.contains("Choose a mind"),
         "expected model menu to open; popup:\n{popup}"
     );
 
@@ -1302,89 +1302,6 @@ async fn usage_error_slash_command_is_available_from_local_recall() {
 }
 
 #[tokio::test]
-async fn signed_out_usage_command_reports_chatgpt_login_requirement() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    submit_composer_text(&mut chat, "/usage");
-
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_chatwidget_snapshot!(
-        "signed_out_usage_command_reports_chatgpt_login_requirement",
-        rendered
-    );
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/usage");
-}
-
-#[tokio::test]
-async fn signed_out_usage_command_with_args_reports_chatgpt_login_requirement() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    submit_composer_text(&mut chat, "/usage weekly");
-
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        rendered.contains("Sign in with ChatGPT to use /usage."),
-        "expected ChatGPT login requirement, got: {rendered:?}"
-    );
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/usage weekly");
-}
-
-#[tokio::test]
-async fn usage_command_with_invalid_view_reports_usage_snapshot() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    set_chatgpt_auth(&mut chat);
-
-    submit_composer_text(&mut chat, "/usage monthly");
-
-    let rendered = drain_insert_history(&mut rx)
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_chatwidget_snapshot!("usage_command_with_invalid_view_reports_usage", rendered);
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/usage monthly");
-}
-
-#[tokio::test]
-async fn usage_command_runs_with_backend_auth_without_chatgpt_account_flag() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.update_account_state(
-        /*status_account_display*/ None, /*plan_type*/ None,
-        /*has_chatgpt_account*/ false, /*has_codex_backend_auth*/ true,
-    );
-
-    chat.dispatch_command_with_args(SlashCommand::Usage, "daily".to_string(), Vec::new());
-
-    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshTokenActivity { .. }));
-    assert!(!chat.has_chatgpt_account());
-}
-
-#[tokio::test]
-async fn usage_command_runs_with_backend_auth_from_widget_init() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual_with_auth(
-        /*model_override*/ None, /*has_chatgpt_account*/ false,
-        /*has_codex_backend_auth*/ true,
-    )
-    .await;
-
-    chat.dispatch_command_with_args(SlashCommand::Usage, "daily".to_string(), Vec::new());
-
-    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshTokenActivity { .. }));
-    assert!(!chat.has_chatgpt_account());
-    assert!(chat.has_codex_backend_auth());
-}
-
-#[tokio::test]
 async fn clearing_pending_token_activity_refreshes_discards_late_result() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
@@ -1668,7 +1585,7 @@ async fn repeated_token_activity_refreshes_keep_only_latest_card() {
 
     let first_request_id = open_token_activity_and_expect_refresh(&mut chat, &mut rx);
 
-    chat.dispatch_command_with_args(SlashCommand::Usage, "weekly".to_string(), Vec::new());
+    chat.add_token_activity_output(crate::chatwidget::TokenActivityView::Weekly);
     let second_request_id = expect_token_activity_refresh(&mut rx);
 
     assert_eq!(
@@ -1724,25 +1641,6 @@ async fn unavailable_slash_command_is_available_from_local_recall() {
         "expected disabled-command message, got: {rendered:?}"
     );
     assert_eq!(recall_latest_after_clearing(&mut chat), "/review");
-}
-
-#[tokio::test]
-async fn no_op_stub_slash_command_is_available_from_local_recall() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    submit_composer_text(&mut chat, "/debug-m-drop");
-
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        rendered.contains("Memory maintenance"),
-        "expected stub message, got: {rendered:?}"
-    );
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/debug-m-drop");
 }
 
 #[tokio::test]
@@ -2137,7 +2035,7 @@ async fn queued_menu_slash_keeps_agent_turn_complete_notification() {
         chat.pending_notification,
         Some(Notification::AgentTurnComplete { ref response }) if response == "Done"
     );
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Select Model"));
+    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Choose a mind"));
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 

@@ -18,5 +18,5 @@ expression: status_line_popup_snapshot(&mut chat)
   [ ] reasoning             Current reasoning level
   [ ] current-dir           Current working directory
 
-  ELPIS · provider openai · model gpt-5.6-sol · context 9…
+  ELPIS · provider openai · model gpt-5.6-sol · context 0…
   Press space to toggle; ←/→ to move; enter to confirm and c

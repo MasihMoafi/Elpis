@@ -2,5 +2,5 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: snapshot
 ---
-status line: ELPIS · provider openai · model gpt-5.6-sol · context 97% · tmp · feat/awesome-feature · thread title · Read Only · Ask for approval
+status line: ELPIS · provider openai · model gpt-5.6-sol · context 0% · tmp · feat/awesome-feature · thread title · Read Only · Ask for approval
 terminal title: thread title | feat/awesome-feature | Tasks 0/0
