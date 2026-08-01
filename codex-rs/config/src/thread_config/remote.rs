@@ -294,6 +294,7 @@ fn proto_wire_api(wire_api: WireApi) -> proto::WireApi {
         WireApi::Responses => proto::WireApi::Responses,
         WireApi::AnthropicMessages => proto::WireApi::AnthropicMessages,
         WireApi::GeminiGenerateContent => proto::WireApi::GeminiGenerateContent,
+        WireApi::Chat => proto::WireApi::Responses,
     }
 }
 

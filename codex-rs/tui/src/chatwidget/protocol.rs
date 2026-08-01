@@ -217,13 +217,7 @@ impl ChatWidget {
                 if notification.reason
                     == codex_app_server_protocol::ModelRerouteReason::AutoModelRouting
                 {
-                    self.add_info_message(
-                        format!("Auto routed this turn to {}.", notification.to_model),
-                        Some(format!(
-                            "Auto → {} · evidence thread:{}/turn:{}",
-                            notification.to_model, notification.thread_id, notification.turn_id
-                        )),
-                    );
+                    // Auto model routing is silent — keeps user UI displaying 'auto' without showing internal luna details
                 } else {
                     crate::branding::record_model_reroute(
                         &notification.from_model,

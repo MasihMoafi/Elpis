@@ -16,7 +16,7 @@ pub enum SlashCommand {
     Model,
     Ide,
     Permissions,
-    #[strum(to_string = "hotkeys")]
+    #[strum(serialize = "hotkeys", serialize = "keymap")]
     Keymap,
     Vim,
     #[strum(serialize = "setup-default-sandbox")]
@@ -98,7 +98,7 @@ impl SlashCommand {
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Usage => "inspect current context, continuity, and token usage",
             SlashCommand::Prune => {
-                "selectively distill old tool output; keep the conversation intact"
+                "distill tool output or force pressure prune: /prune [<pct>] (e.g. /prune 30%)"
             }
             SlashCommand::Context => {
                 "show context usage as a grid, by category, with checkpoints and system files"
@@ -148,7 +148,8 @@ impl SlashCommand {
     pub fn supports_inline_args(self) -> bool {
         matches!(
             self,
-            SlashCommand::Review
+            SlashCommand::Prune
+                | SlashCommand::Review
                 | SlashCommand::Add
                 | SlashCommand::Rename
                 | SlashCommand::Plan
@@ -243,7 +244,6 @@ impl SlashCommand {
             | SlashCommand::Add
             | SlashCommand::Skills
             | SlashCommand::Hooks
-            | SlashCommand::Review
             | SlashCommand::New
             | SlashCommand::Resume
             | SlashCommand::Init
@@ -255,6 +255,7 @@ impl SlashCommand {
             | SlashCommand::Mcp
             | SlashCommand::Quit
             | SlashCommand::Memories
+            | SlashCommand::Keymap
             | SlashCommand::Theme
             | SlashCommand::Fork
             | SlashCommand::Goal
@@ -267,7 +268,7 @@ impl SlashCommand {
             | SlashCommand::Ide
             | SlashCommand::Plan
             | SlashCommand::Clear => true,
-            SlashCommand::Keymap
+            SlashCommand::Review
             | SlashCommand::Rename
             | SlashCommand::Delete
             | SlashCommand::Side
@@ -326,7 +327,8 @@ mod tests {
         assert_eq!(SlashCommand::Keymap.command(), "hotkeys");
         assert_eq!(SlashCommand::Delete.command(), "del");
         assert_eq!(SlashCommand::Experimental.command(), "settings");
-        assert!(SlashCommand::from_str("keymap").is_err());
+        assert_eq!(SlashCommand::from_str("keymap"), Ok(SlashCommand::Keymap));
+        assert_eq!(SlashCommand::from_str("hotkeys"), Ok(SlashCommand::Keymap));
         assert!(SlashCommand::from_str("delete").is_err());
         assert!(SlashCommand::from_str("experimental").is_err());
     }
@@ -345,7 +347,6 @@ mod tests {
             "debug-m-update",
             "exit",
             "feedback",
-            "hotkeys",
             "apps",
             "app",
             "debug-config",
@@ -356,6 +357,7 @@ mod tests {
             "plugins",
             "raw",
             "rename",
+            "review",
             "settings",
             "status",
             "statusline",

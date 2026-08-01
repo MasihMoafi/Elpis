@@ -857,6 +857,22 @@ impl ChatWidget {
                 );
                 self.request_side_conversation(parent_thread_id, Some(user_message));
             }
+            SlashCommand::Prune if !trimmed.is_empty() => {
+                self.clear_token_usage();
+                if !self.bottom_pane.is_task_running() {
+                    self.bottom_pane.set_task_running(/*running*/ true);
+                }
+                let pct = trimmed.trim_end_matches('%').parse::<u32>().ok();
+                if let Some(target) = pct {
+                    self.add_info_message(
+                        format!(
+                            "Running force pressure prune targeting {target}% context remaining..."
+                        ),
+                        None,
+                    );
+                }
+                self.app_event_tx.prune();
+            }
             SlashCommand::Review if !trimmed.is_empty() => {
                 self.submit_op(AppCommand::review(ReviewTarget::Custom {
                     instructions: args,

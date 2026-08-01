@@ -18,39 +18,6 @@ More **QUALITY**. More **QUANTITY**.
 
 </div>
 
-## One prompt. More room to think.
-
-This is the requested illustrative trajectory, not a completed provider evaluation: across
-three turns, Elpis's context-remaining band stays between roughly 66% and 91%, with a
-pressure prune firing at Turn 2 to hold the floor above 65%. The original runtime's band
-falls from roughly 54–68% to 15–25% over the same three turns. No displayed point exceeds
-the 93% max cap.
-
-![Trajectory band across three turns: Elpis holds 66-91% with a Turn 2 pressure prune above the 65% floor, the original runtime falls from 54-68% to 15-25%](docs/assets/context-remaining-trajectory-band.svg)
-
-### Retention ranges per turn
-
-The same data as a per-turn range comparison: Turn 1 Elpis 83.4–91.2% (mean 87.3%) versus
-the original runtime's 54.2–68.2% (mean 61.2%); Turn 2, after the pressure prune, Elpis
-72.2–87.2% (mean 79.7%) versus 28.4–48.2% (mean 38.3%); Turn 3 Elpis 66.4–78.2% (mean 72.3%)
-versus 15.4–25.2% (mean 20.3%), the point at which the original runtime compacts.
-
-![Context memory retention ranges across three turns, Elpis versus the original runtime, capped at 93%](docs/assets/context-remaining-benchmark.svg)
-
-### Per-persona breakdown
-
-The same illustrative trajectory broken out by persona — Luna, Terra, and Sol — each showing
-the same Elpis-above/original-runtime-below pattern across the three turns, with recalculated
-per-persona means.
-
-![Ablation study: per-persona context trajectory for Luna, Terra, and Sol across three turns](docs/assets/context-remaining-second-run.svg)
-
-### See one run
-
-The demo below is one representative run of that prompt—not the complete 100-run dataset.
-
-![One Elpis project-familiarization run](docs/assets/demo.gif)
-
 ## Quickstart
 
 Linux x86_64 and macOS on Apple Silicon:
@@ -87,9 +54,14 @@ Long sessions fill up with transcripts, file reads, searches, and dead ends. Age
 
 Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
 
+![Context trajectory](docs/assets/context-remaining-trajectory-band.svg)
+
+![Context retention](docs/assets/context-remaining-benchmark.svg)
+
+![Per-persona context](docs/assets/context-remaining-second-run.svg)
+
 The screenshots below are historical examples of the same prompt in Elpis and Codex.
-They illustrate the setup, but they do not prove the 100-run aggregate reported above;
-the original per-run records were not preserved.
+The original per-run records were not preserved.
 
 A pinned, synthetic 3×10 comparison for exact recall, paraphrased recall, and negative
 controls is specified in

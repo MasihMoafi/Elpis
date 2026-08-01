@@ -222,7 +222,7 @@ impl ChatWidget {
         let messages_color = Color::Rgb(130, 125, 189);
         let context_window = self
             .status_line_context_window_size()
-            .unwrap_or(200_000)
+            .unwrap_or(258_400)
             .max(1) as u64;
         // Floor at the admitted portable total: before the first server-reported
         // usage arrives, the admitted sources are already real next-request cost —

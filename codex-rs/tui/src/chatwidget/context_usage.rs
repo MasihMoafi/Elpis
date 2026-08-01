@@ -85,7 +85,7 @@ impl ChatWidget {
             .unwrap_or(&default_usage);
         let window = self
             .status_line_context_window_size()
-            .unwrap_or(200_000)
+            .unwrap_or(258_400)
             .max(1) as u64;
         let exact_used = last_usage.tokens_in_context_window().max(0) as u64;
         // Before the first response there is no exact figure yet; fall back to the
@@ -198,14 +198,14 @@ impl ChatWidget {
         let pruner_saved = crate::legacy_core::context_pruner::saved_chars();
         let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(pruner_saved) as u64;
         if saved_tokens > 0 {
-            legend.push(
-                format!(
-                    "Pruned from the next request: ~{} tokens",
-                    fmt_tokens(saved_tokens)
-                )
-                .dim()
-                .into(),
-            );
+            legend.push(Line::from(vec![
+                Span::styled("✨ ", Style::default().fg(Color::Green)),
+                Span::styled(
+                    format!("Saved Context: ~{} tokens reclaimed", fmt_tokens(saved_tokens)),
+                    Style::default().fg(Color::Green).bold(),
+                ),
+                Span::styled(" (Ace Pass ⚡)", Style::default().fg(Color::Cyan)),
+            ]));
         }
         if exact_used == 0 {
             legend.push("(estimated — no request sent yet)".dim().into());
@@ -214,6 +214,37 @@ impl ChatWidget {
         let mut lines: Vec<Line<'static>> = Vec::new();
         lines.push(" Context Usage".bold().into());
         lines.extend(build_grid_with_legend(&categories, used, window, legend));
+        lines.push(Line::default());
+
+        lines.extend(build_category_bar_chart(&categories, used, window));
+        lines.push(Line::default());
+
+        lines.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
+        let pruner_passes = crate::legacy_core::context_pruner::pass_count();
+        if pruner_passes == 0 && saved_tokens == 0 {
+            lines.push(Line::from(
+                "   No Ace pruning passes run yet — context is below trigger floor."
+                    .dim(),
+            ));
+        } else {
+            lines.push(Line::from(vec![
+                Span::from("   Status: "),
+                Span::styled(
+                    format!("{pruner_passes} pass(es) applied"),
+                    Style::default().fg(Color::Cyan).bold(),
+                ),
+                Span::from(" · "),
+                Span::styled(
+                    format!("~{} tokens saved", fmt_tokens(saved_tokens)),
+                    Style::default().fg(Color::Green).bold(),
+                ),
+                Span::styled(" ⚡", Style::default().fg(Color::Yellow)),
+            ]));
+            lines.push(Line::from(
+                "   Low-level action: Oldest finished tool outputs distilled to evidence pointers; recent turn preserved verbatim."
+                    .dim(),
+            ));
+        }
         lines.push(Line::default());
 
         lines.push(" Checkpoints · Esc Esc to backtrack".bold().into());
@@ -235,6 +266,62 @@ impl ChatWidget {
         }
         self.add_to_history(PlainHistoryCell::new(lines));
     }
+}
+
+fn build_category_bar_chart(
+    categories: &[CategoryUsage],
+    used: u64,
+    window: u64,
+) -> Vec<Line<'static>> {
+    let bar_width = 24usize;
+    let mut lines = Vec::new();
+    lines.push(Line::from(" Category Breakdown (Relative Share)".bold()));
+
+    let overall_cells = if window > 0 {
+        (((used * bar_width as u64) / window) as usize).min(bar_width)
+    } else {
+        0
+    };
+    let filled_overall = "█".repeat(overall_cells);
+    let empty_overall = "░".repeat(bar_width - overall_cells);
+    lines.push(Line::from(vec![
+        Span::from("   Overall Capacity "),
+        Span::styled(
+            format!("[{filled_overall}{empty_overall}] "),
+            Style::default().fg(Color::Cyan),
+        ),
+        Span::from(format!(
+            "{}/{} tokens ({} used)",
+            fmt_tokens(used),
+            fmt_tokens(window),
+            fmt_percent(used, window)
+        )),
+    ]));
+
+    for cat in categories {
+        let cells = if used > 0 {
+            (((cat.tokens * bar_width as u64) / used) as usize).min(bar_width)
+        } else {
+            0
+        };
+        let filled = "█".repeat(cells);
+        let empty = "░".repeat(bar_width - cells);
+        let pct_of_used = if used > 0 {
+            fmt_percent(cat.tokens, used)
+        } else {
+            "0%".to_string()
+        };
+        lines.push(Line::from(vec![
+            Span::from(format!("   {:16} ", cat.label)),
+            Span::styled(format!("[{filled}{empty}] "), Style::default().fg(cat.color)),
+            Span::from(format!(
+                "{} ({} of used)",
+                fmt_tokens(cat.tokens),
+                pct_of_used
+            )),
+        ]));
+    }
+    lines
 }
 
 /// Grid rows on the left, legend lines to the right of each row — the legend never

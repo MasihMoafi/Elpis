@@ -627,12 +627,6 @@ pub(crate) fn context_usage_totals(
     cells: &[Arc<dyn crate::history_cell::HistoryCell>],
 ) -> ContextUsageTranscriptTotals {
     let session_start_type = TypeId::of::<SessionInfoCell>();
-    let user_type = TypeId::of::<UserHistoryCell>();
-    // Streaming agent cells are consolidated into AgentMarkdownCell once a stream
-    // finalizes, so both types are agent responses — matching only the streaming
-    // cell left finalized answers miscounted as tool calls.
-    let agent_type = TypeId::of::<AgentMessageCell>();
-    let agent_markdown_type = TypeId::of::<crate::history_cell::AgentMarkdownCell>();
     let type_of = |cell: &Arc<dyn crate::history_cell::HistoryCell>| cell.as_any().type_id();
 
     let start = cells
@@ -647,29 +641,68 @@ pub(crate) fn context_usage_totals(
         tool_call_chars: 0,
     };
 
-    let mut tally = |totals: &mut ContextUsageTranscriptTotals, start: usize| {
+    fn classify_and_tally(
+        cell: &dyn crate::history_cell::HistoryCell,
+        totals: &mut ContextUsageTranscriptTotals,
+    ) {
+        let kind = cell.as_any().type_id();
+        if kind == TypeId::of::<SessionInfoCell>() {
+            return;
+        }
+        if kind == TypeId::of::<crate::history_cell::CompositeHistoryCell>() {
+            if let Some(composite) =
+                cell.as_any().downcast_ref::<crate::history_cell::CompositeHistoryCell>()
+            {
+                for part in &composite.parts {
+                    classify_and_tally(part.as_ref(), totals);
+                }
+                return;
+            }
+        }
+
+        let chars: usize = cell
+            .raw_lines()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.chars().count())
+                    .sum::<usize>()
+            })
+            .sum();
+
+        if chars == 0 {
+            return;
+        }
+
+        if kind == TypeId::of::<UserHistoryCell>() {
+            totals.user_message_chars += chars;
+        } else if kind == TypeId::of::<AgentMessageCell>()
+            || kind == TypeId::of::<crate::history_cell::AgentMarkdownCell>()
+            || kind == TypeId::of::<crate::history_cell::StreamingAgentTailCell>()
+            || kind == TypeId::of::<crate::history_cell::ReasoningSummaryCell>()
+        {
+            totals.agent_response_chars += chars;
+        } else if kind == TypeId::of::<crate::history_cell::UnifiedExecInteractionCell>()
+            || kind == TypeId::of::<crate::history_cell::HookCell>()
+            || kind == TypeId::of::<crate::history_cell::McpToolCallCell>()
+            || kind == TypeId::of::<crate::history_cell::PatchHistoryCell>()
+            || kind == TypeId::of::<crate::history_cell::WebSearchCell>()
+        {
+            totals.tool_call_chars += chars;
+        } else if kind == TypeId::of::<crate::history_cell::PlainHistoryCell>()
+            || kind == TypeId::of::<crate::history_cell::FinalMessageSeparator>()
+            || kind == TypeId::of::<crate::history_cell::UpdateAvailableHistoryCell>()
+        {
+            // System UI / Plain output / Separators
+        } else {
+            totals.tool_call_chars += chars;
+        }
+    }
+
+    let tally = |totals: &mut ContextUsageTranscriptTotals, start: usize| {
         for cell in cells.iter().skip(start) {
-            let kind = type_of(cell);
-            if kind == session_start_type {
-                continue;
-            }
-            let chars: usize = cell
-                .raw_lines()
-                .iter()
-                .map(|line| {
-                    line.spans
-                        .iter()
-                        .map(|span| span.content.chars().count())
-                        .sum::<usize>()
-                })
-                .sum();
-            if kind == user_type {
-                totals.user_message_chars += chars;
-            } else if kind == agent_type || kind == agent_markdown_type {
-                totals.agent_response_chars += chars;
-            } else {
-                totals.tool_call_chars += chars;
-            }
+            classify_and_tally(cell.as_ref(), totals);
         }
     };
 

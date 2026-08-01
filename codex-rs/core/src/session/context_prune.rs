@@ -15,7 +15,6 @@ use crate::responses_metadata::CodexResponsesRequestKind;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::openai_models::ReasoningEffort;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
 
@@ -278,7 +277,7 @@ async fn try_stream_prune_pass(
             &prompt,
             &model_info,
             &turn_context.session_telemetry,
-            Some(ReasoningEffort::High),
+            None,
             turn_context.reasoning_summary,
             turn_context.config.service_tier.clone(),
             &responses_metadata,

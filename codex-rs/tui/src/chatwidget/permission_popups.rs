@@ -362,9 +362,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn cycle_approval_preset(&mut self) {
-        if self.config.explicit_permission_profile_mode {
-            return;
-        }
+        self.config.explicit_permission_profile_mode = false;
 
         let include_read_only = cfg!(target_os = "windows");
         let current_approval =

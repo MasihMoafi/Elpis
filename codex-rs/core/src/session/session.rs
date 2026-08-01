@@ -52,6 +52,7 @@ pub(crate) struct Session {
 pub(crate) struct SessionConfiguration {
     /// Provider identifier ("openai", "openrouter", ...).
     pub(super) provider: ModelProviderInfo,
+    pub(super) default_openai_provider: ModelProviderInfo,
 
     pub(super) collaboration_mode: CollaborationMode,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
@@ -259,8 +260,7 @@ impl SessionConfiguration {
                 next_configuration.provider =
                     codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
             } else if !next_configuration.provider.is_openai() {
-                next_configuration.provider =
-                    codex_model_provider_info::ModelProviderInfo::create_openai_provider(None);
+                next_configuration.provider = next_configuration.default_openai_provider.clone();
             }
             next_configuration.collaboration_mode = collaboration_mode;
         }

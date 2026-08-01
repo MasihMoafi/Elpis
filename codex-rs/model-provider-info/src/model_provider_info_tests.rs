@@ -108,7 +108,7 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
 }
 
 #[test]
-fn test_deserialize_chat_wire_api_shows_helpful_error() {
+fn test_deserialize_chat_wire_api() {
     let provider_toml = r#"
 name = "OpenAI using Chat Completions"
 base_url = "https://api.openai.com/v1"
@@ -116,8 +116,8 @@ env_key = "OPENAI_API_KEY"
 wire_api = "chat"
         "#;
 
-    let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
-    assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
+    let info: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
+    assert_eq!(info.wire_api, WireApi::Chat);
 }
 
 #[test]

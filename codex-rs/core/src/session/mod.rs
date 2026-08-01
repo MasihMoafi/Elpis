@@ -643,6 +643,7 @@ impl Session {
             get_service_tier(config.service_tier.clone(), fast_mode_enabled, &model_info);
         let session_configuration = SessionConfiguration {
             provider,
+            default_openai_provider: config.model_provider.clone(),
             collaboration_mode,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,

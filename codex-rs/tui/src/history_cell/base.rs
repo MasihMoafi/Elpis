@@ -90,7 +90,7 @@ impl HistoryCell for PrefixedWrappedHistoryCell {
 }
 #[derive(Debug)]
 pub(crate) struct CompositeHistoryCell {
-    pub(super) parts: Vec<Box<dyn HistoryCell>>,
+    pub(crate) parts: Vec<Box<dyn HistoryCell>>,
 }
 
 impl CompositeHistoryCell {

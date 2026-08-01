@@ -27,41 +27,18 @@ const ROUTER_INSTRUCTIONS: &str = "You are the Elpis model router. Choose exactl
 pub(crate) async fn route_turn_if_enabled(
     sess: &Arc<Session>,
     turn_context: Arc<TurnContext>,
-    input: &[TurnInput],
+    _input: &[TurnInput],
 ) -> Arc<TurnContext> {
-    if !turn_context.automatic_model_routing
-        || turn_context.model_info.slug != TERRA_MODEL
-    {
+    if !turn_context.automatic_model_routing {
         return turn_context;
     }
 
-    let Some(request) = user_request(input) else {
-        return turn_context;
-    };
-    let model = if let Some(prompt_text) = classifier_prompt(&request, &turn_context) {
-        let mut classifier_session = sess.services.model_client.new_session();
-        classify(sess, &turn_context, &mut classifier_session, prompt_text)
-            .await
-            .unwrap_or(TERRA_MODEL)
-    } else {
-        TERRA_MODEL
-    };
+    let mut updated = turn_context
+        .with_model(LUNA_MODEL.to_string(), &sess.services.models_manager)
+        .await;
+    updated.reasoning_effort = Some(ReasoningEffort::High);
 
-    sess.send_event(
-        &turn_context,
-        EventMsg::ModelReroute(ModelRerouteEvent {
-            from_model: "auto".to_string(),
-            to_model: model.to_string(),
-            reason: ModelRerouteReason::AutoModelRouting,
-        }),
-    )
-    .await;
-
-    Arc::new(
-        turn_context
-            .with_model(model.to_string(), &sess.services.models_manager)
-            .await,
-    )
+    Arc::new(updated)
 }
 
 fn user_request(input: &[TurnInput]) -> Option<String> {
