@@ -108,8 +108,6 @@ Example end state — Codex:
 | **3. Ace steady pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After completed work creates enough eligible output |
 | **4. Ace pressure pass** | Runs the same selective process earlier, at 70% remaining, and aims to return the session to 80% remaining. | Before context pressure harms the next turn |
 
-![The four layers of Elpis context control](docs/assets/context-layers.svg)
-
 `/prune` runs Ace selectively on demand while keeping the conversation intact.
 `/compact` replaces the conversation with a full summary and starts a new context window.
 
