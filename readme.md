@@ -38,7 +38,7 @@ The agent runs the model loop. Elpis owns everything around it: context, memory,
 
 Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
 
-<img src="docs/assets/elpises.webp" alt="One Elpis environment, many paths of work running through it" width="720">
+<img src="docs/assets/elpises.png" alt="One Elpis environment, many paths of work running through it" width="720">
 
 Different paths. Same roots. One shared project.
 
