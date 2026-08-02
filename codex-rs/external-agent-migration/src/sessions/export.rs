@@ -181,6 +181,7 @@ fn token_count_item(last_model_visible_tokens: i64) -> RolloutItem {
             model_context_window: None,
         }),
         rate_limits: None,
+        context_prune_saved_tokens: 0,
     }))
 }
 

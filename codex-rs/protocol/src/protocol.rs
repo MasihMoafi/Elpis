@@ -2138,6 +2138,9 @@ impl TokenUsageInfo {
 pub struct TokenCountEvent {
     pub info: Option<TokenUsageInfo>,
     pub rate_limits: Option<RateLimitSnapshot>,
+    /// Cumulative context tokens reclaimed by Ace in this thread.
+    #[serde(default)]
+    pub context_prune_saved_tokens: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]
@@ -3225,6 +3228,25 @@ pub struct CompactedItem {
     /// UUIDv7 identity of this context window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_id: Option<String>,
+}
+
+const CONTEXT_PRUNE_CHECKPOINT_PREFIX: &str = "elpis.context-prune.v1:";
+
+impl CompactedItem {
+    pub fn context_prune_checkpoint_message(saved_tokens: u64) -> String {
+        format!("{CONTEXT_PRUNE_CHECKPOINT_PREFIX}{saved_tokens}")
+    }
+
+    pub fn context_prune_saved_tokens(&self) -> Option<u64> {
+        self.message
+            .strip_prefix(CONTEXT_PRUNE_CHECKPOINT_PREFIX)?
+            .parse()
+            .ok()
+    }
+
+    pub fn is_context_prune_checkpoint(&self) -> bool {
+        self.context_prune_saved_tokens().is_some()
+    }
 }
 
 impl From<CompactedItem> for ResponseItem {

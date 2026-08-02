@@ -446,6 +446,10 @@ impl CodexThread {
         self.session.token_usage_info().await
     }
 
+    pub async fn context_prune_saved_tokens(&self) -> u64 {
+        self.session.context_prune_saved_tokens().await
+    }
+
     /// Records a user-role session-prefix message without creating a new user turn boundary.
     pub(crate) async fn inject_user_message_without_turn(&self, message: String) {
         let item = ResponseItem::Message {

@@ -1698,6 +1698,77 @@ async fn reconstruct_history_uses_replacement_history_verbatim() {
 }
 
 #[tokio::test]
+async fn reconstruct_history_restores_prune_savings_without_spending_a_window() {
+    let (session, turn_context) = make_session_and_context().await;
+    let pruned_history = vec![ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "rewritten working set".to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }];
+    let checkpoint = |saved_tokens: u64| {
+        RolloutItem::Compacted(CompactedItem {
+            message: CompactedItem::context_prune_checkpoint_message(saved_tokens),
+            replacement_history: Some(pruned_history.clone()),
+            window_number: Some(42),
+            first_window_id: Some(Uuid::now_v7().to_string()),
+            previous_window_id: None,
+            window_id: Some(Uuid::now_v7().to_string()),
+        })
+    };
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(&turn_context, &[checkpoint(1_200), checkpoint(3_400)])
+        .await;
+
+    // The newest checkpoint carries the cumulative thread total, so a resumed session
+    // keeps counting from it instead of restarting at zero.
+    assert_eq!(3_400, reconstructed.context_prune_saved_tokens);
+    // A prune rewrites the working set but is not a compaction: it must neither consume
+    // a context window nor adopt the window ids it recorded.
+    assert_eq!(0, reconstructed.window_number);
+    assert_eq!(None, reconstructed.window_id);
+    // The rewritten working set is still the resume base.
+    assert_eq!(reconstructed.history, pruned_history);
+}
+
+#[tokio::test]
+async fn reconstruct_history_still_treats_an_unmarked_compaction_as_a_compaction() {
+    let (session, turn_context) = make_session_and_context().await;
+    let replacement_history = vec![ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "summary".to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    }];
+    let window_id = Uuid::now_v7();
+    let rollout_items = vec![RolloutItem::Compacted(CompactedItem {
+        message: "an ordinary compaction summary".to_string(),
+        replacement_history: Some(replacement_history.clone()),
+        window_number: Some(42),
+        first_window_id: Some(Uuid::now_v7().to_string()),
+        previous_window_id: None,
+        window_id: Some(window_id.to_string()),
+    })];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(&turn_context, &rollout_items)
+        .await;
+
+    // Negative control for the assertions above: strip the prune marker and the same
+    // item reports no savings and does spend its window.
+    assert_eq!(0, reconstructed.context_prune_saved_tokens);
+    assert_eq!(42, reconstructed.window_number);
+    assert_eq!(Some(window_id), reconstructed.window_id);
+}
+
+#[tokio::test]
 async fn record_initial_history_reconstructs_resumed_transcript() {
     let (session, turn_context) = make_session_and_context().await;
     let (rollout_items, expected) = sample_rollout(&session, &turn_context).await;
@@ -2203,24 +2274,28 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
         TokenCountEvent {
             info: Some(info1),
             rate_limits: None,
+            context_prune_saved_tokens: 0,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
         TokenCountEvent {
             info: None,
             rate_limits: None,
+            context_prune_saved_tokens: 0,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
         TokenCountEvent {
             info: Some(info2.clone()),
             rate_limits: None,
+            context_prune_saved_tokens: 0,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
         TokenCountEvent {
             info: None,
             rate_limits: None,
+            context_prune_saved_tokens: 0,
         },
     )));
 

@@ -2901,6 +2901,7 @@ mod tests {
                     model_context_window: None,
                 }),
                 rate_limits: None,
+                context_prune_saved_tokens: 0,
             },
         ))];
         let override_updated_at =

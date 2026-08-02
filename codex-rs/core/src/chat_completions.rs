@@ -116,9 +116,7 @@ pub(crate) async fn stream_native_request(
             WireApi::GeminiGenerateContent => {
                 stream_gemini_events(&mut events, &tx, idle_timeout).await
             }
-            WireApi::Chat => {
-                stream_chat_completions_events(&mut events, &tx, idle_timeout).await
-            }
+            WireApi::Chat => stream_chat_completions_events(&mut events, &tx, idle_timeout).await,
             WireApi::Responses => unreachable!("validated before spawning stream"),
         };
         if let Err(error) = result {
@@ -1011,7 +1009,8 @@ where
             })?,
         };
         let Some(event) = next else { break };
-        let event = event.map_err(|error| ApiError::Stream(format!("OpenAI Chat SSE error: {error}")))?;
+        let event =
+            event.map_err(|error| ApiError::Stream(format!("OpenAI Chat SSE error: {error}")))?;
         let data = event.data.trim();
         if data.is_empty() {
             continue;
@@ -1019,8 +1018,9 @@ where
         if data == "[DONE]" {
             break;
         }
-        let value: Value = serde_json::from_str(data)
-            .map_err(|error| ApiError::Stream(format!("invalid OpenAI Chat SSE payload: {error}")))?;
+        let value: Value = serde_json::from_str(data).map_err(|error| {
+            ApiError::Stream(format!("invalid OpenAI Chat SSE payload: {error}"))
+        })?;
 
         if response_id.is_empty() {
             response_id = value["id"].as_str().unwrap_or("chat_response").to_string();

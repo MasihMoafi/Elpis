@@ -1551,8 +1551,14 @@ async fn handle_token_count_event(
     token_count_event: TokenCountEvent,
     outgoing: &ThreadScopedOutgoingMessageSender,
 ) {
-    let TokenCountEvent { info, rate_limits } = token_count_event;
-    if let Some(token_usage) = info.map(ThreadTokenUsage::from) {
+    let TokenCountEvent {
+        info,
+        rate_limits,
+        context_prune_saved_tokens,
+    } = token_count_event;
+    if let Some(info) = info {
+        let mut token_usage = ThreadTokenUsage::from(info);
+        token_usage.context_prune_saved_tokens = context_prune_saved_tokens;
         let notification = ThreadTokenUsageUpdatedNotification {
             thread_id: conversation_id.to_string(),
             turn_id,
@@ -3713,6 +3719,7 @@ mod tests {
             TokenCountEvent {
                 info: Some(info),
                 rate_limits: Some(rate_limits),
+                context_prune_saved_tokens: 0,
             },
             &outgoing,
         )
@@ -3763,6 +3770,7 @@ mod tests {
             TokenCountEvent {
                 info: None,
                 rate_limits: None,
+                context_prune_saved_tokens: 0,
             },
             &outgoing,
         )

@@ -1289,7 +1289,10 @@ impl ThreadHistoryBuilder {
     /// This keeps compaction-only legacy turns from being dropped by
     /// `finish_current_turn` when they have no renderable items and were not
     /// explicitly opened.
-    fn handle_compacted(&mut self, _payload: &CompactedItem) {
+    fn handle_compacted(&mut self, payload: &CompactedItem) {
+        if payload.is_context_prune_checkpoint() {
+            return;
+        }
         self.ensure_turn().saw_compaction = true;
     }
 

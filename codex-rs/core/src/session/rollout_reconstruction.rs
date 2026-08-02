@@ -16,6 +16,7 @@ pub(super) struct RolloutReconstruction {
     pub(super) first_window_id: Option<Uuid>,
     pub(super) previous_window_id: Option<Uuid>,
     pub(super) window_id: Option<Uuid>,
+    pub(super) context_prune_saved_tokens: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -122,7 +123,7 @@ impl Session {
         // history semantics.
         let has_legacy_compaction_without_window_number =
             rollout_items.iter().any(|item| {
-                matches!(item, RolloutItem::Compacted(compacted) if compacted.window_number.is_none())
+                matches!(item, RolloutItem::Compacted(compacted) if !compacted.is_context_prune_checkpoint() && compacted.window_number.is_none())
             });
         let initial_window = if has_legacy_compaction_without_window_number {
             None
@@ -156,8 +157,12 @@ impl Session {
                 RolloutItem::Compacted(compacted) => {
                     let active_segment =
                         active_segment.get_or_insert_with(ActiveReplaySegment::default);
-                    active_segment.world_state_replay.push(item);
-                    if active_segment.window.is_none()
+                    let is_context_prune = compacted.is_context_prune_checkpoint();
+                    if !is_context_prune {
+                        active_segment.world_state_replay.push(item);
+                    }
+                    if !is_context_prune
+                        && active_segment.window.is_none()
                         && let Some(window_number) = compacted.window_number
                     {
                         active_segment.window = Some(ReconstructedWindow {
@@ -172,10 +177,12 @@ impl Session {
                     }
                     // Looking backward, compaction clears any older baseline unless a newer
                     // `TurnContextItem` in this same segment has already re-established it.
-                    if matches!(
-                        active_segment.reference_context_item,
-                        TurnReferenceContextItem::NeverSet
-                    ) {
+                    if !is_context_prune
+                        && matches!(
+                            active_segment.reference_context_item,
+                            TurnReferenceContextItem::NeverSet
+                        )
+                    {
                         active_segment.reference_context_item = TurnReferenceContextItem::Cleared;
                     }
                     if active_segment.base_replacement_history.is_none()
@@ -309,7 +316,7 @@ impl Session {
         let fallback_window_number = u64::try_from(
             rollout_items
                 .iter()
-                .filter(|item| matches!(item, RolloutItem::Compacted(_)))
+                .filter(|item| matches!(item, RolloutItem::Compacted(compacted) if !compacted.is_context_prune_checkpoint()))
                 .count(),
         )
         .unwrap_or(u64::MAX);
@@ -390,7 +397,10 @@ impl Session {
         let mut world_state_baseline: Option<WorldStateSnapshot> = None;
         for item in world_state_replay {
             match item {
-                RolloutItem::Compacted(_) => world_state_baseline = None,
+                RolloutItem::Compacted(compacted) => {
+                    debug_assert!(!compacted.is_context_prune_checkpoint());
+                    world_state_baseline = None;
+                }
                 RolloutItem::WorldState(world_state) if world_state.full => {
                     world_state_baseline = match serde_json::from_value(world_state.state.clone()) {
                         Ok(snapshot) => Some(snapshot),
@@ -436,6 +446,14 @@ impl Session {
             first_window_id: window.first_id,
             previous_window_id: window.previous_id,
             window_id: window.id,
+            context_prune_saved_tokens: rollout_items
+                .iter()
+                .rev()
+                .find_map(|item| match item {
+                    RolloutItem::Compacted(compacted) => compacted.context_prune_saved_tokens(),
+                    _ => None,
+                })
+                .unwrap_or(0),
         }
     }
 }
