@@ -353,7 +353,7 @@ fn test_built_in_openrouter_uses_separate_api_key_auth() {
     assert_eq!(provider.base_url.as_deref(), Some(OPENROUTER_BASE_URL));
     assert_eq!(provider.env_key.as_deref(), Some("OPENROUTER_API_KEY"));
     assert!(!provider.requires_openai_auth);
-    assert_eq!(provider.wire_api, WireApi::Responses);
+    assert_eq!(provider.wire_api, WireApi::Chat);
 }
 
 #[test]
@@ -533,7 +533,7 @@ fn native_provider_metadata_is_explicit_and_truthful() {
 
     let openrouter = provider_metadata(OPENROUTER_PROVIDER_ID).expect("OpenRouter metadata");
     assert_eq!(openrouter.provider_id, OPENROUTER_PROVIDER_ID);
-    assert_eq!(openrouter.wire_protocol, WireApi::Responses);
+    assert_eq!(openrouter.wire_protocol, WireApi::Chat);
 
     let claude_compat = compatibility_route_metadata(OPENROUTER_CLAUDE_COMPAT_ALIAS)
         .expect("Claude compatibility route");
