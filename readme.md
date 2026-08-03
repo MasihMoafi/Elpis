@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/codex-vs-elpis.png" alt="A confused Codex robot beside a confident Elpis robot" width="300">
+<img width="985" height="732" alt="Screenshot from 2026-08-03 20-06-18" src="https://github.com/user-attachments/assets/14a244b4-2f80-4efc-b870-0cebde11330a" />
 
 <br>
 
@@ -37,10 +37,6 @@ choose a provider and sign in or enter its API key.
 The agent runs the model loop. Elpis owns everything around it: context, memory, continuity, retrieval, permissions, and provider choice.
 
 Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
-
-<div align="center">
-<img src="docs/assets/elpises.png" alt="One Elpis environment, many paths of work running through it" width="720">
-</div>
 
 Different paths. Same roots. One shared project.
 
