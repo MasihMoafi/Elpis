@@ -92,8 +92,13 @@ follow-up.
 
 `/prune` runs the Ace pass on demand across eligible tool evidence from completed turns.
 It keeps user and assistant messages, the current turn, and durable rollout evidence.
-`/compact` remains the full native summary-and-new-window operation. The Context Ledger's
-exact used-token number is authoritative after either path.
+`/compact` is Elpis-owned conservative cleanup. It first runs the audited tool-evidence
+pass, then asks Luna Max to mark older whole conversation messages as `KEEP` or `DELETE`.
+The latest turn is protected; kept content is copied verbatim; incomplete, malformed, or
+uncertain decisions leave conversation history unchanged. A successful deletion starts a
+new window while the raw transcript remains intact. An explicit custom `compact_prompt`
+retains the upstream summary path as an opt-out. The Context Ledger's exact used-token
+number is authoritative after either path.
 
 ### Ace pass audit trail
 

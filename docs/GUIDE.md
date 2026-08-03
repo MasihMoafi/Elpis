@@ -494,11 +494,16 @@ retain the entire old and new file merely because the agent touched them.
   chooses only the oldest eligible tool evidence needed to target roughly 20% use
   (80% remaining), preserving a recent
   verbatim suffix. It uses Luna at low reasoning effort on the OpenAI path.
-- **Compaction is persistent:** summarize older conversation into a checkpoint that
-  preserves the goal, constraints, decisions, changed files, verification, blockers,
-  and next action.
+- **Compaction is persistent:** `/compact` first applies the audited tool-evidence
+  pruning pass, then asks Luna Max for a conservative whole-message deletion manifest.
+  Older conversation messages stay verbatim unless Luna marks the entire message as
+  duplicated, disposable acknowledgement, or obsolete progress. The latest turn is
+  never eligible, malformed or partial manifests change nothing, and the durable
+  transcript remains intact.
 - `/prune` runs the selective Ace pass on eligible completed-turn tool evidence;
-  `/compact` remains the full summary-and-new-window operation.
+  `/compact` performs persistent deletion-first cleanup and starts a new window only
+  when at least one old conversation message is safely removed. An explicit custom
+  `compact_prompt` retains the upstream summary behavior as an opt-out.
 - Before compaction, flush genuinely reusable facts to durable memory.
 - Keep a recent-turn suffix verbatim so the agent does not wake up inside a summary.
 
