@@ -6,8 +6,6 @@
   src="https://github.com/user-attachments/assets/14a244b4-2f80-4efc-b870-0cebde11330a"
 />
 
-<br><br>
-
 <h1>Never lose the thread.</h1>
 
 <p><strong>You run an agent inside Elpis, and it becomes Elpis.</strong></p>
@@ -33,6 +31,7 @@
 </p>
 
 </div>
+
 ## Quickstart
 
 Linux x86_64 and macOS on Apple Silicon:
