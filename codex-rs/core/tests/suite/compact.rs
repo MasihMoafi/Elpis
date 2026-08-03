@@ -91,6 +91,12 @@ const GLOBAL_AGENTS_OVERRIDE_FILENAME: &str = "AGENTS.override.md";
 const NEW_GLOBAL_INSTRUCTIONS: &str = "new global instructions";
 const OLD_GLOBAL_INSTRUCTIONS: &str = "old global instructions";
 const REMOTE_V2_SUMMARY: &str = "global-instructions-remote-v2-summary";
+const KEEP_USER_DECISION: &str = "KEEP_DECISION_7319";
+const KEEP_ASSISTANT_RULE: &str = "KEEP_RULE_8421";
+const DROP_REDUNDANT_NOISE: &str = "DROP_NOISE_5634";
+const PRESERVATION_ASSISTANT_MESSAGE: &str =
+    "KEEP_RULE_8421 DROP_NOISE_5634 DROP_NOISE_5634 DROP_NOISE_5634";
+const INCOMPLETE_COMPACT_SUMMARY: &str = "A deliberately incomplete compacted summary.";
 
 pub(super) const COMPACT_WARNING_MESSAGE: &str = "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted.";
 
@@ -487,6 +493,144 @@ fn format_labeled_requests_snapshot(
         sections,
         &context_snapshot_options(),
     )
+}
+
+async fn run_compact_preservation_scenario(compact: bool) -> (String, String) {
+    let server = start_mock_server().await;
+    let first_response = sse(vec![
+        ev_assistant_message("m1", PRESERVATION_ASSISTANT_MESSAGE),
+        ev_completed("r1"),
+    ]);
+    let final_response = sse(vec![ev_completed("r3")]);
+    let responses = if compact {
+        vec![
+            first_response,
+            sse(vec![
+                ev_assistant_message("m2", INCOMPLETE_COMPACT_SUMMARY),
+                ev_completed("r2"),
+            ]),
+            final_response,
+        ]
+    } else {
+        vec![first_response, final_response]
+    };
+    let expected_request_count = responses.len();
+    let request_log = mount_sse_sequence(&server, responses).await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider = model_provider;
+        set_test_compact_prompt(config);
+    });
+    let test = builder.build(&server).await.expect("create conversation");
+    let codex = test.codex.clone();
+    let rollout_path = test.session_configured.rollout_path.expect("rollout path");
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: format!(
+                    "{KEEP_USER_DECISION} {DROP_REDUNDANT_NOISE} {DROP_REDUNDANT_NOISE} {DROP_REDUNDANT_NOISE}"
+                ),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .expect("submit preservation turn");
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    if compact {
+        codex.submit(Op::Compact).await.expect("trigger compact");
+        wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    }
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "NEXT_MAIN_MODEL_REQUEST".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .expect("submit follow-up turn");
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    codex
+        .submit(Op::Shutdown)
+        .await
+        .expect("shutdown conversation");
+    wait_for_event(&codex, |event| matches!(event, EventMsg::ShutdownComplete)).await;
+
+    let requests = request_log.requests();
+    assert_eq!(
+        requests.len(),
+        expected_request_count,
+        "unexpected provider request count"
+    );
+    let next_main_request = requests
+        .last()
+        .expect("next main-model request")
+        .body_json()
+        .to_string();
+    let rollout = fs::read_to_string(rollout_path).expect("read saved rollout");
+    (next_main_request, rollout)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn compact_preservation_control_without_compaction_keeps_all_markers() {
+    skip_if_no_network!();
+
+    let (next_main_request, rollout) = run_compact_preservation_scenario(false).await;
+    for marker in [
+        KEEP_USER_DECISION,
+        KEEP_ASSISTANT_RULE,
+        DROP_REDUNDANT_NOISE,
+    ] {
+        assert!(
+            body_contains_text(&next_main_request, marker),
+            "control request should retain {marker}"
+        );
+        assert!(
+            rollout.contains(marker),
+            "saved rollout should retain {marker}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "acceptance eval: fails until compact preserves critical content and removes redundancy"]
+async fn compact_preserves_critical_markers_and_removes_redundant_noise() {
+    skip_if_no_network!();
+
+    let (next_main_request, rollout) = run_compact_preservation_scenario(true).await;
+    for marker in [
+        KEEP_USER_DECISION,
+        KEEP_ASSISTANT_RULE,
+        DROP_REDUNDANT_NOISE,
+    ] {
+        assert!(
+            rollout.contains(marker),
+            "saved rollout should retain {marker}"
+        );
+    }
+
+    let missing_critical: Vec<&str> = [KEEP_USER_DECISION, KEEP_ASSISTANT_RULE]
+        .into_iter()
+        .filter(|marker| !body_contains_text(&next_main_request, marker))
+        .collect();
+    let retained_noise = body_contains_text(&next_main_request, DROP_REDUNDANT_NOISE);
+    assert!(
+        missing_critical.is_empty() && !retained_noise,
+        "compacted request failed preservation: missing_critical={missing_critical:?}, retained_noise={retained_noise}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
