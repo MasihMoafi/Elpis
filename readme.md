@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/codex-vs-elpis.png" alt="A confused Codex robot beside a confident Elpis robot" width="300">
+<img src="final.webp" alt="Elpis" width="300">
 
 <br>
 
@@ -38,11 +38,7 @@ The agent runs the model loop. Elpis owns everything around it: context, memory,
 
 Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
 
-<div align="center">
-<img src="docs/assets/elpises.png" alt="One Elpis environment, many paths of work running through it" width="720">
-</div>
 
-Different paths. Same roots. One shared project.
 
 ## Why Elpis
 

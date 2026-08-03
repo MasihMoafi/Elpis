@@ -68,7 +68,9 @@ src/fix_cuda.sh
 !docs/assets/demo.gif
 !docs/assets/evidence.gif
 !docs/assets/showcase-of-how-much-tool-calls.png
+!final.png
 *.webp
+!final.webp
 !docs/assets/elpis.webp
 !docs/assets/elpises.webp
 !docs/assets/context-ledger.webp
