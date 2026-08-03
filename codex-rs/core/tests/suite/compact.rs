@@ -533,7 +533,12 @@ async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (S
     let expected_request_count = responses.len();
     let request_log = mount_sse_sequence(&server, responses).await;
 
-    let mut builder = test_codex();
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::ElpisCompactCleanup)
+            .expect("test config should allow compact cleanup override");
+    });
     let test = builder.build(&server).await.expect("create conversation");
     let codex = test.codex.clone();
     let rollout_path = test.session_configured.rollout_path.expect("rollout path");

@@ -135,11 +135,15 @@ pub(crate) async fn run_compact_task(
         collaboration_mode_kind: turn_context.mode,
     });
     sess.send_event(&turn_context, start_event).await;
-    if turn_context
+    if !turn_context
         .config
-        .compact_prompt
-        .as_deref()
-        .is_some_and(|prompt| prompt != CLEANUP_PROMPT)
+        .features
+        .enabled(codex_features::Feature::ElpisCompactCleanup)
+        || turn_context
+            .config
+            .compact_prompt
+            .as_deref()
+            .is_some_and(|prompt| prompt != CLEANUP_PROMPT)
     {
         run_compact_task_inner(
             sess,
@@ -170,10 +174,7 @@ struct CleanupRecord {
 }
 
 fn cleanup_candidates(items: &[ResponseItem]) -> Vec<CleanupCandidate> {
-    let protected_recent_start = items
-        .iter()
-        .rposition(|item| matches!(item, ResponseItem::Message { role, .. } if role == "user"))
-        .unwrap_or(0);
+    let protected_recent_start = items.iter().rposition(is_cleanup_user_message).unwrap_or(0);
 
     items[..protected_recent_start]
         .iter()
@@ -182,7 +183,7 @@ fn cleanup_candidates(items: &[ResponseItem]) -> Vec<CleanupCandidate> {
             let ResponseItem::Message { role, content, .. } = item else {
                 return None;
             };
-            if !matches!(role.as_str(), "user" | "assistant") {
+            if role != "assistant" && !(role == "user" && is_cleanup_user_message(item)) {
                 return None;
             }
             let text = content_items_to_text(content)?;
@@ -206,7 +207,7 @@ fn cleanup_candidates(items: &[ResponseItem]) -> Vec<CleanupCandidate> {
 fn cleanup_input(items: &[ResponseItem], candidates: &[CleanupCandidate]) -> String {
     let protected_recent_start = items
         .iter()
-        .rposition(|item| matches!(item, ResponseItem::Message { role, .. } if role == "user"))
+        .rposition(is_cleanup_user_message)
         .unwrap_or(items.len());
     let candidate_json = candidates
         .iter()
@@ -279,10 +280,28 @@ fn build_cleanup_replacement(items: &[ResponseItem], record: &CleanupRecord) -> 
             if record.delete_item_indices.contains(item_index) {
                 return false;
             }
-            !matches!(item, ResponseItem::Message { role, .. } if matches!(role.as_str(), "system" | "developer"))
+            match item {
+                ResponseItem::Message { role, .. } if role == "user" => matches!(
+                    crate::event_mapping::parse_turn_item(item),
+                    Some(TurnItem::UserMessage(_) | TurnItem::HookPrompt(_))
+                ),
+                ResponseItem::Message { role, .. }
+                    if matches!(role.as_str(), "system" | "developer") =>
+                {
+                    false
+                }
+                _ => true,
+            }
         })
         .map(|(_, item)| item.clone())
         .collect()
+}
+
+fn is_cleanup_user_message(item: &ResponseItem) -> bool {
+    matches!(
+        crate::event_mapping::parse_turn_item(item),
+        Some(TurnItem::UserMessage(_))
+    )
 }
 
 async fn run_cleanup_compact_task(

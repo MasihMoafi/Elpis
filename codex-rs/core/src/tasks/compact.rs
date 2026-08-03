@@ -37,24 +37,62 @@ impl SessionTask for CompactTask {
             return Ok(None);
         }
 
-        // Elpis owns manual compaction semantics. Always use the local conservative
-        // cleanup path instead of a provider-side free-form summary.
-        emit_compact_metric(
-            &session.services.session_telemetry,
-            "local_cleanup",
-            /*manual*/ true,
-        );
-        let input = vec![UserInput::Text {
-            text: ctx
+        let cleanup_enabled = ctx.config.features.enabled(Feature::ElpisCompactCleanup)
+            && ctx
                 .config
                 .compact_prompt
                 .as_deref()
-                .unwrap_or(crate::compact::CLEANUP_PROMPT)
-                .to_string(),
-            // Compaction prompt is synthesized; no UI element ranges to preserve.
-            text_elements: Vec::new(),
-        }];
-        let result = crate::compact::run_compact_task(session.clone(), ctx, input).await;
+                .is_none_or(|prompt| prompt == crate::compact::CLEANUP_PROMPT);
+        let result = if cleanup_enabled {
+            emit_compact_metric(
+                &session.services.session_telemetry,
+                "local_cleanup",
+                /*manual*/ true,
+            );
+            let input = vec![UserInput::Text {
+                text: crate::compact::CLEANUP_PROMPT.to_string(),
+                // Compaction prompt is synthesized; no UI element ranges to preserve.
+                text_elements: Vec::new(),
+            }];
+            crate::compact::run_compact_task(session.clone(), ctx, input).await
+        } else if crate::compact::should_use_remote_compact_task(ctx.provider.info()) {
+            if ctx
+                .config
+                .features
+                .enabled(codex_features::Feature::RemoteCompactionV2)
+            {
+                emit_compact_metric(
+                    &session.services.session_telemetry,
+                    "remote_v2",
+                    /*manual*/ true,
+                );
+                crate::compact_remote_v2::run_remote_compact_task(session.clone(), ctx).await
+            } else {
+                emit_compact_metric(
+                    &session.services.session_telemetry,
+                    "remote",
+                    /*manual*/ true,
+                );
+                crate::compact_remote::run_remote_compact_task(session.clone(), ctx).await
+            }
+        } else {
+            emit_compact_metric(
+                &session.services.session_telemetry,
+                "local",
+                /*manual*/ true,
+            );
+            let input = vec![UserInput::Text {
+                text: ctx
+                    .config
+                    .compact_prompt
+                    .as_deref()
+                    .unwrap_or(crate::compact::SUMMARIZATION_PROMPT)
+                    .to_string(),
+                // Compaction prompt is synthesized; no UI element ranges to preserve.
+                text_elements: Vec::new(),
+            }];
+            crate::compact::run_compact_task(session.clone(), ctx, input).await
+        };
         if let Err(err @ CodexErr::TurnAborted) = result {
             return Err(err);
         }
