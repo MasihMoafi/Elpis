@@ -1,34 +1,18 @@
 <div align="center">
 
-<img
-  width="493"
-  alt="Screenshot from 2026-08-03 20-06-18"
-  src="https://github.com/user-attachments/assets/14a244b4-2f80-4efc-b870-0cebde11330a"
-/>
+<img width="493" alt="Screenshot from 2026-08-03 20-06-18" src="https://github.com/user-attachments/assets/14a244b4-2f80-4efc-b870-0cebde11330a" />
 
-<h1>Never lose the thread.</h1>
+# Never lose the thread.
 
-<p><strong>You run an agent inside Elpis, and it becomes Elpis.</strong></p>
+**You run an agent inside Elpis, and it becomes Elpis.**
 
-<p>More <strong>QUALITY</strong>. More <strong>QUANTITY</strong>.</p>
+More **QUALITY**. More **QUANTITY**.
 
-<p>
-  <a href="https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square" alt="Linux verification">
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License">
-  </a>
-  <a href="#privacy-and-ownership">
-    <img src="https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square" alt="Telemetry">
-  </a>
-</p>
+[![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
+[![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
 
-<p>
-  <a href="#quickstart">Install</a> •
-  <a href="#core-features">Features</a> •
-  <a href="#documentation">Docs</a>
-</p>
+[Install](#quickstart) • [Features](#core-features) • [Docs](#documentation)
 
 </div>
 
