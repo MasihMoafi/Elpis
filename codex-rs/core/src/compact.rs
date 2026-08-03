@@ -135,10 +135,7 @@ pub(crate) async fn run_compact_task(
         collaboration_mode_kind: turn_context.mode,
     });
     sess.send_event(&turn_context, start_event).await;
-    if !turn_context
-        .config
-        .features
-        .enabled(codex_features::Feature::ElpisCompactCleanup)
+    if !turn_context.config.elpis_compact_cleanup
         || turn_context
             .config
             .compact_prompt

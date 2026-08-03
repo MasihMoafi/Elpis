@@ -534,10 +534,7 @@ async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (S
     let request_log = mount_sse_sequence(&server, responses).await;
 
     let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::ElpisCompactCleanup)
-            .expect("test config should allow compact cleanup override");
+        config.elpis_compact_cleanup = true;
     });
     let test = builder.build(&server).await.expect("create conversation");
     let codex = test.codex.clone();

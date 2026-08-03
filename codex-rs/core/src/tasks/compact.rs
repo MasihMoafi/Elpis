@@ -37,7 +37,7 @@ impl SessionTask for CompactTask {
             return Ok(None);
         }
 
-        let cleanup_enabled = ctx.config.features.enabled(Feature::ElpisCompactCleanup)
+        let cleanup_enabled = ctx.config.elpis_compact_cleanup
             && ctx
                 .config
                 .compact_prompt

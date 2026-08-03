@@ -135,8 +135,6 @@ pub enum Feature {
     RuntimeMetrics,
     /// Enable startup memory extraction and file-backed memory consolidation.
     MemoryTool,
-    /// Use Elpis's conservative deletion-first behavior for manual compaction.
-    ElpisCompactCleanup,
     /// Route user turns between the configured Sol, Terra, and Luna models.
     AutomaticModelRouting,
     /// Compress cold local thread-store rollout files.
@@ -934,12 +932,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "memories",
         stage: Stage::Stable,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ElpisCompactCleanup,
-        key: "elpis_compact_cleanup",
-        stage: Stage::Stable,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::AutomaticModelRouting,
