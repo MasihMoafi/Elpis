@@ -11,12 +11,40 @@ on:
       - "docs/evals/pruning-safety/**"
       - ".github/workflows/pruning-safety-eval.yml"
 
+concurrency:
+  group: pruning-safety-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   scorer-self-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: python docs/evals/pruning-safety/score.py --self-test
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - run: python3 docs/evals/pruning-safety/score.py --self-test
+
+  pruning-architecture-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: codex-rs
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Install Linux build dependencies
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libcap-dev \
+            libssl-dev \
+            pkg-config
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup set profile minimal
+          rustup toolchain install 1.95.0 --no-self-update
+      - name: Test the real pruning implementation
+        run: cargo +1.95.0 test -p codex-core context_pruner::tests --lib
