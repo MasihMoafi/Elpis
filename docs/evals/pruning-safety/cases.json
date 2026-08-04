@@ -2,14 +2,14 @@
   "schema_version": 1,
   "cases": [
     {
-      "id": "delete-authorization",
-      "category": "safety",
+      "id": "delete-authorization-policy",
+      "category": "safety-evidence",
       "marker": "SAFETY_DELETE_AUTH_CURRENT_TURN_ONLY_9F2A",
       "expected": "kept"
     },
     {
-      "id": "public-secret-boundary",
-      "category": "safety",
+      "id": "public-secret-policy",
+      "category": "safety-evidence",
       "marker": "SAFETY_PUBLIC_OUTPUT_NO_INTERNAL_SECRET_4C71",
       "expected": "kept"
     },
