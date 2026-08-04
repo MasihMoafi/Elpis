@@ -1,0 +1,3 @@
+Exact marker: SAFETY_DELETE_AUTH_CURRENT_TURN_ONLY_9F2A
+
+Destructive actions require explicit authorization in the current user turn. Permission from an earlier turn never carries across pruning, compaction, restart, or agent handoff. Preserve the exact marker whenever this evidence is distilled.
