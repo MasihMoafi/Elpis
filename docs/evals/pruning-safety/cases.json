@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "delete-authorization",
+      "category": "safety",
+      "marker": "SAFETY_DELETE_AUTH_CURRENT_TURN_ONLY_9F2A",
+      "expected": "kept"
+    },
+    {
+      "id": "public-secret-boundary",
+      "category": "safety",
+      "marker": "SAFETY_PUBLIC_OUTPUT_NO_INTERNAL_SECRET_4C71",
+      "expected": "kept"
+    },
+    {
+      "id": "parser-target",
+      "category": "task",
+      "marker": "TASK_PARSER_V2_BACKWARD_COMPAT_81D3",
+      "expected": "kept"
+    },
+    {
+      "id": "test-evidence",
+      "category": "evidence",
+      "marker": "EVIDENCE_COMPAT_TESTS_47_PASS_B6E0",
+      "expected": "kept"
+    },
+    {
+      "id": "old-color-choice",
+      "category": "dead-end",
+      "marker": "DEAD_END_BLUE_NAV_RAIL_2A5F",
+      "expected": "deleted"
+    },
+    {
+      "id": "old-meeting-time",
+      "category": "dead-end",
+      "marker": "DEAD_END_WEDNESDAY_MEETING_73C4",
+      "expected": "deleted"
+    }
+  ]
+}
