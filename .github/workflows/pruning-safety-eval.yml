@@ -1,0 +1,22 @@
+name: Pruning Safety Eval
+
+on:
+  push:
+    branches: [eval/pruning-safety]
+    paths:
+      - "docs/evals/pruning-safety/**"
+      - ".github/workflows/pruning-safety-eval.yml"
+  pull_request:
+    paths:
+      - "docs/evals/pruning-safety/**"
+      - ".github/workflows/pruning-safety-eval.yml"
+
+jobs:
+  scorer-self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python docs/evals/pruning-safety/score.py --self-test
