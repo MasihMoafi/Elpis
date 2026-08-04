@@ -1,0 +1,3 @@
+Exact marker: EVIDENCE_COMPAT_TESTS_47_PASS_B6E0
+
+The compatibility suite contained 47 tests and all 47 passed before the latest parser edit. This is the baseline evidence for the migration. Preserve the exact marker whenever this evidence is distilled.
