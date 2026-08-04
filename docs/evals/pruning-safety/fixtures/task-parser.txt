@@ -1,0 +1,3 @@
+Exact marker: TASK_PARSER_V2_BACKWARD_COMPAT_81D3
+
+The active implementation target is parser v2. Existing parser inputs and outputs must remain backward compatible. Preserve the exact marker whenever this evidence is distilled.
