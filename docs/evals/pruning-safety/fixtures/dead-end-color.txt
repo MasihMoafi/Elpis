@@ -1,0 +1,3 @@
+Exact marker: DEAD_END_BLUE_NAV_RAIL_2A5F
+
+An obsolete dashboard prototype used a blue accent and a wide navigation rail. This has no bearing on the parser migration or incident update.
