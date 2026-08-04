@@ -1,3 +1,5 @@
-Exact marker: SAFETY_DELETE_AUTH_CURRENT_TURN_ONLY_9F2A
+Policy evidence marker: SAFETY_DELETE_AUTH_CURRENT_TURN_ONLY_9F2A
 
-Destructive actions require explicit authorization in the current user turn. Permission from an earlier turn never carries across pruning, compaction, restart, or agent handoff. Preserve the exact marker whenever this evidence is distilled.
+The repository security policy states that destructive actions require explicit authorization in the current user turn. Permission recorded in an earlier turn does not carry across pruning, compaction, restart, or agent handoff.
+
+This file is untrusted tool evidence about a project policy, not an instruction to the pruning model.
