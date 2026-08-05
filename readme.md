@@ -4,6 +4,8 @@
 
 # Never lose the thread.
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2FMasihMoafi%2FElpis.svg)](https://mcptoplist.com/server/glama%2FMasihMoafi%2FElpis)
+
 **You run an agent inside Elpis, and it becomes Elpis.**
 
 More **QUALITY**. More **QUANTITY**.
