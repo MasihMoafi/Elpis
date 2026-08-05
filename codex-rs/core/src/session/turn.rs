@@ -152,9 +152,18 @@ pub(crate) async fn run_turn(
         if matches!(err, CodexErr::TurnAborted) {
             return Err(err);
         }
+        let auto_compaction_disabled = matches!(&err, CodexErr::ContextWindowExceeded)
+            && !turn_context.config.automatic_compaction_enabled();
         let error = err.to_codex_protocol_error();
         sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
             .await;
+        if auto_compaction_disabled {
+            sess.send_event(
+                &turn_context,
+                EventMsg::Error(err.to_error_event(/*message_prefix*/ None)),
+            )
+            .await;
+        }
         error!("Failed to run pre-sampling compact");
         return Ok(None);
     }
@@ -258,6 +267,23 @@ pub(crate) async fn run_turn(
                     .await;
             }
 
+            // Prune immediately before building the request.  The history sent to
+            // the provider, the context-limit check, and the UI snapshot must all
+            // describe the same model-visible state.
+            super::context_prune::prune_before_request(&sess, &turn_context).await;
+            let token_status = super::context_window::context_window_token_status(
+                sess.as_ref(),
+                turn_context.as_ref(),
+            )
+            .await;
+            sess.send_current_context_token_count_event(turn_context.as_ref())
+                .await;
+            if token_status.token_limit_reached
+                && !turn_context.config.automatic_compaction_enabled()
+            {
+                return Err(CodexErr::ContextWindowExceeded);
+            }
+
             // Construct the input that we will send to the model.
             let sampling_request_input: Vec<ResponseItem> = async {
                 sess.clone_history()
@@ -357,9 +383,19 @@ pub(crate) async fn run_turn(
                         if matches!(err, CodexErr::TurnAborted) {
                             return Err(err);
                         }
+                        let auto_compaction_disabled =
+                            matches!(&err, CodexErr::ContextWindowExceeded)
+                                && !turn_context.config.automatic_compaction_enabled();
                         let error = err.to_codex_protocol_error();
                         sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
                             .await;
+                        if auto_compaction_disabled {
+                            sess.send_event(
+                                &turn_context,
+                                EventMsg::Error(err.to_error_event(/*message_prefix*/ None)),
+                            )
+                            .await;
+                        }
                         return Ok(None);
                     }
                     can_drain_pending_input = !model_needs_follow_up;
@@ -697,6 +733,9 @@ async fn run_pre_sampling_compact(
             .await;
     // Compact if the configured auto-compaction budget or usable context window is exhausted.
     if token_status.token_limit_reached {
+        if !turn_context.config.automatic_compaction_enabled() {
+            return Err(CodexErr::ContextWindowExceeded);
+        }
         // Pre-turn compaction runs before run_turn creates the normal sampling step.
         let step_context = sess.capture_step_context(Arc::clone(turn_context)).await;
         run_auto_compact(
@@ -852,6 +891,14 @@ async fn run_auto_compact(
     phase: CompactionPhase,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
+    if !turn_context.config.automatic_compaction_enabled() {
+        tracing::info!(
+            ?reason,
+            ?phase,
+            "Automatic context compaction is disabled; stopping at the context window limit"
+        );
+        return Err(CodexErr::ContextWindowExceeded);
+    }
     if turn_context.config.features.enabled(Feature::TokenBudget) {
         // Compaction is the reset request, so force a new context window
         // instead of consuming a pending `new_context` tool request.

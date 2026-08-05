@@ -605,6 +605,30 @@ auto_compact_fallback_buffer_tokens = 8000
 }
 
 #[tokio::test]
+async fn load_config_resolves_automatic_compaction_policy() -> std::io::Result<()> {
+    let codex_home = tempdir()?;
+    let disabled = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            model_auto_compact_enabled: Some(false),
+            ..ConfigToml::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+    assert!(!disabled.automatic_compaction_enabled());
+
+    let default = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+    assert!(default.automatic_compaction_enabled());
+    Ok(())
+}
+
+#[tokio::test]
 async fn load_config_rejects_overlong_auto_compact_fallback_prompt() -> std::io::Result<()> {
     let codex_home = tempdir()?;
     let prompt = "x".repeat(AUTO_COMPACT_FALLBACK_PROMPT_MAX_BYTES + 1);

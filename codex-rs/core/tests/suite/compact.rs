@@ -2030,6 +2030,74 @@ async fn auto_compact_runs_after_token_limit_hit() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn disabled_auto_compaction_stops_before_a_new_model_request() {
+    skip_if_no_network!();
+
+    let server = start_mock_server().await;
+    let request_log = mount_sse_sequence(
+        &server,
+        vec![sse(vec![
+            ev_assistant_message("m1", FIRST_REPLY),
+            ev_completed_with_tokens("r1", /*total_tokens*/ 250_000),
+        ])],
+    )
+    .await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider = model_provider;
+        config.model_auto_compact_token_limit = Some(200_000);
+        config.model_auto_compact_enabled = Some(false);
+    });
+    let codex = builder.build(&server).await.unwrap().codex;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "OVER_LIMIT_TURN".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "AFTER_LIMIT_TURN".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+    let error = wait_for_event_match(&codex, |event| match event {
+        EventMsg::Error(error) => Some(error.message.clone()),
+        _ => None,
+    })
+    .await;
+    assert!(
+        error.contains("ran out of room in the model's context window"),
+        "expected disabled auto compaction to stop at the limit, got {error}"
+    );
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    assert_eq!(
+        request_log.requests().len(),
+        1,
+        "disabled auto compaction must not issue another model request"
+    );
+}
+
 // Windows CI only: bump to 4 workers to prevent SSE/event starvation and test timeouts.
 #[cfg_attr(windows, tokio::test(flavor = "multi_thread", worker_threads = 4))]
 #[cfg_attr(not(windows), tokio::test(flavor = "multi_thread", worker_threads = 2))]

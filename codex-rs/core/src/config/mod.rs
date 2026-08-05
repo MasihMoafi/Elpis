@@ -688,6 +688,10 @@ pub struct Config {
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
 
+    /// Whether automatic context compaction is allowed. `None` preserves the
+    /// upstream default (enabled); Elpis disables it in its binary defaults.
+    pub model_auto_compact_enabled: Option<bool>,
+
     /// Controls whether `model_auto_compact_token_limit` applies to the full
     /// active context or only tokens after the carried compaction-window prefix.
     pub model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope,
@@ -1303,6 +1307,10 @@ pub fn auth_home_override() -> Option<PathBuf> {
 }
 
 impl Config {
+    pub fn automatic_compaction_enabled(&self) -> bool {
+        self.model_auto_compact_enabled.unwrap_or(true)
+    }
+
     pub fn auth_home(&self) -> PathBuf {
         auth_home_override().unwrap_or_else(|| self.codex_home.to_path_buf())
     }
@@ -3968,6 +3976,7 @@ impl Config {
             review_model,
             model_context_window: cfg.model_context_window,
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
+            model_auto_compact_enabled: cfg.model_auto_compact_enabled,
             model_auto_compact_token_limit_scope: cfg
                 .model_auto_compact_token_limit_scope
                 .unwrap_or_default(),

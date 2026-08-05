@@ -224,28 +224,58 @@ impl ChatWidget {
             .status_line_context_window_size()
             .unwrap_or(258_400)
             .max(1) as u64;
-        // Floor at the admitted portable total: before the first server-reported
-        // usage arrives, the admitted sources are already real next-request cost —
-        // otherwise the headline says "0 used" while the bar shows their segments.
+        // Use the same measured request-context value as `/context` and the status
+        // line.  Portable source estimates are attribution only; they must not
+        // inflate the headline or percentage beyond what is actually in context.
         let used_tokens = (self
             .token_info
             .as_ref()
             .map(|info| info.last_token_usage.tokens_in_context_window())
             .unwrap_or(0)
             .max(0) as u64)
-            .max(total_tokens);
+            .min(context_window);
+        let has_request_snapshot = self.token_info.is_some();
+        let admitted_display_tokens = total_tokens.min(used_tokens);
         // Everything in the window that isn't admitted portable context is the
         // conversation itself — the biggest consumer, previously invisible here.
-        let conversation_tokens = used_tokens.saturating_sub(total_tokens);
-        let used_percent = (used_tokens * 100 / context_window).min(100);
+        let conversation_tokens = used_tokens.saturating_sub(admitted_display_tokens);
+        let used_percent = self.status_line_context_used_percent().unwrap_or(0);
+        let admitted_segments = crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL
+            .into_iter()
+            .filter(|category| {
+                *category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
+            })
+            .map(|category| {
+                let admitted = sources
+                    .iter()
+                    .filter(|source| source.category == category && source.admitted)
+                    .map(|source| source.estimated_tokens)
+                    .sum::<u64>();
+                (admitted, category_color(category))
+            })
+            .collect::<Vec<_>>();
+        let mut bar_segments = vec![(conversation_tokens, messages_color)];
+        bar_segments.extend(scale_usage_segments(
+            &admitted_segments,
+            admitted_display_tokens,
+        ));
+        let context_header = if has_request_snapshot {
+            format!("≈{} tokens in context", format_tokens(used_tokens))
+        } else if total_tokens == 0 {
+            // Keep the compact idle layout used by the existing popups while making
+            // the zero state explicit: no provider request has been measured yet.
+            "Total ≈0 tokens admitted".to_string()
+        } else {
+            format!(
+                "context not measured · ≈{} portable admitted",
+                format_tokens(total_tokens)
+            )
+        };
         let mut lines = vec![
             Line::from(vec![
                 Span::styled("CONTEXT LEDGER", cyan.bold()),
                 Span::raw("  "),
-                Span::styled(
-                    format!("Total ≈{} tokens admitted", format_tokens(total_tokens)),
-                    cyan,
-                ),
+                Span::styled(context_header, cyan),
             ]),
             Line::from(Span::styled(
                 "i = select/deselect all · backspace = remove added file",
@@ -264,18 +294,7 @@ impl ChatWidget {
                     muted,
                 ),
             ]),
-            usage_bar_line(content_width, context_window, &{
-                let mut segments = vec![(conversation_tokens, messages_color)];
-                for category in crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL {
-                    let admitted = sources
-                        .iter()
-                        .filter(|s| s.category == category && s.admitted)
-                        .map(|s| s.estimated_tokens)
-                        .sum::<u64>();
-                    segments.push((admitted, category_color(category)));
-                }
-                segments
-            }),
+            usage_bar_line(content_width, context_window, &bar_segments),
             {
                 let name = "Conversation (messages)";
                 // Same unit as every other row and header; without it this row reads
@@ -690,6 +709,36 @@ fn usage_bar_line(
     Line::from(spans)
 }
 
+/// Scale attribution segments down to the measured amount they represent.  This
+/// keeps the colored breakdown honest when source byte estimates exceed the exact
+/// request-context count after pruning.
+fn scale_usage_segments(segments: &[(u64, Color)], target: u64) -> Vec<(u64, Color)> {
+    let source_total = segments.iter().map(|(tokens, _)| *tokens).sum::<u64>();
+    if source_total == 0 || target >= source_total {
+        return segments.to_vec();
+    }
+
+    let mut scaled = segments
+        .iter()
+        .map(|(tokens, color)| {
+            (
+                ((*tokens as u128 * target as u128) / source_total as u128) as u64,
+                *color,
+            )
+        })
+        .collect::<Vec<_>>();
+    let assigned = scaled.iter().map(|(tokens, _)| *tokens).sum::<u64>();
+    let remainder = target.saturating_sub(assigned);
+    if remainder > 0 {
+        if let Some((tokens, _)) = scaled.iter_mut().rev().find(|(tokens, _)| *tokens > 0) {
+            *tokens = tokens.saturating_add(remainder);
+        } else if let Some((tokens, _)) = scaled.last_mut() {
+            *tokens = remainder;
+        }
+    }
+    scaled
+}
+
 fn format_tokens(tokens: u64) -> String {
     if tokens < 1_000 {
         tokens.to_string()
@@ -750,5 +799,11 @@ mod tests {
         let narrow = selected_source_scroll_offset(&lines, 5..7, 12, 4);
         assert!(narrow > wide);
         assert_eq!(selected_source_scroll_offset(&[], 0..4, 52, 4), 0);
+    }
+
+    #[test]
+    fn scaled_usage_segments_match_measured_context() {
+        let scaled = scale_usage_segments(&[(70, Color::Green), (30, Color::Yellow)], 25);
+        assert_eq!(scaled.iter().map(|(tokens, _)| *tokens).sum::<u64>(), 25);
     }
 }

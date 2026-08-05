@@ -1,10 +1,11 @@
 ---
 source: tui/src/chatwidget/tests/plan_mode.rs
+assertion_line: 86
 expression: popup
 ---
  Elpis · model gpt-5 · location /tmp/project
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
-│ Implement this plan?                         ││admitted
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  ≈90.0k tokens
+│ Implement this plan?                         ││in context
 │                                              ││i = select/deselect all ·
 › 1. Yes, implement this plan   Switch to      ││backspace = remove added file
                                 Default and    ││

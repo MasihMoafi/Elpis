@@ -3,16 +3,13 @@
 //! backtrack mechanism, and a System files (auto-loaded) section backed by the same
 //! admitted-source list the Context Ledger renders.
 //!
-//! ## The math is anchored to one exact number
+//! ## The math is anchored to one measured number
 //!
-//! The only exact figure available here is total tokens currently in context
-//! (`token_info.last_token_usage`, same source the status line uses — the headline
-//! percentage is computed with the status line's own formula so the two can never
-//! disagree). System prompt and Skills are fixed on-disk costs and are shown at
-//! their raw estimates, never scaled. The remaining budget (used − fixed) is split
-//! proportionally across the user/agent/tool transcript estimates; whatever cannot
-//! be attributed lands in an explicit "Other (overhead)" row instead of silently
-//! inflating a named category.
+//! The current request-context count (`token_info.last_token_usage`) is the only
+//! headline number. It is the same snapshot used by the status line and the
+//! Context Ledger. Transcript and portable-source byte counts are attribution
+//! estimates only: they are scaled to that measured total, and any unaccounted
+//! remainder is shown explicitly as "Other (overhead)".
 
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -158,47 +155,35 @@ impl ChatWidget {
             estimate(totals.agent_response_chars),
             estimate(totals.tool_call_chars),
         ];
-        let conversation_estimate_sum: u64 = conversation_estimates.iter().sum();
-
-        // The one exact number: current context occupancy (not the session-cumulative
-        // total, which can exceed the window).
+        // The one measured number: current context occupancy (not the
+        // session-cumulative total, which can exceed the window). Before a provider
+        // response exists, the core emits the same pre-request snapshot used for
+        // pruning and the hard-limit check; zero means no snapshot exists yet.
         let default_usage = crate::token_usage::TokenUsage::default();
         let last_usage = self
             .token_info
             .as_ref()
             .map(|info| &info.last_token_usage)
             .unwrap_or(&default_usage);
+        let has_request_snapshot = self.token_info.is_some();
         let window = self
             .status_line_context_window_size()
             .unwrap_or(258_400)
             .max(1) as u64;
         let exact_used = last_usage.tokens_in_context_window().max(0) as u64;
-        // Before the first response there is no exact figure yet; fall back to the
-        // raw estimates instead of scaling everything to zero.
-        let used = if exact_used > 0 {
-            exact_used.min(window)
-        } else {
-            (conversation_estimate_sum + fixed_system + fixed_skills).min(window)
-        };
-
-        // Only the conversation share (what's left after the fixed buckets) is
-        // split proportionally across user/agent/tool estimates.
-        let fixed_total = (fixed_system + fixed_skills).min(used);
-        let conversation_budget = used.saturating_sub(fixed_total);
-        let mut conversation: [u64; 3] = if conversation_estimate_sum > 0 {
-            conversation_estimates
-                .map(|tokens| tokens * conversation_budget / conversation_estimate_sum)
-        } else {
-            [0, 0, 0]
-        };
-        let mut other = conversation_budget.saturating_sub(conversation.iter().sum());
-        if conversation_estimate_sum > 0 {
-            let largest = (0..conversation.len())
-                .max_by_key(|&i| conversation[i])
-                .unwrap_or(0);
-            conversation[largest] += other;
-            other = 0;
-        }
+        let used = exact_used.min(window);
+        let raw_categories = [
+            conversation_estimates[0],
+            conversation_estimates[1],
+            conversation_estimates[2],
+            fixed_system,
+            fixed_skills,
+        ];
+        let category_tokens = scale_token_counts(&raw_categories, used);
+        let conversation = [category_tokens[0], category_tokens[1], category_tokens[2]];
+        let fixed_system = category_tokens[3];
+        let fixed_skills = category_tokens[4];
+        let other = used.saturating_sub(category_tokens.iter().sum());
         let saved_tokens = self.last_prune_saved_tokens.unwrap_or(0);
 
         let mut categories = vec![
@@ -252,11 +237,7 @@ impl ChatWidget {
         let mut legend: Vec<Line<'static>> = Vec::new();
         // Same formula the status line uses, so /context and the "% left" indicator
         // can never disagree.
-        let used_percent = if exact_used > 0 {
-            (100 - last_usage.percent_of_context_window_remaining(window as i64)).clamp(0, 100)
-        } else {
-            (used.saturating_mul(100) / window) as i64
-        };
+        let used_percent = self.status_line_context_used_percent().unwrap_or(0);
         legend.push(
             format!(
                 "{model} · {}/{} tokens ({used_percent}% used)",
@@ -300,8 +281,8 @@ impl ChatWidget {
                 Span::styled(" (Ace Pass ⚡)", Style::default().fg(Color::Cyan)),
             ]));
         }
-        if exact_used == 0 {
-            legend.push("(estimated — no request sent yet)".dim().into());
+        if !has_request_snapshot {
+            legend.push("(no measured request snapshot yet)".dim().into());
         }
 
         let mut before_chart: Vec<Line<'static>> = Vec::new();
@@ -374,6 +355,31 @@ impl ChatWidget {
         }
         self.request_redraw();
     }
+}
+
+/// Scale attribution estimates down when they exceed the measured request
+/// context. If the estimates are smaller, keep them raw and let the caller show
+/// the unassigned remainder as an explicit overhead bucket.
+fn scale_token_counts(values: &[u64], target: u64) -> Vec<u64> {
+    let source_total = values.iter().copied().sum::<u64>();
+    if source_total == 0 || target >= source_total {
+        return values.to_vec();
+    }
+
+    let mut scaled = values
+        .iter()
+        .map(|value| ((*value as u128 * target as u128) / source_total as u128) as u64)
+        .collect::<Vec<_>>();
+    let assigned = scaled.iter().copied().sum::<u64>();
+    let remainder = target.saturating_sub(assigned);
+    if remainder > 0 {
+        if let Some(value) = scaled.iter_mut().rev().find(|value| **value > 0) {
+            *value = value.saturating_add(remainder);
+        } else if let Some(value) = scaled.last_mut() {
+            *value = remainder;
+        }
+    }
+    scaled
 }
 
 fn build_category_bar_chart(
@@ -613,6 +619,18 @@ mod tests {
         assert_eq!(newly_reclaimed_tokens(None, 4_200), 4_200);
         assert_eq!(newly_reclaimed_tokens(Some(4_200), 7_000), 2_800);
         assert_eq!(newly_reclaimed_tokens(Some(7_000), 4_200), 0);
+    }
+
+    #[test]
+    fn category_attribution_matches_measured_context() {
+        let scaled = scale_token_counts(&[70, 30, 10], 25);
+        assert_eq!(scaled.iter().copied().sum::<u64>(), 25);
+        assert!(
+            scaled
+                .iter()
+                .zip([70, 30, 10])
+                .all(|(actual, raw)| *actual <= raw)
+        );
     }
 
     #[test]

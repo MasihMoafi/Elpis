@@ -71,12 +71,12 @@ async fn pressure_prune_runs_at_thirty_percent_and_rewrites_next_request() -> Re
                 "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
             ),
             final_response(),
+            prune_response,
             main_tool_response(
                 CURRENT_CALL_ID,
                 /*total_tokens*/ 3_000,
                 "printf current-marker",
             ),
-            prune_response,
             final_response(),
         ],
     )
@@ -88,20 +88,21 @@ async fn pressure_prune_runs_at_thirty_percent_and_rewrites_next_request() -> Re
     let requests = requests.requests();
     assert_eq!(requests.len(), 5);
     assert_eq!(requests[0].body_json()["model"], MAIN_MODEL);
-    assert_eq!(requests[3].body_json()["model"], PRUNE_MODEL);
-    assert_eq!(requests[3].body_json()["reasoning"]["effort"], "max");
+    assert_eq!(requests[2].body_json()["model"], PRUNE_MODEL);
+    assert_eq!(requests[2].body_json()["reasoning"]["effort"], "max");
+    assert_eq!(requests[3].body_json()["model"], MAIN_MODEL);
     assert_eq!(requests[4].body_json()["model"], MAIN_MODEL);
-    assert!(requests[3].body_contains_text("<evidence_batch>"));
-    assert!(requests[3].body_contains_text(OLD_CALL_ID));
+    assert!(requests[2].body_contains_text("<evidence_batch>"));
+    assert!(requests[2].body_contains_text(OLD_CALL_ID));
     assert!(
-        !requests[3].body_contains_text("output:\ncurrent-marker"),
+        !requests[2].body_contains_text("output:\ncurrent-marker"),
         "the pruning model must never receive current-turn tool output"
     );
-    assert!(requests[4].body_contains_text("[ELPIS CONTEXT UPDATE]"));
-    assert!(requests[4].body_contains_text(&format!("rollout://tool-call/{OLD_CALL_ID}")));
+    assert!(requests[3].body_contains_text("[ELPIS CONTEXT UPDATE]"));
+    assert!(requests[3].body_contains_text(&format!("rollout://tool-call/{OLD_CALL_ID}")));
     assert!(requests[4].body_contains_text("Output:\ncurrent-marker"));
     assert!(
-        !requests[4].body_contains_text(&"x".repeat(128)),
+        !requests[3].body_contains_text(&"x".repeat(128)),
         "the next real model request must receive the compact receipt, not raw bulk output"
     );
 

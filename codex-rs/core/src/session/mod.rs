@@ -3737,6 +3737,37 @@ impl Session {
         state.set_server_reasoning_included(included);
     }
 
+    /// Deliver the current request-context estimate without persisting a synthetic
+    /// provider usage event.  The TUI uses this snapshot for the ledger and `/context`;
+    /// it is emitted immediately before a request is built, after Ace pruning.
+    pub(crate) async fn send_current_context_token_count_event(&self, turn_context: &TurnContext) {
+        let active_context_tokens = self.get_total_token_usage().await;
+        let (mut info, rate_limits, context_prune_saved_tokens) = {
+            let state = self.state.lock().await;
+            let (info, rate_limits) = state.token_info_and_rate_limits();
+            (info, rate_limits, state.context_prune_saved_tokens)
+        };
+        let info = info.get_or_insert(TokenUsageInfo {
+            total_token_usage: TokenUsage::default(),
+            last_token_usage: TokenUsage::default(),
+            model_context_window: turn_context.model_context_window(),
+        });
+        info.last_token_usage.total_tokens = active_context_tokens;
+        if info.model_context_window.is_none() {
+            info.model_context_window = turn_context.model_context_window();
+        }
+        let event = Event {
+            id: turn_context.sub_id.clone(),
+            msg: EventMsg::TokenCount(TokenCountEvent {
+                info: Some(info.clone()),
+                rate_limits,
+                context_prune_saved_tokens,
+            }),
+        };
+        self.send_event_raw_with_persistence(event, /*persist*/ false)
+            .await;
+    }
+
     pub(crate) async fn send_token_count_event(&self, turn_context: &TurnContext) {
         let (info, rate_limits, context_prune_saved_tokens) = {
             let state = self.state.lock().await;

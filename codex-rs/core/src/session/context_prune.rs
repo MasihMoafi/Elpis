@@ -28,8 +28,24 @@ use super::context_prune_audit;
 use super::session::Session;
 use super::turn_context::TurnContext;
 
+/// Whether an exhausted pressure pass may escalate to a context-window rollover.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Escalation {
+    Allowed,
+    Deferred,
+}
+
 pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_context_prune(sess, turn_context, None, None).await;
+    run_context_prune(sess, turn_context, None, None, Escalation::Allowed).await;
+}
+
+/// The pre-request pass. Reclaims what it can so the history sent to the provider,
+/// the context-limit check, and the UI snapshot describe the same state — but leaves
+/// the rollover decision to the post-sampling pass, which already owns it and sees
+/// fresh usage. Escalating here would stack a second rollover on top of one the model
+/// just requested through `new_context`.
+pub(super) async fn prune_before_request(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    run_context_prune(sess, turn_context, None, None, Escalation::Deferred).await;
 }
 
 pub(crate) async fn run_manual_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
@@ -47,6 +63,7 @@ pub(crate) async fn run_manual_context_prune_with_target(
             turn_context,
             Some(context_pruner::PruneTrigger::Pressure),
             Some(pct),
+            Escalation::Allowed,
         )
         .await;
         return;
@@ -60,6 +77,7 @@ pub(crate) async fn run_manual_context_prune_with_target(
             turn_context,
             Some(context_pruner::PruneTrigger::Manual),
             None,
+            Escalation::Allowed,
         )
         .await
         {
@@ -73,6 +91,7 @@ async fn run_context_prune(
     turn_context: &Arc<TurnContext>,
     requested_trigger: Option<context_pruner::PruneTrigger>,
     target_pct: Option<i64>,
+    escalation: Escalation,
 ) -> bool {
     let context_window = turn_context.model_context_window().unwrap_or(0);
     if requested_trigger.is_none() && context_window <= 0 {
@@ -124,12 +143,19 @@ async fn run_context_prune(
         // stop it. Hand off to compaction instead of letting it drift toward the
         // model's hard limit. The turn loop performs the rollover on its next step.
         if requested_trigger.is_none()
+            && escalation == Escalation::Allowed
             && context_pruner::pressure_reached(active_context_tokens, context_window)
         {
-            tracing::info!(
-                "Context pruning is exhausted at {active_context_tokens} tokens; requesting compaction"
-            );
-            sess.request_new_context_window().await;
+            if turn_context.config.automatic_compaction_enabled() {
+                tracing::info!(
+                    "Context pruning is exhausted at {active_context_tokens} tokens; requesting compaction"
+                );
+                sess.request_new_context_window().await;
+            } else {
+                tracing::info!(
+                    "Context pruning is exhausted at {active_context_tokens} tokens; automatic compaction is disabled"
+                );
+            }
         }
         return false;
     };

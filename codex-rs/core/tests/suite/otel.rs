@@ -1032,7 +1032,10 @@ async fn handle_response_item_records_tool_result_for_function_call() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    // A `TokenCount` now also lands before the first request is built, so it no longer
+    // marks the point where the tool has run. Wait for the turn itself, as every other
+    // test in this file does.
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
