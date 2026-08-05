@@ -1805,8 +1805,6 @@ dependencies = [
  "codex-login",
  "codex-mcp",
  "codex-mcp-extension",
- "codex-memories-extension",
- "codex-memories-write",
  "codex-model-provider",
  "codex-model-provider-info",
  "codex-models-manager",
@@ -2150,7 +2148,6 @@ dependencies = [
  "codex-login",
  "codex-mcp",
  "codex-mcp-server",
- "codex-memories-write",
  "codex-model-provider",
  "codex-models-manager",
  "codex-plugin",
@@ -2408,7 +2405,6 @@ dependencies = [
  "codex-install-context",
  "codex-login",
  "codex-mcp",
- "codex-memories-read",
  "codex-model-provider",
  "codex-model-provider-info",
  "codex-models-manager",
@@ -3169,74 +3165,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "wiremock",
-]
-
-[[package]]
-name = "codex-memories-extension"
-version = "0.0.0"
-dependencies = [
- "codex-core",
- "codex-extension-api",
- "codex-features",
- "codex-otel",
- "codex-tools",
- "codex-utils-absolute-path",
- "codex-utils-output-truncation",
- "codex-utils-template",
- "pretty_assertions",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "codex-memories-read"
-version = "0.0.0"
-dependencies = [
- "codex-protocol",
- "codex-shell-command",
- "codex-utils-absolute-path",
- "pretty_assertions",
-]
-
-[[package]]
-name = "codex-memories-write"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "chrono",
- "codex-backend-client",
- "codex-config",
- "codex-core",
- "codex-features",
- "codex-git-utils",
- "codex-login",
- "codex-model-provider",
- "codex-model-provider-info",
- "codex-models-manager",
- "codex-otel",
- "codex-protocol",
- "codex-rollout",
- "codex-rollout-trace",
- "codex-secrets",
- "codex-state",
- "codex-terminal-detection",
- "codex-utils-absolute-path",
- "codex-utils-output-truncation",
- "codex-utils-template",
- "core_test_support",
- "futures",
- "pretty_assertions",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "uuid",
  "wiremock",
 ]
 

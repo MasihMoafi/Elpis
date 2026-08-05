@@ -564,11 +564,7 @@ impl ChatWidget {
         &self,
     ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
         crate::legacy_core::elpis_context::continuity_sources(
-            self.config
-                .memories
-                .root
-                .as_ref()
-                .map(|root| root.as_path()),
+            Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
             &self.instruction_source_paths_as_path_bufs(),
         )
@@ -614,11 +610,7 @@ impl ChatWidget {
         selectable: &[usize],
     ) {
         match crate::legacy_core::elpis_context::remove_continuity_source(
-            self.config
-                .memories
-                .root
-                .as_ref()
-                .map(|root| root.as_path()),
+            Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
             &source.name,
         ) {
@@ -650,11 +642,7 @@ impl ChatWidget {
         admitted: bool,
     ) -> bool {
         match crate::legacy_core::elpis_context::set_continuity_source_admitted(
-            self.config
-                .memories
-                .root
-                .as_ref()
-                .map(|root| root.as_path()),
+            Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
             &source.name,
             admitted,

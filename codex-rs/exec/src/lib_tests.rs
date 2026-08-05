@@ -359,7 +359,6 @@ fn turn_items_for_thread_returns_matching_turn_items() {
                     id: "msg-1".to_string(),
                     text: "hello".to_string(),
                     phase: None,
-                    memory_citation: None,
                 }],
                 status: codex_app_server_protocol::TurnStatus::Completed,
                 error: None,
@@ -389,7 +388,6 @@ fn turn_items_for_thread_returns_matching_turn_items() {
             id: "msg-1".to_string(),
             text: "hello".to_string(),
             phase: None,
-            memory_citation: None,
         }])
     );
     assert_eq!(turn_items_for_thread(&thread, "missing-turn"), None);

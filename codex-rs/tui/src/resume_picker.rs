@@ -5795,7 +5795,6 @@ session_picker_view = "dense"
                         id: String::from("agent-1"),
                         text: String::from("hello from assistant"),
                         phase: None,
-                        memory_citation: None,
                     },
                     ThreadItem::Plan {
                         id: String::from("plan-1"),

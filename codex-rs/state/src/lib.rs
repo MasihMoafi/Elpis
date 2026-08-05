@@ -22,7 +22,6 @@ mod telemetry;
 pub use model::LogEntry;
 pub use model::LogQuery;
 pub use model::LogRow;
-pub use model::Phase2JobClaimOutcome;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::StateRuntime;
 
@@ -48,10 +47,6 @@ pub use model::DirectionalThreadSpawnEdgeStatus;
 pub use model::ExtractionOutcome;
 pub use model::SortDirection;
 pub use model::SortKey;
-pub use model::Stage1JobClaim;
-pub use model::Stage1JobClaimOutcome;
-pub use model::Stage1Output;
-pub use model::Stage1StartupClaimParams;
 pub use model::ThreadGoal;
 pub use model::ThreadGoalStatus;
 pub use model::ThreadMetadata;
@@ -76,7 +71,6 @@ pub use runtime::GoalAccountingMode;
 pub use runtime::GoalAccountingOutcome;
 pub use runtime::GoalStore;
 pub use runtime::GoalUpdate;
-pub use runtime::MemoryStore;
 pub use runtime::RemoteControlEnrollmentRecord;
 pub use runtime::RuntimeDbBackup;
 pub use runtime::RuntimeDbPath;
@@ -87,8 +81,6 @@ pub use runtime::goals_db_path;
 pub use runtime::is_sqlite_corruption_error;
 pub use runtime::logs_db_filename;
 pub use runtime::logs_db_path;
-pub use runtime::memories_db_filename;
-pub use runtime::memories_db_path;
 pub use runtime::open_thread_history_db;
 pub use runtime::runtime_db_path_for_corruption_error;
 pub use runtime::runtime_db_paths;
@@ -110,7 +102,6 @@ pub const SQLITE_HOME_ENV: &str = "CODEX_SQLITE_HOME";
 
 pub const LOGS_DB_FILENAME: &str = "logs_2.sqlite";
 pub const GOALS_DB_FILENAME: &str = "goals_1.sqlite";
-pub const MEMORIES_DB_FILENAME: &str = "memories_1.sqlite";
 pub const STATE_DB_FILENAME: &str = "state_5.sqlite";
 pub const THREAD_HISTORY_DB_FILENAME: &str = "thread_history_1.sqlite";
 

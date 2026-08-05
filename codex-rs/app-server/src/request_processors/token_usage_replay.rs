@@ -161,7 +161,6 @@ mod tests {
             RolloutItem::EventMsg(EventMsg::AgentMessage(AgentMessageEvent {
                 message: "first answer".to_string(),
                 phase: None,
-                memory_citation: None,
             })),
             RolloutItem::EventMsg(EventMsg::TokenCount(TokenCountEvent {
                 info: None,

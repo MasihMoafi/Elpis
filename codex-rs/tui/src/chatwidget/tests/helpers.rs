@@ -360,7 +360,10 @@ pub(super) fn status_line_text(chat: &ChatWidget) -> Option<String> {
 pub(super) fn status_line_items_text(chat: &ChatWidget) -> Option<String> {
     let text = chat.status_line_text()?;
     let (identity, items) = text.split_once(" · context ")?;
-    debug_assert!(identity.starts_with("ELPIS"), "unexpected status line: {text}");
+    debug_assert!(
+        identity.starts_with("ELPIS"),
+        "unexpected status line: {text}"
+    );
     items
         .split_once(" · ")
         .map(|(_context_value, rest)| rest.to_string())
@@ -779,7 +782,6 @@ pub(super) fn replay_agent_message(
             id: item_id.to_string(),
             text: text.into(),
             phase: Some(MessagePhase::FinalAnswer),
-            memory_citation: None,
         },
         "turn-1".to_string(),
         replay_kind,
@@ -927,7 +929,6 @@ pub(super) fn complete_assistant_message(
                 id: item_id.to_string(),
                 text: text.to_string(),
                 phase,
-                memory_citation: None,
             },
         }),
         /*replay_kind*/ None,

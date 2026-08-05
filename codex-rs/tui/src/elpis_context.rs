@@ -372,7 +372,6 @@ mod tests {
                     id: "message-one".to_string(),
                     text: "Implemented the checkpoint.".to_string(),
                     phase: None,
-                    memory_citation: None,
                 },
             ],
             items_view: TurnItemsView::Full,
@@ -411,7 +410,6 @@ mod tests {
             id: id.to_string(),
             text: text.to_string(),
             phase: None,
-            memory_citation: None,
         };
         let buffered = vec![
             ("turn-one".to_string(), message("stale", "Old turn result.")),

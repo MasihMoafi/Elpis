@@ -12,8 +12,6 @@ use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::MockExperimentalMethodParams;
 use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ThreadMemoryMode;
-use codex_app_server_protocol::ThreadMemoryModeSetParams;
 use codex_app_server_protocol::ThreadRealtimeStartParams;
 use codex_app_server_protocol::ThreadRealtimeStartTransport;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
@@ -112,45 +110,6 @@ async fn realtime_conversation_start_requires_experimental_api_capability() -> R
     )
     .await??;
     assert_experimental_capability_error(error, "thread/realtime/start");
-    Ok(())
-}
-
-#[tokio::test]
-async fn thread_memory_mode_set_requires_experimental_api_capability() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
-        .await?;
-
-    let init = mcp
-        .initialize_with_capabilities(
-            default_client_info(),
-            Some(InitializeCapabilities {
-                experimental_api: false,
-                request_attestation: false,
-                opt_out_notification_methods: None,
-                mcp_server_openai_form_elicitation: false,
-            }),
-        )
-        .await?;
-    let JSONRPCMessage::Response(_) = init else {
-        anyhow::bail!("expected initialize response, got {init:?}");
-    };
-
-    let request_id = mcp
-        .send_thread_memory_mode_set_request(ThreadMemoryModeSetParams {
-            thread_id: "thr_123".to_string(),
-            mode: ThreadMemoryMode::Disabled,
-        })
-        .await?;
-    let error = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    assert_experimental_capability_error(error, "thread/memoryMode/set");
     Ok(())
 }
 

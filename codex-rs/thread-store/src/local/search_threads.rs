@@ -67,7 +67,6 @@ pub(super) async fn search_threads(
         sqlite_home: store.config.sqlite_home.clone(),
         cwd: store.config.codex_home.clone(),
         model_provider_id: store.config.default_model_provider_id.clone(),
-        generate_memories: false,
     };
     let rg_command = InstallContext::current().rg_command();
     let matching_rollouts = search_rollout_matches(

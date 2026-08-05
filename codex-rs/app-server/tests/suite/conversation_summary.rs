@@ -23,7 +23,6 @@ use codex_exec_server::EnvironmentManager;
 use codex_protocol::ThreadId;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::protocol::SessionSource;
-use codex_protocol::protocol::ThreadMemoryMode;
 use codex_thread_store::CreateThreadParams;
 use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::ThreadPersistenceMetadata;
@@ -143,7 +142,6 @@ async fn get_conversation_summary_by_thread_id_reads_pathless_store_thread() -> 
             metadata: ThreadPersistenceMetadata {
                 cwd: None,
                 model_provider: "test-provider".to_string(),
-                memory_mode: ThreadMemoryMode::Disabled,
             },
         })
         .await?;

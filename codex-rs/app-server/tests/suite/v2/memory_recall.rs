@@ -59,10 +59,9 @@ async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
     .await;
 
     let codex_home = TempDir::new()?;
-    let elpis_home = TempDir::new()?;
     let workspace = TempDir::new()?;
-    let memory_root = elpis_home.path().join("memories");
-    write_config_toml(codex_home.path(), &memory_root, &server.uri())?;
+    let memory_root = codex_home.path().join("memories");
+    write_config_toml(codex_home.path(), &server.uri())?;
 
     tokio::fs::create_dir_all(&memory_root).await?;
     tokio::fs::write(
@@ -126,7 +125,7 @@ async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
         .message_input_texts("developer"))
 }
 
-fn write_config_toml(codex_home: &Path, memory_root: &Path, server_uri: &str) -> std::io::Result<()> {
+fn write_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
     std::fs::write(
         codex_home.join("config.toml"),
         format!(
@@ -137,9 +136,6 @@ sandbox_mode = "read-only"
 model_provider = "mock_provider"
 suppress_unstable_features_warning = true
 
-[memories]
-root = {memory_root:?}
-
 [model_providers.mock_provider]
 name = "Mock provider for test"
 base_url = "{server_uri}/v1"
@@ -148,7 +144,6 @@ request_max_retries = 0
 stream_max_retries = 0
 supports_websockets = false
 "#,
-            memory_root = memory_root.display().to_string(),
         ),
     )
 }

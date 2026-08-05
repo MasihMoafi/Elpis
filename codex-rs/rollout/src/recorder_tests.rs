@@ -35,7 +35,6 @@ fn test_config(codex_home: &Path) -> RolloutConfig {
         sqlite_home: codex_home.to_path_buf(),
         cwd: codex_home.to_path_buf(),
         model_provider_id: "test-provider".to_string(),
-        generate_memories: true,
     }
 }
 
@@ -60,7 +59,6 @@ fn agent_message_item(message: &str) -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::AgentMessage(AgentMessageEvent {
         message: message.to_string(),
         phase: None,
-        memory_citation: None,
     }))
 }
 
@@ -177,7 +175,6 @@ async fn state_db_init_backfills_before_returning() -> anyhow::Result<()> {
             base_instructions: None,
             dynamic_tools: None,
             selected_capability_roots: Vec::new(),
-            memory_mode: None,
             history_mode: Default::default(),
             multi_agent_version: None,
             context_window: None,
@@ -522,7 +519,6 @@ async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<
             AgentMessageEvent {
                 message: "buffered-event".to_string(),
                 phase: None,
-                memory_citation: None,
             },
         ))])
         .await?;
@@ -671,7 +667,6 @@ async fn persist_reports_filesystem_error_and_retries_buffered_items() -> std::i
             AgentMessageEvent {
                 message: "buffered-before-persist".to_string(),
                 phase: None,
-                memory_citation: None,
             },
         ))])
         .await?;
@@ -722,7 +717,6 @@ async fn writer_state_retries_write_error_before_reporting_flush_success() -> st
         AgentMessageEvent {
             message: "queued-after-writer-error".to_string(),
             phase: None,
-            memory_citation: None,
         },
     ))]);
 

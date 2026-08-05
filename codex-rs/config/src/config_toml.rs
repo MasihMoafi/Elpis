@@ -14,7 +14,6 @@ use crate::types::AuthCredentialsStoreMode;
 use crate::types::History;
 use crate::types::MarketplaceConfig;
 use crate::types::McpServerConfig;
-use crate::types::MemoriesToml;
 use crate::types::Notice;
 use crate::types::OAuthCredentialsStoreMode;
 use crate::types::OtelConfigToml;
@@ -440,9 +439,6 @@ pub struct ConfigToml {
 
     /// Agent-related settings (thread limits, etc.).
     pub agents: Option<AgentsToml>,
-
-    /// Memories subsystem settings.
-    pub memories: Option<MemoriesToml>,
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,

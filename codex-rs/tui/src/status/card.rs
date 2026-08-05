@@ -360,7 +360,7 @@ impl StatusHistoryCell {
             refreshing_rate_limits,
         }));
         let continuity_sources = crate::legacy_core::elpis_context::continuity_sources(
-            config.memories.root.as_ref().map(|root| root.as_path()),
+            Some(config.memory_dir.as_path()),
             config.cwd.as_path(),
             instruction_source_paths,
         );

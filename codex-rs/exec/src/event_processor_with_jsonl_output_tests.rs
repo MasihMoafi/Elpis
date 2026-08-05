@@ -17,7 +17,6 @@ fn failed_turn_does_not_overwrite_output_last_message_file() {
                 id: "msg-1".to_string(),
                 text: "partial answer".to_string(),
                 phase: None,
-                memory_citation: None,
             },
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),

@@ -48,7 +48,6 @@ pub(super) async fn list_threads(
         sqlite_home: store.config.sqlite_home.clone(),
         cwd: store.config.codex_home.clone(),
         model_provider_id: store.config.default_model_provider_id.clone(),
-        generate_memories: false,
     };
     let page = list_rollout_threads(
         state_db,

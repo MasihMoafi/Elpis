@@ -89,34 +89,12 @@ impl ChatWidget {
             ThreadItem::UserMessage { content, .. } => {
                 self.on_committed_user_message(&content, from_replay);
             }
-            ThreadItem::AgentMessage {
-                id,
-                text,
-                phase,
-                memory_citation,
-            } => {
+            ThreadItem::AgentMessage { id, text, phase } => {
                 self.on_agent_message_item_completed(
                     AgentMessageItem {
                         id,
                         content: vec![AgentMessageContent::Text { text }],
                         phase,
-                        memory_citation: memory_citation.map(|citation| {
-                            codex_protocol::memory_citation::MemoryCitation {
-                                entries: citation
-                                    .entries
-                                    .into_iter()
-                                    .map(|entry| {
-                                        codex_protocol::memory_citation::MemoryCitationEntry {
-                                            path: entry.path,
-                                            line_start: entry.line_start,
-                                            line_end: entry.line_end,
-                                            note: entry.note,
-                                        }
-                                    })
-                                    .collect(),
-                                rollout_ids: citation.thread_ids,
-                            }
-                        }),
                     },
                     from_replay,
                 );

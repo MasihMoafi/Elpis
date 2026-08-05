@@ -591,23 +591,6 @@ impl ThreadRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
-    pub(crate) async fn thread_memory_mode_set(
-        &self,
-        params: ThreadMemoryModeSetParams,
-    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        self.thread_memory_mode_set_response_inner(params)
-            .await
-            .map(|response| Some(response.into()))
-    }
-
-    pub(crate) async fn memory_reset(
-        &self,
-    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        self.memory_reset_response_inner()
-            .await
-            .map(|response: MemoryResetResponse| Some(response.into()))
-    }
-
     pub(crate) async fn thread_unarchive(
         &self,
         request_id: ConnectionRequestId,
@@ -1651,61 +1634,6 @@ impl ThreadRequestProcessor {
                 thread_name: Some(name),
             }),
         ))
-    }
-
-    async fn thread_memory_mode_set_response_inner(
-        &self,
-        params: ThreadMemoryModeSetParams,
-    ) -> Result<ThreadMemoryModeSetResponse, JSONRPCErrorError> {
-        let ThreadMemoryModeSetParams { thread_id, mode } = params;
-        let thread_id = ThreadId::from_string(&thread_id)
-            .map_err(|err| invalid_request(format!("invalid thread id: {err}")))?;
-
-        self.thread_manager
-            .update_thread_metadata(
-                thread_id,
-                StoreThreadMetadataPatch {
-                    memory_mode: Some(mode.to_core()),
-                    ..Default::default()
-                },
-                /*include_archived*/ false,
-            )
-            .await
-            .map_err(|err| core_thread_write_error("set thread memory mode", err))?;
-
-        Ok(ThreadMemoryModeSetResponse {})
-    }
-
-    async fn memory_reset_response_inner(&self) -> Result<MemoryResetResponse, JSONRPCErrorError> {
-        let state_db = self
-            .state_db
-            .clone()
-            .ok_or_else(|| internal_error("sqlite state db unavailable for memory reset"))?;
-
-        state_db
-            .memories()
-            .clear_memory_data()
-            .await
-            .map_err(|err| {
-                internal_error(format!("failed to clear memory rows in memories db: {err}"))
-            })?;
-
-        let memories_root = self
-            .config
-            .memories
-            .root
-            .clone()
-            .unwrap_or_else(|| self.config.codex_home.join("memories"));
-        clear_memory_roots_contents(&memories_root)
-            .await
-            .map_err(|err| {
-                internal_error(format!(
-                    "failed to clear memory directory {}: {err}",
-                    memories_root.display()
-                ))
-            })?;
-
-        Ok(MemoryResetResponse {})
     }
 
     async fn thread_metadata_update_response_inner(

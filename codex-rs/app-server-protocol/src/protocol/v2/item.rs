@@ -28,8 +28,6 @@ use codex_protocol::items::CommandExecutionStatus as CoreCommandExecutionStatus;
 use codex_protocol::items::DynamicToolCallStatus as CoreDynamicToolCallStatus;
 use codex_protocol::items::McpToolCallStatus as CoreMcpToolCallStatus;
 use codex_protocol::items::TurnItem as CoreTurnItem;
-use codex_protocol::memory_citation::MemoryCitation as CoreMemoryCitation;
-use codex_protocol::memory_citation::MemoryCitationEntry as CoreMemoryCitationEntry;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -139,44 +137,6 @@ pub enum CommandAction {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct MemoryCitation {
-    pub entries: Vec<MemoryCitationEntry>,
-    pub thread_ids: Vec<String>,
-}
-
-impl From<CoreMemoryCitation> for MemoryCitation {
-    fn from(value: CoreMemoryCitation) -> Self {
-        Self {
-            entries: value.entries.into_iter().map(Into::into).collect(),
-            thread_ids: value.rollout_ids,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct MemoryCitationEntry {
-    pub path: String,
-    pub line_start: u32,
-    pub line_end: u32,
-    pub note: String,
-}
-
-impl From<CoreMemoryCitationEntry> for MemoryCitationEntry {
-    fn from(value: CoreMemoryCitationEntry) -> Self {
-        Self {
-            path: value.path,
-            line_start: value.line_start,
-            line_end: value.line_end,
-            note: value.note,
-        }
-    }
-}
-
 impl CommandAction {
     pub fn into_core(self) -> CoreParsedCommand {
         match self {
@@ -246,8 +206,6 @@ pub enum ThreadItem {
         text: String,
         #[serde(default)]
         phase: Option<MessagePhase>,
-        #[serde(default)]
-        memory_citation: Option<MemoryCitation>,
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
@@ -824,7 +782,6 @@ impl From<CoreTurnItem> for ThreadItem {
                     id: agent.id,
                     text,
                     phase: agent.phase,
-                    memory_citation: agent.memory_citation.map(Into::into),
                 }
             }
             CoreTurnItem::Plan(plan) => ThreadItem::Plan {

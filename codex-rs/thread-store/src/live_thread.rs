@@ -5,7 +5,6 @@ use std::sync::Arc;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::ThreadHistoryMode;
-use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::RolloutPersistenceTelemetry;
 use codex_rollout::measure_and_filter_rollout_items;
 use codex_rollout::persisted_rollout_items;
@@ -241,25 +240,6 @@ impl LiveThread {
                 include_history,
             })
             .await
-    }
-
-    pub async fn update_memory_mode(
-        &self,
-        mode: ThreadMemoryMode,
-        include_archived: bool,
-    ) -> ThreadStoreResult<()> {
-        self.flush_pending_metadata_update().await?;
-        self.thread_store
-            .update_thread_metadata(UpdateThreadMetadataParams {
-                thread_id: self.thread_id,
-                patch: ThreadMetadataPatch {
-                    memory_mode: Some(mode),
-                    ..Default::default()
-                },
-                include_archived,
-            })
-            .await?;
-        Ok(())
     }
 
     pub async fn update_metadata(

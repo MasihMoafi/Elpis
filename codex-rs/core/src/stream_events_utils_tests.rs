@@ -5,7 +5,6 @@ use super::finalize_non_tool_response_item;
 use super::handle_non_tool_response_item;
 use super::handle_output_item_done;
 use super::last_assistant_message_from_item;
-use super::response_item_may_include_external_context;
 use crate::session::step_context::StepContext;
 use crate::session::tests::make_session_and_context;
 use crate::tools::ToolRouter;
@@ -16,12 +15,7 @@ use codex_extension_api::TurnItemContributor;
 use codex_protocol::ResponseItemId;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::TurnItem;
-use codex_protocol::memory_citation::MemoryCitation;
 use codex_protocol::models::ContentItem;
-use codex_protocol::models::FunctionCallOutputPayload;
-use codex_protocol::models::LocalShellAction;
-use codex_protocol::models::LocalShellExecAction;
-use codex_protocol::models::LocalShellStatus;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseItem;
 use pretty_assertions::assert_eq;
@@ -44,134 +38,6 @@ fn assistant_output_text_with_phase(text: &str, phase: Option<MessagePhase>) -> 
     }
 }
 
-#[test]
-fn external_context_pollution_items_include_web_search_and_tool_search() {
-    let polluting_items = [
-        ResponseItem::WebSearchCall {
-            id: None,
-            status: Some("completed".to_string()),
-            action: None,
-            internal_chat_message_metadata_passthrough: None,
-        },
-        ResponseItem::ToolSearchCall {
-            id: None,
-            call_id: Some("search-1".to_string()),
-            status: None,
-            execution: "client".to_string(),
-            arguments: serde_json::json!({"query": "calendar"}),
-            internal_chat_message_metadata_passthrough: None,
-        },
-        ResponseItem::ToolSearchOutput {
-            id: None,
-            call_id: Some("search-1".to_string()),
-            status: "completed".to_string(),
-            execution: "client".to_string(),
-            tools: Vec::new(),
-            internal_chat_message_metadata_passthrough: None,
-        },
-    ];
-
-    assert!(
-        polluting_items
-            .iter()
-            .all(response_item_may_include_external_context)
-    );
-}
-
-#[test]
-fn external_context_pollution_items_exclude_local_tool_calls() {
-    let non_polluting_items = [
-        ResponseItem::LocalShellCall {
-            id: None,
-            call_id: Some("shell-1".to_string()),
-            status: LocalShellStatus::Completed,
-            action: LocalShellAction::Exec(LocalShellExecAction {
-                command: vec!["cat".to_string(), "README.md".to_string()],
-                timeout_ms: None,
-                working_directory: None,
-                env: None,
-                user: None,
-            }),
-            internal_chat_message_metadata_passthrough: None,
-        },
-        ResponseItem::FunctionCall {
-            id: None,
-            name: "shell".to_string(),
-            namespace: None,
-            arguments: "{}".to_string(),
-            call_id: "call-1".to_string(),
-            internal_chat_message_metadata_passthrough: None,
-        },
-        ResponseItem::FunctionCallOutput {
-            id: None,
-            call_id: "call-1".to_string(),
-            output: FunctionCallOutputPayload::from_text("ok".to_string()),
-            internal_chat_message_metadata_passthrough: None,
-        },
-        ResponseItem::CustomToolCall {
-            id: None,
-            status: None,
-            call_id: "custom-1".to_string(),
-            name: "apply_patch".to_string(),
-            namespace: None,
-            input: "*** Begin Patch\n*** End Patch\n".to_string(),
-            internal_chat_message_metadata_passthrough: None,
-        },
-        ResponseItem::CustomToolCallOutput {
-            id: None,
-            call_id: "custom-1".to_string(),
-            name: Some("apply_patch".to_string()),
-            output: FunctionCallOutputPayload::from_text("ok".to_string()),
-            internal_chat_message_metadata_passthrough: None,
-        },
-        assistant_output_text("plain assistant text"),
-    ];
-
-    assert!(
-        !non_polluting_items
-            .iter()
-            .any(response_item_may_include_external_context)
-    );
-}
-
-#[tokio::test]
-async fn handle_non_tool_response_item_strips_citations_from_assistant_message() {
-    let (session, _) = make_session_and_context().await;
-    let item = assistant_output_text(
-        "hello<oai-mem-citation><citation_entries>\nMEMORY.md:1-2|note=[x]\n</citation_entries>\n<rollout_ids>\n019cc2ea-1dff-7902-8d40-c8f6e5d83cc4\n</rollout_ids></oai-mem-citation> world",
-    );
-
-    let turn_item = handle_non_tool_response_item(
-        &session,
-        TurnItemContributorPolicy::Skip,
-        &item,
-        /*plan_mode*/ false,
-    )
-    .await
-    .expect("assistant message should parse");
-
-    let TurnItem::AgentMessage(agent_message) = turn_item else {
-        panic!("expected agent message");
-    };
-    let text = agent_message
-        .content
-        .iter()
-        .map(|entry| match entry {
-            codex_protocol::items::AgentMessageContent::Text { text } => text.as_str(),
-        })
-        .collect::<String>();
-    assert_eq!(text, "hello world");
-    let memory_citation = agent_message
-        .memory_citation
-        .expect("memory citation should be parsed");
-    assert_eq!(memory_citation.entries.len(), 1);
-    assert_eq!(memory_citation.entries[0].path, "MEMORY.md");
-    assert_eq!(
-        memory_citation.rollout_ids,
-        vec!["019cc2ea-1dff-7902-8d40-c8f6e5d83cc4".to_string()]
-    );
-}
-
 struct TestTurnItemContributor;
 
 #[derive(Debug)]
@@ -186,12 +52,7 @@ impl TurnItemContributor for TestTurnItemContributor {
     ) -> codex_extension_api::ExtensionFuture<'a, Result<(), String>> {
         Box::pin(async move {
             turn_store.insert(TurnItemContributorRan);
-            if let TurnItem::AgentMessage(agent_message) = item {
-                agent_message.memory_citation = Some(MemoryCitation {
-                    entries: Vec::new(),
-                    rollout_ids: Vec::new(),
-                });
-            }
+            let _ = item;
             Ok(())
         })
     }
@@ -241,7 +102,6 @@ async fn handle_non_tool_response_item_runs_turn_item_contributors_only_when_req
     let TurnItem::AgentMessage(provisional_agent_message) = provisional_turn_item else {
         panic!("expected agent message");
     };
-    assert_eq!(provisional_agent_message.memory_citation, None);
 
     let turn_item = handle_non_tool_response_item(
         &session,
@@ -256,7 +116,6 @@ async fn handle_non_tool_response_item_runs_turn_item_contributors_only_when_req
     let TurnItem::AgentMessage(agent_message) = turn_item else {
         panic!("expected agent message");
     };
-    assert!(agent_message.memory_citation.is_some());
     let text = agent_message
         .content
         .iter()
@@ -405,48 +264,4 @@ fn completed_item_keeps_mailbox_delivery_open_for_commentary_messages() {
     assert!(!completed_item_defers_mailbox_delivery_to_next_turn(
         &item, /*plan_mode*/ false,
     ));
-}
-
-#[test]
-fn rollout_summary_slugs_are_extracted_from_a_memory_read() {
-    let args = r#"{"command":["cat","/home/u/.elpis/memories/rollout_summaries/2026-07-26T13-54-10-yZ1q-elpis_state_separation.md"]}"#;
-    assert_eq!(
-        super::rollout_summary_slugs_in(args),
-        vec!["elpis_state_separation".to_string()]
-    );
-}
-
-#[test]
-fn ordinary_tool_calls_are_not_scanned_for_slugs() {
-    let args = r#"{"command":["cat","/home/u/project/src/main.rs"]}"#;
-    assert!(super::rollout_summary_slugs_in(args).is_empty());
-}
-
-/// A memory the model found by searching is named only in the result, never in the call.
-/// Watching calls alone is why recall counts stayed at zero.
-#[test]
-fn a_memory_surfaced_by_a_search_result_is_a_retrieval() {
-    let output = ResponseItem::FunctionCallOutput {
-        id: None,
-        call_id: "call-1".to_string(),
-        output: codex_protocol::models::FunctionCallOutputPayload::from_text(
-            "memories/rollout_summaries/2026-07-26T13-54-10-yZ1q-elpis_state_separation.md:4: ledger"
-                .to_string(),
-        ),
-        internal_chat_message_metadata_passthrough: None,
-    };
-    let text = super::memory_retrieval_text(&output).expect("tool results carry text");
-    assert_eq!(
-        super::rollout_summary_slugs_in(&text),
-        vec!["elpis_state_separation".to_string()]
-    );
-}
-
-#[test]
-fn the_same_retrieval_text_yields_the_same_query_key() {
-    let first = super::retrieval_query_key("search memories for the ledger");
-    let repeat = super::retrieval_query_key("search memories for the ledger");
-    let other = super::retrieval_query_key("search memories for the router");
-    assert_eq!(first, repeat);
-    assert_ne!(first, other);
 }

@@ -42,35 +42,6 @@ pub struct CompactionInput<'a> {
     pub text: Option<TextControls>,
 }
 
-/// Canonical input payload for the memory summarize endpoint.
-#[derive(Debug, Clone, Serialize)]
-pub struct MemorySummarizeInput {
-    pub model: String,
-    #[serde(rename = "traces")]
-    pub raw_memories: Vec<RawMemory>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<Reasoning>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RawMemory {
-    pub id: String,
-    pub metadata: RawMemoryMetadata,
-    pub items: Vec<Value>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RawMemoryMetadata {
-    pub source_path: String,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct MemorySummarizeOutput {
-    #[serde(rename = "trace_summary", alias = "raw_memory")]
-    pub raw_memory: String,
-    pub memory_summary: String,
-}
-
 #[derive(Debug)]
 pub enum ResponseEvent {
     Created,

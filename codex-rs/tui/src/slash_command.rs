@@ -27,7 +27,6 @@ pub enum SlashCommand {
     Experimental,
     #[strum(to_string = "approve")]
     AutoReview,
-    Memories,
     Add,
     Skills,
     Import,
@@ -132,7 +131,6 @@ impl SlashCommand {
             }
             SlashCommand::Experimental => "configure Elpis settings",
             SlashCommand::AutoReview => "approve one retry of a recent auto-review denial",
-            SlashCommand::Memories => "inspect durable memory and generation settings",
             SlashCommand::Add => "add a file to the Context Ledger: /add <path>",
             SlashCommand::Mcp => "list configured MCP tools; use /mcp verbose for details",
             SlashCommand::Apps => "manage apps",
@@ -198,7 +196,6 @@ impl SlashCommand {
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental
-            | SlashCommand::Memories
             | SlashCommand::Add
             | SlashCommand::Import
             | SlashCommand::Review
@@ -259,7 +256,6 @@ impl SlashCommand {
             | SlashCommand::Context
             | SlashCommand::Mcp
             | SlashCommand::Quit
-            | SlashCommand::Memories
             | SlashCommand::Keymap
             | SlashCommand::Theme
             | SlashCommand::Fork
@@ -371,7 +367,6 @@ mod tests {
         ] {
             assert!(!visible.contains(&removed), "{removed} should be removed");
         }
-        assert!(visible.contains(&"memories"));
         assert!(visible.contains(&"add"));
         assert!(visible.contains(&"usage"));
         assert!(visible.contains(&"fork"));

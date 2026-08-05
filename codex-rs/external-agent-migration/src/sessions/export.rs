@@ -123,7 +123,6 @@ fn rollout_items_from_messages(messages: Vec<ConversationMessage>) -> Vec<Rollou
                     AgentMessageEvent {
                         message: message.text.clone(),
                         phase: None,
-                        memory_citation: None,
                     },
                 )));
                 items.push(RolloutItem::ResponseItem(response_item(message)));
@@ -144,7 +143,6 @@ fn external_session_imported_marker_item() -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::AgentMessage(AgentMessageEvent {
         message: EXTERNAL_SESSION_IMPORTED_MARKER.to_string(),
         phase: None,
-        memory_citation: None,
     }))
 }
 
@@ -240,7 +238,6 @@ mod tests {
                 id: "item-4".into(),
                 text: EXTERNAL_SESSION_IMPORTED_MARKER.into(),
                 phase: None,
-                memory_citation: None,
             }
         );
     }
@@ -272,7 +269,6 @@ mod tests {
                 id: "item-3".into(),
                 text: EXTERNAL_SESSION_IMPORTED_MARKER.into(),
                 phase: None,
-                memory_citation: None,
             })
         );
         let last_turn_complete = imported

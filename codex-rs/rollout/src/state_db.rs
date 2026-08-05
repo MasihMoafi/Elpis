@@ -42,12 +42,10 @@ const STARTUP_BACKFILL_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
 /// runtime, applies rollout metadata backfills as needed, and returns the
 /// initialized handle.
 pub async fn init(config: &impl RolloutConfigView) -> Option<StateDbHandle> {
-    let memories_state_root = config.memories_state_root().to_path_buf();
     let config = RolloutConfig::from_view(config);
     match try_init_with_roots(
         config.codex_home,
         config.sqlite_home,
-        memories_state_root,
         config.model_provider_id,
     )
     .await
@@ -65,12 +63,10 @@ pub async fn init(config: &impl RolloutConfigView) -> Option<StateDbHandle> {
 /// Prefer [`init`] unless the caller needs to surface the exact failure after
 /// tracing or UI setup has completed.
 pub async fn try_init(config: &impl RolloutConfigView) -> anyhow::Result<StateDbHandle> {
-    let memories_state_root = config.memories_state_root().to_path_buf();
     let config = RolloutConfig::from_view(config);
     try_init_with_roots(
         config.codex_home,
         config.sqlite_home,
-        memories_state_root,
         config.model_provider_id,
     )
     .await
@@ -79,13 +75,11 @@ pub async fn try_init(config: &impl RolloutConfigView) -> anyhow::Result<StateDb
 async fn try_init_with_roots(
     codex_home: PathBuf,
     sqlite_home: PathBuf,
-    memories_state_root: PathBuf,
     default_model_provider_id: String,
 ) -> anyhow::Result<StateDbHandle> {
     try_init_with_roots_inner(
         codex_home,
         sqlite_home,
-        memories_state_root,
         default_model_provider_id,
         /*backfill_lease_seconds*/ None,
     )
@@ -96,14 +90,12 @@ async fn try_init_with_roots(
 async fn try_init_with_roots_and_backfill_lease(
     codex_home: PathBuf,
     sqlite_home: PathBuf,
-    memories_state_root: PathBuf,
     default_model_provider_id: String,
     backfill_lease_seconds: i64,
 ) -> anyhow::Result<StateDbHandle> {
     try_init_with_roots_inner(
         codex_home,
         sqlite_home,
-        memories_state_root,
         default_model_provider_id,
         Some(backfill_lease_seconds),
     )
@@ -113,22 +105,18 @@ async fn try_init_with_roots_and_backfill_lease(
 async fn try_init_with_roots_inner(
     codex_home: PathBuf,
     sqlite_home: PathBuf,
-    memories_state_root: PathBuf,
     default_model_provider_id: String,
     backfill_lease_seconds: Option<i64>,
 ) -> anyhow::Result<StateDbHandle> {
-    let runtime = codex_state::StateRuntime::init_with_memories_state_root(
-        sqlite_home.clone(),
-        memories_state_root,
-        default_model_provider_id.clone(),
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "failed to initialize state runtime at {}",
-            sqlite_home.display()
-        )
-    })?;
+    let runtime =
+        codex_state::StateRuntime::init(sqlite_home.clone(), default_model_provider_id.clone())
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to initialize state runtime at {}",
+                    sqlite_home.display()
+                )
+            })?;
     let backfill_gate_started = Instant::now();
     let backfill_gate_result = wait_for_backfill_gate(
         runtime.as_ref(),
@@ -237,9 +225,8 @@ pub async fn get_state_db(config: &impl RolloutConfigView) -> Option<StateDbHand
         );
         return None;
     }
-    let runtime = match codex_state::StateRuntime::init_with_memories_state_root(
+    let runtime = match codex_state::StateRuntime::init(
         config.sqlite_home().to_path_buf(),
-        config.memories_state_root().to_path_buf(),
         config.model_provider_id().to_string(),
     )
     .await
@@ -484,23 +471,6 @@ pub async fn find_rollout_path_by_id(
         })
 }
 
-pub async fn mark_thread_memory_mode_polluted(
-    context: Option<&codex_state::StateRuntime>,
-    thread_id: ThreadId,
-    stage: &str,
-) {
-    let Some(ctx) = context else {
-        return;
-    };
-    if let Err(err) = ctx
-        .memories()
-        .mark_thread_memory_mode_polluted(thread_id)
-        .await
-    {
-        warn!("memories db mark_thread_memory_mode_polluted failed during {stage}: {err}");
-    }
-}
-
 /// Reconcile rollout items into SQLite, falling back to scanning the rollout file.
 pub async fn reconcile_rollout(
     context: Option<&codex_state::StateRuntime>,
@@ -509,7 +479,6 @@ pub async fn reconcile_rollout(
     builder: Option<&ThreadMetadataBuilder>,
     items: &[RolloutItem],
     archived_only: Option<bool>,
-    new_thread_memory_mode: Option<&str>,
 ) {
     let Some(ctx) = context else {
         return;
@@ -522,7 +491,6 @@ pub async fn reconcile_rollout(
             builder,
             items,
             "reconcile_rollout",
-            new_thread_memory_mode,
             /*updated_at_override*/ None,
         )
         .await;
@@ -540,7 +508,6 @@ pub async fn reconcile_rollout(
             }
         };
     let mut metadata = outcome.metadata;
-    let memory_mode = outcome.memory_mode.unwrap_or_else(|| "enabled".to_string());
     metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
     if let Ok(Some(existing_metadata)) = ctx.get_thread(metadata.id).await {
         metadata.prefer_existing_git_info(&existing_metadata);
@@ -561,15 +528,6 @@ pub async fn reconcile_rollout(
             rollout_path.display()
         );
         return;
-    }
-    if let Err(err) = ctx
-        .set_thread_memory_mode(metadata.id, memory_mode.as_str())
-        .await
-    {
-        warn!(
-            "state db reconcile_rollout memory_mode update failed {}: {err}",
-            rollout_path.display()
-        );
     }
 }
 
@@ -634,7 +592,6 @@ pub async fn read_repair_rollout_path(
         /*builder*/ None,
         &[],
         archived_only,
-        /*new_thread_memory_mode*/ None,
     )
     .await;
 }
@@ -648,7 +605,6 @@ pub async fn apply_rollout_items(
     builder: Option<&ThreadMetadataBuilder>,
     items: &[RolloutItem],
     stage: &str,
-    new_thread_memory_mode: Option<&str>,
     updated_at_override: Option<DateTime<Utc>>,
 ) {
     let Some(ctx) = context else {
@@ -674,7 +630,7 @@ pub async fn apply_rollout_items(
     builder.rollout_path = rollout_path.to_path_buf();
     builder.cwd = normalize_cwd_for_state_db(&builder.cwd);
     if let Err(err) = ctx
-        .apply_rollout_items(&builder, items, new_thread_memory_mode, updated_at_override)
+        .apply_rollout_items(&builder, items, updated_at_override)
         .await
     {
         warn!(

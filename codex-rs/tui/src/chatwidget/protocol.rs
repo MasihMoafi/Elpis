@@ -48,7 +48,6 @@ impl ChatWidget {
             &provider_name,
             provider_route,
             &current_model,
-            self.config.features.enabled(Feature::MemoryTool),
         ) {
             self.refresh_status_line();
         }
@@ -453,15 +452,6 @@ impl ChatWidget {
         notification: ItemCompletedNotification,
         replay_kind: Option<ReplayKind>,
     ) {
-        if let ThreadItem::AgentMessage {
-            memory_citation: Some(citation),
-            ..
-        } = &notification.item
-            && !citation.entries.is_empty()
-        {
-            crate::branding::record_memory_citation(citation.entries.len());
-            self.refresh_status_line();
-        }
         self.handle_thread_item(
             notification.item,
             notification.turn_id,

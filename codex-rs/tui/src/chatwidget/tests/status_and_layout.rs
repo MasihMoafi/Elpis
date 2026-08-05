@@ -2890,8 +2890,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
     let test_cwd = test_path_display("/tmp/project");
 
     assert!(
-        status_line_text(&chat)
-            .is_some_and(|line| line.contains("model gpt-5.4 xhigh fast")),
+        status_line_text(&chat).is_some_and(|line| line.contains("model gpt-5.4 xhigh fast")),
         "expected model and reasoning in the identity banner, got {:?}",
         status_line_text(&chat)
     );
@@ -2901,8 +2900,8 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
     chat.refresh_status_line();
 
     assert!(
-        status_line_text(&chat).is_some_and(|line| line.contains("model gpt-5.2 xhigh")
-            && !line.contains("fast")),
+        status_line_text(&chat)
+            .is_some_and(|line| line.contains("model gpt-5.2 xhigh") && !line.contains("fast")),
         "expected the banner to drop fast for a model without it, got {:?}",
         status_line_text(&chat)
     );

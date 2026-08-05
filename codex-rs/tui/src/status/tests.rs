@@ -246,7 +246,10 @@ fn permissions_text_for(config: &Config) -> Option<String> {
 /// finds nothing, which turns a value assertion into an assertion about `None`.
 fn status_field_value(lines: &[Line<'static>], label: &str) -> Option<String> {
     fn strip_border(text: &str) -> &str {
-        text.trim().trim_start_matches('│').trim_end_matches('│').trim()
+        text.trim()
+            .trim_start_matches('│')
+            .trim_end_matches('│')
+            .trim()
     }
 
     render_lines(lines).iter().find_map(|line| {
@@ -1224,7 +1227,9 @@ async fn status_snapshot_shows_unlimited_credits() {
     );
     let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
     assert!(
-        credits.as_deref().is_some_and(|value| value.contains("Unlimited")),
+        credits
+            .as_deref()
+            .is_some_and(|value| value.contains("Unlimited")),
         "expected Credits: Unlimited line, got {credits:?}"
     );
 }
@@ -1274,7 +1279,9 @@ async fn status_snapshot_shows_positive_credits() {
     );
     let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
     assert!(
-        credits.as_deref().is_some_and(|value| value.contains("13 credits")),
+        credits
+            .as_deref()
+            .is_some_and(|value| value.contains("13 credits")),
         "expected Credits line with rounded credits, got {credits:?}"
     );
 }
@@ -1331,7 +1338,9 @@ async fn status_snapshot_shows_available_credits_without_display_balance() {
         );
         let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
         assert!(
-            credits.as_deref().is_some_and(|value| value.contains("Available")),
+            credits
+                .as_deref()
+                .is_some_and(|value| value.contains("Available")),
             "expected Credits: Available line, got {credits:?}"
         );
     }
@@ -1382,7 +1391,9 @@ async fn status_snapshot_respects_unlimited_without_has_credits_flag() {
     );
     let credits = status_field_value(&composite.display_lines(/*width*/ 120), "Credits");
     assert!(
-        credits.as_deref().is_some_and(|value| value.contains("Unlimited")),
+        credits
+            .as_deref()
+            .is_some_and(|value| value.contains("Unlimited")),
         "expected Credits: Unlimited line, got {credits:?}"
     );
 }

@@ -77,7 +77,6 @@ where
     }
     codex_guardian::install(&mut builder, guardian_agent_spawner);
     install_elpis_continuity(&mut builder);
-    codex_memories_extension::install(&mut builder, codex_otel::global());
     codex_mcp_extension::install(&mut builder);
     codex_mcp_extension::install_executor_plugins(&mut builder, environment_manager);
     codex_web_search_extension::install(&mut builder, auth_manager.clone());
@@ -117,7 +116,7 @@ struct ElpisContinuityConfig {
 impl ElpisContinuityConfig {
     fn from_config(config: &Config) -> Self {
         Self {
-            memories_root: config.memories.root.clone(),
+            memories_root: Some(config.memory_dir.clone()),
             cwd: config.cwd.clone(),
         }
     }

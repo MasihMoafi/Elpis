@@ -143,12 +143,7 @@ fn parse_agent_message(
     let id = id
         .map(str::to_string)
         .unwrap_or_else(|| Uuid::new_v4().to_string());
-    AgentMessageItem {
-        id,
-        content,
-        phase,
-        memory_citation: None,
-    }
+    AgentMessageItem { id, content, phase }
 }
 
 pub fn parse_turn_item(item: &ResponseItem) -> Option<TurnItem> {

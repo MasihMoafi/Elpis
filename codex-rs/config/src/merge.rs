@@ -1,6 +1,4 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
-use crate::key_aliases::normalize_key_aliases;
-use crate::key_aliases::normalized_with_key_aliases;
 use codex_network_proxy::normalize_host;
 use toml::Value as TomlValue;
 
@@ -13,9 +11,7 @@ fn merge_toml_values_at_path(base: &mut TomlValue, overlay: &TomlValue, path: &m
     if let TomlValue::Table(overlay_table) = overlay
         && let TomlValue::Table(base_table) = base
     {
-        normalize_key_aliases(path, base_table);
         let mut overlay_table = overlay_table.clone();
-        normalize_key_aliases(path, &mut overlay_table);
         if is_permission_network_domains_path(path) {
             normalize_network_domain_keys(base_table);
             normalize_network_domain_keys(&mut overlay_table);
@@ -26,12 +22,12 @@ fn merge_toml_values_at_path(base: &mut TomlValue, overlay: &TomlValue, path: &m
             if let Some(existing) = base_table.get_mut(&key) {
                 merge_toml_values_at_path(existing, &value, path);
             } else {
-                base_table.insert(key, normalized_with_key_aliases(&value, path));
+                base_table.insert(key, value);
             }
             path.pop();
         }
     } else {
-        *base = normalized_with_key_aliases(overlay, path);
+        *base = overlay.clone();
     }
 }
 

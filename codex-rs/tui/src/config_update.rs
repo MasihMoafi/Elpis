@@ -136,19 +136,6 @@ pub(crate) fn build_feature_enabled_edit(feature_key: &str, enabled: bool) -> Co
     }
 }
 
-pub(crate) fn build_memory_settings_edits(
-    use_memories: bool,
-    generate_memories: bool,
-) -> Vec<ConfigEdit> {
-    vec![
-        replace_config_value("memories.use_memories", serde_json::json!(use_memories)),
-        replace_config_value(
-            "memories.generate_memories",
-            serde_json::json!(generate_memories),
-        ),
-    ]
-}
-
 pub(crate) fn build_oss_provider_edit(provider: &str) -> ConfigEdit {
     replace_config_value("oss_provider", serde_json::json!(provider))
 }

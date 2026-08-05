@@ -18,7 +18,6 @@ use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
-use codex_protocol::protocol::ThreadMemoryMode as MemoryMode;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsage;
 use serde::Deserialize;
@@ -58,8 +57,6 @@ pub struct ThreadPersistenceMetadata {
     pub cwd: Option<PathBuf>,
     /// Model provider associated with the thread.
     pub model_provider: String,
-    /// Memory mode associated with the live thread.
-    pub memory_mode: MemoryMode,
 }
 
 /// Extra configuration fields for a thread.
@@ -613,8 +610,6 @@ pub struct ThreadMetadataPatch {
     pub first_user_message: Option<String>,
     /// Git metadata patch.
     pub git_info: Option<GitInfoPatch>,
-    /// Thread memory behavior.
-    pub memory_mode: Option<MemoryMode>,
 }
 
 impl ThreadMetadataPatch {
@@ -692,9 +687,6 @@ impl ThreadMetadataPatch {
                 .get_or_insert_with(GitInfoPatch::default)
                 .merge(git_info);
         }
-        if next.memory_mode.is_some() {
-            self.memory_mode = next.memory_mode;
-        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -720,7 +712,6 @@ impl ThreadMetadataPatch {
             && self.token_usage.is_none()
             && self.first_user_message.is_none()
             && self.git_info.is_none()
-            && self.memory_mode.is_none()
     }
 }
 

@@ -10,8 +10,6 @@ use crate::hook_runtime::PreToolUseHookResult;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::run_post_tool_use_hooks;
 use crate::hook_runtime::run_pre_tool_use_hooks;
-use crate::memory_usage::emit_metric_for_tool_read;
-use crate::memory_usage::shell_script_for_invocation;
 use crate::sandbox_tags::permission_profile_policy_tag;
 use crate::sandbox_tags::permission_profile_sandbox_tag;
 use crate::session::turn_context::TurnContext;
@@ -21,6 +19,7 @@ use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::flat_tool_name;
 use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
+use crate::tools::handlers::unified_exec::ExecCommandArgs;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
@@ -31,7 +30,6 @@ use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::EventMsg;
-use codex_rollout::state_db;
 use codex_shell_command::parse_command::parse_shell_script;
 use codex_tools::ToolName;
 use codex_tools::ToolSearchInfo;
@@ -591,7 +589,6 @@ impl ToolRegistry {
             Ok((_, success)) => *success,
             Err(_) => false,
         };
-        emit_metric_for_tool_read(&invocation, success);
         let post_tool_use_payload = if success {
             let guard = response_cell.lock().await;
             guard
@@ -703,6 +700,27 @@ async fn notify_tool_finish_if_unclaimed(
     true
 }
 
+fn shell_script_for_invocation(invocation: &ToolInvocation) -> Option<String> {
+    let ToolPayload::Function { arguments } = &invocation.payload else {
+        return None;
+    };
+
+    match (
+        invocation.tool_name.namespace.as_deref(),
+        invocation.tool_name.name.as_str(),
+    ) {
+        (None, "shell_command") => {
+            serde_json::from_str::<codex_protocol::models::ShellCommandToolCallParams>(arguments)
+                .ok()
+                .map(|params| params.command)
+        }
+        (None, "exec_command") => serde_json::from_str::<ExecCommandArgs>(arguments)
+            .ok()
+            .map(|params| params.cmd),
+        (Some(_), _) | (None, _) => None,
+    }
+}
+
 async fn handle_any_tool(
     tool: &dyn CoreToolRuntime,
     invocation: ToolInvocation,
@@ -710,16 +728,6 @@ async fn handle_any_tool(
     let call_id = invocation.call_id.clone();
     let payload = invocation.payload.clone();
     let output = tool.handle(invocation.clone()).await?;
-    if output.contains_external_context()
-        && invocation.turn.config.memories.disable_on_external_context
-    {
-        state_db::mark_thread_memory_mode_polluted(
-            invocation.session.services.state_db.as_deref(),
-            invocation.session.thread_id,
-            "tool_output",
-        )
-        .await;
-    }
     let post_tool_use_payload =
         CoreToolRuntime::post_tool_use_payload(tool, &invocation, output.as_ref());
     Ok(AnyToolResult {

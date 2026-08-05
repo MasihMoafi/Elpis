@@ -133,8 +133,6 @@ pub enum Feature {
     DeferredExecutor,
     /// Enable runtime metrics snapshots via a manual reader.
     RuntimeMetrics,
-    /// Enable startup memory extraction and file-backed memory consolidation.
-    MemoryTool,
     /// Route user turns between the configured Sol, Terra, and Luna models.
     AutomaticModelRouting,
     /// Compress cold local thread-store rollout files.
@@ -926,12 +924,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "sqlite",
         stage: Stage::Removed,
         default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::MemoryTool,
-        key: "memories",
-        stage: Stage::Stable,
-        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::AutomaticModelRouting,

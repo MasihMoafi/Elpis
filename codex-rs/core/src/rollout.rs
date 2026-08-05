@@ -33,23 +33,12 @@ impl codex_rollout::RolloutConfigView for Config {
         self.sqlite_home.as_path()
     }
 
-    fn memories_state_root(&self) -> &std::path::Path {
-        self.memories
-            .state_root
-            .as_deref()
-            .unwrap_or(self.sqlite_home.as_path())
-    }
-
     fn cwd(&self) -> &std::path::Path {
         self.cwd.as_path()
     }
 
     fn model_provider_id(&self) -> &str {
         self.model_provider_id.as_str()
-    }
-
-    fn generate_memories(&self) -> bool {
-        self.memories.generate_memories
     }
 }
 

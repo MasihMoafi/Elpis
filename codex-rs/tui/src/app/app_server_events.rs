@@ -246,11 +246,7 @@ impl App {
                 .unwrap_or_default();
             let turn = crate::elpis_context::turn_with_buffered_items(&notification.turn, buffered);
             let result = crate::elpis_context::write_session_checkpoint(
-                self.config
-                    .memories
-                    .root
-                    .as_ref()
-                    .map(|root| root.as_path()),
+                Some(self.config.memory_dir.as_path()),
                 cwd.as_path(),
                 &notification.thread_id,
                 &turn,
@@ -279,12 +275,7 @@ impl App {
                 .unwrap_or_else(|| self.config.cwd.clone()),
             Err(_) => self.config.cwd.clone(),
         };
-        let memories_root = self
-            .config
-            .memories
-            .root
-            .as_ref()
-            .map(|root| root.as_path());
+        let memories_root = Some(self.config.memory_dir.as_path());
         let result = match goal {
             Some(goal) => crate::elpis_context::write_goal(
                 memories_root,

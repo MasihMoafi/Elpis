@@ -40,7 +40,6 @@ codex-extension-items = { workspace = true }
 codex-features = { workspace = true }
 codex-file-system = { workspace = true }
 codex-login = { workspace = true }
-codex-memories-read = { workspace = true }
 codex-mcp = { workspace = true }
 codex-model-provider-info = { workspace = true }
 codex-models-manager = { workspace = true }

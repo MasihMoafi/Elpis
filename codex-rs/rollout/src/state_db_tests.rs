@@ -66,7 +66,6 @@ async fn try_init_waits_for_concurrent_startup_backfill() -> anyhow::Result<()> 
     let initialized = try_init_with_roots_and_backfill_lease(
         home.path().to_path_buf(),
         home.path().to_path_buf(),
-        home.path().to_path_buf(),
         "test-provider".to_string(),
         /*backfill_lease_seconds*/ 60,
     )
@@ -90,7 +89,6 @@ async fn try_init_times_out_waiting_for_stuck_startup_backfill() -> anyhow::Resu
     assert!(claimed);
 
     let result = try_init_with_roots_and_backfill_lease(
-        home.path().to_path_buf(),
         home.path().to_path_buf(),
         home.path().to_path_buf(),
         "test-provider".to_string(),
@@ -135,7 +133,6 @@ async fn reconcile_rollout_preserves_existing_explicit_title() -> anyhow::Result
         /*builder*/ None,
         &[],
         /*archived_only*/ Some(false),
-        /*new_thread_memory_mode*/ None,
     )
     .await;
 
@@ -179,7 +176,6 @@ fn write_rollout_with_user_message(
                     base_instructions: None,
                     dynamic_tools: None,
                     selected_capability_roots: Vec::new(),
-                    memory_mode: None,
                     history_mode: Default::default(),
                     multi_agent_version: None,
                     context_window: None,

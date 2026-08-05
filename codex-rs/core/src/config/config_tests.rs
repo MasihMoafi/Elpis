@@ -46,8 +46,6 @@ use codex_config::types::McpServerEnvVar;
 use codex_config::types::McpServerOAuthConfig;
 use codex_config::types::McpServerToolConfig;
 use codex_config::types::McpServerTransportConfig;
-use codex_config::types::MemoriesConfig;
-use codex_config::types::MemoriesToml;
 use codex_config::types::ModelAvailabilityNuxConfig;
 use codex_config::types::Notice;
 use codex_config::types::NotificationCondition;
@@ -332,82 +330,6 @@ persistence = "none"
             max_bytes: None,
         }),
         history_no_persistence_cfg.history
-    );
-
-    let memories = r#"
-[memories]
-disable_on_external_context = true
-generate_memories = false
-use_memories = false
-dedicated_tools = true
-max_raw_memories_for_consolidation = 512
-max_unused_days = 21
-max_rollout_age_days = 42
-max_rollouts_per_startup = 9
-min_rollout_idle_hours = 24
-min_rate_limit_remaining_percent = 12
-extract_model = "gpt-5-mini"
-consolidation_model = "gpt-5.2"
-"#;
-    let memories_cfg =
-        toml::from_str::<ConfigToml>(memories).expect("TOML deserialization should succeed");
-    assert_eq!(
-        Some(MemoriesToml {
-            root: None,
-            state_root: None,
-            disable_on_external_context: Some(true),
-            generate_memories: Some(false),
-            use_memories: Some(false),
-            dedicated_tools: Some(true),
-            max_raw_memories_for_consolidation: Some(512),
-            max_unused_days: Some(21),
-            max_rollout_age_days: Some(42),
-            max_rollouts_per_startup: Some(9),
-            min_rollout_idle_hours: Some(24),
-            min_rate_limit_remaining_percent: Some(12),
-            extract_model: Some("gpt-5-mini".to_string()),
-            consolidation_model: Some("gpt-5.2".to_string()),
-        }),
-        memories_cfg.memories
-    );
-
-    let config = Config::load_from_base_config_with_overrides(
-        memories_cfg,
-        ConfigOverrides::default(),
-        tempdir().expect("tempdir").abs(),
-    )
-    .await
-    .expect("load config from memories settings");
-    assert_eq!(
-        config.memories,
-        MemoriesConfig {
-            root: None,
-            state_root: None,
-            disable_on_external_context: true,
-            generate_memories: false,
-            use_memories: false,
-            dedicated_tools: true,
-            max_raw_memories_for_consolidation: 512,
-            max_unused_days: 21,
-            max_rollout_age_days: 42,
-            max_rollouts_per_startup: 9,
-            min_rollout_idle_hours: 24,
-            min_rate_limit_remaining_percent: 12,
-            extract_model: Some("gpt-5-mini".to_string()),
-            consolidation_model: Some("gpt-5.2".to_string()),
-        }
-    );
-
-    let legacy_memories_cfg =
-        toml::from_str::<ConfigToml>("[memories]\nno_memories_if_mcp_or_web_search = true\n")
-            .expect("legacy memories TOML should deserialize");
-    assert!(
-        MemoriesConfig::from(
-            legacy_memories_cfg
-                .memories
-                .expect("legacy memories config")
-        )
-        .disable_on_external_context
     );
 }
 
@@ -5408,8 +5330,7 @@ async fn workspace_write_includes_configured_writable_root_once_without_memories
 }
 
 #[tokio::test]
-async fn memory_tool_makes_memories_root_readable_without_creating_or_widening_writes()
--> std::io::Result<()> {
+async fn memory_dir_is_readable_without_creating_or_widening_writes() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cwd = TempDir::new()?;
     let memories_root = codex_home.path().join("memories");
@@ -5417,10 +5338,6 @@ async fn memory_tool_makes_memories_root_readable_without_creating_or_widening_w
 
     let config = Config::load_from_base_config_with_overrides(
         ConfigToml {
-            features: Some(FeaturesToml::from(BTreeMap::from([(
-                "memories".to_string(),
-                true,
-            )]))),
             sandbox_workspace_write: Some(SandboxWorkspaceWrite {
                 exclude_tmpdir_env_var: true,
                 exclude_slash_tmp: true,

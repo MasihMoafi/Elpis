@@ -16,7 +16,6 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
-use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_rollout::RolloutRecorder;
@@ -65,7 +64,6 @@ async fn paginated_live_append_materializes_turn_items_and_state() {
                             text: "done".to_string(),
                         }],
                         phase: None,
-                        memory_citation: None,
                     }),
                 ),
                 turn_completed("turn-1"),
@@ -264,7 +262,6 @@ async fn turn_creation_recovers_summary_ids_from_earlier_items() {
                             text: "done".to_string(),
                         }],
                         phase: None,
-                        memory_citation: None,
                     }),
                 ),
             ],
@@ -799,7 +796,6 @@ async fn create_paginated_thread(store: &LocalThreadStore, thread_id: ThreadId) 
             metadata: ThreadPersistenceMetadata {
                 cwd: Some(std::env::current_dir().expect("cwd")),
                 model_provider: "test-provider".to_string(),
-                memory_mode: ThreadMemoryMode::Enabled,
             },
         })
         .await

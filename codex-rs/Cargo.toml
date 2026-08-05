@@ -50,7 +50,6 @@ members = [
     "ext/guardian",
     "ext/image-generation",
     "ext/items",
-    "ext/memories",
     "ext/mcp",
     "ext/skills",
     "ext/web-search",
@@ -63,8 +62,6 @@ members = [
     "login",
     "codex-mcp",
     "mcp-server",
-    "memories/read",
-    "memories/write",
     "model-provider-info",
     "models-manager",
     "network-proxy",
@@ -190,10 +187,7 @@ codex-linux-sandbox = { path = "linux-sandbox" }
 codex-lmstudio = { path = "lmstudio" }
 codex-login = { path = "login" }
 codex-message-history = { path = "message-history" }
-codex-memories-extension = { path = "ext/memories" }
 codex-web-search-extension = { path = "ext/web-search" }
-codex-memories-read = { path = "memories/read" }
-codex-memories-write = { path = "memories/write" }
 codex-mcp = { path = "codex-mcp" }
 codex-mcp-extension = { path = "ext/mcp" }
 codex-mcp-server = { path = "mcp-server" }

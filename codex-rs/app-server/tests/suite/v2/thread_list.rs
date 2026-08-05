@@ -665,7 +665,6 @@ sqlite = true
         sqlite_home: codex_home.path().to_path_buf(),
         cwd: codex_home.path().to_path_buf(),
         model_provider_id: "mock_provider".to_string(),
-        generate_memories: false,
     };
     let repaired_page = codex_core::RolloutRecorder::list_threads(
         Some(state_db.clone()),
@@ -1803,7 +1802,6 @@ async fn thread_list_sort_recency_at_uses_state_db_order_with_provider_filter() 
         sqlite_home: codex_home.path().to_path_buf(),
         cwd: codex_home.path().to_path_buf(),
         model_provider_id: "mock_provider".to_string(),
-        generate_memories: false,
     };
     codex_core::RolloutRecorder::list_threads(
         Some(state_db.clone()),

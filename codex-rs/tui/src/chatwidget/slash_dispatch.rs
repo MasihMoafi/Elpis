@@ -394,9 +394,6 @@ impl ChatWidget {
             SlashCommand::AutoReview => {
                 self.open_auto_review_denials_popup();
             }
-            SlashCommand::Memories => {
-                self.open_memories_popup();
-            }
             SlashCommand::Add => {
                 self.add_error_message(ADD_CONTEXT_USAGE.to_string());
             }
@@ -639,11 +636,7 @@ impl ChatWidget {
             SlashCommand::Add => {
                 let cleaned = clean_dropped_path(trimmed);
                 match crate::legacy_core::elpis_context::add_continuity_sources(
-                    self.config
-                        .memories
-                        .root
-                        .as_ref()
-                        .map(|root| root.as_path()),
+                    Some(self.config.memory_dir.as_path()),
                     self.config.cwd.as_path(),
                     std::path::Path::new(&cleaned),
                 ) {
@@ -1083,7 +1076,6 @@ impl ChatWidget {
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental
             | SlashCommand::AutoReview
-            | SlashCommand::Memories
             | SlashCommand::Add
             | SlashCommand::Quit
             | SlashCommand::Logout

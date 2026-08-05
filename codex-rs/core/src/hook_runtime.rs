@@ -376,7 +376,7 @@ pub(crate) async fn run_pre_compact_hooks(
     {
         let config = sess.get_config().await;
         if let Err(error) = crate::elpis_context::sync_continuity_before_compaction(
-            config.memories.root.as_ref().map(|root| root.as_path()),
+            Some(config.memory_dir.as_path()),
             cwd.as_path(),
         )
         .await

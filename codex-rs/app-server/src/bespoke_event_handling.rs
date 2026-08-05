@@ -2179,7 +2179,6 @@ mod tests {
             RolloutItem::EventMsg(EventMsg::AgentMessage(AgentMessageEvent {
                 message: "after rollback".to_string(),
                 phase: None,
-                memory_citation: None,
             })),
         ];
         let stored_thread = StoredThread {

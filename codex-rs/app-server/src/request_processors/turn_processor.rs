@@ -5,7 +5,6 @@ use codex_agent_extension::AgentRun;
 use codex_agent_extension::AgentRunner;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputContentItem;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AdditionalContextEntry as CoreAdditionalContextEntry;
 use codex_protocol::protocol::AdditionalContextKind as CoreAdditionalContextKind;
 use codex_protocol::protocol::MultiAgentVersion;
@@ -451,7 +450,7 @@ impl TurnRequestProcessor {
         app_server_client_version: Option<String>,
         supports_openai_form_elicitation: bool,
     ) -> Result<TurnStartResponse, JSONRPCErrorError> {
-        let (thread_id, thread) = self.load_thread(&params.thread_id).await?;
+        let (_thread_id, thread) = self.load_thread(&params.thread_id).await?;
         self.ensure_direct_input_allowed(thread.as_ref()).await?;
         Self::validate_v2_input_limit(&params.input)?;
         Self::set_app_server_client_info(
@@ -483,7 +482,6 @@ impl TurnRequestProcessor {
             .collect();
         let client_user_message_id = params.client_user_message_id;
         let additional_context = map_additional_context(params.additional_context);
-        let turn_has_input = !mapped_items.is_empty();
         let cwd = resolve_request_cwd(params.cwd)?;
         let environments = self
             .build_environment_override(
@@ -513,14 +511,6 @@ impl TurnRequestProcessor {
                 },
             )
             .await?;
-        let parent_permission_profile_override =
-            thread_settings.permission_profile.clone().or_else(|| {
-                thread_settings
-                    .sandbox_policy
-                    .as_ref()
-                    .map(PermissionProfile::from_legacy_sandbox_policy)
-            });
-
         // Start the turn by submitting the user input. Return its submission id as turn_id.
         let turn_op = Op::UserInput {
             items: mapped_items,
@@ -537,21 +527,6 @@ impl TurnRequestProcessor {
             )
             .await
             .map_err(|err| internal_error(format!("failed to start turn: {err}")))?;
-
-        if turn_has_input {
-            let config_snapshot = thread.config_snapshot().await;
-            let parent_permission_profile =
-                parent_permission_profile_override.unwrap_or(config_snapshot.permission_profile);
-            codex_memories_write::start_memories_startup_task(
-                Arc::clone(&self.thread_manager),
-                Arc::clone(&self.auth_manager),
-                thread_id,
-                Arc::clone(&thread),
-                thread.config().await,
-                parent_permission_profile,
-                &config_snapshot.session_source,
-            );
-        }
 
         self.outgoing
             .record_request_turn_id(&request_id, &turn_id)

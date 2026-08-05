@@ -40,7 +40,6 @@ use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
 use codex_otel::TURN_E2E_DURATION_METRIC;
-use codex_otel::TURN_MEMORY_METRIC;
 use codex_otel::TURN_NETWORK_PROXY_METRIC;
 use codex_otel::TURN_TOKEN_USAGE_METRIC;
 use codex_otel::TURN_TOOL_CALL_METRIC;
@@ -53,7 +52,6 @@ use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::WarningEvent;
 
-use codex_features::Feature;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::ContentItem;
@@ -123,7 +121,6 @@ pub(crate) fn interrupted_turn_history_marker(
 fn emit_turn_network_proxy_metric(
     session_telemetry: &SessionTelemetry,
     network_proxy_active: bool,
-    tmp_mem: (&str, &str),
 ) {
     let active = if network_proxy_active {
         "true"
@@ -133,26 +130,7 @@ fn emit_turn_network_proxy_metric(
     session_telemetry.counter(
         TURN_NETWORK_PROXY_METRIC,
         /*inc*/ 1,
-        &[("active", active), tmp_mem],
-    );
-}
-
-fn emit_turn_memory_metric(
-    session_telemetry: &SessionTelemetry,
-    feature_enabled: bool,
-    config_enabled: bool,
-    has_citations: bool,
-) {
-    let read_allowed = feature_enabled && config_enabled;
-    session_telemetry.counter(
-        TURN_MEMORY_METRIC,
-        /*inc*/ 1,
-        &[
-            ("read_allowed", bool_tag(read_allowed)),
-            ("feature_enabled", bool_tag(feature_enabled)),
-            ("config_use_memories", bool_tag(config_enabled)),
-            ("has_citations", bool_tag(has_citations)),
-        ],
+        &[("active", active)],
     );
 }
 
@@ -592,13 +570,9 @@ impl Session {
             .input_queue
             .take_pending_input_for_turn_state(turn_state.as_ref())
             .await;
-        let (turn_had_memory_citation, turn_tool_calls, token_usage_at_turn_start) = {
+        let (turn_tool_calls, token_usage_at_turn_start) = {
             let ts = turn_state.lock().await;
-            (
-                ts.has_memory_citation,
-                ts.tool_calls,
-                ts.token_usage_at_turn_start.clone(),
-            )
+            (ts.tool_calls, ts.token_usage_at_turn_start.clone())
         };
         if !pending_input.is_empty() {
             for pending_input_item in pending_input {
@@ -624,15 +598,6 @@ impl Session {
         }
         // Emit token usage metrics.
         {
-            // TODO(jif): drop this
-            let tmp_mem = (
-                "tmp_mem_enabled",
-                if self.enabled(Feature::MemoryTool) {
-                    "true"
-                } else {
-                    "false"
-                },
-            );
             let network_proxy = self.services.network_proxy.load_full();
             let network_proxy_active = match network_proxy.as_ref() {
                 Some(started_network_proxy) => {
@@ -648,15 +613,11 @@ impl Session {
                 }
                 None => false,
             };
-            emit_turn_network_proxy_metric(
-                &self.services.session_telemetry,
-                network_proxy_active,
-                tmp_mem,
-            );
+            emit_turn_network_proxy_metric(&self.services.session_telemetry, network_proxy_active);
             self.services.session_telemetry.histogram(
                 TURN_TOOL_CALL_METRIC,
                 i64::try_from(turn_tool_calls).unwrap_or(i64::MAX),
-                &[tmp_mem],
+                &[],
             );
             let total_token_usage = self.total_token_usage().await.unwrap_or_default();
             let turn_token_usage = TokenUsage {
@@ -704,35 +665,29 @@ impl Session {
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.total_tokens,
-                &[("token_type", "total"), tmp_mem],
+                &[("token_type", "total")],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.input_tokens,
-                &[("token_type", "input"), tmp_mem],
+                &[("token_type", "input")],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.cached_input(),
-                &[("token_type", "cached_input"), tmp_mem],
+                &[("token_type", "cached_input")],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.output_tokens,
-                &[("token_type", "output"), tmp_mem],
+                &[("token_type", "output")],
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
                 turn_token_usage.reasoning_output_tokens,
-                &[("token_type", "reasoning_output"), tmp_mem],
+                &[("token_type", "reasoning_output")],
             );
         }
-        emit_turn_memory_metric(
-            &self.services.session_telemetry,
-            turn_context.config.features.enabled(Feature::MemoryTool),
-            turn_context.config.memories.use_memories,
-            turn_had_memory_citation,
-        );
         let started_at = turn_context.turn_timing_state.started_at_unix_secs().await;
         let (completed_at, duration_ms) = turn_context
             .turn_timing_state

@@ -63,8 +63,6 @@ struct RuntimeIdentity {
     route: ProviderRoute,
     model: String,
     context_used_percent: Option<i64>,
-    durable_memory_enabled: bool,
-    memory_citations: usize,
     eviction_count: u64,
     latest_eviction: Option<EvictionNotice>,
     latest_continuity: Option<String>,
@@ -80,8 +78,6 @@ impl Default for RuntimeIdentity {
             route: ProviderRoute::Native,
             model: "starting".to_string(),
             context_used_percent: None,
-            durable_memory_enabled: false,
-            memory_citations: 0,
             eviction_count: 0,
             latest_eviction: None,
             latest_continuity: None,
@@ -125,7 +121,6 @@ pub(crate) fn sync_runtime_identity(
     provider: &str,
     route: ProviderRoute,
     model: &str,
-    durable_memory_enabled: bool,
 ) -> bool {
     mutate_runtime_identity(|state| {
         let provider = normalized_value(provider, "configured");
@@ -133,8 +128,7 @@ pub(crate) fn sync_runtime_identity(
         let changed = state.thread_id.as_deref() != thread_id
             || state.provider != provider
             || state.route != route
-            || state.model != model
-            || state.durable_memory_enabled != durable_memory_enabled;
+            || state.model != model;
         if state.thread_id.as_deref() != thread_id {
             *state = RuntimeIdentity {
                 thread_id: thread_id.map(ToOwned::to_owned),
@@ -144,7 +138,6 @@ pub(crate) fn sync_runtime_identity(
         state.provider = provider;
         state.route = route;
         state.model = model;
-        state.durable_memory_enabled = durable_memory_enabled;
         changed
     })
 }
@@ -154,14 +147,6 @@ pub(crate) fn record_context_usage(last_total_tokens: i64, context_window: Optio
         state.context_used_percent = context_window
             .filter(|window| *window > 0)
             .map(|window| ((last_total_tokens.max(0) * 100) / window).clamp(0, 100));
-    });
-}
-
-pub(crate) fn record_memory_citation(entry_count: usize) {
-    mutate_runtime_identity(|state| {
-        state.memory_citations = state.memory_citations.saturating_add(entry_count);
-        state.durable_memory_enabled = true;
-        state.latest_continuity = Some("memory recalled".to_string());
     });
 }
 
@@ -317,8 +302,6 @@ mod tests {
             route: ProviderRoute::Native,
             model: "gpt-5.6".to_string(),
             context_used_percent: Some(41),
-            durable_memory_enabled: true,
-            memory_citations: 6,
             eviction_count: 2,
             latest_eviction: Some(EvictionNotice {
                 count: 2,

@@ -103,9 +103,9 @@ impl codex_extension_api::ThreadLifecycleContributor<Config> for GuardianMemoryC
         input: codex_extension_api::ThreadStartInput<'a, Config>,
     ) -> codex_extension_api::ExtensionFuture<'a, ()> {
         Box::pin(async move {
-            input.thread_store.insert(GuardianMemoryContextEnabled(
-                input.config.memories.use_memories,
-            ));
+            input
+                .thread_store
+                .insert(GuardianMemoryContextEnabled(true));
         })
     }
 }
@@ -1640,11 +1640,6 @@ async fn guardian_review_request_layout_matches_model_visible_request_snapshot()
     let mut config = (*turn.config).clone();
     config.cwd = temp_cwd.abs();
     config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
-    config.memories.use_memories = true;
-    config
-        .features
-        .enable(Feature::MemoryTool)
-        .expect("memory tool feature is configurable");
     let config = Arc::new(config);
     let models_manager = test_support::models_manager_with_provider(
         config.codex_home.to_path_buf(),
@@ -3029,8 +3024,6 @@ async fn guardian_review_session_config_disables_mcp_apps_plugins_and_memories()
         .enable(Feature::Plugins)
         .expect("plugins feature is configurable");
     parent_config.include_apps_instructions = true;
-    parent_config.memories.use_memories = true;
-    parent_config.memories.dedicated_tools = true;
 
     let guardian_config = build_guardian_review_session_config_for_test(
         &parent_config,
@@ -3045,8 +3038,6 @@ async fn guardian_review_session_config_disables_mcp_apps_plugins_and_memories()
     assert!(!guardian_config.features.enabled(Feature::Apps));
     assert!(!guardian_config.features.enabled(Feature::Plugins));
     assert!(!guardian_config.include_apps_instructions);
-    assert!(!guardian_config.memories.use_memories);
-    assert!(!guardian_config.memories.dedicated_tools);
 }
 
 #[tokio::test]

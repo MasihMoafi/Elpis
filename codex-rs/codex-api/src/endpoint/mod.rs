@@ -1,7 +1,6 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 pub(crate) mod compact;
 pub(crate) mod images;
-pub(crate) mod memories;
 pub(crate) mod models;
 pub(crate) mod realtime_call;
 pub(crate) mod realtime_websocket;
@@ -12,7 +11,6 @@ mod session;
 
 pub use compact::CompactClient;
 pub use images::ImagesClient;
-pub use memories::MemoriesClient;
 pub use models::ModelsClient;
 pub use realtime_call::RealtimeCallClient;
 pub use realtime_call::RealtimeCallResponse;

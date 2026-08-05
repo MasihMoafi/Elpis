@@ -48,7 +48,7 @@ fn configure_ledger_sources(
     std::fs::write(workspace.join("ES.md"), "Command evidence")?;
     std::fs::write(memories.join("MEMORY.md"), "Durable memory")?;
 
-    chat.config.memories.root = Some(memories.clone().abs());
+    chat.config.memory_dir = memories.clone().abs();
     chat.config.cwd = cwd.clone().abs();
     // The ledger reads instruction rows from the server-reported list, exactly as
     // /usage does. Mirror a real session by reporting the same files created above.

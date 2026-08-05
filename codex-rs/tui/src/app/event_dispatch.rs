@@ -1729,20 +1729,6 @@ impl App {
             AppEvent::UpdateFeatureFlags { updates } => {
                 self.update_feature_flags(app_server, updates).await;
             }
-            AppEvent::UpdateMemorySettings {
-                use_memories,
-                generate_memories,
-            } => {
-                self.update_memory_settings_with_app_server(
-                    app_server,
-                    use_memories,
-                    generate_memories,
-                )
-                .await;
-            }
-            AppEvent::ResetMemories => {
-                self.reset_memories_with_app_server(app_server).await;
-            }
             AppEvent::SkipNextWorldWritableScan => {
                 self.windows_sandbox.skip_world_writable_scan_once = true;
             }

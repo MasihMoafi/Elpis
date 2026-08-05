@@ -4,7 +4,6 @@ use crate::config_requirements::ConfigRequirementsToml;
 
 use super::fingerprint::record_origins;
 use super::fingerprint::version_for_toml;
-use super::key_aliases::normalized_with_key_aliases;
 use super::merge::merge_toml_values;
 use crate::CloudConfigBundleLoader;
 use crate::ConfigLayer;
@@ -507,8 +506,7 @@ impl ConfigLayerStack {
             ConfigLayerStackOrdering::LowestPrecedenceFirst,
             /*include_disabled*/ false,
         ) {
-            let config = normalized_with_key_aliases(&layer.config, &[]);
-            record_origins(&config, &layer.metadata(), &mut path, &mut origins);
+            record_origins(&layer.config, &layer.metadata(), &mut path, &mut origins);
         }
 
         origins

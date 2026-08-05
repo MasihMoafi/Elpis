@@ -123,16 +123,6 @@ pub async fn extract_metadata_from_rollout(
     }
     Ok(ExtractionOutcome {
         metadata,
-        memory_mode: items.iter().rev().find_map(|item| match item {
-            RolloutItem::SessionMeta(meta_line) => meta_line.meta.memory_mode.clone(),
-            RolloutItem::ResponseItem(_)
-            | RolloutItem::InterAgentCommunication(_)
-            | RolloutItem::InterAgentCommunicationMetadata { .. }
-            | RolloutItem::Compacted(_)
-            | RolloutItem::TurnContext(_)
-            | RolloutItem::WorldState(_)
-            | RolloutItem::EventMsg(_) => None,
-        }),
         parse_errors,
     })
 }
@@ -265,7 +255,6 @@ pub(crate) async fn backfill_sessions_with_lease(
                     }
                     let mut metadata = outcome.metadata;
                     metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
-                    let memory_mode = outcome.memory_mode.unwrap_or_else(|| "enabled".to_string());
                     if let Ok(Some(existing_metadata)) = runtime.get_thread(metadata.id).await {
                         metadata.prefer_existing_git_info(&existing_metadata);
                         metadata.prefer_existing_explicit_title(&existing_metadata);
@@ -280,17 +269,6 @@ pub(crate) async fn backfill_sessions_with_lease(
                         stats.failed = stats.failed.saturating_add(1);
                         warn!("failed to upsert rollout {}: {err}", rollout.path.display());
                     } else {
-                        if let Err(err) = runtime
-                            .set_thread_memory_mode(metadata.id, memory_mode.as_str())
-                            .await
-                        {
-                            stats.failed = stats.failed.saturating_add(1);
-                            warn!(
-                                "failed to restore memory mode for {}: {err}",
-                                rollout.path.display()
-                            );
-                            continue;
-                        }
                         stats.upserted = stats.upserted.saturating_add(1);
                     }
                 }

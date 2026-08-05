@@ -525,7 +525,6 @@ impl RolloutRecorder {
                     /*builder*/ None,
                     &[],
                     Some(archived),
-                    /*new_thread_memory_mode*/ None,
                 )
                 .await;
             } else {
@@ -564,7 +563,6 @@ impl RolloutRecorder {
                         /*builder*/ None,
                         &[],
                         Some(archived),
-                        /*new_thread_memory_mode*/ None,
                     )
                     .await;
                 }
@@ -603,7 +601,6 @@ impl RolloutRecorder {
                         /*builder*/ None,
                         &[],
                         Some(archived),
-                        /*new_thread_memory_mode*/ None,
                     )
                     .await;
                 }
@@ -812,7 +809,6 @@ impl RolloutRecorder {
                         Some(dynamic_tools)
                     },
                     selected_capability_roots,
-                    memory_mode: (!config.generate_memories()).then_some("disabled".to_string()),
                     history_mode,
                     multi_agent_version,
                     context_window: initial_window_id.map(SessionContextWindow::new),
