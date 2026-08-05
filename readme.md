@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="final.webp" alt="Elpis" width="300">
-
-<br>
+<img width="493" alt="Screenshot from 2026-08-03 20-06-18" src="https://github.com/user-attachments/assets/14a244b4-2f80-4efc-b870-0cebde11330a" />
 
 # Never lose the thread.
 
@@ -38,7 +36,7 @@ The agent runs the model loop. Elpis owns everything around it: context, memory,
 
 Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
 
-
+Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
