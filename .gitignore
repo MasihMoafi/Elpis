@@ -108,3 +108,7 @@ NOTES-masih.md
 
 # Private task list; not published.
 TASKS.md
+
+# insta scratch files, rewritten by every test run
+*.snap.new
+*.pending-snap
