@@ -88,10 +88,46 @@ Example end state — Codex:
 | **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook, before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. The installer installs [RTK](https://github.com/rtk-ai/rtk) and Elpis registers the hook on first launch, where you trust it like any other hook. | Before the agent sees it |
 | **2. Safety cap** | Deterministic truncation bounds exceptionally large tool output. Inherited from Codex, unchanged. | Before the agent sees it |
 | **3. Ace steady pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After completed work creates enough eligible output |
-| **4. Ace pressure pass** | Runs the same selective process earlier, at 70% remaining, and aims to return the session to 80% remaining. | Before context pressure harms the next turn |
+| **4. Ace pressure pass** | Runs the same selective process earlier, at 70% remaining, and aims to return the session to 75% remaining. | Before context pressure harms the next turn |
 
 `/prune` runs Ace selectively on demand while keeping the conversation intact.
 `/compact` replaces the conversation with a full summary and starts a new context window.
+
+### What a pruning decision looks like
+
+One real pass, taken from the archive on disk. A single search command whose output ran to
+18,930 characters — close to 5,000 tokens carried into every subsequent request, for one
+tool call.
+
+**Before** — what the model was carrying:
+
+```text
+Script completed · Wall time 0.1 seconds · Output:
+
+tui/src/external_agent_config_migration.rs:800:   item_type: …ItemType::AgentsMd,
+tui/src/external_agent_config_migration_flow.rs:75: …ItemType::AgentsMd
+tui/src/theme_picker.rs:283:  fn theme_picker_subtitle(home: …) -> String
+tui/src/theme_picker.rs:392:     subtitle: Some(theme_picker_subtitle(
+tui/src/theme_picker.rs:605:     let subtitle = theme_picker_subtitle(…, Some(200));
+tui/src/theme_picker.rs:617:     let subtitle = theme_picker_subtitle(…, Some(140));
+tui/src/app_event.rs:152:        OpenAgentPicker,
+… roughly two hundred more lines of the same shape …
+```
+
+**After** — what the model carries now:
+
+```text
+[ELPIS CONTEXT UPDATE]
+kept=`/agent` and `/subagents` already open the agent picker
+     — tui/src/chatwidget/slash_dispatch.rs:305
+     — preserves the selected graph UX entry point
+evidence=rollout://tool-call/call_0nK3lZKWgHXkqYoNy3Sux5Gj
+original_chars=18199
+```
+
+The finding survives; the two hundred lines of noise do not. `evidence=` resolves to the
+untouched original, still sitting in the session rollout — so a pruned session can always
+be asked what it used to know. Every pass writes this record, for every item it judged.
 
 ### Context Ledger
 
