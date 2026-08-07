@@ -446,6 +446,43 @@ impl ModelClient {
         self
     }
 
+    /// Provider this client currently talks to.
+    pub(crate) fn provider_info(&self) -> ModelProviderInfo {
+        self.state.provider.info().clone()
+    }
+
+    /// Rebuilds this client against a different provider, keeping the session-stable
+    /// settings and dropping transport state that only makes sense for the old
+    /// endpoint (cached websocket session, websocket fallback, auth fallback).
+    pub(crate) fn with_provider(&self, provider_info: ModelProviderInfo) -> Self {
+        let model_provider = create_model_provider(provider_info, self.state.provider.auth_manager());
+        let include_attestation = model_provider.supports_attestation();
+        Self {
+            state: Arc::new(ModelClientState {
+                thread_id: self.state.thread_id,
+                provider: model_provider,
+                session_source: self.state.session_source.clone(),
+                originator: self.state.originator.clone(),
+                model_verbosity: self.state.model_verbosity,
+                enable_request_compression: self.state.enable_request_compression,
+                include_timing_metrics: self.state.include_timing_metrics,
+                beta_features_header: self.state.beta_features_header.clone(),
+                item_ids_enabled: self.state.item_ids_enabled,
+                concurrent_reasoning_summaries_enabled: self
+                    .state
+                    .concurrent_reasoning_summaries_enabled,
+                include_attestation,
+                attestation_provider: self.state.attestation_provider.clone(),
+                disable_websockets: AtomicBool::new(false),
+                agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
+                cached_websocket_session: StdMutex::new(WebsocketSession::default()),
+            }),
+            agent_identity_policy: self.agent_identity_policy,
+            prompt_cache_key_override: self.prompt_cache_key_override.clone(),
+            http_client_factory: self.http_client_factory.clone(),
+        }
+    }
+
     fn prompt_cache_key(&self, responses_metadata: &CodexResponsesMetadata) -> String {
         self.prompt_cache_key_override
             .clone()

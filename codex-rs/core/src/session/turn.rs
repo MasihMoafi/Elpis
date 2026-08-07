@@ -140,7 +140,7 @@ pub(crate) async fn run_turn(
     cancellation_token: CancellationToken,
 ) -> CodexResult<Option<String>> {
     let mut client_session =
-        prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
+        prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.load().new_session());
     let turn_context =
         super::auto_model_routing::route_turn_if_enabled(&sess, turn_context, &input).await;
     // TODO(ccunningham): Pre-turn compaction runs before context updates and the

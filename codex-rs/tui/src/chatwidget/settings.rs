@@ -245,8 +245,6 @@ impl ChatWidget {
         self.has_codex_backend_auth = has_codex_backend_auth;
         self.bottom_pane
             .set_connectors_enabled(self.connectors_enabled());
-        self.bottom_pane
-            .set_token_activity_command_enabled(has_codex_backend_auth);
         self.refresh_status_surfaces();
     }
 
@@ -491,6 +489,12 @@ impl ChatWidget {
         let cwd_changed = self.config.cwd != settings.cwd;
         self.apply_thread_settings_cwd(settings.cwd.clone());
         self.config.model_provider_id = settings.model_provider.clone();
+        // The provider *definition* has to move with the id, or every surface that reads it --
+        // name, protocol, route, credential source -- keeps describing the provider the thread
+        // started on while the requests go somewhere else.
+        if let Some(provider) = self.config.model_providers.get(&settings.model_provider) {
+            self.config.model_provider = provider.clone();
+        }
         self.set_service_tier(settings.service_tier.clone());
         self.set_approval_policy(settings.approval_policy);
         self.set_approvals_reviewer(settings.approvals_reviewer.to_core());

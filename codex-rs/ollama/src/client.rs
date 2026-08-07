@@ -14,6 +14,7 @@ use crate::url::is_openai_compatible_base_url;
 use codex_core::config::Config;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_NAME;
 #[cfg(test)]
 use codex_model_provider_info::WireApi;
 #[cfg(test)]
@@ -51,7 +52,7 @@ impl OllamaClient {
 
     #[cfg(test)]
     async fn try_from_provider_with_base_url(base_url: &str) -> io::Result<Self> {
-        let provider = create_oss_provider_with_base_url(base_url, WireApi::Responses);
+        let provider = create_oss_provider_with_base_url(OLLAMA_OSS_PROVIDER_NAME, base_url, WireApi::Responses);
         Self::try_from_provider(&provider).await
     }
 

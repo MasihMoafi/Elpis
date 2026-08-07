@@ -174,7 +174,6 @@ impl<'a> SlashInput<'a> {
                 collaboration_modes_enabled: self.command_flags.collaboration_modes_enabled,
                 connectors_enabled: self.command_flags.connectors_enabled,
                 plugins_command_enabled: self.command_flags.plugins_command_enabled,
-                token_activity_command_enabled: self.command_flags.token_activity_command_enabled,
                 service_tier_commands_enabled: self.command_flags.service_tier_commands_enabled,
                 goal_command_enabled: self.command_flags.goal_command_enabled,
                 personality_command_enabled: self.command_flags.personality_command_enabled,
@@ -599,13 +598,15 @@ mod tests {
 
     #[test]
     fn esc_dismisses_slash_popup_while_idle() {
-        let mut composer = composer_with_text_at_cursor("/rev", "/rev".len());
+        // Any command Elpis actually lists will do -- Esc is what is under test. `/rev` was
+        // used here upstream, where `/review` is on the menu.
+        let mut composer = composer_with_text_at_cursor("/mod", "/mod".len());
         assert!(composer.popup_active());
 
         assert_eq!(press(&mut composer, KeyCode::Esc), InputResult::None);
 
         assert!(!composer.popup_active());
-        assert_eq!(composer.draft.textarea.text(), "/rev");
+        assert_eq!(composer.draft.textarea.text(), "/mod");
     }
 
     #[test]

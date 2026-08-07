@@ -59,7 +59,6 @@ pub(crate) struct BuiltinCommandFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
-    pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
     pub(crate) goal_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
@@ -78,7 +77,6 @@ fn enabled_by_feature_gates(cmd: SlashCommand, flags: BuiltinCommandFlags) -> bo
         && (flags.plugins_command_enabled || cmd != SlashCommand::Plugins)
         && (flags.goal_command_enabled || cmd != SlashCommand::Goal)
         && (flags.personality_command_enabled || cmd != SlashCommand::Personality)
-        && (flags.token_activity_command_enabled || cmd != SlashCommand::Usage)
 }
 
 /// Return the built-ins that should be visible/usable for the current input.
@@ -170,7 +168,6 @@ mod tests {
             collaboration_modes_enabled: true,
             connectors_enabled: true,
             plugins_command_enabled: true,
-            token_activity_command_enabled: true,
             service_tier_commands_enabled: true,
             goal_command_enabled: true,
             personality_command_enabled: true,
@@ -268,23 +265,22 @@ mod tests {
         assert_eq!(find_builtin_command("goal", flags), None);
     }
 
+    /// `/usage` reports the session's own context, continuity, and token totals, none of
+    /// which come from an account. It used to be gated on having a Codex backend login,
+    /// which took the command away entirely -- not just its rate-limit section -- from
+    /// anyone running on a local or third-party provider.
     #[test]
-    fn usage_command_is_hidden_from_input_when_account_token_activity_is_disabled() {
-        let mut flags = all_enabled_flags();
-        flags.token_activity_command_enabled = false;
-        assert_eq!(
+    fn usage_command_is_available_without_an_account() {
+        let flags = BuiltinCommandFlags::default();
+        assert!(
             builtins_for_input(flags)
                 .into_iter()
-                .find(|(_, command)| *command == SlashCommand::Usage),
-            None
+                .any(|(_, command)| command == SlashCommand::Usage)
         );
-    }
-
-    #[test]
-    fn removed_usage_command_does_not_resolve() {
-        let mut flags = all_enabled_flags();
-        flags.token_activity_command_enabled = false;
-        assert_eq!(find_builtin_command("usage", flags), None);
+        assert_eq!(
+            find_builtin_command("usage", flags),
+            Some(SlashCommand::Usage)
+        );
     }
 
     #[test]

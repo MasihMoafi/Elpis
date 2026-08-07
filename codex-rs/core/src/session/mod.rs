@@ -649,6 +649,7 @@ impl Session {
         let session_configuration = SessionConfiguration {
             provider,
             default_openai_provider: config.model_provider.clone(),
+            default_openai_provider_id: config.model_provider_id.clone(),
             collaboration_mode,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
@@ -1425,6 +1426,16 @@ impl Session {
                 self.services
                     .turn_environments
                     .update_selections(updated.environment_selections());
+            }
+            // The model client binds one endpoint and auth scheme for its lifetime, so a
+            // provider change has to rebuild it or later turns keep hitting the old API.
+            if updated.provider != state.session_configuration.provider {
+                self.services.model_client.store(Arc::new(
+                    self.services
+                        .model_client
+                        .load()
+                        .with_provider(updated.provider.clone()),
+                ));
             }
             state.session_configuration = updated;
             (previous_config, new_config, permission_profile_changed)

@@ -53,6 +53,9 @@ pub(crate) struct SessionConfiguration {
     /// Provider identifier ("openai", "openrouter", ...).
     pub(super) provider: ModelProviderInfo,
     pub(super) default_openai_provider: ModelProviderInfo,
+    /// Id of `default_openai_provider`, so falling back to it can also restore the
+    /// provider id this thread reports.
+    pub(super) default_openai_provider_id: String,
 
     pub(super) collaboration_mode: CollaborationMode,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
@@ -245,24 +248,65 @@ impl SessionConfiguration {
                             }
                         )
                 });
+        // An explicit provider id wins over the slug-based inference below: model names
+        // served by local runtimes carry no prefix we could recognize, so the client has
+        // to name the provider outright.
+        let explicit_provider = updates.model_provider.as_deref().and_then(|provider_id| {
+            next_configuration
+                .original_config_do_not_use
+                .model_providers
+                .get(provider_id)
+                .cloned()
+                .map(|provider| (provider_id.to_string(), provider))
+        });
+        let mut selected_provider = explicit_provider.clone();
         if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
             let model = collaboration_mode.model();
-            if model.starts_with("claude") && !model.contains('/') {
-                next_configuration.provider =
-                    codex_model_provider_info::ModelProviderInfo::create_anthropic_provider();
-            } else if model.starts_with("gemini") && !model.contains('/') {
-                next_configuration.provider =
-                    codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider();
-            } else if model.contains('/')
-                || model.contains(":free")
-                || !codex_model_provider_info::openrouter_free_fallback_candidates(model).is_empty()
-            {
-                next_configuration.provider =
-                    codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
-            } else if !next_configuration.provider.is_openai() {
-                next_configuration.provider = next_configuration.default_openai_provider.clone();
+            // Every turn re-sends the model it is already running, so re-deriving the
+            // provider from an unchanged slug would drag the thread off any provider the
+            // client pinned. Only an actual model change re-opens the question.
+            let model_changed = model != next_configuration.collaboration_mode.model();
+            if selected_provider.is_none() && model_changed {
+                selected_provider = if model.starts_with("claude") && !model.contains('/') {
+                    Some((
+                        codex_model_provider_info::ANTHROPIC_PROVIDER_ID.to_string(),
+                        codex_model_provider_info::ModelProviderInfo::create_anthropic_provider(),
+                    ))
+                } else if model.starts_with("gemini") && !model.contains('/') {
+                    Some((
+                        codex_model_provider_info::GOOGLE_GEMINI_PROVIDER_ID.to_string(),
+                        codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider(
+                        ),
+                    ))
+                } else if model.contains('/')
+                    || model.contains(":free")
+                    || !codex_model_provider_info::openrouter_free_fallback_candidates(model)
+                        .is_empty()
+                {
+                    Some((
+                        codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+                        codex_model_provider_info::ModelProviderInfo::create_openrouter_provider(),
+                    ))
+                } else if !next_configuration.provider.is_openai() {
+                    // The new slug names no vendor of its own, so fall back to the
+                    // provider this thread started on.
+                    Some((
+                        next_configuration.default_openai_provider_id.clone(),
+                        next_configuration.default_openai_provider.clone(),
+                    ))
+                } else {
+                    None
+                };
             }
             next_configuration.collaboration_mode = collaboration_mode;
+        }
+        if let Some((provider_id, provider)) = selected_provider {
+            next_configuration.provider = provider.clone();
+            // Thread snapshots and per-turn config reconstruction both read the provider
+            // off this config, so it has to name the provider we will actually call.
+            let config = Arc::make_mut(&mut next_configuration.original_config_do_not_use);
+            config.model_provider_id = provider_id;
+            config.model_provider = provider;
         }
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = Some(summary);
@@ -444,6 +488,9 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
     pub(crate) automatic_model_routing: Option<bool>,
     pub(crate) collaboration_mode: Option<CollaborationMode>,
+    /// Explicit provider id for the incoming model, resolved against
+    /// `model_providers`. Takes precedence over slug-based inference.
+    pub(crate) model_provider: Option<String>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) service_tier: Option<Option<String>>,
     pub(crate) final_output_json_schema: Option<Option<Value>>,
@@ -1087,7 +1134,7 @@ impl Session {
                 thread_store: Arc::clone(&thread_store),
                 attestation_provider: attestation_provider.clone(),
                 time_provider,
-                model_client: ModelClient::new(
+                model_client: arc_swap::ArcSwap::from_pointee(ModelClient::new(
                     Some(Arc::clone(&auth_manager)),
                     if config.features.enabled(Feature::UseAgentIdentity) {
                         AgentIdentityAuthPolicy::ChatGptAuth
@@ -1118,7 +1165,7 @@ impl Session {
                         &session_configuration.session_source,
                         session_configuration.parent_thread_id,
                     ),
-                ),
+                )),
                 code_mode_service: crate::tools::code_mode::CodeModeService::new(Arc::clone(
                     &code_mode_session_provider,
                 )),

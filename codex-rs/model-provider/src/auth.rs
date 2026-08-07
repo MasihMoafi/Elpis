@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn unauthenticated_auth_provider_adds_no_headers() {
         let provider =
-            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses);
+            create_oss_provider_with_base_url(codex_model_provider_info::OLLAMA_OSS_PROVIDER_NAME, "http://localhost:11434/v1", WireApi::Responses);
         let auth = resolve_provider_auth(/*auth*/ None, &provider).expect("auth should resolve");
 
         assert!(auth.to_auth_headers().is_empty());

@@ -5,10 +5,12 @@
 //! into another, especially while Plan mode is active.
 
 use super::*;
+use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::OPENROUTER_BASE_URL;
 use ratatui::text::Span;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
+const OLLAMA_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
 
 impl ChatWidget {
     /// Open a popup to choose a quick auto model. Selecting "All models"
@@ -32,7 +34,96 @@ impl ChatWidget {
                 return;
             }
         };
+        self.refresh_ollama_models();
         self.open_model_popup_with_presets(presets);
+    }
+
+    /// Kicks off a background refresh of the locally installed Ollama models shown in the
+    /// `/model` picker. Fire-and-forget: results land later via `OllamaModelsLoaded` and only
+    /// affect the *next* time the picker is opened, since the popup already on screen (if any)
+    /// isn't rebuilt in place.
+    pub(super) fn refresh_ollama_models(&self) {
+        let Some(base_url) = self
+            .config
+            .model_providers
+            .get(OLLAMA_OSS_PROVIDER_ID)
+            .and_then(|provider| provider.base_url.clone())
+        else {
+            return;
+        };
+        let tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let models = fetch_ollama_model_names(base_url).await;
+            tx.send(AppEvent::OllamaModelsLoaded { models });
+        });
+    }
+
+    pub(crate) fn on_ollama_models_loaded(&mut self, models: Vec<String>) {
+        self.ollama_local_models = models;
+    }
+
+    /// Provider currently backing this thread. Kept in step with the server by
+    /// `apply_thread_settings`, so it reflects mid-session provider switches.
+    pub(crate) fn active_model_provider_id(&self) -> &str {
+        self.config.model_provider_id.as_str()
+    }
+
+    /// Base URL configured for a provider, for callers that need to query the provider's own
+    /// API (model lists, model metadata) rather than route a turn through it.
+    pub(crate) fn model_provider_base_url(&self, provider_id: &str) -> Option<String> {
+        self.config
+            .model_providers
+            .get(provider_id)
+            .and_then(|provider| provider.base_url.clone())
+    }
+
+    /// Appends an "OLLAMA" group listing locally installed models below whatever the active
+    /// provider's models are, mirroring `push_openrouter_free_model_group`. Selecting one
+    /// switches both the model and the provider for the active thread, and persists both to
+    /// config.toml so the next launch starts on the same local model.
+    ///
+    /// Listed even while Ollama is the active provider: the group above it comes from the
+    /// hosted model catalog, which never contains locally installed models, so skipping this
+    /// group would leave a thread running on Ollama with no way to see or reach its own models.
+    fn push_ollama_model_group(&self, items: &mut Vec<SelectionItem>) {
+        if self.ollama_local_models.is_empty() {
+            return;
+        }
+        items.push(SelectionItem {
+            name: "OLLAMA".to_string(),
+            is_disabled: true,
+            ..Default::default()
+        });
+        for model in &self.ollama_local_models {
+            let model = model.clone();
+            let model_for_action = model.clone();
+            items.push(SelectionItem {
+                name: model,
+                description: Some("Runs on this machine via Ollama".to_string()),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::UpdateModelForProvider {
+                        model: model_for_action.clone(),
+                        provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
+                    });
+                    tx.send(AppEvent::PersistProviderModelSelection {
+                        model: model_for_action.clone(),
+                        provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
+                    });
+                })],
+                dismiss_on_select: true,
+                ..Default::default()
+            });
+        }
+    }
+
+    /// Provider name and id reduced to their letters and digits, lowercased, so cosmetic
+    /// differences ("LM Studio" vs "lmstudio") don't read as two different providers.
+    fn squashed(value: &str) -> String {
+        value
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .map(|c| c.to_ascii_lowercase())
+            .collect()
     }
 
     pub(super) fn model_provider_display_name(&self) -> String {
@@ -42,7 +133,9 @@ impl ChatWidget {
             (true, true) => "configured provider".to_string(),
             (true, false) => provider_id.to_string(),
             (false, true) => provider_name.to_string(),
-            (false, false) if provider_name.eq_ignore_ascii_case(provider_id) => {
+            // `LM Studio`/`lmstudio` name the same thing, so showing both would be noise.
+            // Compare on letters and digits only so spacing and punctuation don't split them.
+            (false, false) if Self::squashed(provider_name) == Self::squashed(provider_id) => {
                 provider_name.to_string()
             }
             (false, false) => format!("{provider_name} ({provider_id})"),
@@ -140,7 +233,9 @@ impl ChatWidget {
         {
             return "configured bearer token".to_string();
         }
-        "not declared".to_string()
+        // A provider that declares no credential of any kind is a local server; saying
+        // "not declared" makes a normal setup look misconfigured.
+        "none required".to_string()
     }
 
     fn model_route_description(&self, description: &str) -> String {
@@ -179,7 +274,7 @@ impl ChatWidget {
             crate::style::status_symbol_style(),
         )));
         header.push(Line::from(
-            format!("Codex model: {}", self.current_model()).bold(),
+            format!("Model: {}", self.current_model()).bold(),
         ));
         header.push(Line::from(subtitle.to_string().dim()));
         if let Some(warning) = self.model_menu_warning_line() {
@@ -304,6 +399,7 @@ impl ChatWidget {
         }
 
         self.push_openrouter_free_model_group(&mut items);
+        self.push_ollama_model_group(&mut items);
         items.insert(0, self.model_provider_group_item());
         items.insert(1, auto_routing_item);
 
@@ -391,6 +487,7 @@ impl ChatWidget {
             });
         }
         self.push_openrouter_free_model_group(&mut items);
+        self.push_ollama_model_group(&mut items);
 
         let header = self.model_menu_header(
             "Choose a mind and effort",
@@ -879,5 +976,124 @@ impl ChatWidget {
         self.apply_model_and_effort_without_persist(model.clone(), effort.clone());
         self.app_event_tx
             .send(AppEvent::PersistModelSelection { model, effort });
+    }
+}
+
+/// Queries a local Ollama server's native `/api/tags` endpoint for installed model names.
+///
+/// `base_url` is the provider's OpenAI-compatible base URL (e.g. `http://localhost:11434/v1`);
+/// Ollama's native API lives one level up, at the host root. Any failure (server not running,
+/// unexpected response shape, timeout) yields an empty list rather than surfacing an error --
+/// this is a best-effort convenience list, not a required capability.
+async fn fetch_ollama_model_names(base_url: String) -> Vec<String> {
+    let host_root = base_url
+        .trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .trim_end_matches('/')
+        .to_string();
+    let Ok(client) = reqwest::Client::builder()
+        .connect_timeout(OLLAMA_MODELS_FETCH_TIMEOUT)
+        .timeout(OLLAMA_MODELS_FETCH_TIMEOUT)
+        .build()
+    else {
+        return Vec::new();
+    };
+    let Ok(response) = client.get(format!("{host_root}/api/tags")).send().await else {
+        return Vec::new();
+    };
+    let Ok(body) = response.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+    body.get("models")
+        .and_then(|models| models.as_array())
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|model| model.get("name")?.as_str())
+                .filter(|name| !is_embedding_model_name(name) && !is_cloud_hosted_model_name(name))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Whether a model Ollama lists is one it hosts remotely rather than serves from this
+/// machine. These carry a `:cloud` tag and appear in `/api/tags` next to the real local
+/// pulls, but reaching them takes a signed-in Ollama account, so offering one to a user
+/// without that account produces a model that is listed and cannot answer.
+fn is_cloud_hosted_model_name(name: &str) -> bool {
+    name.ends_with(":cloud")
+}
+
+/// Whether an installed Ollama model only produces embeddings and so cannot hold a turn.
+///
+/// `/api/tags` reports no capability field, and the family it does report does not separate
+/// the two -- `qwen3-embedding` and a `qwen3` chat model are both family `qwen3`. The name is
+/// the only signal the list endpoint carries. Asking `/api/show` per model would answer this
+/// exactly, at the cost of one request per installed model every time the picker opens.
+fn is_embedding_model_name(name: &str) -> bool {
+    name.to_ascii_lowercase().contains("embed")
+}
+
+/// Context window Ollama reports for one locally installed model, via `/api/show`.
+///
+/// Without this the model falls back to the generic metadata window, so the context meter
+/// and every budget derived from it describe a model nobody is running. Best-effort like
+/// `fetch_ollama_model_names`: on any failure the caller keeps the fallback.
+pub(crate) async fn fetch_ollama_context_window(base_url: String, model: String) -> Option<i64> {
+    let host_root = base_url
+        .trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .trim_end_matches('/')
+        .to_string();
+    let client = reqwest::Client::builder()
+        .connect_timeout(OLLAMA_MODELS_FETCH_TIMEOUT)
+        .timeout(OLLAMA_MODELS_FETCH_TIMEOUT)
+        .build()
+        .ok()?;
+    let response = client
+        .post(format!("{host_root}/api/show"))
+        .json(&serde_json::json!({ "model": model }))
+        .send()
+        .await
+        .ok()?;
+    let body = response.json::<serde_json::Value>().await.ok()?;
+    // Ollama namespaces the key by architecture (`qwen35.context_length`, `llama.context_length`,
+    // ...), so match on the suffix rather than guessing the architecture.
+    body.get("model_info")?
+        .as_object()?
+        .iter()
+        .find(|(key, _)| key.ends_with(".context_length"))
+        .and_then(|(_, value)| value.as_i64())
+        .filter(|context_window| *context_window > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_cloud_hosted_model_name;
+    use super::is_embedding_model_name;
+
+    /// Reaching a `:cloud` model needs a signed-in Ollama account. Listing one without that
+    /// account offers a model that cannot answer, so it does not belong in the picker.
+    #[test]
+    fn remotely_hosted_models_are_not_offered() {
+        assert!(is_cloud_hosted_model_name("glm-5.2:cloud"));
+        assert!(is_cloud_hosted_model_name("minimax-m2:cloud"));
+        assert!(!is_cloud_hosted_model_name("qwen3.5:latest"));
+    }
+
+    #[test]
+    fn embedding_models_are_not_offered_as_chat_models() {
+        for name in [
+            "qwen3-embedding:8b",
+            "qwen3-embedding:0.6b",
+            "embeddinggemma:latest",
+            "nomic-embed-text:latest",
+        ] {
+            assert!(is_embedding_model_name(name), "{name} should be filtered");
+        }
+        for name in ["qwen3.5:latest", "glm-5.2:cloud", "minimax-m2:cloud"] {
+            assert!(!is_embedding_model_name(name), "{name} should be offered");
+        }
     }
 }

@@ -163,7 +163,7 @@ async fn run_context_prune(
     // Keep maintenance inference isolated from the active turn's sticky routing and
     // incremental request state. This lets the pressure check run between tool
     // follow-ups without perturbing the user's model session.
-    let mut prune_client_session = sess.services.model_client.new_session();
+    let mut prune_client_session = sess.services.model_client.load().new_session();
 
     let Some((record, raw, model_slug)) = run_prune_pass(
         sess,

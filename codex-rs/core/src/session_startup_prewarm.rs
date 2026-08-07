@@ -11,6 +11,7 @@ use tracing::instrument;
 use tracing::trace_span;
 use tracing::warn;
 
+use crate::client::ModelClient;
 use crate::client::ModelClientSession;
 use crate::guardian::routes_approval_to_guardian;
 use crate::responses_metadata::CodexResponsesRequestKind;
@@ -184,10 +185,10 @@ impl SessionStartupPrewarmHandle {
 
 impl Session {
     pub(crate) async fn schedule_startup_prewarm(self: &Arc<Self>, base_instructions: String) {
-        if !self.services.model_client.responses_websocket_enabled() {
+        if !self.services.model_client.load().responses_websocket_enabled() {
             // Without websocket prewarm, resolve auth once so Agent Identity bootstrap can
             // register or engage this session's bearer fallback before the first user request.
-            let model_client = self.services.model_client.clone();
+            let model_client = ModelClient::clone(&self.services.model_client.load());
             tokio::spawn(async move {
                 if let Err(err) = model_client.prewarm_auth().await {
                     warn!("startup auth prewarm failed: {err:#}");
@@ -313,7 +314,7 @@ async fn schedule_startup_prewarm_inner(
             window_id,
             CodexResponsesRequestKind::Prewarm,
         );
-    let mut client_session = session.services.model_client.new_session();
+    let mut client_session = session.services.model_client.load().new_session();
     let websocket_warmup_started_at = Instant::now();
     client_session
         .prewarm_websocket(

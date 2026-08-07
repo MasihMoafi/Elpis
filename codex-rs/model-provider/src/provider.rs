@@ -272,20 +272,17 @@ fn native_default_model(info: &ModelProviderInfo) -> Option<&'static str> {
     }
 }
 
-/// Display metadata for `OPENROUTER_FREE_MODEL_GROUP`, in the same order. Context windows
-/// verified against each model's OpenRouter listing 2026-07-21. Kept as a parallel array
-/// (rather than folded into the shared constant) because display copy is a picker-only
-/// concern, while the slug order itself is shared with the turn-loop fallback retry.
-const OPENROUTER_FREE_MODEL_DISPLAY: &[(&str, u32)] = &[
-    ("Tencent Hy3 (free)", 262_144),
-    ("NVIDIA Nemotron 3 Ultra (free)", 1_000_000),
-    ("Poolside Laguna M.1 (free)", 262_144),
-];
+/// Display metadata for `OPENROUTER_FREE_MODEL_GROUP`, in the same order. Kept as a parallel
+/// array (rather than folded into the shared constant) because display copy is a picker-only
+/// concern, while the slug itself is shared with the turn loop.
+///
+/// The context window is the floor OpenRouter guarantees across the models it routes to;
+/// the actual window depends on which one it picks for a given request.
+const OPENROUTER_FREE_MODEL_DISPLAY: &[(&str, u32)] = &[("Free (auto-routed)", 131_072)];
 
-/// Static picker catalog for Elpis's free OpenRouter model group (Masih, 2026-07-21).
-/// OpenRouter's live `/models` catalog doesn't map onto Codex's `ModelInfo` schema, so
-/// these three are surfaced directly rather than fetched (see TASKS.md's "full OpenRouter
-/// catalog" backlog item for the eventual live-catalog replacement).
+/// Picker catalog for OpenRouter's free tier. A single entry by design: `openrouter/free`
+/// is an auto-router that dispatches each request to whichever open-weight model is free
+/// at that moment, so there is no list to keep current.
 pub fn openrouter_free_model_catalog() -> ModelsResponse {
     debug_assert_eq!(
         OPENROUTER_FREE_MODEL_GROUP.len(),
@@ -304,7 +301,7 @@ pub fn openrouter_free_model_catalog() -> ModelsResponse {
             serde_json::from_value(serde_json::json!({
                 "slug": slug,
                 "display_name": display_name,
-                "description": "Free OpenRouter model",
+                "description": "OpenRouter routes each request to a free open-source model",
                 "default_reasoning_level": null,
                 "supported_reasoning_levels": [],
                 "shell_type": "shell_command",
@@ -649,7 +646,7 @@ mod tests {
     #[tokio::test]
     async fn scoped_auth_ignores_scope_for_non_openai_provider() {
         let provider = create_model_provider(
-            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses),
+            create_oss_provider_with_base_url(codex_model_provider_info::OLLAMA_OSS_PROVIDER_NAME, "http://localhost:11434/v1", WireApi::Responses),
             /*auth_manager*/ None,
         );
 
@@ -1007,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn openrouter_free_model_catalog_lists_all_three_in_group_order() {
+    fn openrouter_free_model_catalog_matches_group_order() {
         let catalog = openrouter_free_model_catalog();
         let slugs: Vec<&str> = catalog.models.iter().map(|m| m.slug.as_str()).collect();
         assert_eq!(slugs, OPENROUTER_FREE_MODEL_GROUP);

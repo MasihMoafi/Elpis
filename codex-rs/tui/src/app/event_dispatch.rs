@@ -889,6 +889,9 @@ impl App {
             AppEvent::ConnectorsLoaded { result, is_final } => {
                 self.chat_widget.on_connectors_loaded(result, is_final);
             }
+            AppEvent::OllamaModelsLoaded { models } => {
+                self.chat_widget.on_ollama_models_loaded(models);
+            }
             AppEvent::UpdateReasoningEffort(effort) => {
                 self.on_update_reasoning_effort(effort.clone());
                 self.sync_active_thread_reasoning_setting(app_server, effort)
@@ -896,17 +899,21 @@ impl App {
             }
             AppEvent::UpdateModel(model) => {
                 self.chat_widget.set_auto_model_routing_enabled(false);
-                let provider_id = if model.contains('/')
-                    || model.contains(":free")
-                    || !codex_model_provider_info::openrouter_free_fallback_candidates(&model)
-                        .is_empty()
-                {
-                    Some("openrouter".to_string())
-                } else {
-                    Some("openai".to_string())
-                };
+                // Only name a provider the slug actually pins. Naming `openai` for every
+                // other slug would override the core's own inference, which is what routes
+                // `claude-*` and `gemini-*` to their vendors.
+                let provider_id = crate::config_update::is_openrouter_model_slug(&model)
+                    .then(|| codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string());
                 self.chat_widget.set_model(&model);
                 self.sync_active_thread_model_setting(app_server, model, provider_id)
+                    .await;
+                self.sync_active_thread_service_tier_to_cached_session()
+                    .await;
+            }
+            AppEvent::UpdateModelForProvider { model, provider_id } => {
+                self.chat_widget.set_auto_model_routing_enabled(false);
+                self.chat_widget.set_model(&model);
+                self.sync_active_thread_model_setting(app_server, model, Some(provider_id))
                     .await;
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
@@ -917,19 +924,18 @@ impl App {
                 self.chat_widget.set_auto_model_routing_enabled(true);
                 self.chat_widget.set_model(&model);
                 self.on_update_reasoning_effort(Some(effort.clone()));
-                self.sync_active_thread_model_setting(
-                    app_server,
-                    model,
-                    Some("openai".to_string()),
-                )
-                .await;
+                let provider_edit = crate::config_update::build_model_provider_edits(
+                    model.as_str(),
+                    self.chat_widget.active_model_provider_id(),
+                );
+                self.sync_active_thread_model_setting(app_server, model, /*provider*/ None)
+                    .await;
                 self.sync_active_thread_reasoning_setting(app_server, Some(effort))
                     .await;
-                match crate::config_update::write_config_batch(
-                    app_server.request_handle(),
-                    crate::config_update::build_auto_model_routing_edits(),
-                )
-                .await
+                let mut edits = crate::config_update::build_auto_model_routing_edits();
+                edits.extend(provider_edit);
+                match crate::config_update::write_config_batch(app_server.request_handle(), edits)
+                    .await
                 {
                     Ok(_) => self
                         .chat_widget
@@ -1490,14 +1496,16 @@ impl App {
                 }
             }
             AppEvent::PersistModelSelection { model, effort } => {
-                match crate::config_update::write_config_batch(
-                    app_server.request_handle(),
-                    crate::config_update::build_model_selection_edits(
-                        model.as_str(),
-                        effort.as_ref(),
-                    ),
-                )
-                .await
+                let mut edits = crate::config_update::build_model_selection_edits(
+                    model.as_str(),
+                    effort.as_ref(),
+                );
+                edits.extend(crate::config_update::build_model_provider_edits(
+                    model.as_str(),
+                    self.chat_widget.active_model_provider_id(),
+                ));
+                match crate::config_update::write_config_batch(app_server.request_handle(), edits)
+                    .await
                 {
                     Ok(_) => {
                         let effort_label = effort
@@ -1511,6 +1519,51 @@ impl App {
                             message.push_str(&label);
                         }
                         self.chat_widget.add_info_message(message, /*hint*/ None);
+                    }
+                    Err(err) => {
+                        let error = format_config_error(&err);
+                        tracing::error!(
+                            error = %error,
+                            "failed to persist model selection"
+                        );
+                        self.chat_widget
+                            .add_error_message(format!("Failed to save default model: {error}"));
+                    }
+                }
+            }
+            AppEvent::PersistProviderModelSelection { model, provider_id } => {
+                // Ask the provider what window this model actually has. Locally served models
+                // are absent from the bundled catalog, so without this the context meter and
+                // every budget derived from it describe generic fallback metadata instead.
+                let context_window = match self
+                    .chat_widget
+                    .model_provider_base_url(provider_id.as_str())
+                {
+                    Some(base_url) if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
+                        crate::chatwidget::model_popups::fetch_ollama_context_window(
+                            base_url,
+                            model.clone(),
+                        )
+                        .await
+                    }
+                    _ => None,
+                };
+                match crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    crate::config_update::build_provider_model_selection_edits(
+                        model.as_str(),
+                        provider_id.as_str(),
+                        context_window,
+                    ),
+                )
+                .await
+                {
+                    Ok(_) => {
+                        tracing::info!("Selected model: {model}, Selected provider: {provider_id}");
+                        self.chat_widget.add_info_message(
+                            format!("Model changed to {model} ({provider_id})"),
+                            /*hint*/ None,
+                        );
                     }
                     Err(err) => {
                         let error = format_config_error(&err);

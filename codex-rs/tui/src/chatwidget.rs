@@ -364,7 +364,7 @@ use self::plugins::PluginListFetchState;
 use self::plugins::PluginsCacheState;
 mod plan_implementation;
 use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
-mod model_popups;
+pub(crate) mod model_popups;
 pub(crate) mod model_routing;
 mod notifications;
 use self::notifications::Notification;
@@ -537,6 +537,8 @@ pub(crate) struct ChatWidget {
     has_chatgpt_account: bool,
     has_codex_backend_auth: bool,
     model_catalog: Arc<ModelCatalog>,
+    /// Locally installed Ollama model names, refreshed in the background for the `/model` picker.
+    ollama_local_models: Vec<String>,
     session_telemetry: SessionTelemetry,
     session_header: SessionHeader,
     initial_user_message: Option<UserMessage>,

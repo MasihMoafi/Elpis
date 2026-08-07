@@ -53,11 +53,12 @@ pub const OPENROUTER_GEMINI_FLASH_COMPAT_MODEL: &str = "~google/gemini-flash-lat
 /// model in the list, in order, before giving up. Single source of truth for both the
 /// picker (`codex-model-provider`'s `native_model_catalog`) and the turn-loop retry
 /// (`codex-core`'s `stream_with_openrouter_fallback`) -- change the group here only.
-pub const OPENROUTER_FREE_MODEL_GROUP: &[&str] = &[
-    "tencent/hy3:free",
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "poolside/laguna-m.1:free",
-];
+/// OpenRouter's free auto-router. It is not a model: OpenRouter dispatches each request to
+/// whichever open-weight model is free at that moment, so pinning individual free slugs here
+/// only goes stale as their catalog rotates. One entry, and OpenRouter does the choosing.
+pub const OPENROUTER_FREE_MODEL_SLUG: &str = "openrouter/free";
+
+pub const OPENROUTER_FREE_MODEL_GROUP: &[&str] = &[OPENROUTER_FREE_MODEL_SLUG];
 
 /// Returns the other members of `slug`'s fallback group, in retry order. Empty if `slug`
 /// isn't part of `OPENROUTER_FREE_MODEL_GROUP` (the common case for every other model).
@@ -81,18 +82,10 @@ mod openrouter_free_fallback_tests {
     use super::*;
 
     #[test]
-    fn excludes_self_and_preserves_group_order() {
-        assert_eq!(
-            openrouter_free_fallback_candidates("tencent/hy3:free"),
-            vec![
-                "nvidia/nemotron-3-ultra-550b-a55b:free",
-                "poolside/laguna-m.1:free",
-            ]
-        );
-        assert_eq!(
-            openrouter_free_fallback_candidates("poolside/laguna-m.1:free"),
-            vec!["tencent/hy3:free", "nvidia/nemotron-3-ultra-550b-a55b:free"],
-        );
+    fn auto_router_has_no_siblings_to_fall_back_to() {
+        // OpenRouter already picks a working free model per request, so there is nothing
+        // for the turn loop to retry against.
+        assert!(openrouter_free_fallback_candidates(OPENROUTER_FREE_MODEL_SLUG).is_empty());
     }
 
     #[test]
@@ -683,6 +676,12 @@ pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
 pub const LMSTUDIO_OSS_PROVIDER_ID: &str = "lmstudio";
 pub const OLLAMA_OSS_PROVIDER_ID: &str = "ollama";
 
+/// Human-readable names for the locally served providers. The runtime that serves the
+/// models is what the user picked and what every surface should name -- `gpt-oss` is
+/// one model family they may or may not be running, not the provider.
+pub const LMSTUDIO_OSS_PROVIDER_NAME: &str = "LM Studio";
+pub const OLLAMA_OSS_PROVIDER_NAME: &str = "Ollama";
+
 /// Built-in default provider list.
 pub fn built_in_model_providers(
     openai_base_url: Option<String>,
@@ -706,11 +705,19 @@ pub fn built_in_model_providers(
         (AMAZON_BEDROCK_PROVIDER_ID, amazon_bedrock_provider),
         (
             OLLAMA_OSS_PROVIDER_ID,
-            create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
+            create_oss_provider(
+                OLLAMA_OSS_PROVIDER_NAME,
+                DEFAULT_OLLAMA_PORT,
+                WireApi::Responses,
+            ),
         ),
         (
             LMSTUDIO_OSS_PROVIDER_ID,
-            create_oss_provider(DEFAULT_LMSTUDIO_PORT, WireApi::Responses),
+            create_oss_provider(
+                LMSTUDIO_OSS_PROVIDER_NAME,
+                DEFAULT_LMSTUDIO_PORT,
+                WireApi::Responses,
+            ),
         ),
     ]
     .into_iter()
@@ -756,7 +763,11 @@ pub fn merge_configured_model_providers(
     Ok(model_providers)
 }
 
-pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> ModelProviderInfo {
+pub fn create_oss_provider(
+    name: &str,
+    default_provider_port: u16,
+    wire_api: WireApi,
+) -> ModelProviderInfo {
     // These CODEX_OSS_ environment variables are experimental: we may
     // switch to reading values from config.toml instead.
     let default_codex_oss_base_url = format!(
@@ -772,12 +783,16 @@ pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> Mod
         .ok()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or(default_codex_oss_base_url);
-    create_oss_provider_with_base_url(&codex_oss_base_url, wire_api)
+    create_oss_provider_with_base_url(name, &codex_oss_base_url, wire_api)
 }
 
-pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
+pub fn create_oss_provider_with_base_url(
+    name: &str,
+    base_url: &str,
+    wire_api: WireApi,
+) -> ModelProviderInfo {
     ModelProviderInfo {
-        name: "gpt-oss".into(),
+        name: name.into(),
         base_url: Some(base_url.into()),
         env_key: None,
         env_key_instructions: None,

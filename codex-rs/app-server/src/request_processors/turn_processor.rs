@@ -118,6 +118,7 @@ struct ThreadSettingsBuildParams {
     permissions: Option<String>,
     automatic_model_routing: Option<bool>,
     model: Option<String>,
+    model_provider: Option<String>,
     service_tier: Option<Option<String>>,
     effort: Option<ReasoningEffort>,
     summary: Option<ReasoningSummary>,
@@ -503,6 +504,9 @@ impl TurnRequestProcessor {
                     permissions: params.permissions,
                     automatic_model_routing: None,
                     model: params.model,
+                    // `turn/start` has no provider field; provider changes go through
+                    // `thread/settings/update`.
+                    model_provider: None,
                     service_tier: params.service_tier,
                     effort: params.effort,
                     summary: params.summary,
@@ -622,6 +626,7 @@ impl TurnRequestProcessor {
             permissions,
             automatic_model_routing,
             model,
+            model_provider,
             service_tier,
             effort,
             summary,
@@ -654,6 +659,7 @@ impl TurnRequestProcessor {
             || permissions.is_some()
             || automatic_model_routing.is_some()
             || model.is_some()
+            || model_provider.is_some()
             || service_tier.is_some()
             || effort.is_some()
             || summary.is_some()
@@ -723,6 +729,7 @@ impl TurnRequestProcessor {
                     windows_sandbox_level: None,
                     automatic_model_routing,
                     model: model.clone(),
+                    model_provider: model_provider.clone(),
                     effort: effort.clone(),
                     summary,
                     service_tier: service_tier.clone(),
@@ -746,6 +753,7 @@ impl TurnRequestProcessor {
             windows_sandbox_level: None,
             automatic_model_routing,
             model,
+            model_provider,
             effort,
             summary,
             service_tier,
@@ -781,6 +789,7 @@ impl TurnRequestProcessor {
                     permissions: params.permissions,
                     automatic_model_routing: params.automatic_model_routing,
                     model: params.model,
+                    model_provider: params.model_provider,
                     service_tier: params.service_tier,
                     effort: params.effort,
                     summary: params.summary,

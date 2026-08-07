@@ -95,8 +95,10 @@ pub(crate) struct SessionServices {
     pub(crate) thread_store: Arc<dyn ThreadStore>,
     pub(crate) attestation_provider: Option<Arc<dyn AttestationProvider>>,
     pub(crate) time_provider: Arc<dyn TimeProvider>,
-    /// Session-scoped model client shared across turns.
-    pub(crate) model_client: ModelClient,
+    /// Session-scoped model client shared across turns. Swappable because a
+    /// thread-settings update can move the thread to a different provider, and the
+    /// endpoint/auth a client was built with are fixed for its lifetime.
+    pub(crate) model_client: ArcSwap<ModelClient>,
     pub(crate) code_mode_service: CodeModeService,
     pub(crate) tool_search_handler_cache: ToolSearchHandlerCache,
     pub(crate) turn_environments: Arc<ThreadEnvironments>,

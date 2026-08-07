@@ -363,6 +363,11 @@ pub(crate) enum AppEvent {
         is_final: bool,
     },
 
+    /// Locally installed Ollama models were (re)fetched for the `/model` picker.
+    OllamaModelsLoaded {
+        models: Vec<String>,
+    },
+
     /// Result of computing a `/diff` command.
     DiffResult(String),
 
@@ -656,6 +661,16 @@ pub(crate) enum AppEvent {
     /// Update the current model slug in the running app and widget.
     UpdateModel(String),
 
+    /// Update the current model slug together with an explicit provider override.
+    ///
+    /// Used when a model is only available under a specific provider (e.g. a locally
+    /// installed Ollama model) and the provider can't be inferred from the model
+    /// slug the way OpenRouter models are in `UpdateModel`.
+    UpdateModelForProvider {
+        model: String,
+        provider_id: String,
+    },
+
     /// Enable the conservative Sol/Terra/Luna routing policy from `/model`.
     EnableAutoModelRouting,
 
@@ -671,6 +686,12 @@ pub(crate) enum AppEvent {
     PersistModelSelection {
         model: String,
         effort: Option<ReasoningEffort>,
+    },
+
+    /// Persist a model selection together with an explicit provider override.
+    PersistProviderModelSelection {
+        model: String,
+        provider_id: String,
     },
 
     /// Persist the selected personality to the appropriate config.

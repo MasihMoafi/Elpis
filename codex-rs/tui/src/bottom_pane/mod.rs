@@ -319,11 +319,6 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    pub fn set_token_activity_command_enabled(&mut self, enabled: bool) {
-        self.composer.set_token_activity_command_enabled(enabled);
-        self.request_redraw();
-    }
-
     pub fn set_mentions_v2_enabled(&mut self, enabled: bool) {
         self.composer.set_mentions_v2_enabled(enabled);
         self.request_redraw();
@@ -2712,10 +2707,12 @@ mod tests {
 
         // Repro: a running task + slash-command popup + Esc should dismiss the popup without
         // interrupting the task.
-        pane.insert_str("/rev");
+        // Any command Elpis actually lists will do -- what is under test is Esc, not which
+        // command was typed. `/rev` was used here upstream, where `/review` is on the menu.
+        pane.insert_str("/mod");
         assert!(
             pane.composer.popup_active(),
-            "expected command popup after typing `/rev`"
+            "expected command popup after typing `/mod`"
         );
 
         pane.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -2727,7 +2724,7 @@ mod tests {
             );
         }
         assert!(!pane.composer.popup_active());
-        assert_eq!(pane.composer_text(), "/rev");
+        assert_eq!(pane.composer_text(), "/mod");
 
         let width = 60;
         let area = Rect::new(0, 0, width, pane.desired_height(width));
@@ -2736,7 +2733,9 @@ mod tests {
             render_snapshot(&pane, area)
         );
 
-        pane.insert_str("i");
+        // Typing on brings the popup back, so long as the text still matches something:
+        // `/mod` + `e` keeps matching `/model`.
+        pane.insert_str("e");
         assert!(pane.composer.popup_active());
     }
 

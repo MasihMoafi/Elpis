@@ -78,6 +78,77 @@ pub(crate) fn build_model_selection_edits(
     ]
 }
 
+/// Config edits for pinning a model to a specific provider.
+///
+/// `context_window` is the window the provider itself reports for this model, when it can be
+/// discovered. Locally served models are absent from the bundled catalog, so without it every
+/// context measurement uses generic fallback metadata and describes the wrong model. Passing
+/// `None` clears any window a previous selection pinned rather than leaving it to apply to a
+/// model it was never measured from.
+pub(crate) fn build_provider_model_selection_edits(
+    model: &str,
+    provider_id: &str,
+    context_window: Option<i64>,
+) -> Vec<ConfigEdit> {
+    vec![
+        replace_config_value("model", serde_json::json!(model)),
+        replace_config_value("model_provider", serde_json::json!(provider_id)),
+        clear_config_value("model_reasoning_effort"),
+        replace_config_value("features.auto_model_routing", serde_json::json!(false)),
+        context_window.map_or_else(
+            || clear_config_value("model_context_window"),
+            |context_window| {
+                replace_config_value("model_context_window", serde_json::json!(context_window))
+            },
+        ),
+    ]
+}
+
+/// Providers the `/model` picker pins on the user's behalf. Selecting a model from a
+/// different group has to release the pin, or the next launch starts on the old
+/// endpoint with a model it does not serve. Providers outside this list were set up
+/// by the user, so they are left alone.
+const PICKER_MANAGED_PROVIDERS: [&str; 3] = [
+    codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID,
+    codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID,
+    codex_model_provider_info::OPENROUTER_PROVIDER_ID,
+];
+
+/// Config edit that keeps `model_provider` consistent with a newly selected `model`.
+///
+/// Returns `None` when the selection carries no provider signal and the active provider
+/// is one the user configured themselves.
+pub(crate) fn build_model_provider_edits(
+    model: &str,
+    active_provider_id: &str,
+) -> Vec<ConfigEdit> {
+    if is_openrouter_model_slug(model) {
+        return vec![
+            replace_config_value(
+                "model_provider",
+                serde_json::json!(codex_model_provider_info::OPENROUTER_PROVIDER_ID),
+            ),
+            // A window measured from a local model says nothing about an OpenRouter one.
+            clear_config_value("model_context_window"),
+        ];
+    }
+    if PICKER_MANAGED_PROVIDERS.contains(&active_provider_id) {
+        return vec![
+            clear_config_value("model_provider"),
+            clear_config_value("model_context_window"),
+        ];
+    }
+    Vec::new()
+}
+
+/// Whether a model slug is only reachable through OpenRouter. Mirrors the provider
+/// inference the core applies to a bare model slug.
+pub(crate) fn is_openrouter_model_slug(model: &str) -> bool {
+    model.contains('/')
+        || model.contains(":free")
+        || !codex_model_provider_info::openrouter_free_fallback_candidates(model).is_empty()
+}
+
 pub(crate) fn build_auto_model_routing_edits() -> Vec<ConfigEdit> {
     vec![
         replace_config_value("model", serde_json::json!("gpt-5.6-terra")),

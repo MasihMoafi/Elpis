@@ -9,30 +9,22 @@ expression: popup
 │ Route: direct provider connection            ││backspace = remove added file
 │ Protocol: responses                          ││
 │ Credential: OpenAI/ChatGPT credential store  ││CONTEXT WINDOW  ≈0 of 258.4k
-│ Codex model: test-visible-model              ││used (0%)
+│ Model: test-visible-model                    ││used (0%)
 │ Provider, protocol, route, and credential so ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 │                                              ││■ Conversation (messages) ≈0
      OPENAI                                    ││tokens
-     Auto                       Requires this  ││
-                                provider to    ││No portable context is
-                                offer GPT-5.6  ││available.
-                                Luna, Terra,   │
-                                and Sol.       │
-› 1. All models (current)       Browse this    │
-                                provider's     │
-                                full catalog   │
-                                (current:      │
-                                test-visible-  │
-                                model)         │
+     Auto                  Requires this       ││
+                           provider to offer   ││No portable context is
+                           GPT-5.6 Luna,       ││available.
+                           Terra, and Sol.     │
+› 1. All models (current)  Browse this         │
+                           provider's full     │
+                           catalog (current:   │
+                           test-visible-model) │
      OPENROUTER                                │
-  2. tencent/hy3:free           Free           │
-                                OpenRouter     │
-                                model          │
-  3. nvidia/nemotron-3-ultra-5… Free           │
-                                OpenRouter     │
-                                model          │
-  4. poolside/laguna-m.1:free   Free           │
-                                OpenRouter     │
-                                model          │
+  2. openrouter/free       OpenRouter routes   │
+                           each request to a   │
+                           free open-source    │
+                           model               │
 └──────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

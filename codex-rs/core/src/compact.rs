@@ -416,7 +416,7 @@ async fn run_cleanup_pass(
         } else {
             turn_context.model_info.slug.as_str()
         };
-    let mut client_session = sess.services.model_client.new_session();
+    let mut client_session = sess.services.model_client.load().new_session();
     if let Some(record) = try_cleanup_pass(
         sess,
         turn_context,
@@ -586,7 +586,7 @@ async fn run_compact_task_inner_impl(
 
     let max_retries = turn_context.provider.info().stream_max_retries();
     let mut retries = 0;
-    let mut client_session = sess.services.model_client.new_session();
+    let mut client_session = sess.services.model_client.load().new_session();
     // Reuse one client session so turn-scoped state (sticky routing, websocket incremental
     // request tracking)
     // survives retries within this compact turn.

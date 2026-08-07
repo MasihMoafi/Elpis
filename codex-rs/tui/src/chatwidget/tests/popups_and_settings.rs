@@ -3015,12 +3015,13 @@ async fn model_picker_shows_auto_without_upstream_auto_presets() {
         "expected Elpis Auto routing to appear without upstream auto presets:\n{popup}"
     );
     let normalized_popup = popup.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Word by word rather than by phrase: the description shares its line with the
+    // context pane, so where it wraps depends on how wide the widest model name happens
+    // to be. The claim under test is which words appear, not where they break.
     assert!(
-        popup.contains("Elpis")
-            && popup.contains("automatically")
-            && popup.contains("chooses the")
-            && popup.contains("right model")
-            && popup.contains("for the task"),
+        ["Elpis", "automatically", "chooses", "right", "model", "task"]
+            .iter()
+            .all(|word| popup.contains(word)),
         "expected opaque Auto description:\n{popup}"
     );
     assert!(

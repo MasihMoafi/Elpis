@@ -9,29 +9,21 @@ expression: popup
 │ Route: direct provider connection            ││backspace = remove added file
 │ Protocol: responses                          ││
 │ Credential: OpenAI/ChatGPT credential store  ││CONTEXT WINDOW  ≈0 of 258.4k
-│ Codex model: gpt-5.2                         ││used (0%)
+│ Model: gpt-5.2                               ││used (0%)
 │ Provider, protocol, route, and credential so ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 │                                              ││■ Conversation (messages) ≈0
      OPENAI                                    ││tokens
-  1. Auto                       Elpis          ││
-                                automatically  ││No portable context is
-                                chooses the    ││available.
-                                right model    │
-                                for the task   │
-› 2. All models (current)       Browse this    │
-                                provider's     │
-                                full catalog   │
-                                (current: gpt- │
-                                5.2)           │
+  1. Auto                  Elpis automatically ││
+                           chooses the right   ││No portable context is
+                           model for the task  ││available.
+› 2. All models (current)  Browse this         │
+                           provider's full     │
+                           catalog (current:   │
+                           gpt-5.2)            │
      OPENROUTER                                │
-  3. tencent/hy3:free           Free           │
-                                OpenRouter     │
-                                model          │
-  4. nvidia/nemotron-3-ultra-5… Free           │
-                                OpenRouter     │
-                                model          │
-  5. poolside/laguna-m.1:free   Free           │
-                                OpenRouter     │
-                                model          │
+  3. openrouter/free       OpenRouter routes   │
+                           each request to a   │
+                           free open-source    │
+                           model               │
 └──────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

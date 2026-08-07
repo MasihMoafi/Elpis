@@ -111,6 +111,7 @@ impl ChatWidget {
             has_chatgpt_account,
             has_codex_backend_auth,
             model_catalog,
+            ollama_local_models: Vec::new(),
             session_telemetry,
             session_header: SessionHeader::new(header_model),
             initial_user_message,
@@ -232,6 +233,7 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
+        widget.refresh_ollama_models();
         if let Some(keymap) = runtime_keymap {
             widget.bottom_pane.set_keymap_bindings(&keymap);
         }
@@ -262,9 +264,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_connectors_enabled(widget.connectors_enabled());
-        widget
-            .bottom_pane
-            .set_token_activity_command_enabled(widget.has_codex_backend_auth);
         widget.refresh_status_surfaces();
         widget.refresh_context_window_display();
 

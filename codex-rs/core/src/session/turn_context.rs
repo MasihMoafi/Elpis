@@ -812,7 +812,13 @@ impl Session {
     }
 
     pub(crate) async fn maybe_emit_model_warnings_for_turn(&self, tc: &TurnContext) {
-        if tc.model_info.used_fallback_model_metadata {
+        // The bundled model catalog only describes the first-party models. A third-party or
+        // locally served model is *expected* to be absent from it, so warning there flags
+        // normal operation as a problem on every turn. Keep the warning where it means
+        // something: a first-party slug we don't recognize is usually a typo.
+        let model_metadata_is_expected =
+            tc.config.model_provider.is_openai() && tc.config.model_provider.requires_openai_auth;
+        if tc.model_info.used_fallback_model_metadata && model_metadata_is_expected {
             self.send_event(
                 tc,
                 EventMsg::Warning(WarningEvent {

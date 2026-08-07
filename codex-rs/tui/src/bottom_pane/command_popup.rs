@@ -45,7 +45,6 @@ pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
-    pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
     pub(crate) goal_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
@@ -59,7 +58,6 @@ impl From<CommandPopupFlags> for BuiltinCommandFlags {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
             connectors_enabled: value.connectors_enabled,
             plugins_command_enabled: value.plugins_command_enabled,
-            token_activity_command_enabled: value.token_activity_command_enabled,
             service_tier_commands_enabled: value.service_tier_commands_enabled,
             goal_command_enabled: value.goal_command_enabled,
             personality_command_enabled: value.personality_command_enabled,
@@ -381,14 +379,10 @@ mod tests {
                 CommandItem::ServiceTier(command) => command.name,
             })
             .collect();
-        assert_eq!(
-            cmds,
-            vec![
-                "model".to_string(),
-                "mention".to_string(),
-                "mcp".to_string()
-            ]
-        );
+        // `/mention` also matches this prefix upstream, but it is not part of Elpis's command
+        // menu, so the run of matches is shorter here. What this covers is the order the
+        // matches keep, not how many there are.
+        assert_eq!(cmds, vec!["model".to_string(), "mcp".to_string()]);
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -494,17 +488,6 @@ mod tests {
     }
 
     #[test]
-    fn btw_hidden_in_empty_filter_but_shown_for_prefix() {
-        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
-        popup.on_composer_text_change("/".to_string());
-        let items = popup.filtered_items();
-        assert!(!items.contains(&CommandItem::Builtin(SlashCommand::Btw)));
-
-        popup.on_composer_text_change("/bt".to_string());
-        let items = popup.filtered_items();
-        assert!(items.contains(&CommandItem::Builtin(SlashCommand::Btw)));
-    }
-
     #[test]
     fn plan_command_hidden_when_collaboration_modes_disabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
@@ -531,7 +514,6 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 plugins_command_enabled: false,
-                token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
                 personality_command_enabled: true,
@@ -552,7 +534,6 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 plugins_command_enabled: false,
-                token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
                 personality_command_enabled: false,
@@ -584,7 +565,6 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 plugins_command_enabled: false,
-                token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
                 personality_command_enabled: true,
