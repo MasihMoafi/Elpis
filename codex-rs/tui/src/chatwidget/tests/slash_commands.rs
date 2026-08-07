@@ -481,21 +481,29 @@ async fn queued_settings_selection_applies_before_next_input() {
         "expected model menu to open; popup:\n{popup}"
     );
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-    while let Ok(event) = rx.try_recv() {
-        match event {
-            AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
-            AppEvent::UpdateModel(model) => chat.set_model(&model),
-            AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
-            AppEvent::SettingsSelectionClosed => {
-                chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+    // The first menu lists routing choices and an "All models" entry; the individual presets
+    // live one level down, so reaching the model takes three accepts: All models, the preset,
+    // then its reasoning effort.
+    for step in 0..3 {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        if step == 0 {
+            assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+        }
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                AppEvent::OpenAllModelsPopup { models } => chat.open_all_models_popup(models),
+                AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
+                AppEvent::UpdateModel(model) => chat.set_model(&model),
+                AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
+                AppEvent::SettingsSelectionClosed => {
+                    chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
+                }
+                AppEvent::SettingsSelectionSettled if chat.no_modal_or_popup_active() => {
+                    chat.set_queue_autosend_suppressed(/*suppressed*/ false);
+                    chat.maybe_send_next_queued_input();
+                }
+                _ => {}
             }
-            AppEvent::SettingsSelectionSettled if chat.no_modal_or_popup_active() => {
-                chat.set_queue_autosend_suppressed(/*suppressed*/ false);
-                chat.maybe_send_next_queued_input();
-            }
-            _ => {}
         }
     }
 

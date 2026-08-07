@@ -1140,9 +1140,10 @@ mod tests {
                 vec![Line::from("hello back")],
                 /*is_first_line*/ true,
             )) as Arc<dyn HistoryCell>,
-            Arc::new(crate::history_cell::new_info_event(
+            Arc::new(crate::history_cell::new_active_web_search_call(
+                "call-1".to_string(),
                 "ran a command".to_string(),
-                /*hint*/ None,
+                false,
             )) as Arc<dyn HistoryCell>,
         ];
 

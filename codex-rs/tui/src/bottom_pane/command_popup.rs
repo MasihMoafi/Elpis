@@ -488,7 +488,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn plan_command_hidden_when_collaboration_modes_disabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
         popup.on_composer_text_change("/".to_string());
@@ -508,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_command_stays_removed_when_collaboration_modes_enabled() {
+    fn plan_command_shown_when_collaboration_modes_enabled() {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
@@ -524,7 +523,12 @@ mod tests {
         );
         popup.on_composer_text_change("/plan".to_string());
 
-        assert!(popup.filtered_items().is_empty());
+        assert!(
+            popup
+                .filtered_items()
+                .contains(&CommandItem::Builtin(SlashCommand::Plan)),
+            "expected '/plan' to be offered when collaboration modes are enabled"
+        );
     }
 
     #[test]
