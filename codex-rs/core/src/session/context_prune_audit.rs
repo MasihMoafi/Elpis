@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use anyhow::Result;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::TokenUsage;
 use serde::Serialize;
 use tempfile::Builder;
 use url::Url;
@@ -15,7 +16,7 @@ use uuid::Uuid;
 
 use crate::context_pruner::PruneRecord;
 
-const AUDIT_SCHEMA_VERSION: u32 = 1;
+const AUDIT_SCHEMA_VERSION: u32 = 2;
 
 pub(super) struct PruneAuditInput<'a> {
     /// Which trigger fired this pass: `steady` or `pressure`.
@@ -24,6 +25,9 @@ pub(super) struct PruneAuditInput<'a> {
     pub(super) ace_instructions: &'a str,
     pub(super) ace_input: &'a str,
     pub(super) raw_response: &'a str,
+    /// What the pruning call was billed. `None` when the provider reported nothing —
+    /// distinct from a pass that genuinely cost zero.
+    pub(super) usage: Option<&'a TokenUsage>,
     pub(super) batch: &'a [(String, String)],
     pub(super) record: &'a PruneRecord,
     pub(super) before_model_items: &'a [ResponseItem],
@@ -43,6 +47,7 @@ struct AceConversation<'a> {
     instructions: &'a str,
     input: &'a str,
     raw_response: &'a str,
+    usage: Option<&'a TokenUsage>,
 }
 
 #[derive(Serialize)]
@@ -103,6 +108,7 @@ pub(super) fn write_applied_pass(
             instructions: input.ace_instructions,
             input: input.ace_input,
             raw_response: input.raw_response,
+            usage: input.usage,
         },
     )?;
 
@@ -396,6 +402,7 @@ mod tests {
                 ace_instructions: "PRUNING INSTRUCTIONS",
                 ace_input: "ACE INPUT",
                 raw_response: "call/unsafe: found needle in source.rs",
+                usage: None,
                 batch: &batch,
                 record: &record,
                 before_model_items: &before,
@@ -470,6 +477,7 @@ mod tests {
                     ace_instructions: "instructions",
                     ace_input: "input",
                     raw_response: "NOTHING_TO_KEEP",
+                    usage: None,
                     batch: &batch,
                     record: &record,
                     before_model_items: &before,
@@ -504,6 +512,7 @@ mod tests {
                 ace_instructions: "instructions",
                 ace_input: "input",
                 raw_response: "NOTHING_TO_KEEP",
+                usage: None,
                 batch: &batch,
                 record: &record,
                 before_model_items: &[],
@@ -513,5 +522,66 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("pruning audit directory"));
+    }
+
+    fn write_pass_with_usage(
+        root: &Path,
+        usage: Option<TokenUsage>,
+    ) -> serde_json::Value {
+        let before = vec![tool_call("a", "first"), tool_output("a", "result")];
+        let batch = vec![("a".to_string(), "tool and output".to_string())];
+        let record = PruneRecord {
+            covered_call_ids: vec!["a".to_string()],
+            text: String::new(),
+        };
+        let written = write_applied_pass(
+            root,
+            PruneAuditInput {
+                trigger: "pressure",
+                model_slug: "terra",
+                ace_instructions: "instructions",
+                ace_input: "input",
+                raw_response: "NOTHING_TO_KEEP",
+                usage: usage.as_ref(),
+                batch: &batch,
+                record: &record,
+                before_model_items: &before,
+                after_model_items: &[],
+                saved_chars: 10,
+            },
+        )
+        .expect("write audit");
+        serde_json::from_str(
+            &std::fs::read_to_string(written.pass_dir.join("ace.json")).expect("read ace.json"),
+        )
+        .expect("parse ace.json")
+    }
+
+    #[test]
+    fn pass_records_the_reasoning_tokens_it_was_billed_for() {
+        let root = tempfile::tempdir().expect("audit root");
+        let ace = write_pass_with_usage(
+            root.path(),
+            Some(TokenUsage {
+                input_tokens: 4_000,
+                cached_input_tokens: 1_000,
+                output_tokens: 120,
+                reasoning_output_tokens: 8_500,
+                total_tokens: 12_620,
+            }),
+        );
+        // Reasoning tokens are billed as output but never appear in `raw_response`, so
+        // without this the archive cannot say what a pass cost.
+        assert_eq!(ace["usage"]["reasoning_output_tokens"].as_i64(), Some(8_500));
+        assert_eq!(ace["usage"]["cached_input_tokens"].as_i64(), Some(1_000));
+    }
+
+    #[test]
+    fn a_pass_with_no_reported_usage_records_null_rather_than_zero() {
+        let root = tempfile::tempdir().expect("audit root");
+        let ace = write_pass_with_usage(root.path(), None);
+        // A provider that reports nothing and a pass that genuinely cost nothing are
+        // different facts; analysis has to be able to tell them apart.
+        assert_eq!(ace.get("usage"), Some(&serde_json::Value::Null));
     }
 }

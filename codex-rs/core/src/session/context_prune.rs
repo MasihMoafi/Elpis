@@ -17,6 +17,7 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::TokenUsage;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
 
@@ -165,7 +166,7 @@ async fn run_context_prune(
     // follow-ups without perturbing the user's model session.
     let mut prune_client_session = sess.services.model_client.load().new_session();
 
-    let Some((record, raw, model_slug)) = run_prune_pass(
+    let Some((record, raw, model_slug, usage)) = run_prune_pass(
         sess,
         turn_context,
         &mut prune_client_session,
@@ -200,6 +201,7 @@ async fn run_context_prune(
             ace_instructions: codex_prompts::CONTEXT_PRUNE_PROMPT,
             ace_input: &ace_input,
             raw_response: &raw,
+            usage: usage.as_ref(),
             batch: &batch,
             record: &record,
             before_model_items: &before_model_items,
@@ -263,7 +265,12 @@ async fn run_prune_pass(
     client_session: &mut ModelClientSession,
     batch: &[(String, String)],
     active_question: Option<&str>,
-) -> Option<(crate::context_pruner::PruneRecord, String, String)> {
+) -> Option<(
+    crate::context_pruner::PruneRecord,
+    String,
+    String,
+    Option<TokenUsage>,
+)> {
     let primary_slug =
         if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
             context_pruner::PRUNE_MODEL_SLUG
@@ -271,7 +278,7 @@ async fn run_prune_pass(
             turn_context.model_info.slug.as_str()
         };
 
-    if let Some((record, output)) = try_validated_prune_pass(
+    if let Some((record, output, usage)) = try_validated_prune_pass(
         sess,
         turn_context,
         client_session,
@@ -281,7 +288,7 @@ async fn run_prune_pass(
     )
     .await
     {
-        return Some((record, output, primary_slug.to_string()));
+        return Some((record, output, primary_slug.to_string(), usage));
     }
 
     let fallback_slug = turn_context.model_info.slug.as_str();
@@ -295,7 +302,7 @@ async fn run_prune_pass(
             fallback_slug,
         )
         .await
-        .map(|(record, output)| (record, output, fallback_slug.to_string()));
+        .map(|(record, output, usage)| (record, output, fallback_slug.to_string(), usage));
     }
 
     None
@@ -308,8 +315,12 @@ async fn try_validated_prune_pass(
     batch: &[(String, String)],
     active_question: Option<&str>,
     prune_model_slug: &str,
-) -> Option<(crate::context_pruner::PruneRecord, String)> {
-    let output = try_stream_prune_pass(
+) -> Option<(
+    crate::context_pruner::PruneRecord,
+    String,
+    Option<TokenUsage>,
+)> {
+    let (output, usage) = try_stream_prune_pass(
         sess,
         turn_context,
         client_session,
@@ -333,7 +344,7 @@ async fn try_validated_prune_pass(
         .await;
         return None;
     };
-    Some((record, output))
+    Some((record, output, usage))
 }
 
 async fn try_stream_prune_pass(
@@ -343,7 +354,7 @@ async fn try_stream_prune_pass(
     batch: &[(String, String)],
     active_question: Option<&str>,
     prune_model_slug: &str,
-) -> Option<String> {
+) -> Option<(String, Option<TokenUsage>)> {
     let model_info = sess
         .services
         .models_manager
@@ -410,6 +421,10 @@ async fn try_stream_prune_pass(
     let mut collected: Vec<ResponseItem> = Vec::new();
     let mut streamed_text = String::new();
     let mut safety_buffering = false;
+    // The pruning call runs at max reasoning effort. Those tokens are billed as output
+    // but never appear in the response text, so the completion event is the only place
+    // the cost of a pass can be observed.
+    let mut usage: Option<TokenUsage> = None;
     loop {
         match stream.next().await {
             Some(Ok(ResponseEvent::OutputItemDone(item))) => collected.push(item),
@@ -417,7 +432,10 @@ async fn try_stream_prune_pass(
             Some(Ok(ResponseEvent::SafetyBuffering(_))) => {
                 safety_buffering = true;
             }
-            Some(Ok(ResponseEvent::Completed { .. })) => break,
+            Some(Ok(ResponseEvent::Completed { token_usage, .. })) => {
+                usage = token_usage;
+                break;
+            }
             Some(Ok(_)) => continue,
             Some(Err(err)) => {
                 tracing::warn!("Context prune stream error for model {prune_model_slug}: {err}");
@@ -447,7 +465,7 @@ async fn try_stream_prune_pass(
         };
         log_prune_debug(sess, prune_model_slug, &input_text, reason, None).await;
     }
-    result
+    result.map(|text| (text, usage))
 }
 
 async fn log_prune_debug(
