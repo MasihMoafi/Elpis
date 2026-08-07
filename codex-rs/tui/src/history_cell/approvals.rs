@@ -140,7 +140,7 @@ pub fn new_approval_decision_cell(
                     vec![
                         actor.subject().into(),
                         "persisted".bold(),
-                        " Codex network access to ".into(),
+                        " Elpis network access to ".into(),
                         Span::from(target).dim(),
                     ],
                 ),

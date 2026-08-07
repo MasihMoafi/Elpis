@@ -98,7 +98,7 @@ impl WidgetRef for &WelcomeWidget {
             "  ".into(),
             "Welcome to ".into(),
             PRODUCT_NAME.set_style(brand_style()),
-            ", with Codex as the active runtime".into(),
+            ", with Elpis as the active runtime".into(),
         ]));
 
         Paragraph::new(lines)
