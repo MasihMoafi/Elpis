@@ -1,9 +1,3 @@
-# The prompt
-
-Given verbatim to both systems. Do not edit between runs. Paste as a single message.
-
----
-
 This repository is a fork of the OpenAI Codex CLI. Large parts of the inherited code are
 not used by this product. Your task is to delete them.
 
