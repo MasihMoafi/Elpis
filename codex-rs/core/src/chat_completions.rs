@@ -1000,6 +1000,7 @@ where
     let mut input_tokens = 0_i64;
     let mut output_tokens = 0_i64;
     let mut finish_reason: Option<String> = None;
+    let mut item_opened = false;
 
     loop {
         let next = tokio::select! {
@@ -1035,6 +1036,25 @@ where
             if let Some(delta) = candidate["delta"]["content"].as_str()
                 && !delta.is_empty()
             {
+                // The session only streams deltas into an already-open item; one that
+                // arrives before the item is opened is discarded, and panics in a debug
+                // build. The Responses API opens the item for us, so open it here too.
+                if !item_opened {
+                    item_opened = true;
+                    send(
+                        tx,
+                        ResponseEvent::OutputItemAdded(ResponseItem::Message {
+                            id: None,
+                            role: "assistant".to_string(),
+                            content: vec![ContentItem::OutputText {
+                                text: String::new(),
+                            }],
+                            phase: None,
+                            internal_chat_message_metadata_passthrough: None,
+                        }),
+                    )
+                    .await?;
+                }
                 text.push_str(delta);
                 send(tx, ResponseEvent::OutputTextDelta(delta.to_string())).await?;
             }
@@ -1400,6 +1420,50 @@ mod tests {
         .await
         .expect("closed receiver should cancel promptly");
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn chat_stream_opens_an_item_before_the_first_text_delta() {
+        fn sse(data: &str) -> Result<Event, EventStreamError<reqwest::Error>> {
+            Ok(Event {
+                event: "message".to_string(),
+                data: data.to_string(),
+                id: String::new(),
+                retry: None,
+            })
+        }
+
+        let mut events = futures::stream::iter(vec![
+            sse(r#"{"id":"gen-1","choices":[{"delta":{"content":"hi"}}]}"#),
+            sse(r#"{"id":"gen-1","choices":[{"delta":{"content":" there"},"finish_reason":"stop"}]}"#),
+            sse("[DONE]"),
+        ]);
+        let (tx, mut rx) = mpsc::channel(16);
+        stream_chat_completions_events(&mut events, &tx, Duration::from_secs(5))
+            .await
+            .expect("stream");
+        drop(tx);
+
+        let mut seen = Vec::new();
+        while let Some(event) = rx.recv().await {
+            seen.push(event.expect("event"));
+        }
+
+        // A text delta that arrives before an item is open is dropped by the session, and
+        // panics outright in a debug build. Every Chat-API provider -- OpenRouter, Ollama,
+        // LM Studio -- has to open the assistant item first, the way the Responses API does.
+        let first_delta = seen
+            .iter()
+            .position(|event| matches!(event, ResponseEvent::OutputTextDelta(_)))
+            .expect("a text delta");
+        let opened = seen
+            .iter()
+            .position(|event| matches!(event, ResponseEvent::OutputItemAdded(_)))
+            .expect("an opened item");
+        assert!(
+            opened < first_delta,
+            "item must open before the first delta, got {seen:?}"
+        );
     }
 
     #[test]
