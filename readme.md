@@ -159,13 +159,13 @@ off, matching upstream Codex. Extraction works, but durable promotion has not pr
 real `MEMORY.md` commit on Masih's install because the current recall threshold is not
 reached in normal use. `/memories` controls recall and writing independently; no claim
 that durable memory works is accepted without a promotion commit in the memories
-repository. See [the measured state and eval](docs/memory.md).
+repository. See [Memory](docs/memory.md).
 
 ### MCP integrations you plug in
 
 Elpis ships no retrieval or speech engine and downloads no models. MCP servers keep optional capabilities in their own processes, with their own dependencies and disk costs; `/mcp` confirms the servers you register are connected.
 
-- **Workspace retrieval:** [rag-mcp](https://github.com/MasihMoafi/rag-mcp) provides local semantic search over your own documents. Its embeddings, vector store, reranker, and any API key remain yours. See [docs/rag.md](docs/rag.md).
+- **Workspace retrieval:** [rag-mcp](https://github.com/MasihMoafi/rag-mcp) provides local semantic search over your own documents. Its embeddings, vector store, reranker, and any API key remain yours. Elpis ships no retrieval engine of its own.
 - **Voice transcription:** [Voice Commander](https://github.com/MasihMoafi/Voice-commander) records speech, transcribes it locally, and pastes at the active cursor. It remains an external companion; it can expose transcription as an MCP tool rather than adding Whisper, CUDA, Python, or model downloads to Elpis.
 
 ### Privacy and ownership
@@ -184,10 +184,9 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 
 - [Context and pruning](docs/context.md) — the four context-control layers and the Context Ledger
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
-- [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
+- [Memory](docs/memory.md) — one durable file, switchable in the Context Ledger
 - [Evals](docs/evals/) — source data, reproducible scorers, and publication gates
 - [Providers](docs/providers.md) — every supported route, including local inference
-- [Workspace retrieval](docs/rag.md) — how to plug in semantic search over your own documents
 - [Technical guide](docs/GUIDE.md) — product vision and architecture
 
 ## License

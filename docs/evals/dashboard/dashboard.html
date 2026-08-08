@@ -68,8 +68,8 @@ code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:color-mix(
 <h1>One prompt, two systems, two transcripts.</h1>
 <p class="sub">Identical clean checkouts of the same repository, the same 258,400-token window, the same
 prompt. Both arms ran on <code>gpt-5.6-luna</code>. Every figure on this page is read out of the two
-session rollouts on disk — nothing is projected, extrapolated or synthesised. Messages 2 and 3 have not
-been run; their slots are empty rather than estimated.</p></header>
+session rollouts on disk — nothing is projected, extrapolated or synthesised. Messages 2 and 3 were run
+and then withdrawn as not comparable; why is the first thing below.</p></header>
 
 <div class="kpis">
 <div class="kpi"><div class="k">Lowest context remaining</div>
@@ -85,8 +85,20 @@ been run; their slots are empty rather than estimated.</p></header>
   <div class="n"><span style="color:#7fc44a">$4.73</span> <span class="vs">/</span>
   <span style="color:#17a398">$10.01</span></div><div class="l">Codex / Elpis</div></div>
 </div>
+<section class="card"><h3>Why this page shows one message and not three</h3>
+<p class="note danger"><b>Messages 2 and 3 were withdrawn.</b> Their prompts name a goal —
+&ldquo;find ONE performance improvement&rdquo; — not a task, so each system chose different work and
+did different amounts of it. On message 3 Codex ran 16 tool calls in 3.0 minutes; Elpis ran 83 in 30.2.
+Nothing comparative survives that, and averaging them in would corrupt every figure they touch, so
+their records are not kept in <code>runs/</code>.</p>
+<p class="note"><b>What they did establish, and it was worth having.</b> Elpis's prune passes collapsed
+across the session — <b>26 on message 1, 7 on message 2, 0 on message 3</b> — while its floor fell
+65.9% &rarr; 55.6% &rarr; 19%. Pressure pruning went silent exactly as the window filled, because the
+keep-budget was measured in tool output and by message 3 the window held prose. Fixed in
+<code>96d54f9</code>; the regression test fails without it. That defect is only visible at depth, and
+only because these two messages were run.</p></section>
 <div class="part"><span class="pnum">Message 1 · measured</span>
-<h2 class="ptitle">“Thoroughly familiarize yourself with the project.”</h2>
+<h2 class="ptitle">“thoroughly familiarize yourself with this project.”</h2>
 <p class="sub">Codex: 46 requests, 45 tool calls, 10.3 minutes.
 Elpis: 67 requests, 66 tool calls, 23.9 minutes.</p></div>
 <section class="card"><h3>Context remaining, request by request</h3>
@@ -147,19 +159,19 @@ $0.19 and $0.59.</p>
 0.82 reclaimed per token spent. The last two bars are cost in millionths of a
 dollar: $0.20 on Luna,
 $0.51 on Haiku 4.5.</p></section>
-<div class="part pending"><span class="pnum">Message 2 · not yet run</span>
+<div class="part pending"><span class="pnum">Message 2 · withdrawn</span>
 <h2 class="ptitle">“Identify and implement ONE small performance improvement that makes the application measurably faster or more efficient.”</h2></div>
 <section class="card pending">
-<p class="sub">Run both arms, then <code>python3 collect.py &lt;rollout.jsonl&gt; exp2-codex</code> and
-the same for <code>exp2-elpis</code>, then <code>python3 build.py</code>. This section fills with the
-same charts as message 1. No edits to the page.</p>
+<p class="sub">Not comparable — see above. Re-run it as a single fixed task both arms must complete,
+collect with <code>python3 collect.py &lt;rollout.jsonl&gt; --split --system &lt;codex|elpis&gt;</code>,
+and this section fills with the same charts as message 1. No edits to the page.</p>
 <div class="slots"><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">floor</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">floor</span></div><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">compactions / passes</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">compactions / passes</span></div><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">cache hit</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">cache hit</span></div><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">cost, Sol</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">cost, Sol</span></div></div></section>
-<div class="part pending"><span class="pnum">Message 3 · not yet run</span>
+<div class="part pending"><span class="pnum">Message 3 · withdrawn</span>
 <h2 class="ptitle">“Find and implement ONE UX improvement that makes the interface more intuitive, accessible, or pleasant to use.”</h2></div>
 <section class="card pending">
-<p class="sub">Run both arms, then <code>python3 collect.py &lt;rollout.jsonl&gt; exp3-codex</code> and
-the same for <code>exp3-elpis</code>, then <code>python3 build.py</code>. This section fills with the
-same charts as message 1. No edits to the page.</p>
+<p class="sub">Not comparable — see above. Re-run it as a single fixed task both arms must complete,
+collect with <code>python3 collect.py &lt;rollout.jsonl&gt; --split --system &lt;codex|elpis&gt;</code>,
+and this section fills with the same charts as message 1. No edits to the page.</p>
 <div class="slots"><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">floor</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">floor</span></div><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">compactions / passes</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">compactions / passes</span></div><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">cache hit</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">cache hit</span></div><div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">cost, Sol</span></div><div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">cost, Sol</span></div></div></section>
 <div class="part"><span class="pnum">Across the run</span>
 <h2 class="ptitle">All three messages, side by side</h2>
@@ -181,6 +193,43 @@ same charts as message 1. No edits to the page.</p>
 <tr><td>Total output tokens</td><td>18,929</td><td>26,952</td><td class='pend'>—</td><td class='pend'>—</td><td class='pend'>—</td><td class='pend'>—</td></tr>
 <tr><td>Wall clock, minutes</td><td>10.3</td><td>23.9</td><td class='pend'>—</td><td class='pend'>—</td><td class='pend'>—</td><td class='pend'>—</td></tr>
 </table></div></section>
+<div class="part"><span class="pnum">Holistic</span>
+<h2 class="ptitle">The session end to end</h2>
+<p class="sub">All messages concatenated in the order they were sent — the run as the window
+actually experienced it, rather than three separate readings.</p></div>
+
+<section class="card"><h3>Context remaining across the whole session</h3>
+<svg viewBox="0 0 1020 380" class="chart"><defs><linearGradient id="r0" gradientUnits="userSpaceOnUse" x1="0" y1="30.0" x2="0" y2="338.0"><stop offset="0.0" stop-color="#7fc44a"/><stop offset="0.3" stop-color="#7fc44a"/><stop offset="0.45" stop-color="#6fb03f"/><stop offset="0.58" stop-color="#c9b03a"/><stop offset="0.72" stop-color="#d98026"/><stop offset="0.86" stop-color="#c8442c"/><stop offset="1.0" stop-color="#96181c"/></linearGradient><linearGradient id="r1" gradientUnits="userSpaceOnUse" x1="0" y1="30.0" x2="0" y2="338.0"><stop offset="0.0" stop-color="#17a398"/><stop offset="0.3" stop-color="#17a398"/><stop offset="0.45" stop-color="#6fb03f"/><stop offset="0.58" stop-color="#c9b03a"/><stop offset="0.72" stop-color="#d98026"/><stop offset="0.86" stop-color="#c8442c"/><stop offset="1.0" stop-color="#96181c"/></linearGradient><linearGradient id="rband" gradientUnits="userSpaceOnUse" x1="0" y1="30.0" x2="0" y2="122.4"><stop offset="0" stop-color="#17a398" stop-opacity=".16"/><stop offset="1" stop-color="#17a398" stop-opacity=".03"/></linearGradient></defs><rect x="58" y="30.0" width="936" height="92.4" fill="url(#rband)"/><rect x="58" y="137.8" width="936" height="200.2" fill="#c8442c" opacity=".05"/><line x1="58" y1="338.0" x2="994" y2="338.0" class="grid"/><text x="48" y="342.0" class="ax" text-anchor="end">0%</text><line x1="58" y1="261.0" x2="994" y2="261.0" class="grid"/><text x="48" y="265.0" class="ax" text-anchor="end">25%</text><line x1="58" y1="184.0" x2="994" y2="184.0" class="grid"/><text x="48" y="188.0" class="ax" text-anchor="end">50%</text><line x1="58" y1="137.8" x2="994" y2="137.8" class="grid"/><text x="48" y="141.8" class="ax" text-anchor="end">65%</text><line x1="58" y1="107.0" x2="994" y2="107.0" class="grid"/><text x="48" y="111.0" class="ax" text-anchor="end">75%</text><line x1="58" y1="30.0" x2="994" y2="30.0" class="grid"/><text x="48" y="34.0" class="ax" text-anchor="end">100%</text><line x1="58" y1="122.4" x2="994" y2="122.4" class="trig"/><text x="66" y="114.4" class="trigmark">pressure pruning fires here — 70% remaining</text><line x1="58" y1="137.8" x2="994" y2="137.8" class="refline"/><text x="988" y="153.8" class="anno" fill="#c8442c" text-anchor="end">your floor — 65% remaining</text><path d="M58.0,57.4 L78.8,69.1 L99.6,69.9 L120.4,72.1 L141.2,83.0 L162.0,83.5 L182.8,87.4 L203.6,91.5 L224.4,95.4 L245.2,110.6 L266.0,123.7 L286.8,124.8 L307.6,139.1 L328.4,151.9 L349.2,154.7 L370.0,157.2 L390.8,161.0 L411.6,164.1 L432.4,177.4 L453.2,184.8 L474.0,189.5 L494.8,193.8 L515.6,198.7 L536.4,202.5 L557.2,206.2 L578.0,217.3 L598.8,221.5 L619.6,224.7 L640.4,227.6 L661.2,230.4 L682.0,233.2 L702.8,237.6 L723.6,248.7 L744.4,252.7 L765.2,263.6 L786.0,265.4 L806.8,267.1 L827.6,269.2 L848.4,282.3 L869.2,289.0 L890.0,299.6 L910.8,312.5 L931.6,316.7 L952.4,68.7 L973.2,74.1 L994.0,77.3" fill="none" stroke="url(#r0)" stroke-width="2.4" stroke-linejoin="round"/><circle cx="931.6" cy="316.7" r="4" fill="#c8442c"/><text x="939.6" y="320.7" class="anno" fill="#c8442c">Codex floor 6.9%</text><line x1="952.4" y1="30.0" x2="952.4" y2="338.0" class="comp"/><text x="958.4" y="22.0" class="anno" fill="#c8442c">compaction</text><path d="M58.0,60.5 L72.2,61.8 L86.4,64.2 L100.5,71.7 L114.7,82.8 L128.9,93.9 L143.1,103.7 L157.3,113.9 L171.5,109.2 L185.6,120.4 L199.8,112.4 L214.0,100.9 L228.2,113.2 L242.4,101.1 L256.5,114.3 L270.7,118.4 L284.9,107.2 L299.1,109.9 L313.3,122.6 L327.5,106.3 L341.6,108.8 L355.8,120.0 L370.0,108.7 L384.2,119.6 L398.4,110.0 L412.5,123.6 L426.7,114.0 L440.9,120.6 L455.1,115.1 L469.3,114.8 L483.5,113.3 L497.6,115.8 L511.8,117.1 L526.0,119.4 L540.2,120.3 L554.4,121.2 L568.5,121.5 L582.7,121.7 L596.9,121.8 L611.1,122.0 L625.3,122.1 L639.5,122.3 L653.6,122.4 L667.8,122.5 L682.0,124.9 L696.2,126.0 L710.4,131.5 L724.5,123.9 L738.7,126.2 L752.9,129.3 L767.1,129.6 L781.3,134.9 L795.5,123.8 L809.6,129.0 L823.8,133.6 L838.0,125.0 L852.2,126.0 L866.4,128.9 L880.5,129.9 L894.7,130.6 L908.9,126.7 L923.1,127.2 L937.3,127.8 L951.5,128.9 L965.6,129.5 L979.8,130.5 L994.0,132.8" fill="none" stroke="url(#r1)" stroke-width="2.4" stroke-linejoin="round"/><circle cx="781.3" cy="134.9" r="4" fill="#17a398"/><text x="789.3" y="138.9" class="anno" fill="#17a398">Elpis floor 65.9%</text><text x="58" y="372" class="ax">model request →</text></svg>
+<p class="cap">Codex 46 requests, Elpis 67, plotted on a shared horizontal axis, so the
+two lines are not aligned by request number. Requests below 65% remaining — Codex
+31 of 46, Elpis 0 of 67.</p></section>
+
+<section class="card"><h3>Session totals</h3>
+<div class="scroll"><table>
+<tr><th>Whole session</th><th>Codex</th><th>Elpis</th></tr>
+<tr><td>Model requests</td><td>46</td><td>67</td></tr>
+<tr><td>Tool calls</td><td>45</td><td>66</td></tr>
+<tr><td>Working time, minutes</td><td>10.3</td><td>23.9</td></tr>
+<tr><td>Lowest context remaining</td><td>6.9%</td><td>65.9%</td></tr>
+<tr><td>Median context remaining</td><td>49.0%</td><td>70.4%</td></tr>
+<tr><td>Spread (σ)</td><td>25.0</td><td>5.3</td></tr>
+<tr><td>Compactions</td><td>1</td><td>0</td></tr>
+<tr><td>Prune passes</td><td>0</td><td>26</td></tr>
+<tr><td>Total input tokens</td><td>5,726,840</td><td>4,817,007</td></tr>
+<tr><td>Fresh (uncached) input</td><td>289,656</td><td>1,464,943</td></tr>
+<tr><td>Cache hit rate</td><td>94.9%</td><td>69.6%</td></tr>
+<tr><td>Total output tokens</td><td>18,929</td><td>26,952</td></tr>
+<tr class="tot"><td>Cost, Sol-priced</td><td>$4.73</td>
+    <td>$10.01</td></tr>
+</table></div>
+<svg viewBox="0 0 1020 330" class="chart"><line x1="62" y1="272.0" x2="1000" y2="272.0" class="grid"/><text x="53" y="276.0" class="ax" text-anchor="end">$0.00</text><line x1="62" y1="210.5" x2="1000" y2="210.5" class="grid"/><text x="53" y="214.5" class="ax" text-anchor="end">$5.67</text><line x1="62" y1="149.0" x2="1000" y2="149.0" class="grid"/><text x="53" y="153.0" class="ax" text-anchor="end">$11.34</text><line x1="62" y1="87.5" x2="1000" y2="87.5" class="grid"/><text x="53" y="91.5" class="ax" text-anchor="end">$17.01</text><line x1="62" y1="26.0" x2="1000" y2="26.0" class="grid"/><text x="53" y="30.0" class="ax" text-anchor="end">$22.67</text><rect x="82.3" y="220.6" width="49.7" height="51.4" rx="3" fill="#7fc44a"><title>Codex · gpt-5.6-sol: $4.73</title></rect><text x="107.2" y="214.6" class="ax" text-anchor="middle">$4.73</text><rect x="140.2" y="163.4" width="49.7" height="108.6" rx="3" fill="#17a398"><title>Elpis · gpt-5.6-sol: $10.01</title></rect><text x="165.0" y="157.4" class="ax" text-anchor="middle">$10.01</text><text x="140.2" y="292.0" class="blab" text-anchor="middle">gpt-5.6-sol</text><rect x="238.7" y="251.5" width="49.7" height="20.5" rx="3" fill="#7fc44a"><title>Codex · gpt-5.6-terra: $1.89</title></rect><text x="263.5" y="245.5" class="ax" text-anchor="middle">$1.89</text><rect x="296.5" y="227.3" width="49.7" height="44.7" rx="3" fill="#17a398"><title>Elpis · gpt-5.6-terra: $4.12</title></rect><text x="321.4" y="221.3" class="ax" text-anchor="middle">$4.12</text><text x="296.5" y="292.0" class="blab" text-anchor="middle">gpt-5.6-terra</text><rect x="395.0" y="171.3" width="49.7" height="100.7" rx="3" fill="#7fc44a"><title>Codex · Claude Fable 5: $9.28</title></rect><text x="419.9" y="165.3" class="ax" text-anchor="middle">$9.28</text><rect x="452.8" y="59.9" width="49.7" height="212.1" rx="3" fill="#17a398"><title>Elpis · Claude Fable 5: $19.55</title></rect><text x="477.7" y="53.9" class="ax" text-anchor="middle">$19.55</text><text x="452.8" y="292.0" class="blab" text-anchor="middle">Claude Fable 5</text><rect x="551.3" y="221.7" width="49.7" height="50.3" rx="3" fill="#7fc44a"><title>Codex · Claude Opus 5: $4.64</title></rect><text x="576.2" y="215.7" class="ax" text-anchor="middle">$4.64</text><rect x="609.2" y="164.9" width="49.7" height="107.1" rx="3" fill="#17a398"><title>Elpis · Claude Opus 5: $9.87</title></rect><text x="634.0" y="158.9" class="ax" text-anchor="middle">$9.87</text><text x="609.2" y="292.0" class="blab" text-anchor="middle">Claude Opus 5</text><rect x="707.7" y="249.9" width="49.7" height="22.1" rx="3" fill="#7fc44a"><title>Codex · Claude Sonnet 5: $2.04</title></rect><text x="732.5" y="243.9" class="ax" text-anchor="middle">$2.04</text><rect x="765.5" y="227.9" width="49.7" height="44.1" rx="3" fill="#17a398"><title>Elpis · Claude Sonnet 5: $4.07</title></rect><text x="790.4" y="221.9" class="ax" text-anchor="middle">$4.07</text><text x="765.5" y="292.0" class="blab" text-anchor="middle">Claude Sonnet 5</text><rect x="864.0" y="247.6" width="49.7" height="24.4" rx="3" fill="#7fc44a"><title>Codex · Gemini 3 Pro: $2.25</title></rect><text x="888.9" y="241.6" class="ax" text-anchor="middle">$2.25</text><rect x="921.8" y="227.3" width="49.7" height="44.7" rx="3" fill="#17a398"><title>Elpis · Gemini 3 Pro: $4.12</title></rect><text x="946.7" y="221.3" class="ax" text-anchor="middle">$4.12</text><text x="921.8" y="292.0" class="blab" text-anchor="middle">Gemini 3 Pro</text></svg>
+</section>
+
+<section class="card"><h3>Prune passes and context floor, message by message</h3>
+<svg viewBox="0 0 1020 250" class="chart"><line x1="62" y1="192.0" x2="1000" y2="192.0" class="grid"/><text x="53" y="196.0" class="ax" text-anchor="end">0</text><line x1="62" y1="150.5" x2="1000" y2="150.5" class="grid"/><text x="53" y="154.5" class="ax" text-anchor="end">8</text><line x1="62" y1="109.0" x2="1000" y2="109.0" class="grid"/><text x="53" y="113.0" class="ax" text-anchor="end">15</text><line x1="62" y1="67.5" x2="1000" y2="67.5" class="grid"/><text x="53" y="71.5" class="ax" text-anchor="end">23</text><line x1="62" y1="26.0" x2="1000" y2="26.0" class="grid"/><text x="53" y="30.0" class="ax" text-anchor="end">30</text><rect x="102.6" y="48.9" width="199.0" height="143.1" rx="3" fill="#17a398"><title>Elpis prune passes · Message 1: 26</title></rect><text x="202.1" y="42.9" class="ax" text-anchor="middle">26</text><text x="218.3" y="212.0" class="blab" text-anchor="middle">Message 1</text><rect x="415.3" y="192.0" width="199.0" height="1.0" rx="3" fill="#17a398"><title>Elpis prune passes · Message 2: 0</title></rect><text x="514.8" y="186.0" class="ax" text-anchor="middle">0</text><text x="531.0" y="212.0" class="blab" text-anchor="middle">Message 2</text><rect x="728.0" y="192.0" width="199.0" height="1.0" rx="3" fill="#17a398"><title>Elpis prune passes · Message 3: 0</title></rect><text x="827.5" y="186.0" class="ax" text-anchor="middle">0</text><text x="843.7" y="212.0" class="blab" text-anchor="middle">Message 3</text></svg>
+<svg viewBox="0 0 1020 260" class="chart"><line x1="62" y1="202.0" x2="1000" y2="202.0" class="grid"/><text x="53" y="206.0" class="ax" text-anchor="end">0%</text><line x1="62" y1="158.0" x2="1000" y2="158.0" class="grid"/><text x="53" y="162.0" class="ax" text-anchor="end">19%</text><line x1="62" y1="114.0" x2="1000" y2="114.0" class="grid"/><text x="53" y="118.0" class="ax" text-anchor="end">38%</text><line x1="62" y1="70.0" x2="1000" y2="70.0" class="grid"/><text x="53" y="74.0" class="ax" text-anchor="end">57%</text><line x1="62" y1="26.0" x2="1000" y2="26.0" class="grid"/><text x="53" y="30.0" class="ax" text-anchor="end">76%</text><rect x="102.6" y="186.1" width="99.5" height="15.9" rx="3" fill="#7fc44a"><title>Codex floor · Message 1: 7%</title></rect><text x="152.4" y="180.1" class="ax" text-anchor="middle">7%</text><rect x="218.3" y="50.3" width="99.5" height="151.7" rx="3" fill="#17a398"><title>Elpis floor · Message 1: 66%</title></rect><text x="268.1" y="44.3" class="ax" text-anchor="middle">66%</text><text x="218.3" y="222.0" class="blab" text-anchor="middle">Message 1</text><rect x="415.3" y="202.0" width="99.5" height="1.0" rx="3" fill="#7fc44a"><title>Codex floor · Message 2: 0%</title></rect><text x="465.1" y="196.0" class="ax" text-anchor="middle">0%</text><rect x="531.0" y="202.0" width="99.5" height="1.0" rx="3" fill="#17a398"><title>Elpis floor · Message 2: 0%</title></rect><text x="580.7" y="196.0" class="ax" text-anchor="middle">0%</text><text x="531.0" y="222.0" class="blab" text-anchor="middle">Message 2</text><rect x="728.0" y="202.0" width="99.5" height="1.0" rx="3" fill="#7fc44a"><title>Codex floor · Message 3: 0%</title></rect><text x="777.7" y="196.0" class="ax" text-anchor="middle">0%</text><rect x="843.7" y="202.0" width="99.5" height="1.0" rx="3" fill="#17a398"><title>Elpis floor · Message 3: 0%</title></rect><text x="893.4" y="196.0" class="ax" text-anchor="middle">0%</text><text x="843.7" y="222.0" class="blab" text-anchor="middle">Message 3</text></svg>
+<p class="cap">Pass count against context floor, per message. Zero passes on a message means the
+pressure trigger never selected a batch on that message.</p></section>
 <div class="part"><span class="pnum">Mechanism</span>
 <h2 class="ptitle">What sits between a tool's output and a full window</h2>
 <p class="sub">Five layers, in the order they fire. Each sees only what the layer above let through.</p></div>

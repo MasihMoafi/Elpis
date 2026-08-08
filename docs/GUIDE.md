@@ -349,7 +349,7 @@ the current foundation work — see [Current State](#current-state).
 Open questions not yet approved as requirements:
 
 - which Codex cloud, apps, realtime, and experimental surfaces remain (tracked as
-  reduction-campaign candidates in `docs/BUILD_AND_REDUCTION_AUDIT.md`);
+  reduction-campaign candidates);
 - the final visual redesign beyond the shipped cyan identity line and Context Ledger
   (see [UI Identity](#ui-identity)).
 
@@ -513,7 +513,7 @@ Memory is curated cross-session knowledge, not a transcript mirror. Store stable
 preferences, project facts, decisions, and proven procedures. Retrieve only relevant
 entries for the current task and make provenance visible.
 
-> For full technical architecture on 2-stage SQLite extraction/consolidation and live workspace re-verification, see [memory.md](memory.md).
+> The extraction/consolidation pipeline was deleted; what remains is one durable file. See [memory.md](memory.md).
 
 ### 7. Measurement
 
@@ -657,7 +657,7 @@ that the fresh launch is fast. Startup performance is accepted.
 Elpis contains no Python. Retrieval runs in an MCP server the user registers, in its own
 process, started by the MCP layer — so an engine's imports, model loading, and indexing
 cost cannot reach the launch path no matter how heavy that engine is. Never reintroduce a
-machine-learning dependency into this repository to serve retrieval; see [rag.md](rag.md).
+machine-learning dependency into this repository to serve retrieval; retrieval is an external MCP server you register yourself.
 
 ### Memory ownership
 

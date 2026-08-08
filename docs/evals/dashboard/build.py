@@ -2,7 +2,7 @@
 """Render the dashboard from whatever runs are in runs/. Add a run, re-run this.
 
 Two standing rules for this file:
-  - Nothing is modelled, projected or extrapolated. A message that has not been run
+  - Nothing is modelled, projected or extrapolated. A message with no record in runs/
     renders as an empty slot, never as an estimate.
   - The page states what was measured. It does not rank the systems, declare a winner,
     or recommend what to do next.
@@ -36,17 +36,49 @@ def stats(run):
         dur=run["duration_min"], saved=run["prune"]["saved_tokens"],
         spend=run["prune"]["input"] + run["prune"]["output"])
 
-# Message n of experiment 1 -> runs/exp<n>-{codex,elpis}.json.
-MESSAGES = [
-    (1, "Thoroughly familiarize yourself with the project.", "exp1-codex", "exp1-elpis"),
-    (2, "Identify and implement ONE small performance improvement that makes the "
-        "application measurably faster or more efficient.", "exp2-codex", "exp2-elpis"),
-    (3, "Find and implement ONE UX improvement that makes the interface more intuitive, "
-        "accessible, or pleasant to use.", "exp3-codex", "exp3-elpis"),
+# Message n of experiment 1 -> runs/exp<n>-{codex,elpis}.json. The three prompts go down
+# one session, so collect.py --split writes one record per message from one transcript.
+FALLBACK = [
+    "Thoroughly familiarize yourself with the project.",
+    "Identify and implement ONE small performance improvement that makes the application "
+    "measurably faster or more efficient.",
+    "Find and implement ONE UX improvement that makes the interface more intuitive, "
+    "accessible, or pleasant to use.",
 ]
-DONE = [(i, p, load(cn), load(en)) for i, p, cn, en in MESSAGES]
-DONE = [(i, p, c, e, stats(c) if c else None, stats(e) if e else None) for i, p, c, e in DONE]
+DONE = []
+for i in (1, 2, 3):
+    c, e = load(f"exp{i}-codex"), load(f"exp{i}-elpis")
+    prompt = (c or {}).get("prompt") or (e or {}).get("prompt") or FALLBACK[i - 1]
+    DONE.append((i, prompt, c, e, stats(c) if c else None, stats(e) if e else None))
 _, PROMPT1, C1, E1, sC, sE = DONE[0]
+
+def merge(which):
+    """Concatenate every message's segments in order — the session as one run."""
+    parts = [d[2 if which == "codex" else 3] for d in DONE]
+    parts = [p for p in parts if p]
+    if not parts:
+        return None
+    out = dict(window=parts[0]["window"], requests=[], occupancy=[], compactions=0,
+               tool_calls=0, duration_min=0.0,
+               prune=dict(passes=0, input=0, output=0, saved_tokens=0, per_pass=[]))
+    for p in parts:
+        out["requests"] += p["requests"]; out["occupancy"] += p["occupancy"]
+        out["compactions"] += p["compactions"]; out["tool_calls"] += p["tool_calls"]
+        out["duration_min"] += p["duration_min"] or 0
+        for k in ("passes", "input", "output", "saved_tokens"):
+            out["prune"][k] += p["prune"][k]
+        out["prune"]["per_pass"] += p["prune"]["per_pass"]
+    out["duration_min"] = round(out["duration_min"], 1)
+    return out
+
+WC, WE = merge("codex"), merge("elpis")
+swC, swE = stats(WC), stats(WE)
+BOUNDS = []
+_acc_c = _acc_e = 0
+for _i, _p, c, e, _sc, _se in DONE:
+    if c: _acc_c += len(c["requests"]); BOUNDS.append(("codex", _i, _acc_c))
+    if e: _acc_e += len(e["requests"]); BOUNDS.append(("elpis", _i, _acc_e))
+LIVE = [i for i, _p, c, e, _sc, _se in DONE if (c is None) != (e is None)]
 
 MAIN = ["gpt-5.6-sol", "gpt-5.6-terra", "Claude Fable 5", "Claude Opus 5", "Claude Sonnet 5", "Gemini 3 Pro"]
 def cost_of(run, m, pm="gpt-5.6-luna"): return C.run_cost(run, m, pm)
@@ -66,8 +98,8 @@ S.append(f"""<header>
 <h1>One prompt, two systems, two transcripts.</h1>
 <p class="sub">Identical clean checkouts of the same repository, the same 258,400-token window, the same
 prompt. Both arms ran on <code>gpt-5.6-luna</code>. Every figure on this page is read out of the two
-session rollouts on disk — nothing is projected, extrapolated or synthesised. Messages 2 and 3 have not
-been run; their slots are empty rather than estimated.</p></header>
+session rollouts on disk — nothing is projected, extrapolated or synthesised. Messages 2 and 3 were run
+and then withdrawn as not comparable; why is the first thing below.</p></header>
 
 <div class="kpis">
 <div class="kpi"><div class="k">Lowest context remaining</div>
@@ -85,6 +117,19 @@ been run; their slots are empty rather than estimated.</p></header>
 </div>""")
 
 # ----------------------------------------------------------------- part 1 ---
+S.append("""<section class="card"><h3>Why this page shows one message and not three</h3>
+<p class="note danger"><b>Messages 2 and 3 were withdrawn.</b> Their prompts name a goal —
+&ldquo;find ONE performance improvement&rdquo; — not a task, so each system chose different work and
+did different amounts of it. On message 3 Codex ran 16 tool calls in 3.0 minutes; Elpis ran 83 in 30.2.
+Nothing comparative survives that, and averaging them in would corrupt every figure they touch, so
+their records are not kept in <code>runs/</code>.</p>
+<p class="note"><b>What they did establish, and it was worth having.</b> Elpis's prune passes collapsed
+across the session — <b>26 on message 1, 7 on message 2, 0 on message 3</b> — while its floor fell
+65.9% &rarr; 55.6% &rarr; 19%. Pressure pruning went silent exactly as the window filled, because the
+keep-budget was measured in tool output and by message 3 the window held prose. Fixed in
+<code>96d54f9</code>; the regression test fails without it. That defect is only visible at depth, and
+only because these two messages were run.</p></section>""")
+
 S.append(f"""<div class="part"><span class="pnum">Message 1 · measured</span>
 <h2 class="ptitle">“{PROMPT1}”</h2>
 <p class="sub">Codex: {sC['n']} requests, {sC['tools']} tool calls, {sC['dur']:.1f} minutes.
@@ -178,12 +223,12 @@ dollar: {money(cost_of(E1,'gpt-5.6-sol','gpt-5.6-luna')['prune'])} on Luna,
 
 # ------------------------------------------------------- pending messages ---
 for idx, prompt, c, e, _sc, _se in DONE[1:]:
-    S.append(f"""<div class="part pending"><span class="pnum">Message {idx} · not yet run</span>
+    S.append(f"""<div class="part pending"><span class="pnum">Message {idx} · withdrawn</span>
 <h2 class="ptitle">“{prompt}”</h2></div>
 <section class="card pending">
-<p class="sub">Run both arms, then <code>python3 collect.py &lt;rollout.jsonl&gt; exp{idx}-codex</code> and
-the same for <code>exp{idx}-elpis</code>, then <code>python3 build.py</code>. This section fills with the
-same charts as message 1. No edits to the page.</p>
+<p class="sub">Not comparable — see above. Re-run it as a single fixed task both arms must complete,
+collect with <code>python3 collect.py &lt;rollout.jsonl&gt; --split --system &lt;codex|elpis&gt;</code>,
+and this section fills with the same charts as message 1. No edits to the page.</p>
 <div class="slots">""" + "".join(
         f'<div class="slot"><span class="sk">{who}</span><span class="sv">—</span>'
         f'<span class="sl">{lab}</span></div>'
@@ -220,6 +265,55 @@ S.append(f"""<div class="part"><span class="pnum">Across the run</span>
 {row("Total output tokens", "tout", "{:,.0f}")}
 {row("Wall clock, minutes", "dur", "{:.1f}")}
 </table></div></section>""")
+
+# -------------------------------------------------------------- holistic ----
+wrows = [(m, cost_of(WC, m)["total"], cost_of(WE, m)["total"]) for m in MAIN]
+live = (f' Message {LIVE[0]} is still running on one arm, so its column is partial.'
+        if LIVE else '')
+S.append(f"""<div class="part"><span class="pnum">Holistic</span>
+<h2 class="ptitle">The session end to end</h2>
+<p class="sub">All messages concatenated in the order they were sent — the run as the window
+actually experienced it, rather than three separate readings.{live}</p></div>
+
+<section class="card"><h3>Context remaining across the whole session</h3>
+{ch.remaining_lines([("Codex", swC['rem'], GRN, cliffs(WC)), ("Elpis", swE['rem'], TEAL, cliffs(WE))])}
+<p class="cap">Codex {swC['n']} requests, Elpis {swE['n']}, plotted on a shared horizontal axis, so the
+two lines are not aligned by request number. Requests below 65% remaining — Codex
+{swC['below65']} of {swC['n']}, Elpis {swE['below65']} of {swE['n']}.</p></section>
+
+<section class="card"><h3>Session totals</h3>
+<div class="scroll"><table>
+<tr><th>Whole session</th><th>Codex</th><th>Elpis</th></tr>
+<tr><td>Model requests</td><td>{swC['n']}</td><td>{swE['n']}</td></tr>
+<tr><td>Tool calls</td><td>{swC['tools']}</td><td>{swE['tools']}</td></tr>
+<tr><td>Working time, minutes</td><td>{swC['dur']:.1f}</td><td>{swE['dur']:.1f}</td></tr>
+<tr><td>Lowest context remaining</td><td>{swC['floor']:.1f}%</td><td>{swE['floor']:.1f}%</td></tr>
+<tr><td>Median context remaining</td><td>{swC['rmed']:.1f}%</td><td>{swE['rmed']:.1f}%</td></tr>
+<tr><td>Spread (σ)</td><td>{swC['sd']:.1f}</td><td>{swE['sd']:.1f}</td></tr>
+<tr><td>Compactions</td><td>{swC['comp']}</td><td>{swE['comp']}</td></tr>
+<tr><td>Prune passes</td><td>{swC['passes']}</td><td>{swE['passes']}</td></tr>
+<tr><td>Total input tokens</td><td>{swC['tin']:,}</td><td>{swE['tin']:,}</td></tr>
+<tr><td>Fresh (uncached) input</td><td>{swC['fresh']:,}</td><td>{swE['fresh']:,}</td></tr>
+<tr><td>Cache hit rate</td><td>{swC['hit']:.1f}%</td><td>{swE['hit']:.1f}%</td></tr>
+<tr><td>Total output tokens</td><td>{swC['tout']:,}</td><td>{swE['tout']:,}</td></tr>
+<tr class="tot"><td>Cost, Sol-priced</td><td>{money(cost_of(WC,'gpt-5.6-sol')['total'])}</td>
+    <td>{money(cost_of(WE,'gpt-5.6-sol')['total'])}</td></tr>
+</table></div>
+{ch.grouped(MAIN, [("Codex", [r[1] for r in wrows], GRN), ("Elpis", [r[2] for r in wrows], TEAL)],
+            fmtf=lambda v: f"${v:,.2f}")}
+</section>
+
+<section class="card"><h3>Prune passes and context floor, message by message</h3>
+{ch.grouped([f"Message {i}" for i, *_ in DONE],
+            [("Elpis prune passes", [(se or {}).get('passes', 0) for *_, se in
+                                     [(d[0], d[5]) for d in DONE]], TEAL)], h=250,
+            fmtf=lambda v: f"{v:,.0f}")}
+{ch.grouped([f"Message {i}" for i, *_ in DONE],
+            [("Codex floor", [(sc or {}).get('floor', 0) for sc in [d[4] for d in DONE]], GRN),
+             ("Elpis floor", [(se or {}).get('floor', 0) for se in [d[5] for d in DONE]], TEAL)],
+            h=260, fmtf=lambda v: f"{v:.0f}%")}
+<p class="cap">Pass count against context floor, per message. Zero passes on a message means the
+pressure trigger never selected a batch on that message.</p></section>""")
 
 # ------------------------------------------------------------- mechanism ----
 S.append("""<div class="part"><span class="pnum">Mechanism</span>

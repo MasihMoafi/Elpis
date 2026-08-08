@@ -49,7 +49,7 @@ cd ~/Desktop/p/Elpis-exp1-codex && codex     # branch exp1/codex
 
 Three prompts, one at a time, waiting for each to finish:
 
-1. Thoroughly familiarize yourself with the project.
+1. Thoroughly familiarize yourself with this project.
 2. Identify and implement ONE small performance improvement that makes the application
    measurably faster or more efficient.
 3. Find and implement ONE UX improvement that makes the interface more intuitive,

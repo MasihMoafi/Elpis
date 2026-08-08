@@ -5,7 +5,7 @@
 - Read `docs/GUIDE.md`; it is the product, architecture, and requirements source of truth.
 - Read `TASKS.md`; work only on its Current Action unless Masih changes priority.
 - Read `docs/context.md` and `docs/sessions.md` before touching context, session, or
-  pruning behavior; read `docs/BUILD_AND_REDUCTION_AUDIT.md` before build or dependency work.
+  pruning behavior.
 - Read `docs/SHIPPING_RULES.md` before a release, and before any change that reads the
   filesystem, environment, or network. Nothing machine-specific ships in the binary.
 - Verify the repository state before editing; preserve unrelated user changes.

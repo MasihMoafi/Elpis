@@ -9,12 +9,19 @@ import argparse, datetime, json, os, sys, collections
 
 PRUNE_PREFIX = "elpis.context-prune.v1:"
 
-def parse(path):
-    reqs, occ, ts = [], [], []
-    tools = collections.Counter()
-    compactions = 0
-    prune_checkpoints = 0
-    prune_saved = 0
+def blank():
+    return dict(requests=[], occupancy=[], _ts=[], _tools=collections.Counter(),
+                compactions=0, prune_checkpoints=0, prune_saved_reported=0)
+
+def parse(path, split=False):
+    """Read a transcript into one record, or into one record per user message.
+
+    Experiment 1 sends its three prompts down a single session, so the messages are
+    segments of one transcript rather than separate files. `split` cuts at each
+    `user_message` event; the cumulative token counters keep running across the cut,
+    which is what makes the per-segment deltas add up to the session total.
+    """
+    segs = [blank()]
     window = None
     prev = None
     for line in open(path, errors="replace"):
@@ -22,22 +29,40 @@ def parse(path):
             o = json.loads(line)
         except Exception:
             continue
+        p0 = o.get("payload") or {}
+        if split and o.get("type") == "response_item" and p0.get("role") == "user":
+            # Both systems record the prompt as a user response_item; only Elpis also
+            # emits a `user_message` event, so this is the boundary that works for both.
+            # Every turn is preceded by an injected AGENTS.md preamble wearing the same
+            # role, which is not a prompt and must not open a segment.
+            text = "".join(c.get("text", "") for c in (p0.get("content") or [])
+                           if isinstance(c, dict))
+            if not text.lstrip().startswith("# AGENTS.md instructions") and segs[-1]["requests"]:
+                segs.append(blank())
+                segs[-1]["prompt"] = text.strip()[:400]
+            elif not segs[-1]["requests"] and not segs[-1].get("prompt") and \
+                    not text.lstrip().startswith("# AGENTS.md instructions"):
+                segs[-1]["prompt"] = text.strip()[:400]
+            continue
+        cur = segs[-1]
+        reqs, occ, ts, tools = cur["requests"], cur["occupancy"], cur["_ts"], cur["_tools"]
         if o.get("type") == "compacted":
             # Elpis writes a rollout checkpoint after every pruning pass using the same
             # item type as a real compaction. Only the message distinguishes them, and
             # counting a prune as a compaction would erase the whole distinction the
             # experiment exists to measure.
-            msg = (o.get("payload") or {}).get("message") or ""
+            msg = p0.get("message") or ""
             if msg.startswith(PRUNE_PREFIX):
-                prune_checkpoints += 1
+                cur["prune_checkpoints"] += 1
                 try:
-                    prune_saved = max(prune_saved, int(msg[len(PRUNE_PREFIX):]))
+                    cur["prune_saved_reported"] = max(cur["prune_saved_reported"],
+                                                      int(msg[len(PRUNE_PREFIX):]))
                 except ValueError:
                     pass
             else:
-                compactions += 1
+                cur["compactions"] += 1
             continue
-        p = o.get("payload") or {}
+        p = p0
         t = p.get("type")
         if t == "token_count":
             info = p.get("info") or {}
@@ -68,14 +93,20 @@ def parse(path):
                 ts.append(o["timestamp"])
         elif t in ("custom_tool_call", "function_call"):
             tools[p.get("name") or "?"] += 1
-    dur = None
-    if len(ts) >= 2:
-        a = datetime.datetime.fromisoformat(ts[0].replace("Z", "+00:00"))
-        b = datetime.datetime.fromisoformat(ts[-1].replace("Z", "+00:00"))
-        dur = round((b - a).total_seconds() / 60, 1)
-    return dict(window=window, requests=reqs, occupancy=occ, compactions=compactions,
-                prune_checkpoints=prune_checkpoints, prune_saved_reported=prune_saved,
-                tool_calls=sum(tools.values()), tools=dict(tools), duration_min=dur)
+    out = []
+    for s in segs:
+        if not s["requests"]:
+            continue
+        ts = s.pop("_ts"); tools = s.pop("_tools")
+        dur = None
+        if len(ts) >= 2:
+            a = datetime.datetime.fromisoformat(ts[0].replace("Z", "+00:00"))
+            b = datetime.datetime.fromisoformat(ts[-1].replace("Z", "+00:00"))
+            dur = round((b - a).total_seconds() / 60, 1)
+        s.update(window=window, tool_calls=sum(tools.values()), tools=dict(tools),
+                 duration_min=dur, t_from=ts[0][:19] if ts else "", t_to=ts[-1][:19] if ts else "")
+        out.append(s)
+    return out
 
 def prune_stats(pass_dir, t_from, t_to):
     """Ace pass usage for a run, matched by timestamp window."""
@@ -112,27 +143,28 @@ def prune_stats(pass_dir, t_from, t_to):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("transcript")
-    ap.add_argument("--id", required=True)
+    ap.add_argument("--id", default=None, help="single-record id, e.g. exp1-elpis")
+    ap.add_argument("--split", action="store_true",
+                    help="one record per user message: <prefix>N-<system>")
+    ap.add_argument("--prefix", default="exp")
     ap.add_argument("--system", required=True, choices=["elpis", "codex"])
-    ap.add_argument("--label", default=None)
-    ap.add_argument("--prune-window", nargs=2, default=None,
-                    metavar=("FROM", "TO"), help="UTC ISO prefixes bounding this run's Ace passes")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "runs"))
     a = ap.parse_args()
-    rec = parse(a.transcript)
-    rec.update(id=a.id, system=a.system, label=a.label or a.id, measured=True,
-               source=a.transcript)
-    if a.prune_window:
-        rec["prune"] = prune_stats(os.path.expanduser("~/.elpis/logs/pruning/passes"),
-                                   a.prune_window[0], a.prune_window[1])
-    else:
-        rec["prune"] = dict(passes=0, input=0, output=0, saved_tokens=0, per_pass=[])
+    if not a.split and not a.id:
+        ap.error("--id is required unless --split is given")
+    recs = parse(a.transcript, split=a.split)
     os.makedirs(a.out, exist_ok=True)
-    dst = os.path.join(a.out, f"{a.id}.json")
-    json.dump(rec, open(dst, "w"))
-    print(f"{a.id}: {len(rec['requests'])} requests, {rec['compactions']} compactions, "
-          f"window {rec['window']}, {rec['tool_calls']} tools, {rec['duration_min']} min "
-          f"-> {dst}")
+    for n, rec in enumerate(recs, 1):
+        rid = f"{a.prefix}{n}-{a.system}" if a.split else a.id
+        rec.update(id=rid, system=a.system, label=rid, measured=True, source=a.transcript)
+        rec["prune"] = prune_stats(os.path.expanduser("~/.elpis/logs/pruning/passes"),
+                                   rec["t_from"], rec["t_to"]) if a.system == "elpis" else \
+            dict(passes=0, input=0, output=0, saved_tokens=0, per_pass=[])
+        dst = os.path.join(a.out, f"{rid}.json")
+        json.dump(rec, open(dst, "w"))
+        print(f"{rid}: {len(rec['requests'])} requests, {rec['compactions']} compactions, "
+              f"{rec['prune']['passes']} prune passes, {rec['tool_calls']} tools, "
+              f"{rec['duration_min']} min -> {dst}")
 
 if __name__ == "__main__":
     main()
