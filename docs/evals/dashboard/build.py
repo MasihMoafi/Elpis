@@ -40,6 +40,18 @@ def rbins(rem):
     return [sum(1 for x in rem if lo <= x < hi) for lo, hi in edges], \
            ["0–20", "20–40", "40–55", "55–65", "65–75", "75–85", "85+"]
 
+
+def cmp2(a, b, lower_is_better=True, f="{:,.0f}"):
+    """Two cells, winner green, loser red. Green always means Elpis-side better."""
+    if a == b:
+        return f"<td>{f.format(a)}</td><td>{f.format(b)}</td>"
+    a_wins = (a < b) if lower_is_better else (a > b)
+    ca, cb = ("lose", "win") if not a_wins else ("win", "lose")
+    return f"<td class='{ca}'>{f.format(a)}</td><td class='{cb}'>{f.format(b)}</td>"
+
+def plain(a, b, f="{:,.0f}"):
+    return f"<td>{f.format(a)}</td><td>{f.format(b)}</td>"
+
 S = []
 
 S.append(f"""<header>
@@ -66,15 +78,19 @@ two session transcripts. Context and tokens only.</p></header>
 
 S.append(f"""<div class="part"><span class="pnum">Context</span>
 <h2 class="ptitle">What the window did</h2>
-<p class="sub">Codex {sC['n']} requests, {sC['tools']} tool calls, {sC['dur']:.1f} minutes.
-Elpis {sE['n']} requests, {sE['tools']} tool calls, {sE['dur']:.1f} minutes.</p></div>
+<p class="sub">Codex {sC['n']} model calls, {sC['tools']} tool calls, {sC['dur']:.1f} minutes.
+Elpis {sE['n']} model calls, {sE['tools']} tool calls, {sE['dur']:.1f} minutes.</p></div>
 
-<section class="card"><h3>Context remaining, request by request</h3>
+<section class="card"><h3>Context remaining, model call by model call</h3>
+<p class="sub"><b>You sent one message.</b> Each point below is one round trip to the model, not one
+message from you: the agent calls the model, the model asks for a tool, the tool runs, and the whole
+conversation so far goes back to the model again. That single message cost Codex {sC['n']} round trips
+and Elpis {sE['n']}.</p>
 {ch.remaining_lines([("Codex", sC['rem'], GRN, cliffs(C1)), ("Elpis", sE['rem'], TEAL, [])])}
 <div class="key"><span><i style="background:{TEAL}"></i>Elpis</span><span><i style="background:{GRN}"></i>Codex</span>
 <span><i style="background:{AMB}"></i>under pressure</span><span><i style="background:{RED}"></i>critical</span>
 <span><i class="dash"></i>compaction</span></div>
-<p class="cap">Requests spent below 65% remaining — Codex <b>{sC['below65']} of {sC['n']}</b>,
+<p class="cap">Model calls below 65% remaining — Codex <b>{sC['below65']} of {sC['n']}</b>,
 Elpis <b>{sE['below65']} of {sE['n']}</b>. Elpis ran {sE['passes']} prune passes; Codex ran
 {sC['comp']} compaction.</p></section>""")
 
@@ -90,28 +106,36 @@ Elpis median {sE['rmed']:.1f}%, range {min(sE['rem']):.1f}–{max(sE['rem']):.1f
 S.append(f"""<div class="part"><span class="pnum">Tokens</span>
 <h2 class="ptitle">What it spent</h2></div>
 
-<section class="card"><h3>Input tokens per request</h3>
+<section class="card"><h3>Input tokens per model call</h3>
 {ch.box([("Codex", sC['inp'], GRN), ("Elpis", sE['inp'], TEAL)], h=180, unit="", fmtf=ch.fmt)}
 <p class="cap">Median {sC['imed']:,.0f} / {sE['imed']:,.0f} · mean {sC['imean']:,.0f} / {sE['imean']:,.0f}
 · largest {sC['imax']:,.0f} / {sE['imax']:,.0f}.</p></section>
 
 <section class="card"><h3>Token expenditure, whole message</h3>
+<p class="sub"><b>Green = Elpis did better. Red = Codex did better.</b> Every token figure is a
+<em>sum across the whole message</em>, not one request: each of the {sC['n']} Codex and {sE['n']} Elpis
+model calls re-sends the conversation so far, so the totals are much larger than the window itself.</p>
 {ch.hbars([("Codex · total input", sC['tin'], GRN), ("Elpis · total input", sE['tin'], TEAL),
            ("Codex · of that, cached", sC['cached'], GRN), ("Elpis · of that, cached", sE['cached'], TEAL),
            ("Codex · of that, fresh", sC['fresh'], RED), ("Elpis · of that, fresh", sE['fresh'], RED),
            ("Codex · output", sC['tout'], GRN), ("Elpis · output", sE['tout'], TEAL)],
           pl=250, fmtf=ch.fmt)}
 <div class="scroll"><table>
-<tr><th>gpt-5.6-luna</th><th>Codex</th><th>Elpis</th><th>Elpis ÷ Codex</th></tr>
-<tr><td>Model requests</td><td>{sC['n']}</td><td>{sE['n']}</td><td>{sE['n']/sC['n']:.2f}×</td></tr>
-<tr><td>Tool calls</td><td>{sC['tools']}</td><td>{sE['tools']}</td><td>{sE['tools']/sC['tools']:.2f}×</td></tr>
-<tr><td>Total input tokens</td><td>{sC['tin']:,}</td><td>{sE['tin']:,}</td><td>{sE['tin']/sC['tin']:.2f}×</td></tr>
-<tr><td>— cached</td><td>{sC['cached']:,}</td><td>{sE['cached']:,}</td><td>{sE['cached']/sC['cached']:.2f}×</td></tr>
-<tr><td>— fresh</td><td>{sC['fresh']:,}</td><td>{sE['fresh']:,}</td><td>{sE['fresh']/sC['fresh']:.2f}×</td></tr>
-<tr><td>Cache hit rate</td><td>{sC['hit']:.1f}%</td><td>{sE['hit']:.1f}%</td><td></td></tr>
-<tr><td>Output tokens</td><td>{sC['tout']:,}</td><td>{sE['tout']:,}</td><td>{sE['tout']/sC['tout']:.2f}×</td></tr>
-<tr><td>Mean input per request</td><td>{sC['imean']:,.0f}</td><td>{sE['imean']:,.0f}</td><td>{sE['imean']/sC['imean']:.2f}×</td></tr>
-<tr><td>Wall clock, minutes</td><td>{sC['dur']:.1f}</td><td>{sE['dur']:.1f}</td><td>{sE['dur']/sC['dur']:.2f}×</td></tr>
+<tr><th>gpt-5.6-luna</th><th>Codex</th><th>Elpis</th><th>Better</th></tr>
+<tr><td>Model calls (round trips)</td>{plain(sC['n'], sE['n'])}<td class="neu">neither — more requests is more work, not worse work</td></tr>
+<tr><td>Tool calls</td>{plain(sC['tools'], sE['tools'])}<td class="neu">neither — same reason</td></tr>
+<tr><td>Lowest context remaining</td>{cmp2(sC['floor'], sE['floor'], False, "{:.1f}%")}<td class="win">Elpis</td></tr>
+<tr><td>Median context remaining</td>{cmp2(sC['rmed'], sE['rmed'], False, "{:.1f}%")}<td class="win">Elpis</td></tr>
+<tr><td>Model calls below 65% remaining</td>{cmp2(sC['below65'], sE['below65'])}<td class="win">Elpis</td></tr>
+<tr><td>Spread of the window (σ)</td>{cmp2(sC['sd'], sE['sd'], True, "{:.1f}")}<td class="win">Elpis</td></tr>
+<tr><td>Compactions — history destroyed</td>{cmp2(sC['comp'], sE['comp'])}<td class="win">Elpis</td></tr>
+<tr><td>Total input tokens sent</td>{cmp2(sC['tin'], sE['tin'])}<td class="win">Elpis</td></tr>
+<tr><td>— of that, billed at the cached rate</td>{plain(sC['cached'], sE['cached'])}<td class="neu">component, not a score</td></tr>
+<tr><td>— of that, billed at full rate</td>{cmp2(sC['fresh'], sE['fresh'])}<td class="lose">Codex</td></tr>
+<tr><td>Cache hit rate</td>{cmp2(sC['hit'], sE['hit'], False, "{:.1f}%")}<td class="lose">Codex</td></tr>
+<tr><td>Mean input per model call</td>{cmp2(sC['imean'], sE['imean'])}<td class="win">Elpis</td></tr>
+<tr><td>Output tokens</td>{cmp2(sC['tout'], sE['tout'])}<td class="lose">Codex</td></tr>
+<tr><td>Wall clock, minutes</td>{cmp2(sC['dur'], sE['dur'], True, "{:.1f}")}<td class="lose">Codex</td></tr>
 </table></div></section>
 
 <section class="card"><h3>What pruning spent to hold that window</h3>
@@ -181,6 +205,11 @@ th,td{text-align:right;padding:8px 11px;border-bottom:1px solid var(--line);font
 th:first-child,td:first-child{text-align:left;font-variant-numeric:normal;white-space:normal}
 th{color:var(--mut);font-weight:600;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase}
 .scroll{overflow-x:auto}
+td.win{color:#0e7a63;font-weight:600;background:color-mix(in srgb,var(--teal) 13%,transparent)}
+td.lose{color:var(--red);font-weight:600;background:color-mix(in srgb,var(--red) 11%,transparent)}
+td.neu{color:var(--mut);font-weight:400;font-size:12.5px;white-space:normal}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) td.win{color:#4fd3b8}}
+:root[data-theme=dark] td.win{color:#4fd3b8}
 .note{font-size:14.2px;color:var(--mut);border-left:2px solid var(--teal);padding-left:14px;max-width:82ch;margin:2px 0 0}
 .note.danger{border-color:var(--red)}
 .cap{font-size:13px;color:var(--mut);margin:0;max-width:82ch}

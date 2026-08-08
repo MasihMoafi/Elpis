@@ -1,103 +1,103 @@
-# Experiment 2 — identical checklist, run to completion
+# What the paper still needs, and the run that gets it
 
-Everything here is run by hand.
+The questions are the five in `paper/main.tex` §7.1. Nothing else is a question.
 
-## Why experiment 1 could not settle it
+## Status — nothing is conclusively answered
 
-Experiment 1 sent three prompts to each system. Only the first was a real comparison.
+| RQ | | State |
+| --- | --- | --- |
+| RQ1 | Context efficiency | **One run.** Message 1 of experiment 1: Elpis floor 65.9%, 0 compactions; Codex floor 6.9%, 1 compaction. Same task, same model, same window. It is a strong single observation, not a rate. |
+| RQ2 | Retention | **Nothing.** `context-continuity/` specifies the protocol in full and has never been executed. |
+| RQ3 | Task correctness | **Nothing.** No run has ended in a state a script could check. |
+| RQ4 | Overhead | **Partial.** Pruning's visible tokens are measured for one run (337,968 spent, 303,953 reclaimed). Its *reasoning* tokens are billed and never logged — task 33 — so pass cost is still unknown. |
+| RQ5 | Auditability | **Mechanism only.** 329 pass records exist with per-item decisions and evidence pointers. Nobody has walked one end to end and confirmed it reconstructs what was removed. |
 
-- **Message 1** — "thoroughly familiarize yourself with this project" — one task, done twice.
-  Neither arm produced a plan checklist; both read the repository and reported. **Comparable.**
-- **Messages 2 and 3** — "find ONE performance improvement", "find ONE UX improvement" — name a
-  *goal*, not a task. Each arm chose different work and different amounts of it: on message 3
-  Codex ran 16 tool calls in 3.0 minutes, Elpis 83 in 30.2. **Not comparable, withdrawn.**
+## Why experiment 1 could not settle any of them
 
-**The deletion sprint is rejected for the same reason.** "Delete as much as you can in two hours"
-is a goal. Two runs of the *same* system on it diverge, so a difference between systems proves
-nothing. Variance in the task swamps variance in the system.
+Message 1 asked both systems to read the repository — one task, done twice, and it stands.
+Messages 2 and 3 asked them to *find* an improvement. That names a goal, not a task, so each
+arm chose different work: on message 3 Codex ran 16 tool calls in 3.0 minutes, Elpis 83 in 30.2.
+Nothing comparative survives that, and they were withdrawn.
 
-## The fix: fix the task, not the prompt
+**The deletion sprint fails the same test** and is dropped. "Delete as much as you can" is a
+goal; two runs of the *same* system on it diverge, so a difference between systems proves
+nothing. Task variance swamps system variance.
 
-Both systems get the **same numbered checklist**, written in advance, with a pass condition a
-script can evaluate. Neither system chooses what to do. Both run until every item is done or they
-give up. Then measure.
+## Experiment 2 — one fixed checklist, both arms, run to completion
 
-This does not make the run cheap or short — it makes it *the same run twice*, which is the only
-thing that lets a difference be attributed to the system.
-
-## What answers we are trying to get
-
-Stated before the run, not after. If a question is not on this list, the run does not answer it.
-
-| # | Question | Answer shape | Pass |
-| --- | --- | --- | --- |
-| Q1 | Does either system fail to finish the checklist? | items completed / total | both complete, or the gap is the result |
-| Q2 | How low does the context window go? | lowest % remaining, per system | Elpis never below 65% |
-| Q3 | How steady is the window? | σ of % remaining | — |
-| Q4 | How many times is history destroyed? | compactions | Elpis 0 |
-| Q5 | What does the same work cost in tokens? | total input, fresh input, output | — |
-| Q6 | What does pruning spend to hold the window? | tokens spent vs reclaimed | — |
-
-Not answered by this design, and not to be claimed from it: money (only the vendor that ran has
-known caching behaviour), and output quality beyond the checklist's own pass condition.
-
-## Design
+Fix the task, not the prompt. Neither system chooses what to do.
 
 | | |
 | --- | --- |
-| Arms | Codex, Elpis — separate clean checkouts, separate branches |
+| Arms | Codex, Elpis — separate clean checkouts of the same base commit |
 | Model | `gpt-5.6-luna`, both arms, same reasoning effort |
-| Input | One numbered checklist, byte-identical, pasted once |
-| Interaction | None after the paste. No steering, no follow-ups. |
-| Ends when | Every item done, or the agent stops |
-| Runs | One at a time — both compile Rust, and this machine kills a process past 80°C |
+| Input | The checklist below, byte-identical, pasted once |
+| Interaction | None afterwards. No steering, no follow-ups, no answers. |
+| Ends when | Every item is done, or the agent stops |
+| Repeat | **3 runs per arm.** One run is an anecdote; RQ1 needs a rate. |
+| Order | One at a time — both compile Rust, and this machine kills a process past 80°C |
 
-The checklist has to be long enough that Codex crosses its compaction boundary. Message 1 put
-Codex at 6.9% remaining in 46 requests, so roughly two to three times that much work.
+### What it closes
 
-## The checklist
+- **RQ1** — three runs per arm turns the floor and σ into a range instead of a point.
+- **RQ3** — every item has a command that says done or not done. First evidence of correctness.
+- **RQ4** — same work, both systems, so token totals are finally comparable. Land task 33 first
+  and pass cost becomes measurable in the same run.
 
-**Not yet written.** It is the whole experiment and it is the thing to get right. Requirements:
+It does **not** close RQ2 or RQ5. Those need their own runs, below.
 
-1. **Every item is a specific change to a specific file** — no "improve", no "find", no "choose".
-2. **The pass condition is a command**, not a judgement. Because the suite is already red at HEAD,
-   it must be a *delta*: capture the failing-test list first, and pass means no test name moves
-   from passing to failing.
-3. **Tool-output heavy**, so pruning has something to work on and the window actually fills.
-4. **No item depends on an earlier item's design choice**, or the arms diverge again at item 2.
+### The checklist
 
-## Running it
+Drawn from `TASKS.md`, so the runs produce work worth keeping. Each item names files and ends in
+a command. Nothing here depends on an earlier item's design choice, so the arms cannot diverge
+at item 2.
+
+1. **Task 35 — show the cached share of input in the session summary.** The line prints
+   `input=N (+ M cached)` and a `total` that excludes cached entirely, so the ratio never
+   appears. Print the percentage. *Done when:* a test asserts the rendered summary contains the
+   ratio, and it passes.
+2. **Task 33 — record token usage in the pruning pass archive.** Ace's usage is returned by the
+   pass and dropped. Persist it into the pass record. *Done when:* a new pass directory contains
+   input/output token counts, and a test asserts the field is written.
+3. **Task 20 — rebrand user-visible "Codex" strings to Elpis.** User-facing text only: never a
+   global replace, never protocol identifiers, never crate names. *Done when:* a listed set of
+   user-visible strings reads Elpis and the suite shows no new failures.
+
+**Pass condition, for every item:** the test suite is already red at HEAD, so pass is a *delta* —
+capture the failing-test list before the run and require that **no test name moves from passing to
+failing**. Count, never; names, always.
 
 ```bash
-git -C ~/Desktop/p/Elpis rev-parse HEAD          # pin the base commit in the manifest
-docs/evals/deletion-sprint/capture-baseline.sh   # the failing-test baseline, in the main tree
+docs/evals/deletion-sprint/capture-baseline.sh   # in the main tree, before anything
 ```
 
-Then, one after the other:
+### Running and scoring
 
 ```bash
 cd ~/Desktop/p/Elpis-exp2-elpis && elpis
 cd ~/Desktop/p/Elpis-exp2-codex && codex
 ```
 
-Sessions file themselves by date — Elpis under `~/.elpis/sessions/<y>/<m>/<d>/`, Codex under
-`~/.codex/sessions/...` — so nothing needs moving afterwards.
-
-## Scoring
-
 ```bash
 cd docs/evals/dashboard
-python3 collect.py <elpis-rollout.jsonl> --split --system elpis
-python3 collect.py <codex-rollout.jsonl> --split --system codex
+python3 collect.py <rollout.jsonl> --split --system <elpis|codex>
 python3 build.py
 ```
 
-Charts regenerate from the transcripts. Nothing is scored by hand except Q1, which is read off
-the checklist.
+Sessions file themselves by date under `~/.elpis/sessions/` and `~/.codex/sessions/`, so nothing
+needs moving. Only Q "did it finish the checklist" is scored by hand.
+
+## The two that need their own runs
+
+- **RQ2 — retention.** Run `docs/evals/context-continuity/` as written: exact, paraphrase and
+  negative-recall probes, both systems, per its own publication gate. The facts being probed must
+  live **only inside tool output** — pruning never touches your messages, so anything typed
+  directly proves nothing.
+- **RQ5 — auditability.** No new run needed. Take one pass directory from an existing session,
+  follow its evidence pointer back to the original tool output in the rollout, and confirm the
+  removed text is recoverable and the replacement states what it kept. One walk, written down.
 
 ## Standing caveat
 
-One run per arm is one sample. Experiment 1's message 1 is empirical and unrepeated: it shows
-that *in that run*, pressure pruning held Elpis's window above 65% while Codex fell to 6.9% and
-compacted. That is an observation, not an established rate. It becomes a rate when there are
-enough runs to average, and not before.
+One run per arm is one sample. Until there are three, every figure is an observation about a
+particular afternoon, not a property of either system.

@@ -95,7 +95,7 @@ def remaining_lines(series, w=1020, h=380, trigger=70, floor=65, marks=True):
                 x = pl + iw * (c / max(n - 1, 1))
                 o.append(f'<line x1="{x:.1f}" y1="{Y(100):.1f}" x2="{x:.1f}" y2="{Y(0):.1f}" class="comp"/>')
                 o.append(f'<text x="{x+6:.1f}" y="{Y(100)-8:.1f}" class="anno" fill="#c8442c">compaction</text>')
-    o.append(f'<text x="{pl}" y="{h-8}" class="ax">model request →</text>')
+    o.append(f'<text x="{pl}" y="{h-8}" class="ax">model call →</text>')
     return f'<svg viewBox="0 0 {w} {h}" class="chart">' + "".join(o) + "</svg>"
 
 def box(groups, w=1020, h=300, unit="%", vmax=None, fmtf=None):
