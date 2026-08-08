@@ -21,6 +21,7 @@ const AUDIT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(super) struct PruneAttemptRecord {
+    pub(super) pass_id: String,
     pub(super) timestamp: String,
     pub(super) kind: PruneAttemptKind,
     pub(super) model_slug: String,
@@ -47,6 +48,7 @@ pub(super) enum PruneAttemptStatus {
 }
 
 pub(super) struct PruneAuditInput<'a> {
+    pub(super) pass_id: &'a str,
     /// Which trigger fired this pass: `steady` or `pressure`.
     pub(super) trigger: &'a str,
     pub(super) model_slug: &'a str,
@@ -162,7 +164,7 @@ pub(super) fn write_applied_pass(
         )
     })?;
 
-    let pass_id = Uuid::now_v7().to_string();
+    let pass_id = input.pass_id.to_string();
     let final_dir = passes_dir.join(&pass_id);
     let staging = Builder::new()
         .prefix(".pending-")
@@ -468,6 +470,7 @@ mod tests {
         let written = write_applied_pass(
             root.path(),
             PruneAuditInput {
+                pass_id: "test-pass-id",
                 trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "PRUNING INSTRUCTIONS",
@@ -540,10 +543,14 @@ mod tests {
             covered_call_ids: vec!["a".to_string()],
             text: String::new(),
         };
-        let write = || {
+        let mut count = 0;
+        let mut write = || {
+            count += 1;
+            let pass_id = format!("pass-{count}");
             write_applied_pass(
                 root.path(),
                 PruneAuditInput {
+                    pass_id: &pass_id,
                     trigger: "pressure",
                     model_slug: "terra",
                     ace_instructions: "instructions",
@@ -580,6 +587,7 @@ mod tests {
         let error = write_applied_pass(
             root.path(),
             PruneAuditInput {
+                pass_id: "test-pass-id",
                 trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "instructions",
@@ -611,6 +619,7 @@ mod tests {
         let written = write_applied_pass(
             root,
             PruneAuditInput {
+                pass_id: "usage-pass-id",
                 trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "instructions",
@@ -663,7 +672,9 @@ mod tests {
     #[test]
     fn records_multiple_attempts_and_retains_failed_billed_calls() {
         let root = tempfile::tempdir().expect("audit root");
+        let pass_id = "shared-pass-id-123".to_string();
         let primary_failed = PruneAttemptRecord {
+            pass_id: pass_id.clone(),
             timestamp: "2026-08-08T10:00:00Z".to_string(),
             kind: PruneAttemptKind::Primary,
             model_slug: "gpt-5.6-terra".to_string(),
@@ -679,6 +690,7 @@ mod tests {
             }),
         };
         let fallback_success = PruneAttemptRecord {
+            pass_id: pass_id.clone(),
             timestamp: "2026-08-08T10:00:05Z".to_string(),
             kind: PruneAttemptKind::Fallback,
             model_slug: "gpt-4o".to_string(),
@@ -705,6 +717,7 @@ mod tests {
         let written = write_applied_pass(
             root.path(),
             PruneAuditInput {
+                pass_id: &pass_id,
                 trigger: "pressure",
                 model_slug: "gpt-4o",
                 ace_instructions: "instructions",
@@ -726,13 +739,17 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(manifest["pass_id"], "shared-pass-id-123");
+
         let attempts_json = manifest["attempts"].as_array().expect("attempts array");
         assert_eq!(attempts_json.len(), 2);
+        assert_eq!(attempts_json[0]["pass_id"], "shared-pass-id-123");
         assert_eq!(attempts_json[0]["kind"], "primary");
         assert_eq!(attempts_json[0]["status"], "parse_error");
         assert_eq!(attempts_json[0]["usage"]["reasoning_output_tokens"], 10_000);
         assert_eq!(attempts_json[0]["usage"]["cached_input_tokens"], 2_000);
 
+        assert_eq!(attempts_json[1]["pass_id"], "shared-pass-id-123");
         assert_eq!(attempts_json[1]["kind"], "fallback");
         assert_eq!(attempts_json[1]["status"], "success");
         assert_eq!(attempts_json[1]["model_slug"], "gpt-4o");
@@ -740,12 +757,15 @@ mod tests {
         let attempts_log = std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
         let lines: Vec<&str> = attempts_log.trim().lines().collect();
         assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains(r#""pass_id":"shared-pass-id-123""#));
+        assert!(lines[1].contains(r#""pass_id":"shared-pass-id-123""#));
     }
 
     #[test]
     fn records_failed_attempts_when_pass_fails_completely() {
         let root = tempfile::tempdir().expect("audit root");
         let failed_attempt = PruneAttemptRecord {
+            pass_id: "failed-pass-id-999".to_string(),
             timestamp: "2026-08-08T11:00:00Z".to_string(),
             kind: PruneAttemptKind::Primary,
             model_slug: "gpt-5.6-terra".to_string(),
@@ -760,6 +780,7 @@ mod tests {
         let attempts_log = std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
         assert!(attempts_log.contains("stream_error"));
         assert!(attempts_log.contains("connection reset"));
+        assert!(attempts_log.contains("failed-pass-id-999"));
 
         let failed_dir = root.path().join("pruning/failed_attempts");
         let entries: Vec<_> = std::fs::read_dir(failed_dir).unwrap().collect();

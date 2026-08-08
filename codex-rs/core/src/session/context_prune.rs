@@ -187,7 +187,7 @@ async fn run_context_prune(
     )
     .await;
 
-    let Some((record, raw, model_slug, usage)) = pass_result else {
+    let Some((record, raw, model_slug, usage, pass_id)) = pass_result else {
         let log_dir = sess.codex_home().await.join("logs");
         if let Err(err) = context_prune_audit::record_failed_attempts(&log_dir, &attempts) {
             tracing::warn!("Failed to record failed pruning attempt audit: {err:#}");
@@ -213,6 +213,7 @@ async fn run_context_prune(
     let audit = match context_prune_audit::write_applied_pass(
         &log_dir,
         context_prune_audit::PruneAuditInput {
+            pass_id: &pass_id,
             trigger: trigger.as_str(),
             model_slug: &model_slug,
             ace_instructions: codex_prompts::CONTEXT_PRUNE_PROMPT,
@@ -289,9 +290,11 @@ async fn run_prune_pass(
         String,
         String,
         Option<TokenUsage>,
+        String,
     )>,
     Vec<context_prune_audit::PruneAttemptRecord>,
 ) {
+    let pass_id = uuid::Uuid::now_v7().to_string();
     let mut attempts = Vec::new();
     let primary_slug =
         if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
@@ -307,13 +310,14 @@ async fn run_prune_pass(
         batch,
         active_question,
         primary_slug,
+        &pass_id,
         context_prune_audit::PruneAttemptKind::Primary,
         &mut attempts,
     )
     .await
     {
         return (
-            Some((record, output, primary_slug.to_string(), usage)),
+            Some((record, output, primary_slug.to_string(), usage, pass_id)),
             attempts,
         );
     }
@@ -327,13 +331,14 @@ async fn run_prune_pass(
             batch,
             active_question,
             fallback_slug,
+            &pass_id,
             context_prune_audit::PruneAttemptKind::Fallback,
             &mut attempts,
         )
         .await
         {
             return (
-                Some((record, output, fallback_slug.to_string(), usage)),
+                Some((record, output, fallback_slug.to_string(), usage, pass_id)),
                 attempts,
             );
         }
@@ -349,6 +354,7 @@ async fn try_validated_prune_pass(
     batch: &[(String, String)],
     active_question: Option<&str>,
     prune_model_slug: &str,
+    pass_id: &str,
     kind: context_prune_audit::PruneAttemptKind,
     attempts: &mut Vec<context_prune_audit::PruneAttemptRecord>,
 ) -> Option<(
@@ -384,6 +390,7 @@ async fn try_validated_prune_pass(
                 )
                 .await;
                 attempts.push(context_prune_audit::PruneAttemptRecord {
+                    pass_id: pass_id.to_string(),
                     timestamp,
                     kind,
                     model_slug: prune_model_slug.to_string(),
@@ -395,6 +402,7 @@ async fn try_validated_prune_pass(
                 return None;
             };
             attempts.push(context_prune_audit::PruneAttemptRecord {
+                pass_id: pass_id.to_string(),
                 timestamp,
                 kind,
                 model_slug: prune_model_slug.to_string(),
@@ -407,6 +415,7 @@ async fn try_validated_prune_pass(
         }
         Err((err_msg, usage)) => {
             attempts.push(context_prune_audit::PruneAttemptRecord {
+                pass_id: pass_id.to_string(),
                 timestamp,
                 kind,
                 model_slug: prune_model_slug.to_string(),
@@ -489,44 +498,49 @@ async fn try_stream_prune_pass(
         }
     };
 
-    // Some model transports deliver the answer only as text deltas, with no
-    // `OutputItemDone` message item; reading item events alone throws that reply away
-    // and reports the pass as producing nothing.
+    let mut events = Vec::new();
+    while let Some(res) = stream.next().await {
+        events.push(res);
+    }
+
+    let outcome = process_prune_stream_events(events);
+    match &outcome {
+        Ok((text, _)) => {
+            tracing::info!("Context prune LLM response received ({prune_model_slug}): {text}");
+        }
+        Err((reason, _)) => {
+            tracing::warn!("Context prune LLM stream error/empty ({prune_model_slug}): {reason}");
+            log_prune_debug(sess, prune_model_slug, &input_text, reason, None).await;
+        }
+    }
+    outcome
+}
+
+fn process_prune_stream_events<E: std::fmt::Display>(
+    events: impl IntoIterator<Item = Result<ResponseEvent, E>>,
+) -> Result<(String, Option<TokenUsage>), (String, Option<TokenUsage>)> {
     let mut collected: Vec<ResponseItem> = Vec::new();
     let mut streamed_text = String::new();
     let mut safety_buffering = false;
-    // The pruning call runs at max reasoning effort. Those tokens are billed as output
-    // but never appear in the response text, so the completion event is the only place
-    // the cost of a pass can be observed.
     let mut usage: Option<TokenUsage> = None;
     let mut stream_err: Option<String> = None;
-    loop {
-        match stream.next().await {
-            Some(Ok(ResponseEvent::OutputItemDone(item))) => collected.push(item),
-            Some(Ok(ResponseEvent::OutputTextDelta(delta))) => streamed_text.push_str(&delta),
-            Some(Ok(ResponseEvent::SafetyBuffering(_))) => {
+
+    for item in events {
+        match item {
+            Ok(ResponseEvent::OutputItemDone(item)) => collected.push(item),
+            Ok(ResponseEvent::OutputTextDelta(delta)) => streamed_text.push_str(&delta),
+            Ok(ResponseEvent::SafetyBuffering(_)) => {
                 safety_buffering = true;
             }
-            Some(Ok(ResponseEvent::Completed { token_usage, .. })) => {
+            Ok(ResponseEvent::Completed { token_usage, .. }) => {
                 usage = token_usage;
-                break;
             }
-            Some(Ok(_)) => continue,
-            Some(Err(err)) => {
+            Ok(_) => continue,
+            Err(err) => {
                 let msg = format!("stream ended with an error: {err}");
-                tracing::warn!("Context prune stream error for model {prune_model_slug}: {err}");
-                log_prune_debug(
-                    sess,
-                    prune_model_slug,
-                    &input_text,
-                    &msg,
-                    None,
-                )
-                .await;
                 stream_err = Some(msg);
                 break;
             }
-            None => break,
         }
     }
 
@@ -537,16 +551,13 @@ async fn try_stream_prune_pass(
     let result = super::turn::get_last_assistant_message_from_turn(&collected)
         .or_else(|| (!streamed_text.trim().is_empty()).then(|| streamed_text.clone()));
     if let Some(text) = result {
-        tracing::info!("Context prune LLM response received ({prune_model_slug}): {text}");
         Ok((text, usage))
     } else {
-        tracing::warn!("Context prune LLM stream returned no assistant text ({prune_model_slug})");
         let reason = if safety_buffering {
             "stream completed with no assistant text after safety buffering"
         } else {
             "stream completed with no assistant text and no text deltas"
         };
-        log_prune_debug(sess, prune_model_slug, &input_text, reason, None).await;
         Err((reason.to_string(), usage))
     }
 }
@@ -576,5 +587,146 @@ async fn log_prune_debug(
             file,
             "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {model_slug}\nFAILURE: {reason}\n--- INPUT BATCH SENT TO LLM ---\n{input_text}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn successful_completed_stream_yields_success_and_provider_usage() {
+        let usage = TokenUsage {
+            input_tokens: 1_000,
+            cached_input_tokens: 300,
+            output_tokens: 50,
+            reasoning_output_tokens: 500,
+            total_tokens: 1_550,
+        };
+        let events: Vec<Result<ResponseEvent, String>> = vec![
+            Ok(ResponseEvent::OutputTextDelta("call_1: kept output".to_string())),
+            Ok(ResponseEvent::Completed {
+                token_usage: Some(usage.clone()),
+                response_id: "res-123".to_string(),
+                end_turn: None,
+            }),
+        ];
+
+        let res = process_prune_stream_events(events);
+        assert_eq!(res, Ok(("call_1: kept output".to_string(), Some(usage))));
+    }
+
+    #[test]
+    fn stream_ending_without_completed_event_yields_none_usage_not_zero() {
+        let events: Vec<Result<ResponseEvent, String>> = vec![
+            Ok(ResponseEvent::OutputTextDelta("call_1: kept output".to_string())),
+        ];
+
+        let res = process_prune_stream_events(events);
+        assert_eq!(res, Ok(("call_1: kept output".to_string(), None)));
+    }
+
+    #[test]
+    fn stream_failure_yields_stream_error_and_retains_partial_usage() {
+        let usage = TokenUsage {
+            input_tokens: 2_000,
+            cached_input_tokens: 500,
+            output_tokens: 20,
+            reasoning_output_tokens: 0,
+            total_tokens: 2_020,
+        };
+        let events: Vec<Result<ResponseEvent, String>> = vec![
+            Ok(ResponseEvent::Completed {
+                token_usage: Some(usage.clone()),
+                response_id: "res-456".to_string(),
+                end_turn: None,
+            }),
+            Err("connection reset by peer".to_string()),
+        ];
+
+        let res = process_prune_stream_events(events);
+        assert_eq!(
+            res,
+            Err(("stream ended with an error: connection reset by peer".to_string(), Some(usage)))
+        );
+    }
+
+    #[test]
+    fn parse_failure_retains_attempt_record_with_parse_error_status() {
+        let pass_id = "test-pass-999".to_string();
+        let batch = vec![("call_1".to_string(), "tool output".to_string())];
+        let mut attempts = Vec::new();
+        let timestamp = "2026-08-08T12:00:00Z".to_string();
+        let reasoning_effort = Some("max".to_string());
+        let prune_model_slug = "gpt-5.6-terra";
+        let output = "invalid manifest format".to_string();
+        let usage = Some(TokenUsage {
+            input_tokens: 800,
+            cached_input_tokens: 100,
+            output_tokens: 30,
+            reasoning_output_tokens: 0,
+            total_tokens: 830,
+        });
+
+        // Simulate parse failure classification in try_validated_prune_pass
+        let parsed = context_pruner::parse_prune_output(&output, &batch);
+        assert!(parsed.is_none());
+        attempts.push(context_prune_audit::PruneAttemptRecord {
+            pass_id: pass_id.clone(),
+            timestamp,
+            kind: context_prune_audit::PruneAttemptKind::Primary,
+            model_slug: prune_model_slug.to_string(),
+            reasoning_effort,
+            status: context_prune_audit::PruneAttemptStatus::ParseError,
+            error: Some("response did not parse as a decision manifest".to_string()),
+            usage: usage.clone(),
+        });
+
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].pass_id, "test-pass-999");
+        assert_eq!(attempts[0].status, context_prune_audit::PruneAttemptStatus::ParseError);
+        assert_eq!(attempts[0].usage, usage);
+    }
+
+    #[test]
+    fn primary_failure_and_fallback_share_pass_id_and_correct_kinds() {
+        let pass_id = "shared-pass-uuid-777".to_string();
+        let mut attempts = Vec::new();
+
+        // Primary attempt fails
+        attempts.push(context_prune_audit::PruneAttemptRecord {
+            pass_id: pass_id.clone(),
+            timestamp: "2026-08-08T12:00:00Z".to_string(),
+            kind: context_prune_audit::PruneAttemptKind::Primary,
+            model_slug: "gpt-5.6-terra".to_string(),
+            reasoning_effort: Some("max".to_string()),
+            status: context_prune_audit::PruneAttemptStatus::StreamError,
+            error: Some("stream could not be opened: connection timeout".to_string()),
+            usage: None,
+        });
+
+        // Fallback attempt succeeds
+        attempts.push(context_prune_audit::PruneAttemptRecord {
+            pass_id: pass_id.clone(),
+            timestamp: "2026-08-08T12:00:02Z".to_string(),
+            kind: context_prune_audit::PruneAttemptKind::Fallback,
+            model_slug: "gpt-4o".to_string(),
+            reasoning_effort: Some("max".to_string()),
+            status: context_prune_audit::PruneAttemptStatus::Success,
+            error: None,
+            usage: Some(TokenUsage {
+                input_tokens: 300,
+                cached_input_tokens: 0,
+                output_tokens: 20,
+                reasoning_output_tokens: 0,
+                total_tokens: 320,
+            }),
+        });
+
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].pass_id, "shared-pass-uuid-777");
+        assert_eq!(attempts[1].pass_id, "shared-pass-uuid-777");
+        assert_eq!(attempts[0].kind, context_prune_audit::PruneAttemptKind::Primary);
+        assert_eq!(attempts[1].kind, context_prune_audit::PruneAttemptKind::Fallback);
     }
 }
