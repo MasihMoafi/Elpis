@@ -21,8 +21,6 @@ the matching section; nothing else needs touching.
 | File | Does |
 | --- | --- |
 | `collect.py` | Transcript → `runs/<id>.json` |
-| `pricing.json` | Rate cards. Add a vendor here and it appears in every cost chart |
-| `cost.py` | Prices a run; counts long-context tier crossings |
 | `charts.py` | Pure-SVG primitives — no CDN, so the page opens offline |
 | `build.py` | Redraws the page from whatever is in `runs/` |
 
