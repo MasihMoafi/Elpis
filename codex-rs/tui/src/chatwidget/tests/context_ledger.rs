@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::render::renderable::Renderable;
+
 fn render_ledger(chat: &ChatWidget, height: u16) -> String {
     let area = ratatui::layout::Rect::new(0, 0, 52, height);
     let mut buf = ratatui::buffer::Buffer::empty(area);
@@ -71,6 +73,10 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     configure_ledger_sources(&mut chat, root.path())?;
 
+    let unfocused = render_ledger(&chat, 80);
+    assert!(unfocused.contains("Tab focus"));
+    assert!(unfocused.contains("Ctrl+click open file"));
+
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
     let rendered = render_ledger(&chat, 80);
@@ -81,6 +87,8 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
         assert!(rendered.contains(heading), "missing {heading}:\n{rendered}");
     }
     assert!(rendered.contains("≈"), "token estimates must be labeled");
+    assert!(rendered.contains("Up/Down move"));
+    assert!(rendered.contains("Space/Enter toggle"));
     assert!(rendered.contains("WHY INCLUDED"));
     assert!(rendered.contains("applicable global rules"));
     assert!(
@@ -204,5 +212,23 @@ async fn ledger_and_status_read_the_same_source_list() -> anyhow::Result<()> {
     for name in ["Global AGENTS.md", "Project AGENTS.md", "dev/SKILL.md"] {
         assert!(rendered.contains(name), "panel hides {name}:\n{rendered}");
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_widget_render_keeps_context_ledger_visible() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+
+    let area = ratatui::layout::Rect::new(0, 0, 120, 80);
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(&chat, area, &mut buf);
+    let rendered = buf
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(rendered.contains("CONTEXT LEDGER"));
     Ok(())
 }

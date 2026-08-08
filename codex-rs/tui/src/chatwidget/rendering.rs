@@ -170,7 +170,9 @@ impl Renderable for ChatWidget {
             area.height,
         );
         self.as_renderable().render(chat_area, buf);
-        if ledger_width > 0 {
+        if let Some((ledger_desired_height, ledger_lines)) =
+            self.context_ledger_lines_with_height(ledger_width)
+        {
             // Top-align the ledger with the composer box and let it run downward. It is
             // never trimmed to fit: `desired_height` reserves the rows it needs below
             // that point. Bottom-anchoring it instead (the previous behavior) made a tall
@@ -178,12 +180,12 @@ impl Renderable for ChatWidget {
             let ledger_top = area
                 .y
                 .saturating_add(self.composer_top_offset(chat_area.width));
-            let ledger_height = self.context_ledger_desired_height(ledger_width).min(
+            let ledger_height = ledger_desired_height.min(
                 area.y
                     .saturating_add(area.height)
                     .saturating_sub(ledger_top),
             );
-            self.render_context_ledger(
+            self.render_context_ledger_lines(
                 Rect::new(
                     chat_area.x.saturating_add(chat_area.width),
                     ledger_top,
@@ -191,6 +193,7 @@ impl Renderable for ChatWidget {
                     ledger_height,
                 ),
                 buf,
+                ledger_lines,
             );
         }
         self.last_rendered_width.set(Some(area.width as usize));

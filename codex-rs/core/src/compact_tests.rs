@@ -84,6 +84,15 @@ fn content_items_to_text_ignores_image_only_content() {
 }
 
 #[test]
+fn is_summary_message_requires_prefix_followed_by_newline() {
+    assert!(is_summary_message(&format!("{SUMMARY_PREFIX}\nsummary text")));
+    assert!(is_summary_message(&format!("{SUMMARY_PREFIX}\n")));
+    assert!(!is_summary_message(SUMMARY_PREFIX));
+    assert!(!is_summary_message(&format!("{SUMMARY_PREFIX} summary text")));
+    assert!(!is_summary_message(&format!("prefix {SUMMARY_PREFIX}\nsummary text")));
+}
+
+#[test]
 fn collect_user_messages_extracts_user_text_only() {
     let items = vec![
         ResponseItem::Message {

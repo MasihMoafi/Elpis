@@ -60,20 +60,35 @@ impl ChatWidget {
     }
 
     pub(super) fn context_ledger_desired_height(&self, ledger_width: u16) -> u16 {
+        self.context_ledger_lines_with_height(ledger_width)
+            .map(|(height, _)| height)
+            .unwrap_or(0)
+    }
+
+    /// Builds the ledger once for a render pass and returns both its measured height
+    /// and the lines needed to paint it. The normal render path needs both values;
+    /// keeping them together avoids rescanning continuity files between layout and
+    /// painting.
+    pub(super) fn context_ledger_lines_with_height(
+        &self,
+        ledger_width: u16,
+    ) -> Option<(u16, LedgerLines)> {
         if !self.context_ledger.visible || ledger_width == 0 {
-            return 0;
+            return None;
         }
         // Build the real lines and measure them with the same wrap settings the
         // renderer uses. Hand-counting rows here is what mis-anchored the panel: the
         // estimate had to mirror the renderer by hand, and it silently missed wrapped
         // rows and the expanded "WHY INCLUDED" block.
         let content_width = ledger_width.saturating_sub(1).max(1);
-        u16::try_from(
-            Paragraph::new(self.ledger_lines(content_width as usize).lines)
+        let ledger_lines = self.ledger_lines(content_width as usize);
+        let height = u16::try_from(
+            Paragraph::new(ledger_lines.lines.clone())
                 .wrap(Wrap { trim: true })
                 .line_count(content_width),
         )
-        .unwrap_or(u16::MAX)
+        .unwrap_or(u16::MAX);
+        Some((height, ledger_lines))
     }
 
     pub(super) fn handle_context_ledger_key_event(&mut self, key_event: KeyEvent) -> bool {
@@ -271,16 +286,18 @@ impl ChatWidget {
                 format_tokens(total_tokens)
             )
         };
+        let interaction_hint = if self.context_ledger.focused {
+            "Up/Down move · Space/Enter toggle · i all · w why · Backspace remove · Esc exit"
+        } else {
+            "Tab focus · Alt+C focus/hide · Ctrl+click open file"
+        };
         let mut lines = vec![
             Line::from(vec![
                 Span::styled("CONTEXT LEDGER", cyan.bold()),
                 Span::raw("  "),
                 Span::styled(context_header, cyan),
             ]),
-            Line::from(Span::styled(
-                "i = select/deselect all · backspace = remove added file",
-                muted,
-            )),
+            Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
             Line::from(vec![
                 Span::styled("CONTEXT WINDOW", cyan.bold()),
@@ -452,13 +469,24 @@ impl ChatWidget {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
+        let content_width = area.width.saturating_sub(1).max(1);
+        self.render_context_ledger_lines(area, buf, self.ledger_lines(content_width as usize));
+    }
+
+    pub(super) fn render_context_ledger_lines(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        ledger_lines: LedgerLines,
+    ) {
         let content_width = area.width.saturating_sub(1).max(1);
         let LedgerLines {
             lines,
             source_line_ranges,
             source_links,
-        } = self.ledger_lines(content_width as usize);
+        } = ledger_lines;
         let cyan = Style::default().fg(Color::Cyan);
 
         let scroll_lines = self

@@ -773,7 +773,9 @@ pub(crate) fn collect_user_messages(items: &[ResponseItem]) -> Vec<CompactedUser
 }
 
 pub(crate) fn is_summary_message(message: &str) -> bool {
-    message.starts_with(format!("{SUMMARY_PREFIX}\n").as_str())
+    message
+        .strip_prefix(SUMMARY_PREFIX)
+        .is_some_and(|suffix| suffix.starts_with('\n'))
 }
 
 /// Inserts canonical initial context into compacted replacement history at the
