@@ -6,6 +6,7 @@
 
 use super::*;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_model_provider_info::OPENROUTER_BASE_URL;
 use ratatui::text::Span;
 
@@ -183,6 +184,54 @@ impl ChatWidget {
                     tx.send(AppEvent::PersistModelSelection {
                         model: model.clone(),
                         effort: None,
+                    });
+                })],
+                dismiss_on_select: true,
+                ..Default::default()
+            });
+        }
+    }
+
+    /// Appends an "OPENAI" group below the active provider's models, mirroring
+    /// `push_ollama_model_group`. The picker's main list comes from the `model/list`
+    /// answered at startup, which is scoped to whichever provider was active then, so
+    /// once a thread moves to OpenRouter or Ollama the hosted models vanish from the
+    /// picker and there is no route back. Selecting one switches both the model and the
+    /// provider for the active thread and persists both to config.toml.
+    fn push_openai_model_group(&self, items: &mut Vec<SelectionItem>) {
+        if self.active_model_provider_id() == OPENAI_PROVIDER_ID {
+            return;
+        }
+        items.push(SelectionItem {
+            name: "OPENAI".to_string(),
+            is_disabled: true,
+            ..Default::default()
+        });
+        for (model, description) in [
+            (
+                crate::chatwidget::model_routing::SOL_MODEL,
+                "Top-tier reasoning for hard or important work",
+            ),
+            (
+                crate::chatwidget::model_routing::TERRA_MODEL,
+                "Balanced default for ordinary work",
+            ),
+            (
+                crate::chatwidget::model_routing::LUNA_MODEL,
+                "Fastest, for trivial mechanical work",
+            ),
+        ] {
+            items.push(SelectionItem {
+                name: model.to_string(),
+                description: Some(description.to_string()),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::UpdateModelForProvider {
+                        model: model.to_string(),
+                        provider_id: OPENAI_PROVIDER_ID.to_string(),
+                    });
+                    tx.send(AppEvent::PersistProviderModelSelection {
+                        model: model.to_string(),
+                        provider_id: OPENAI_PROVIDER_ID.to_string(),
                     });
                 })],
                 dismiss_on_select: true,
@@ -398,6 +447,7 @@ impl ChatWidget {
             });
         }
 
+        self.push_openai_model_group(&mut items);
         self.push_openrouter_free_model_group(&mut items);
         self.push_ollama_model_group(&mut items);
         items.insert(0, self.model_provider_group_item());
@@ -486,6 +536,7 @@ impl ChatWidget {
                 ..Default::default()
             });
         }
+        self.push_openai_model_group(&mut items);
         self.push_openrouter_free_model_group(&mut items);
         self.push_ollama_model_group(&mut items);
 
