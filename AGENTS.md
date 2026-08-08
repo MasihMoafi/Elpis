@@ -52,7 +52,7 @@ promoted nothing; no test caught it because every test checked plumbing rather t
 behavior. The pattern that does catch it: plant something only the feature could know, run
 the real path, assert it arrives — then switch the feature off and assert it does not.
 
-Existing evals: `docs/memory.md` section 6 (memory recall). Prove a new eval can fail
+Prove a new eval can fail
 before trusting it.
 
 ## Known Gaps

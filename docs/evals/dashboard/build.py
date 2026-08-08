@@ -133,6 +133,10 @@ during this message — both went straight to reading the repository and reporte
 what makes it comparable.</p>
 <p class="note"><b>Measured:</b> how each system's context window behaved, and the tokens each spent
 doing it. Both arms on <code>gpt-5.6-luna</code>, so the model is not a variable.</p>
+<p class="note danger"><b>One run. Not a rate.</b> This is a single, unrepeated observation:
+<em>in this run</em> pressure pruning held Elpis above 65% remaining while Codex fell to 6.9% and
+compacted. It is empirical, it is one sample, and it stays an observation until there are enough
+runs to average. Nothing here should be quoted as a general result.</p>
 <p class="note danger"><b>Not measured:</b> money — no rate card is applied, and the caching behaviour
 of vendors other than the one that ran is unknown, so no other vendor is priced. Output quality — the
 two briefs were not scored, and reading a repository has no checkable answer.</p>

@@ -513,7 +513,7 @@ Memory is curated cross-session knowledge, not a transcript mirror. Store stable
 preferences, project facts, decisions, and proven procedures. Retrieve only relevant
 entries for the current task and make provenance visible.
 
-> The extraction/consolidation pipeline was deleted; what remains is one durable file. See [memory.md](memory.md).
+> Durable memory is one file, `~/.elpis/memories/MEMORY.md`, switchable in the Context Ledger. There is no pipeline behind it.
 
 ### 7. Measurement
 

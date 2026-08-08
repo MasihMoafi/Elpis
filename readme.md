@@ -159,7 +159,7 @@ off, matching upstream Codex. Extraction works, but durable promotion has not pr
 real `MEMORY.md` commit on Masih's install because the current recall threshold is not
 reached in normal use. `/memories` controls recall and writing independently; no claim
 that durable memory works is accepted without a promotion commit in the memories
-repository. See [Memory](docs/memory.md).
+repository.
 
 ### MCP integrations you plug in
 
@@ -184,7 +184,6 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 
 - [Context and pruning](docs/context.md) — the four context-control layers and the Context Ledger
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
-- [Memory](docs/memory.md) — one durable file, switchable in the Context Ledger
 - [Evals](docs/evals/) — source data, reproducible scorers, and publication gates
 - [Providers](docs/providers.md) — every supported route, including local inference
 - [Technical guide](docs/GUIDE.md) — product vision and architecture

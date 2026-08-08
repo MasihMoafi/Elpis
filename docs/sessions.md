@@ -97,12 +97,12 @@ Both files are written to a temporary path and renamed into place, so a crash mi
 
 If writing `ES.md` fails, the turn still completes: Elpis logs a warning and surfaces `Turn completed, but Elpis could not save ES.md: <error>` in the transcript (`codex-rs/tui/src/app/app_server_events.rs`). Continuity degrades visibly rather than silently, but it does not abort the turn.
 
-See [Memory](memory.md).
+
 
 ---
 
 ## 5. Related Surfaces
 
 - **Context admission** — which checkpoint sources are carried forward is controlled in the Context Ledger; see [Context](context.md).
-- **Memory** — durable cross-session facts live in one file, switchable in the Context Ledger; see [Memory](memory.md).
+- **Memory** — durable cross-session facts live in `MEMORY.md`, switchable in the Context Ledger.
 - **Providers** — because checkpoints are plain Markdown, switching provider mid-task does not discard them; see [Providers](providers.md).
