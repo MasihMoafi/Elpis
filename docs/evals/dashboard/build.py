@@ -1,246 +1,301 @@
 #!/usr/bin/env python3
-"""Render the dashboard from whatever runs are in runs/. Add a run, re-run this."""
+"""Render the dashboard from whatever runs are in runs/. Add a run, re-run this.
+
+Nothing on the page is modelled, projected or extrapolated. Every number comes from a
+transcript that exists on disk. Messages that have not been run yet render as empty slots
+rather than as estimates.
+"""
 import json, os, statistics as st
 import charts as ch, cost as C
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-R = lambda n: json.load(open(os.path.join(HERE, "runs", f"{n}.json")))
-TEAL, GRN, RED, AMB, SLATE = "#17a398", "#7fc44a", "#c8442c", "#d98026", "#5b7fa6"
+RUNS = os.path.join(HERE, "runs")
+TEAL, GRN, RED, AMB, SLATE, MUT = "#17a398", "#7fc44a", "#c8442c", "#d98026", "#5b7fa6", "#8a8279"
+
+def load(n):
+    p = os.path.join(RUNS, f"{n}.json")
+    return json.load(open(p)) if os.path.exists(p) else None
 
 def cliffs(run, drop=25):
     o = run["occupancy"]
-    return [i for i in range(1, len(o)) if o[i-1] - o[i] > drop]
+    return [i for i in range(1, len(o)) if o[i - 1] - o[i] > drop]
 
 def stats(run):
-    o, q = run["occupancy"], ch.q
+    o = run["occupancy"]
+    rem = [100 - x for x in o]
     inp = [r["i"] for r in run["requests"]]
+    out = [r["o"] for r in run["requests"]]
     cac = sum(r["c"] for r in run["requests"]); tin = sum(inp)
-    return dict(n=len(inp), mean=st.mean(o), med=st.median(o), p95=q(o, .95), mx=max(o),
-                sd=st.pstdev(o), over50=100*sum(1 for x in o if x > 50)/len(o),
-                over80=100*sum(1 for x in o if x > 80)/len(o),
-                rmed=st.median(inp), rp95=q(inp, .95), rmx=max(inp), rmean=tin/len(inp),
-                hit=100*cac/max(tin, 1), tin=tin, tout=sum(r["o"] for r in run["requests"]),
-                comp=run["compactions"], tools=run["tool_calls"], dur=run["duration_min"])
+    return dict(
+        n=len(inp), rem=rem, inp=inp, out=out,
+        floor=min(rem), rmed=st.median(rem), rmean=st.mean(rem), sd=st.pstdev(rem),
+        below65=sum(1 for x in rem if x < 65), below30=sum(1 for x in rem if x < 30),
+        imed=st.median(inp), imean=tin / len(inp), imax=max(inp), i95=ch.q(inp, .95),
+        hit=100 * cac / max(tin, 1), tin=tin, tout=sum(out), omean=st.mean(out),
+        comp=run["compactions"], passes=run["prune"]["passes"], tools=run["tool_calls"],
+        dur=run["duration_min"], saved=run["prune"]["saved_tokens"],
+        spend=run["prune"]["input"] + run["prune"]["output"])
 
-E1C, E1E = R("exp1-codex"), R("exp1-elpis")
-LC, LH, LD = R("long-codex-a"), R("long-elpis-hold"), R("long-elpis-drift")
-LB, LCC = R("long-codex-b"), R("long-codex-c")
-sC, sE = stats(E1C), stats(E1E)
-sLC, sLH, sLD = stats(LC), stats(LH), stats(LD)
+# ---------------------------------------------------------------- the runs --
+# Message n of experiment 1 -> runs/exp<n>-{codex,elpis}.json. Message 1 is exp1-*.
+MESSAGES = [
+    (1, "Thoroughly familiarize yourself with the project.", "exp1-codex", "exp1-elpis"),
+    (2, "Identify and implement ONE small performance improvement that makes the "
+        "application measurably faster or more efficient.", "exp2-codex", "exp2-elpis"),
+    (3, "Find and implement ONE UX improvement that makes the interface more intuitive, "
+        "accessible, or pleasant to use.", "exp3-codex", "exp3-elpis"),
+]
+DONE = []
+for idx, prompt, cn, en in MESSAGES:
+    c, e = load(cn), load(en)
+    DONE.append((idx, prompt, c, e, stats(c) if c else None, stats(e) if e else None))
+
+M1 = DONE[0]
+_, _, C1, E1, sC, sE = M1
 
 MAIN = ["gpt-5.6-sol", "Claude Fable 5", "Claude Opus 5", "Claude Sonnet 5", "Gemini 3 Pro"]
-def cost_of(run, m, pm="gpt-5.6-luna", sc="base"): return C.run_cost(run, m, pm, sc)
-
-def hist_counts(o):
-    return [sum(1 for x in o if lo <= x < lo + 10) for lo in range(0, 100, 10)]
-BINS = [f"{i}–{i+10}" for i in range(0, 100, 10)]
-
-# ---- break-even curve -------------------------------------------------------
-def breakeven_curve(model):
-    pts = []
-    for k in range(0, 41):
-        hit = 0.60 + k * 0.01
-        reqs = [{"i": r["i"], "c": int(r["i"] * hit), "o": r["o"]} for r in LH["requests"]]
-        t = C.price(reqs, model)[0] + cost_of(LH, model)["prune"]
-        pts.append((hit, t))
-    return pts
-
+def cost_of(run, m, pm="gpt-5.6-luna"): return C.run_cost(run, m, pm)
 def money(v): return f"${v:,.0f}" if abs(v) >= 100 else f"${v:,.2f}"
 
-# ---------------------------------------------------------------- sections --
+SOL_C, SOL_E = cost_of(C1, "gpt-5.6-sol")["total"], cost_of(E1, "gpt-5.6-sol")["total"]
+RATIO = SOL_E / SOL_C
+
+def rbins(rem):
+    edges = [(0, 20), (20, 40), (40, 55), (55, 65), (65, 75), (75, 85), (85, 101)]
+    return [sum(1 for x in rem if lo <= x < hi) for lo, hi in edges], \
+           ["0–20", "20–40", "40–55", "55–65", "65–75", "75–85", "85+"]
+
 S = []
+
+# ------------------------------------------------------------------ header --
 S.append(f"""<header>
-<p class="eyebrow">Elpis · context economics dashboard · rebuilt {os.popen('date -u +"%Y-%m-%d %H:%M UTC"').read().strip()}</p>
-<h1>Elpis holds a flat context. Codex refills and compacts — thirteen times in one session.</h1>
-<p class="sub">Everything on this page is computed from session transcripts by <code>collect.py</code> and
-priced by <code>pricing.json</code>. Measured runs are labelled as such; the one projected series says
-so on every chart it appears in. Colour follows pressure throughout — teal is healthy, red is a window
-about to collapse.</p></header>
+<p class="eyebrow">Elpis vs Codex · experiment 1 · measured only</p>
+<h1>Elpis held the line you set. It cost {RATIO:.1f}× more to do it.</h1>
+<p class="sub">One prompt, two systems, identical clean checkouts of the same repository and the same
+258,400-token window. Both arms ran on <code>gpt-5.6-luna</code>. Every figure below is read out of the
+two session transcripts — there is no projection, no extrapolation and no synthetic data anywhere on
+this page. Messages 2 and 3 have not been run; their slots are empty rather than guessed.</p></header>
 
 <div class="kpis">
-<div class="kpi"><div class="n" style="color:{TEAL}">0</div><div class="l">compactions across 1,566 projected Elpis requests</div></div>
-<div class="kpi"><div class="n" style="color:{RED}">13</div><div class="l">compactions in the matching real Codex session</div></div>
-<div class="kpi"><div class="n" style="color:{TEAL}">77.5k</div><div class="l">mean Elpis request vs {ch.fmt(sLC['rmean'])} for Codex</div></div>
-<div class="kpi"><div class="n" style="color:{RED}">67.9%</div><div class="l">Elpis cache hit — the one number that decides the bill</div></div>
+<div class="kpi"><div class="n" style="color:{TEAL}">{sE['floor']:.1f}%</div>
+  <div class="l">Elpis's lowest remaining context — <b>your 65% floor held</b></div></div>
+<div class="kpi"><div class="n" style="color:{RED}">{sC['floor']:.1f}%</div>
+  <div class="l">Codex's lowest, before it was forced to compact</div></div>
+<div class="kpi"><div class="n" style="color:{TEAL}">σ {sE['sd']:.1f}</div>
+  <div class="l">Elpis context spread against σ {sC['sd']:.1f} for Codex</div></div>
+<div class="kpi"><div class="n" style="color:{RED}">{RATIO:.1f}×</div>
+  <div class="l">what Elpis cost, Sol-priced — {money(SOL_E)} against {money(SOL_C)}</div></div>
 </div>""")
 
-# PART 1
-S.append(f"""<div class="part"><span class="pnum">Part 1</span><h2 class="ptitle">The run we actually measured</h2>
-<p class="sub">One prompt — “thoroughly familiarize yourself with the project” — on identical clean
-checkouts of the same repo, same 258,400-token window, {sC['n']} requests for Codex and {sE['n']} for Elpis.</p></div>""")
+# ------------------------------------------------------------------ verdict --
+S.append(f"""<div class="part"><span class="pnum">The short answer</span>
+<h2 class="ptitle">Which one did better</h2></div>
 
-S.append(f"""<section class="card"><h3>Context occupancy, step by step</h3>
-<p class="sub">Codex drifts up through amber into red and is compacted at {sC['mx']:.1f}%. Elpis saws
-against the teal threshold for half again as many steps and never leaves it.</p>
-{ch.occupancy_lines([("Codex", E1C["occupancy"], GRN, cliffs(E1C)), ("Elpis", E1E["occupancy"], TEAL, [])])}
-<div class="key"><span><i style="background:{TEAL}"></i>Elpis</span><span><i style="background:{GRN}"></i>Codex (low)</span>
-<span><i style="background:{AMB}"></i>pressure</span><span><i style="background:{RED}"></i>danger</span>
-<span><i class="dash"></i>compaction</span></div></section>""")
+<section class="card"><h3>Split decision, and not a close one either way</h3>
+<div class="two">
+<div class="col ok"><h4>Elpis won — context</h4><ul>
+<li><b>Never broke 65%.</b> Floor {sE['floor']:.1f}% remaining, across all {sE['n']} requests. The
+criterion you set was that pressure pruning at 70 must not let it fall under 65. It did not, once.</li>
+<li><b>Zero compactions.</b> Nothing was ever summarised away; the full history survived the run.</li>
+<li><b>{sC['sd']/sE['sd']:.1f}× steadier.</b> σ {sE['sd']:.1f} against {sC['sd']:.1f} — it sits where you put it
+instead of sliding.</li>
+<li><b>{100*(1-sE['imean']/sC['imean']):.0f}% smaller requests.</b> {sE['imean']:,.0f} input tokens on the
+average call against {sC['imean']:,.0f}.</li>
+<li>Did more work: {sE['tools']} tool calls against {sC['tools']}.</li></ul></div>
 
+<div class="col bad"><h4>Codex won — cost and speed</h4><ul>
+<li><b>{RATIO:.1f}× cheaper</b> on this run at Sol pricing, and cheaper on every other rate card tested.</li>
+<li><b>Cache hit {sC['hit']:.1f}% against {sE['hit']:.1f}%.</b> This is the entire reason. A cached token
+bills at a tenth; pruning rewrites history, which throws the cached prefix away.</li>
+<li><b>{sC['dur']:.0f} minutes against {sE['dur']:.0f}.</b> Less than half the wall clock.</li>
+<li>Wrote the better familiarisation brief, on my reading of the two documents — more documentation-drift
+findings, plus a runtime diagram and crate map Elpis did not produce.</li></ul></div></div>
+
+<p class="note danger"><b>The honest sentence.</b> Elpis does exactly what it was built to do, and the
+measurement confirms it. It is not yet cheaper, and on this run it was not faster. The context win is
+real and the cost loss is real; both are in the same two transcripts.</p></section>""")
+
+# ------------------------------------------------------------------ part 1 --
+S.append(f"""<div class="part"><span class="pnum">Message 1 · measured</span>
+<h2 class="ptitle">“{M1[1]}”</h2>
+<p class="sub">Codex: {sC['n']} requests over {sC['dur']:.1f} minutes. Elpis: {sE['n']} requests over
+{sE['dur']:.1f} minutes. Both on <code>gpt-5.6-luna</code>, pruning on Luna, window 258,400.</p></div>""")
+
+S.append(f"""<section class="card"><h3>Context remaining, request by request</h3>
+<p class="sub">This is the chart the whole experiment exists to produce. Teal is a healthy window; the
+colour follows the line down through amber into red as the window fills. The dashed teal line is where
+pressure pruning fires, the red line is the floor you set.</p>
+{ch.remaining_lines([("Codex", sC['rem'], GRN, cliffs(C1)), ("Elpis", sE['rem'], TEAL, [])])}
+<div class="key"><span><i style="background:{TEAL}"></i>Elpis</span><span><i style="background:{GRN}"></i>Codex</span>
+<span><i style="background:{AMB}"></i>under pressure</span><span><i style="background:{RED}"></i>critical</span>
+<span><i class="dash"></i>compaction</span></div>
+<p class="note">Codex climbs steadily, crosses the threshold with nothing to catch it, bottoms out at
+{sC['floor']:.1f}% and is compacted — the vertical dashed line. Elpis saws against the threshold
+{sE['passes']} times and never falls through it. Requests spent below your floor: Codex
+<b>{sC['below65']} of {sC['n']}</b>, Elpis <b>{sE['below65']} of {sE['n']}</b>.</p></section>""")
+
+cb, cl = rbins(sC['rem']); eb, _ = rbins(sE['rem'])
 S.append(f"""<section class="card"><h3>Where each run spent its time</h3>
-{ch.histogram([("Codex", hist_counts(E1C["occupancy"]), GRN, .55), ("Elpis", hist_counts(E1E["occupancy"]), TEAL, 1)], BINS, xlabel="% of context window in use · faded = Codex, solid = Elpis")}
-{ch.box([("Codex · occupancy", E1C["occupancy"], GRN), ("Elpis · occupancy", E1E["occupancy"], TEAL)], h=190, vmax=100)}
-<p class="cap">Box = interquartile range, line = median, whiskers = full range.</p></section>""")
+{ch.histogram([("Codex", cb, GRN, .55), ("Elpis", eb, TEAL, 1)], cl,
+              xlabel="% of context window remaining · faded = Codex, solid = Elpis")}
+{ch.box([("Codex · remaining", sC['rem'], GRN), ("Elpis · remaining", sE['rem'], TEAL)], h=180, vmax=100)}
+<p class="cap">Box = interquartile range, line = median, whiskers = full range. Elpis's entire range
+({sE['floor']:.0f}–{max(sE['rem']):.0f}%) is narrower than Codex's interquartile box.</p></section>""")
 
-S.append(f"""<section class="card"><h3>Request size — what you pay for on every single call</h3>
-{ch.box([("Codex · tokens per request", [r["i"] for r in E1C["requests"]], GRN),
-         ("Elpis · tokens per request", [r["i"] for r in E1E["requests"]], TEAL)], h=190, unit="", fmtf=ch.fmt)}
-<p class="cap">Median {sC['rmed']:,.0f} against {sE['rmed']:,.0f}. Every request, all run long.</p></section>""")
+S.append(f"""<section class="card"><h3>Request size — what you pay for on every call</h3>
+{ch.box([("Codex · input tokens", sC['inp'], GRN), ("Elpis · input tokens", sE['inp'], TEAL)],
+        h=180, unit="", fmtf=ch.fmt)}
+{ch.hbars([("Codex · total input sent", sC['tin'], GRN), ("Elpis · total input sent", sE['tin'], TEAL),
+           ("Codex · of that, cache hits", sum(r['c'] for r in C1['requests']), GRN),
+           ("Elpis · of that, cache hits", sum(r['c'] for r in E1['requests']), TEAL)],
+          pl=260, fmtf=ch.fmt)}
+<p class="note">Elpis sends far less — median {sE['imed']:,.0f} against {sC['imed']:,.0f}, largest call
+{sE['imax']:,.0f} against {sC['imax']:,.0f} — and still pays more, because {sC['hit']:.1f}% of what Codex
+sent was billed at the cached rate against {sE['hit']:.1f}% of Elpis's. <b>Cache beats volume.</b>
+That single row is the whole cost story.</p></section>""")
 
-S.append(f"""<section class="card"><h3>The single-run scorecard</h3><div class="scroll"><table>
-<tr><th>Measured</th><th>Codex</th><th>Elpis</th></tr>
-<tr><td>Requests</td><td>{sC['n']}</td><td>{sE['n']}</td></tr>
-<tr><td>Tool calls</td><td>{sC['tools']}</td><td class="w">{sE['tools']}</td></tr>
-<tr><td>Compactions</td><td class="lose">{sC['comp']}</td><td class="w">{sE['comp']}</td></tr>
-<tr><td>Mean occupancy</td><td>{sC['mean']:.1f}%</td><td class="w">{sE['mean']:.1f}%</td></tr>
-<tr><td>Std deviation</td><td>{sC['sd']:.1f}</td><td class="w">{sE['sd']:.1f}</td></tr>
-<tr><td>95th percentile</td><td class="lose">{sC['p95']:.1f}%</td><td class="w">{sE['p95']:.1f}%</td></tr>
-<tr><td>Peak</td><td class="lose">{sC['mx']:.1f}%</td><td class="w">{sE['mx']:.1f}%</td></tr>
-<tr><td>Requests above 80% used</td><td class="lose">{sC['over80']:.1f}%</td><td class="w">{sE['over80']:.1f}%</td></tr>
-<tr><td>Median request</td><td>{sC['rmed']:,.0f}</td><td class="w">{sE['rmed']:,.0f}</td></tr>
-<tr><td>Largest request</td><td>{sC['rmx']:,.0f}</td><td class="w">{sE['rmx']:,.0f}</td></tr>
-<tr><td>Cache hit rate</td><td class="w">{sC['hit']:.1f}%</td><td class="lose">{sE['hit']:.1f}%</td></tr>
-<tr><td>Wall clock</td><td>{sC['dur']} min</td><td>{sE['dur']} min</td></tr>
+S.append(f"""<section class="card"><h3>Cache hit rate — the number that decides the bill</h3>
+{ch.hbars([("Codex", sC['hit'], GRN), ("Elpis", sE['hit'], TEAL)], pl=140, vmax=100,
+          fmtf=lambda v: f"{v:.1f}%")}
+<p class="note">A prune pass rewrites history, so the prefix no longer matches and everything downstream
+of the edit is re-billed at full price on the next request. {sE['passes']} passes over {sE['n']} requests
+means roughly two calls in five follow an invalidation. This is the cost of pruning, and it is far larger
+than the pruning calls themselves.</p></section>""")
+
+per = E1["prune"]["per_pass"]
+S.append(f"""<section class="card"><h3>The pruning ledger — all {sE['passes']} passes</h3>
+{ch.grouped([str(i+1) for i in range(len(per))],
+            [("reclaimed", [p["saved"] for p in per], TEAL),
+             ("spent reclaiming it", [p["spend"] for p in per], AMB)], h=300, fmtf=ch.fmt)}
+{ch.hbars([("Context reclaimed", sE['saved'], TEAL), ("Tokens spent reclaiming it", sE['spend'], AMB)],
+          pl=250, fmtf=ch.fmt)}
+<p class="note">In raw tokens pruning does not pay for itself here: {sE['passes']} passes spent
+{sE['spend']:,} tokens to remove {sE['saved']:,} — a ratio of
+<b>{sE['saved']/sE['spend']:.2f} reclaimed per token spent</b>. It is still worth running, because the
+tokens it spends are cheap and spent once while the tokens it removes are expensive and would be re-sent
+on every later request. But it is a context mechanism, not a savings mechanism, and the earlier claim
+that it returned nine-to-one was wrong.</p></section>""")
+
+# --------------------------------------------------------------------- cost --
+rows = []
+for m in MAIN:
+    rows.append((m, cost_of(C1, m)["total"], cost_of(E1, m)["total"],
+                 C.tier_crossings(C1["requests"], m), C.tier_crossings(E1["requests"], m)))
+tbl = "".join(
+    f"<tr><td>{m}</td><td>{money(c)}</td><td class='lose'>{money(e)}</td>"
+    f"<td>{e/c:.2f}×</td><td>{tc}</td><td class='w'>{te}</td></tr>"
+    for m, c, e, tc, te in rows)
+
+S.append(f"""<section class="card"><h3>What this run cost, on every rate card</h3>
+<p class="sub">The same two transcripts, re-priced five ways. Pruning is always billed on the cheap model
+of the same family. Tier crossings count requests that exceeded the vendor's long-context threshold —
+272,000 tokens on OpenAI, 200,000 on Sonnet and Gemini.</p>
+{ch.grouped(MAIN, [("Codex", [r[1] for r in rows], GRN), ("Elpis", [r[2] for r in rows], TEAL)],
+            fmtf=lambda v: f"${v:,.2f}")}
+<div class="scroll"><table>
+<tr><th>Main model</th><th>Codex</th><th>Elpis</th><th>Elpis ÷ Codex</th>
+    <th>Codex tier crossings</th><th>Elpis tier crossings</th></tr>{tbl}
+</table></div>
+<p class="note">Neither system crossed a long-context threshold on this run — the window is 258,400 and
+OpenAI's premium starts at 272,000, so nobody paid it. That matters because an earlier version of this
+analysis put the threshold at 128,000 and invented a premium for Codex that does not exist. It was wrong
+and the conclusion it produced was backwards.</p>
+<p class="note danger"><b>Read this before quoting the cost figures.</b> Both runs actually executed on
+<code>gpt-5.6-luna</code>. The table re-prices those same token counts at Sol, Claude and Gemini rates.
+That is a fair comparison between the two systems — identical model, identical prompt — but it is not a
+measurement of what Sol would do, because a different model would produce a different token trace.
+At the model they really ran on, the run cost {money(cost_of(C1,'gpt-5.6-luna')['total'])} for Codex and
+{money(cost_of(E1,'gpt-5.6-luna')['total'])} for Elpis.</p></section>""")
+
+pruners = [("Pruning on Luna", cost_of(E1, "gpt-5.6-sol", "gpt-5.6-luna")["prune"], TEAL),
+           ("Pruning on Haiku 4.5", cost_of(E1, "gpt-5.6-sol", "Claude Haiku 4.5")["prune"], SLATE)]
+S.append(f"""<section class="card"><h3>What the pruning calls themselves cost</h3>
+{ch.hbars(pruners, pl=220, fmtf=lambda v: f"${v:.3f}")}
+<p class="note">Negligible either way — {money(pruners[0][1])} of a {money(SOL_E)} run. The pruner is not
+what makes Elpis expensive; the cache invalidation it causes is.</p></section>""")
+
+# ------------------------------------------------------- pending messages ---
+for idx, prompt, c, e, _sc, _se in DONE[1:]:
+    S.append(f"""<div class="part pending"><span class="pnum">Message {idx} · not yet run</span>
+<h2 class="ptitle">“{prompt}”</h2></div>
+<section class="card pending"><h3>Slot reserved</h3>
+<p class="sub">Run both arms, then drop the transcripts in with
+<code>collect.py &lt;transcript&gt; exp{idx}-codex</code> and <code>exp{idx}-elpis</code>, and
+<code>build.py</code> fills this section with the same charts as message 1 — no edits to the page.</p>
+<div class="slots">
+  <div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">floor</span></div>
+  <div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">floor</span></div>
+  <div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">compactions</span></div>
+  <div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">prune passes</span></div>
+  <div class="slot"><span class="sk">Codex</span><span class="sv">—</span><span class="sl">cost, Sol</span></div>
+  <div class="slot"><span class="sk">Elpis</span><span class="sv">—</span><span class="sl">cost, Sol</span></div>
+</div></section>""")
+
+# ------------------------------------------------------- across the three ---
+def cell(s, key, f="{:.1f}", cls=""):
+    return f"<td class='{cls}'>{f.format(s[key])}</td>" if s else "<td class='pend'>—</td>"
+
+hdr = "".join(f"<th colspan='2'>Message {i}</th>" for i, *_ in DONE)
+sub = "".join("<th>Codex</th><th>Elpis</th>" for _ in DONE)
+def row(label, key, f="{:.1f}", better="low"):
+    tds = ""
+    for _i, _p, c, e, sc, se in DONE:
+        tds += cell(sc, key, f) + cell(se, key, f, "w" if se else "")
+    return f"<tr><td>{label}</td>{tds}</tr>"
+
+S.append(f"""<div class="part"><span class="pnum">Across the run</span>
+<h2 class="ptitle">All three messages, side by side</h2>
+<p class="sub">One row per metric, one column pair per message. Dashes are measurements that do not exist
+yet — they will not be filled with estimates.</p></div>
+
+<section class="card"><div class="scroll"><table class="matrix">
+<tr><th rowspan="2">Metric</th>{hdr}</tr><tr>{sub}</tr>
+{row("Model requests", "n", "{:.0f}")}
+{row("Tool calls", "tools", "{:.0f}")}
+{row("Lowest context remaining", "floor", "{:.1f}%")}
+{row("Median context remaining", "rmed", "{:.1f}%")}
+{row("Spread (σ)", "sd", "{:.1f}")}
+{row("Requests below 65% remaining", "below65", "{:.0f}")}
+{row("Compactions", "comp", "{:.0f}")}
+{row("Prune passes", "passes", "{:.0f}")}
+{row("Mean input tokens per request", "imean", "{:,.0f}")}
+{row("Total input tokens", "tin", "{:,.0f}")}
+{row("Cache hit rate", "hit", "{:.1f}%")}
+{row("Total output tokens", "tout", "{:,.0f}")}
+{row("Wall clock, minutes", "dur", "{:.1f}")}
 </table></div></section>""")
 
-cats = MAIN
-S.append(f"""<section class="card"><h3>What the measured run cost, on every model</h3>
-<p class="sub">Same transcripts, five rate cards. Ace pruning always priced on the cheap model of the
-same family — Luna for OpenAI, Haiku 4.5 shown separately below.</p>
-{ch.grouped(cats, [("Codex", [cost_of(E1C, m)["total"] for m in cats], GRN),
-                   ("Elpis", [cost_of(E1E, m)["total"] for m in cats], TEAL)], fmtf=lambda v: f"${v:,.2f}")}
-{ch.grouped(cats, [("Codex per tool call", [cost_of(E1C, m)["total"]/sC["tools"] for m in cats], GRN),
-                   ("Elpis per tool call", [cost_of(E1E, m)["total"]/sE["tools"] for m in cats], TEAL)],
-            h=280, fmtf=lambda v: f"${v:.3f}")}
-<p class="note">On the single run Codex is cheaper on every model, per run <em>and</em> per tool call.
-That is the opposite of what I told you earlier, and the earlier claim was wrong: it came from putting
-the long-context threshold at 128k. The real OpenAI threshold is 272,000 tokens, which is above this
-258,400 window, so <strong>neither system ever paid a long-context premium on OpenAI</strong>.</p></section>""")
+# ------------------------------------------------------------------ caveats --
+S.append(f"""<div class="part"><span class="pnum">Before you quote any of this</span>
+<h2 class="ptitle">What one message does and does not establish</h2></div>
 
-pruners = [("Ace on Luna", cost_of(E1E, "gpt-5.6-sol", "gpt-5.6-luna")["prune"], TEAL),
-           ("Ace on Haiku 4.5", cost_of(E1E, "gpt-5.6-sol", "Claude Haiku 4.5")["prune"], SLATE)]
-S.append(f"""<section class="card"><h3>What pruning itself costs</h3>
-{ch.hbars(pruners, pl=210, fmtf=lambda v: f"${v:.3f}")}
-{ch.hbars([("Context reclaimed", E1E["prune"]["saved_tokens"], TEAL),
-           ("Tokens spent reclaiming it", E1E["prune"]["input"]+E1E["prune"]["output"], AMB)], pl=250, fmtf=ch.fmt)}
-<p class="note">In raw tokens Ace is not a saver: {E1E['prune']['passes']} passes spent
-{E1E['prune']['input']+E1E['prune']['output']:,} tokens to remove {E1E['prune']['saved_tokens']:,}.
-It wins only because those are cheap tokens spent once, against expensive tokens that would otherwise
-be re-sent on every request afterwards. The pruning calls are never the expensive part —
-{money(pruners[0][1])} of a {money(cost_of(E1E,'gpt-5.6-sol')['total'])} run.</p></section>""")
-
-# PART 2
-S.append(f"""<div class="part"><span class="pnum">Part 2</span><h2 class="ptitle">At scale — {len(LC['requests']):,} requests</h2>
-<p class="sub">Codex needs no extrapolation: real sessions of {len(LC['requests']):,},
-{len(LB['requests']):,} and {len(LCC['requests']):,} requests with 13, 11 and 7 compactions are on disk.
-Only Elpis is projected, and only from its own measured behaviour — see the method note below.</p></div>""")
-
-S.append(f"""<section class="card"><h3>A real 13-compaction Codex session against projected Elpis</h3>
-{ch.occupancy_lines([("Codex", LC["occupancy"], GRN, cliffs(LC)),
-                     ("Elpis · control holds", LH["occupancy"], TEAL, []),
-                     ("Elpis · residual drift", LD["occupancy"], "#2b8fa8", cliffs(LD))], h=380, sample=520)}
-<p class="cap">Vertical marks are compactions. Codex: {sLC['comp']}. Elpis under the pessimistic drift
-scenario: its first at step {LD['first_compaction_at']:,}. Under the stationary scenario: none.</p></section>""")
-
-S.append(f"""<section class="card"><h3>How the method works, and what it assumes</h3>
-<p class="sub">The projection is a block bootstrap of Elpis's own measured requests, not a curve fit.</p>
-<div class="two"><div class="col"><h4>Why the regulated segment only</h4>
-<p class="small">Elpis's pruner is a control loop with a fixed setpoint: a pass fires at 30% of the
-window and reclaims toward 20%. The measurement shows that loop converging — occupancy slope is
-<b>+1.00 %/step</b> during the first 18 steps, <b>+0.128</b> once regulated, and <b>+0.043</b> over the
-final twenty, with the band settling to 24.8–34.1%. Only the regulated segment is resampled.</p></div>
-<div class="col"><h4>Why contiguous blocks</h4>
-<p class="small">Consecutive requests are strongly autocorrelated: context climbs for several steps,
-a pass fires, it drops. Sampling requests independently would erase the saw-tooth and understate the
-peaks, so requests are drawn in blocks of 8 with a fixed seed.</p></div></div>
-<p class="note">The residual <b>+0.043 %/step</b> cannot be told apart from zero across 49 samples, so
-both readings are carried: <b>hold</b> treats the loop as stationary; <b>drift</b> treats the residual as
-real and compounding, which is what the non-prunable core — messages and reasoning, which no pruning
-layer rewrites — would do. Under drift Elpis eventually hits the wall too, at step
-{LD['first_compaction_at']:,}. Codex reaches its thirteenth compaction well before that.</p></section>""")
-
-capped = [{"i": min(r["i"], 200000), "c": int(r["c"] * min(1, 200000 / max(r["i"], 1))), "o": r["o"]} for r in LC["requests"]]
-GEM_ACTUAL = cost_of(LC, "Gemini 3 Pro")["total"]
-GEM_FLAT = C.price(capped, "Gemini 3 Pro")[0]
-GEM_PREMIUM = money(GEM_ACTUAL - GEM_FLAT)
-GEM_PCT = 100 * (GEM_ACTUAL - GEM_FLAT) / GEM_ACTUAL
-GEM_X = sum(1 for r in LC["requests"] if r["i"] > 200000)
-
-S.append(f"""<section class="card"><h3>The gap that compounds</h3>
-{ch.hbars([("Codex · input tokens sent", sLC["tin"], GRN),
-           ("Elpis · control holds", sLH["tin"], TEAL),
-           ("Elpis · residual drift", sLD["tin"], "#2b8fa8")], pl=230, fmtf=ch.fmt)}
-{ch.hbars([("Codex · compactions", sLC["comp"], RED),
-           ("Elpis · control holds", sLH["comp"], TEAL),
-           ("Elpis · residual drift", sLD["comp"], "#2b8fa8")], pl=230, fmtf=lambda v: f"{v:.0f}")}
-{ch.hbars([("Codex · requests over 200k", sum(1 for r in LC["requests"] if r["i"]>200000), RED),
-           ("Elpis · control holds", sum(1 for r in LH["requests"] if r["i"]>200000), TEAL),
-           ("Elpis · residual drift", sum(1 for r in LD["requests"] if r["i"]>200000), "#2b8fa8")], pl=230)}
-<p class="note">You were right about the tier: <strong>Elpis trims below the long-context line and
-never crosses it.</strong> On Claude Sonnet 5 and Gemini 3 Pro — both of which double their rates above
-200k — Codex crosses it {GEM_X} times. That premium is {GEM_PREMIUM}
-of Codex's Gemini bill, {GEM_PCT:.0f}% of it. On OpenAI the threshold is 272k, above the window, so nobody pays it.</p></section>""")
-
-S.append(f"""<section class="card"><h3>Cost at scale, every model</h3>
-{ch.grouped(cats, [("Codex (real, 13 compactions)", [cost_of(LC, m)["total"] for m in cats], GRN),
-                   ("Elpis · hold (projected)", [cost_of(LH, m)["total"] for m in cats], TEAL),
-                   ("Elpis · drift (projected)", [cost_of(LD, m)["total"] for m in cats], "#2b8fa8")],
-            h=350, fmtf=lambda v: f"${v:,.0f}")}
-<p class="note danger"><strong>This is where I have to contradict you.</strong> At scale Codex is still
-cheaper — about <b>1.8×</b> — and the reason is not tokens. Elpis sends
-<b>{ch.fmt(sLH['tin'])}</b> input tokens against Codex's <b>{ch.fmt(sLC['tin'])}</b>, so it wins the
-volume argument decisively. It loses on cache: Codex's hit rate over that real session is
-<b>{sLC['hit']:.1f}%</b>, Elpis's is <b>{sLH['hit']:.1f}%</b>. A cached token bills at a tenth of a
-fresh one, so 30 points of cache hit is worth more than halving your volume.</p></section>""")
-
-be = breakeven_curve("gpt-5.6-sol")
-cref = cost_of(LC, "gpt-5.6-sol")["total"]
-S.append(f"""<section class="card"><h3>The one number that decides it</h3>
-<p class="sub">Elpis's bill as a function of its cache hit rate, holding everything else at the projected
-values. Where the curve crosses the red line, Elpis becomes cheaper than a real 13-compaction Codex run.</p>
-{ch.curve(be, marks=[(0.679, f"measured 67.9%"), (0.883, "break-even 88.3%")], ref=(cref, f"Codex — {money(cref)}"), xlab="Elpis cache hit rate →")}
-{ch.hbars([(f"{m} — break-even hit rate", v, TEAL) for m, v in
-           [("gpt-5.6-sol", 88.3), ("Claude Opus 5", 88.3), ("Claude Sonnet 5", 85.9), ("Gemini 3 Pro", 82.5)]],
-          pl=300, fmtf=lambda v: f"{v:.1f}%", vmax=100)}
-<p class="note">So the whole economic case reduces to a single engineering target:
-<strong>get Elpis's cache hit above roughly 88% and it is cheaper than Codex on every model.</strong>
-It is at 68% today. Two things make that plausible rather than wishful — Codex's own hit rate climbed
-from {sC['hit']:.1f}% on the short run to {sLC['hit']:.1f}% on the long one as the cache warmed, and the
-projection holds Elpis flat at its short-run value, which is conservative. The lever is pass frequency:
-{LH['prune']['passes']} passes over {len(LH['requests']):,} requests means roughly two of every five
-requests follow a cache-invalidating rewrite. Fewer, larger passes would cut that directly.</p></section>""")
-
-S.append(f"""<div class="part"><span class="pnum">Part 3</span><h2 class="ptitle">The verdict, and what to run next</h2></div>
-<section class="card"><h3>What is actually established</h3>
-<div class="two"><div class="col ok"><h4>Elpis wins, on evidence</h4><ul>
-<li>Never compacts. Zero across 1,566 projected requests; first compaction at step {LD['first_compaction_at']:,} even under the pessimistic reading. Codex: 13.</li>
-<li>Sends <b>43% fewer input tokens per request</b> — {sLH['rmean']:,.0f} against {sLC['rmean']:,.0f}.</li>
-<li>Never crosses the 200k long-context line. Codex crosses it 308 times, 23% of its Gemini bill.</li>
-<li>Context distribution <b>{sLC['sd']/sLH['sd']:.1f}× tighter</b> — σ {sLH['sd']:.1f} against {sLC['sd']:.1f}.</li>
-<li>Loses no history: 13 compactions is 13 irreversible summarisations of the working set.</li></ul></div>
-<div class="col bad"><h4>Codex wins, on evidence</h4><ul>
-<li><b>Cheaper — about 1.8× at scale</b>, on every model tested, because of cache, not tokens.</li>
-<li>Cache hit {sLC['hit']:.1f}% against {sLH['hit']:.1f}%. Pruning rewrites history, which invalidates the prefix.</li>
-<li>Wrote the better familiarisation brief in the one run we can compare: five documentation-drift findings against one, plus a runtime diagram and crate map Elpis did not produce.</li>
-<li>Finished in {sC['dur']} minutes against {sE['dur']}.</li></ul></div></div>
-<p class="note">Neither run was scored against a task with a checkable answer, so nothing here measures
-output quality except my own reading of two documents. That is the gap the next experiment has to close.</p></section>
-
-<section class="card"><h3>What to run next</h3>
+<section class="card"><h3>Four limits, stated plainly</h3>
 <ol class="next">
-<li><b>The deletion sprint.</b> Already specified, already has a worktree pair and a single objective
-metric — lines removed while the suite stays green. It is the first experiment with a checkable answer,
-and it runs long enough that Codex will compact several times. Capture the failing-test baseline first.</li>
-<li><b>A cache-rate intervention.</b> The economic case rests entirely on one number. Batch pruning into
-fewer, larger passes, re-measure the hit rate, and re-run this page. It is a one-variable experiment
-with a pass mark already computed: 88%.</li>
-<li><b>Drop the rest of experiment 1.</b> The perf and UX prompts measure nothing this page does not
-already show.</li>
-</ol>
-<p class="note">Everything here is reproducible: <code>collect.py</code> ingests a transcript into
-<code>runs/</code>, <code>project.py</code> extends a measured run, <code>pricing.json</code> holds the
-rate cards, <code>build.py</code> redraws every chart. New experiment, one command, same charts.</p>
-</section>""")
+<li><b>n = 1.</b> One message, one run per arm. The context result is large enough and mechanical enough
+that a single run is persuasive; the cost result rests on one cache-hit measurement and is not.</li>
+<li><b>The model was Luna, not Sol.</b> Both arms, so the comparison is fair. Every dollar figure above
+is a re-pricing of Luna's token trace, and is labelled as such wherever it appears.</li>
+<li><b>Nothing was scored against a checkable answer.</b> “Familiarize yourself with the project”
+produces a document, and comparing two documents is a judgement, not a measurement. Messages 2 and 3
+change that — both end in code that either works or does not.</li>
+<li><b>Cost is a moving target.</b> It hinges on cache hit rate, which is a function of how often pruning
+fires. That is a tunable, not a constant, and it has not been tuned once.</li>
+</ol></section>
+
+<section class="card"><h3>How to add the next run</h3>
+<p class="sub">Nothing on this page is hand-written. The pipeline is four files.</p>
+<div class="scroll"><table>
+<tr><th>File</th><th>Does</th></tr>
+<tr><td><code>collect.py</code></td><td>Reads a session transcript, writes <code>runs/&lt;id&gt;.json</code></td></tr>
+<tr><td><code>pricing.json</code></td><td>Rate cards — add a vendor here, it appears in every cost chart</td></tr>
+<tr><td><code>cost.py</code></td><td>Prices a run, counts long-context tier crossings</td></tr>
+<tr><td><code>build.py</code></td><td>Redraws this page from whatever is in <code>runs/</code></td></tr>
+</table></div>
+<p class="note">Two accounting rules are baked into <code>collect.py</code> because getting either wrong
+changes the headline. Per-request usage is read as deltas of the cumulative counters, not from the
+per-turn field, which is re-emitted when a turn ends without a request. And Elpis's prune checkpoints are
+written as the same rollout item type as a real compaction, distinguished only by a message prefix — miss
+that and a run with zero compactions reports twenty-six.</p></section>""")
 
 CSS = """
 :root{--ink:#15130f;--paper:#f7f4ee;--card:#fff;--line:#e3ddd1;--mut:#6b635a;--teal:#17a398;--red:#c8442c}
@@ -252,13 +307,17 @@ body{background:var(--paper);color:var(--ink);margin:0;padding:44px 22px 100px;f
 h1{font:600 43px/1.07 ui-serif,Georgia,serif;letter-spacing:-.023em;margin:0 0 12px;text-wrap:balance}
 h3{font:600 20px/1.25 ui-sans-serif,system-ui,sans-serif;letter-spacing:-.012em;margin:0}
 h4{font:600 14px/1.3 ui-sans-serif,system-ui,sans-serif;margin:0 0 6px}
-.sub{color:var(--mut);margin:6px 0 0;max-width:70ch}
+.sub{color:var(--mut);margin:6px 0 0;max-width:74ch}
 .eyebrow{font:600 11px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.17em;text-transform:uppercase;color:var(--mut);margin:0 0 14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:24px 26px;display:flex;flex-direction:column;gap:13px}
+.card.pending{border-style:dashed;background:transparent}
 .part{margin-top:30px;padding-bottom:4px;border-bottom:2px solid var(--teal)}
+.part.pending{border-bottom:2px dashed var(--line)}
+.part.pending .pnum{color:var(--mut)}
+.part.pending .ptitle{color:var(--mut)}
 .pnum{display:inline-block;font:600 10.5px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--teal);margin-bottom:6px}
-.ptitle{font:600 27px/1.15 ui-serif,Georgia,serif;letter-spacing:-.018em;margin:0 0 6px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.ptitle{font:600 27px/1.15 ui-serif,Georgia,serif;letter-spacing:-.018em;margin:0 0 6px;text-wrap:balance}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
 .kpi .n{font:600 32px/1.05 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.022em}
 .kpi .l{color:var(--mut);font-size:12.5px;margin-top:5px;line-height:1.4}
@@ -267,21 +326,22 @@ h4{font:600 14px/1.3 ui-sans-serif,system-ui,sans-serif;margin:0 0 6px}
 .ax{fill:var(--mut);font-size:11px;font-family:ui-sans-serif,system-ui,sans-serif}
 .trig{stroke:var(--teal);stroke-width:1.3;stroke-dasharray:5 4}
 .trigmark{fill:var(--teal);font-size:11.5px;font-weight:600;font-family:ui-sans-serif,system-ui,sans-serif}
-.comp{stroke:var(--red);stroke-width:1;stroke-dasharray:3 4;opacity:.5}
+.comp{stroke:var(--red);stroke-width:1;stroke-dasharray:3 4;opacity:.55}
 .refline{stroke:var(--red);stroke-width:1.5;stroke-dasharray:6 4}
 .anno{font-size:12px;font-weight:600;font-family:ui-sans-serif,system-ui,sans-serif}
 .blab{fill:var(--ink);font-size:12.5px;font-family:ui-sans-serif,system-ui,sans-serif}
 .bval{fill:var(--mut);font-size:12px;font-variant-numeric:tabular-nums;font-family:ui-sans-serif,system-ui,sans-serif}
 table{border-collapse:collapse;width:100%;font-size:14.5px}
-th,td{text-align:right;padding:8px 11px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
-th:first-child,td:first-child{text-align:left;font-variant-numeric:normal}
+th,td{text-align:right;padding:8px 11px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;font-variant-numeric:normal;white-space:normal}
 th{color:var(--mut);font-weight:600;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase}
+.matrix th{text-align:right}
 .w{color:var(--teal);font-weight:600}.lose{color:var(--red);font-weight:600}
+td.pend{color:var(--line);font-weight:600}
 .scroll{overflow-x:auto}
-.note{font-size:14.2px;color:var(--mut);border-left:2px solid var(--teal);padding-left:14px;max-width:76ch;margin:2px 0 0}
+.note{font-size:14.2px;color:var(--mut);border-left:2px solid var(--teal);padding-left:14px;max-width:80ch;margin:2px 0 0}
 .note.danger{border-color:var(--red)}
 .cap{font-size:12.8px;color:var(--mut);margin:0}
-.small{font-size:13.4px;color:var(--mut);margin:0}
 .key{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--mut)}
 .key i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
 .key i.dash{width:14px;height:0;border-top:2px dashed var(--red);border-radius:0;vertical-align:4px}
@@ -289,11 +349,21 @@ th{color:var(--mut);font-weight:600;font-size:11.5px;letter-spacing:.06em;text-t
 @media(max-width:780px){.two{grid-template-columns:1fr}}
 .col{border:1px solid var(--line);border-radius:11px;padding:15px 17px}
 .col.ok{border-left:3px solid var(--teal)}.col.bad{border-left:3px solid var(--red)}
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.slot{border:1px dashed var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.slot .sk{font:600 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.slot .sv{font:600 26px/1.1 ui-sans-serif,system-ui,sans-serif;color:var(--line)}
+.slot .sl{font-size:12px;color:var(--mut)}
 ul,ol{margin:6px 0 0;padding-left:19px}li{margin:5px 0;font-size:14px}
 ol.next li{margin:9px 0;font-size:14.5px}
 code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:color-mix(in srgb,var(--mut) 14%,transparent);padding:1px 5px;border-radius:4px}
 """
-html = f"<title>Elpis · context economics</title>\n<style>{CSS}</style>\n<div class='wrap'>\n" + "\n".join(S) + "\n</div>\n"
+
+html = ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>Elpis vs Codex — experiment 1</title>\n"
+        f"<style>{CSS}</style></head><body>\n<div class='wrap'>\n"
+        + "\n".join(S) + "\n</div></body></html>\n")
 out = os.path.join(HERE, "dashboard.html")
 open(out, "w").write(html)
-print(f"wrote {out}  ({len(html):,} bytes)")
+print(f"wrote {out}  ({len(html):,} bytes, {html.count('<svg')} charts)")

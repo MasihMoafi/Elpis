@@ -1,46 +1,41 @@
-# Context economics dashboard
+# Experiment dashboard
 
-Charts every experiment from session transcripts. Adding a run is one command; the charts
-redraw from whatever is in `runs/`.
+`dashboard.html` is generated. Do not edit it by hand — edit the inputs and re-run `build.py`.
 
-## Add a run
+Everything on the page is measured. There is no projection, extrapolation or synthetic series
+anywhere in the pipeline; a message that has not been run renders as an empty slot.
+
+## Adding a run
 
 ```bash
-python3 collect.py <path-to-rollout.jsonl> --id <name> --system <elpis|codex> \
-        --label "Human readable" [--prune-window <UTC-FROM> <UTC-TO>]
-python3 build.py
+python3 collect.py <path-to-rollout.jsonl> exp2-elpis   # writes runs/exp2-elpis.json
+python3 build.py                                        # redraws dashboard.html
 ```
 
-`--prune-window` bounds which Ace passes in `~/.elpis/logs/pruning/passes` belong to the run.
-Omit it for Codex, which has none.
+Naming is what wires a run into the page: `exp<N>-codex` and `exp<N>-elpis`, where `N` is the
+message number of experiment 1 (see `../RUNBOOK.md`). `build.py` looks those names up and fills
+the matching section; nothing else needs touching.
 
 ## Files
 
-| file | what it owns |
-|---|---|
-| `collect.py` | transcript → canonical run record in `runs/` |
-| `project.py` | extends a measured run to a longer horizon (block bootstrap) |
-| `pricing.json` | rate cards, including context tiers and their thresholds |
-| `cost.py` | prices a run against a rate card |
-| `charts.py` | SVG primitives — no external libraries, opens from `file://` |
-| `build.py` | renders `dashboard.html` |
+| File | Does |
+| --- | --- |
+| `collect.py` | Transcript → `runs/<id>.json` |
+| `pricing.json` | Rate cards. Add a vendor here and it appears in every cost chart |
+| `cost.py` | Prices a run; counts long-context tier crossings |
+| `charts.py` | Pure-SVG primitives — no CDN, so the page opens offline |
+| `build.py` | Redraws the page from whatever is in `runs/` |
 
-## Accounting rules that matter
+## Four accounting rules that change the headline if you get them wrong
 
-- **Per-request usage comes from the movement in cumulative counters**, not `last_token_usage`.
-  That block is re-emitted when a turn ends without a request; summing the re-emits overstated
-  one run by 211k phantom input tokens.
-- **Prune checkpoints are not compactions.** Elpis writes both as `compacted` rollout items;
-  only the `elpis.context-prune.v1:` message prefix distinguishes them.
-- **Cost is a range, not a number.** The split between fresh input and cache writes is not in
-  the telemetry, so `base` (fresh at input rate) and `write` (fresh at cache-write rate)
-  bracket it.
-- **Tiers key on a request's input size**, not the window: OpenAI's long-context line is
-  272k, above the 258.4k window, so it never applies here. Anthropic Sonnet and Gemini 3 Pro
-  cross at 200k, which Codex does routinely and Elpis does not.
-
-## Runs on file
-
-Measured: `exp1-codex`, `exp1-elpis` (experiment 1, identical prompt and checkout);
-`long-codex-a/b/c` (real sessions of 1,566 / 1,672 / 983 requests with 13 / 11 / 7 compactions).
-Projected: `long-elpis-hold`, `long-elpis-drift` — see the method note in the dashboard.
+1. **Per-request usage comes from deltas of the cumulative counters**, never from the per-turn
+   field. That field is re-emitted when a turn ends without issuing a request, which invented
+   211,106 phantom input tokens the first time this was measured.
+2. **Elpis writes prune checkpoints as `compacted` rollout items**, distinguished from a real
+   compaction only by the `elpis.context-prune.v1:` message prefix. Miss it and a run with zero
+   compactions reports twenty-six.
+3. **OpenAI's long-context threshold is 272,000 tokens**, above the 258,400 window, so it never
+   applies here. An earlier pass used 128,000 and invented a premium that does not exist.
+4. **The model a run executed on is not the model the cost table prices.** Experiment 1 ran on
+   `gpt-5.6-luna` in both arms. Every Sol/Claude/Gemini figure is a re-pricing of that same token
+   trace, and the page says so.

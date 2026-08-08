@@ -59,6 +59,45 @@ def occupancy_lines(series, w=1020, h=360, trigger=30, mark_compactions=True, sa
     o.append(f'<text x="{pl}" y="{h-8}" class="ax">turn step →</text>')
     return f'<svg viewBox="0 0 {w} {h}" class="chart">' + "".join(o) + "</svg>"
 
+def remaining_lines(series, w=1020, h=380, trigger=70, floor=65, marks=True):
+    """Same as occupancy_lines but plotted as context *remaining*, which is what the
+    session actually shows you. Low remaining is the dangerous end, so the colour ramp
+    runs the other way: teal at the top, red at the floor."""
+    pt, pr, pb, pl = 30, 26, 42, 58
+    iw, ih = w - pl - pr, h - pt - pb
+    Y = lambda p: pt + ih * (1 - min(max(p, 0), 100) / 100)
+    o = ['<defs>']
+    for i, (lab, rem, low, comps) in enumerate(series):
+        # reversed: offset 0 of the ramp (teal) sits at 100% remaining
+        o.append(pressure_gradient(f"r{i}", Y(100), Y(0), low))
+    o.append(f'<linearGradient id="rband" gradientUnits="userSpaceOnUse" x1="0" y1="{Y(100):.1f}" x2="0" y2="{Y(trigger):.1f}">'
+             '<stop offset="0" stop-color="#17a398" stop-opacity=".16"/><stop offset="1" stop-color="#17a398" stop-opacity=".03"/></linearGradient></defs>')
+    o.append(f'<rect x="{pl}" y="{Y(100):.1f}" width="{iw}" height="{Y(trigger)-Y(100):.1f}" fill="url(#rband)"/>')
+    o.append(f'<rect x="{pl}" y="{Y(floor):.1f}" width="{iw}" height="{Y(0)-Y(floor):.1f}" fill="#c8442c" opacity=".05"/>')
+    for p in (0, 25, 50, 65, 75, 100):
+        y = Y(p)
+        o.append(f'<line x1="{pl}" y1="{y:.1f}" x2="{pl+iw}" y2="{y:.1f}" class="grid"/>')
+        o.append(f'<text x="{pl-10}" y="{y+4:.1f}" class="ax" text-anchor="end">{p}%</text>')
+    o.append(f'<line x1="{pl}" y1="{Y(trigger):.1f}" x2="{pl+iw}" y2="{Y(trigger):.1f}" class="trig"/>')
+    o.append(f'<text x="{pl+8}" y="{Y(trigger)-8:.1f}" class="trigmark">pressure pruning fires here — {trigger}% remaining</text>')
+    o.append(f'<line x1="{pl}" y1="{Y(floor):.1f}" x2="{pl+iw}" y2="{Y(floor):.1f}" class="refline"/>')
+    o.append(f'<text x="{pl+iw-6}" y="{Y(floor)+16:.1f}" class="anno" fill="#c8442c" text-anchor="end">your floor — {floor}% remaining</text>')
+    for i, (lab, rem, low, comps) in enumerate(series):
+        n = len(rem)
+        X = lambda j: pl + iw * (j / (n - 1)) if n > 1 else pl
+        d = " ".join(("M" if j == 0 else "L") + f"{X(j):.1f},{Y(v):.1f}" for j, v in enumerate(rem))
+        o.append(f'<path d="{d}" fill="none" stroke="url(#r{i})" stroke-width="2.4" stroke-linejoin="round"/>')
+        lo = min(rem); li = rem.index(lo)
+        o.append(f'<circle cx="{X(li):.1f}" cy="{Y(lo):.1f}" r="4" fill="{"#c8442c" if lo<floor else low}"/>')
+        o.append(f'<text x="{X(li)+8:.1f}" y="{Y(lo)+4:.1f}" class="anno" fill="{"#c8442c" if lo<floor else low}">{lab} floor {lo:.1f}%</text>')
+        if marks:
+            for c in comps:
+                x = pl + iw * (c / max(n - 1, 1))
+                o.append(f'<line x1="{x:.1f}" y1="{Y(100):.1f}" x2="{x:.1f}" y2="{Y(0):.1f}" class="comp"/>')
+                o.append(f'<text x="{x+6:.1f}" y="{Y(100)-8:.1f}" class="anno" fill="#c8442c">compaction</text>')
+    o.append(f'<text x="{pl}" y="{h-8}" class="ax">model request →</text>')
+    return f'<svg viewBox="0 0 {w} {h}" class="chart">' + "".join(o) + "</svg>"
+
 def box(groups, w=1020, h=300, unit="%", vmax=None, fmtf=None):
     """groups: list of (label, values[], colour)"""
     fmtf = fmtf or (lambda v: f"{v:.0f}")
