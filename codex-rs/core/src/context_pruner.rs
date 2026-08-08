@@ -15,7 +15,10 @@
 //! boundary; pressure alone lets a session climb to 30% before anything is reclaimed,
 //! which is the state the steady pass exists to prevent.
 //!
-//! Neither trigger ever touches the current turn. On any failure (model error,
+//! The steady trigger never touches the turn in flight. The pressure trigger has to:
+//! a single tool-driven turn can cross the boundary without ever ending, and cutting
+//! at the latest user message would leave nothing eligible exactly then — so it cuts
+//! by recency instead, keeping the newest 10% of the window verbatim. On any failure (model error,
 //! timeout, unparseable output) the batch is left alone and can retry after the
 //! backoff in `retry_delay_after_failures` elapses — an untouched batch is otherwise
 //! re-selected identically on the next turn, so without the backoff one unluckily
@@ -38,6 +41,13 @@ pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 30;
 /// distill recent, still-relevant evidence and cost answer quality for context the
 /// session has not yet needed to give up.
 pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 25;
+
+/// How much of the newest tool evidence a pressure pass always leaves verbatim, as a
+/// percentage of the context window. Unlike the steady pass, a pressure pass reaches
+/// into the turn that is still running, so it needs its own floor: the observations the
+/// next follow-up reasons over sit at the end of the history, and only what is behind
+/// them may be rewritten.
+pub(crate) const PRESSURE_KEEP_RECENT_PERCENT: i64 = 10;
 
 /// Floor for the steady pass, as a percentage of the context window. Low enough that
 /// routine exploration is distilled the turn after it lands, high enough that a couple
@@ -116,16 +126,25 @@ impl PruneTrigger {
 }
 
 /// The trigger that applies right now, or `None` when no pass should run.
+///
+/// The two triggers measure different regions, so they get their own backlog figures.
+/// A turn that drives dozens of tools without ever ending has no completed turns at
+/// all, so a shared `uncovered_tokens` of zero would rule out pressure exactly when
+/// the window is filling fastest.
 pub(crate) fn select_trigger(
     used_tokens: i64,
     uncovered_tokens: usize,
+    pressure_uncovered_tokens: usize,
     context_window: i64,
 ) -> Option<PruneTrigger> {
-    if context_window <= 0 || uncovered_tokens == 0 {
+    if context_window <= 0 {
         return None;
     }
-    if pressure_reached(used_tokens, context_window) {
+    if pressure_uncovered_tokens > 0 && pressure_reached(used_tokens, context_window) {
         return Some(PruneTrigger::Pressure);
+    }
+    if uncovered_tokens == 0 {
+        return None;
     }
     steady_floor_reached(uncovered_tokens, context_window).then_some(PruneTrigger::Steady)
 }
@@ -230,6 +249,58 @@ fn completed_turn_items(input: &[ResponseItem]) -> &[ResponseItem] {
     }
 }
 
+/// Region a pressure pass may rewrite: everything except the newest tool evidence,
+/// which stays verbatim.
+///
+/// The steady pass stops at the latest user message, because between turns that is
+/// exactly the boundary between settled work and the question being answered. A
+/// pressure pass cannot use the same boundary. A single tool-driven turn can run for
+/// dozens of steps and cross the pressure line without ever ending, and at that point
+/// every byte in the window belongs to the current turn — so stopping at the turn
+/// boundary leaves nothing eligible precisely when reclaiming matters most.
+///
+/// Instead the cut is made by recency: walking back from the end, the newest outputs
+/// totalling `PRESSURE_KEEP_RECENT_PERCENT` of the window are kept verbatim, and the
+/// prefix behind them is eligible.
+fn pressure_eligible_items(input: &[ResponseItem], context_window: i64) -> &[ResponseItem] {
+    if context_window <= 0 {
+        return &[];
+    }
+    let keep_budget = usize::try_from(
+        context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100,
+    )
+    .unwrap_or(usize::MAX);
+
+    let mut kept = 0usize;
+    for (index, item) in input.iter().enumerate().rev() {
+        let Some((_, text)) = prunable_text(item) else {
+            continue;
+        };
+        kept = kept.saturating_add(approx_token_count(&text));
+        if kept >= keep_budget {
+            return &input[..index];
+        }
+    }
+    // The whole history fits inside the keep budget, so nothing is old enough to take.
+    &[]
+}
+
+/// Approximate tokens of uncovered tool output a pressure pass could take right now.
+/// Measured over the pressure region rather than completed turns, so a long single
+/// turn still reports a real backlog.
+pub(crate) fn uncovered_pressure_tokens(
+    input: &[ResponseItem],
+    covered_call_ids: &HashSet<String>,
+    context_window: i64,
+) -> usize {
+    pressure_eligible_items(input, context_window)
+        .iter()
+        .filter_map(prunable_text)
+        .filter(|(call_id, _)| !covered_call_ids.contains(*call_id))
+        .map(|(_, text)| approx_token_count(&text))
+        .sum()
+}
+
 /// Approximate tokens of turn-lifetime tool output from completed turns not already
 /// covered by a prior record — the backlog the steady trigger measures. Durable rules,
 /// messages, the current turn, and already-covered items are all excluded.
@@ -293,6 +364,7 @@ pub(crate) fn build_prune_batch_for_reclaim(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
     target_tokens: usize,
+    context_window: i64,
 ) -> Vec<(String, String)> {
     if target_tokens == 0 {
         return Vec::new();
@@ -300,9 +372,10 @@ pub(crate) fn build_prune_batch_for_reclaim(
 
     let mut selected = Vec::new();
     let mut selected_tokens = 0usize;
-    for (call_id, evidence, output_tokens) in
-        build_prune_candidates(completed_turn_items(input), covered_call_ids)
-    {
+    for (call_id, evidence, output_tokens) in build_prune_candidates(
+        pressure_eligible_items(input, context_window),
+        covered_call_ids,
+    ) {
         if !selected.is_empty()
             && selected_tokens.saturating_add(output_tokens) > MAX_PRUNE_BATCH_TOKENS
         {
@@ -562,12 +635,12 @@ mod tests {
 
     #[test]
     fn pressure_trigger_starts_at_thirty_percent_use() {
-        assert_eq!(select_trigger(299_999, 9_999, 1_000_000), None);
+        assert_eq!(select_trigger(299_999, 9_999, 9_999, 1_000_000), None);
         assert_eq!(
-            select_trigger(300_000, 9_999, 1_000_000),
+            select_trigger(300_000, 9_999, 9_999, 1_000_000),
             Some(PruneTrigger::Pressure)
         );
-        assert_eq!(select_trigger(900_000, 0, 1_000_000), None);
+        assert_eq!(select_trigger(900_000, 0, 0, 1_000_000), None);
     }
 
     #[test]
@@ -575,11 +648,11 @@ mod tests {
         // The regression this guards: under pressure-only gating, a session with a
         // real backlog but modest use pruned nothing and grew until it hit 30% used.
         assert_eq!(
-            select_trigger(200_000, 10_000, 1_000_000),
+            select_trigger(200_000, 10_000, 0, 1_000_000),
             Some(PruneTrigger::Steady)
         );
-        assert_eq!(select_trigger(200_000, 9_999, 1_000_000), None);
-        assert_eq!(select_trigger(200_000, 0, 1_000_000), None);
+        assert_eq!(select_trigger(200_000, 9_999, 0, 1_000_000), None);
+        assert_eq!(select_trigger(200_000, 0, 0, 1_000_000), None);
     }
 
     #[test]
@@ -589,8 +662,8 @@ mod tests {
 
     #[test]
     fn no_trigger_fires_for_non_positive_context_window() {
-        assert_eq!(select_trigger(200_000, 1_000_000, 0), None);
-        assert_eq!(select_trigger(200_000, 1_000_000, -1), None);
+        assert_eq!(select_trigger(200_000, 1_000_000, 1_000_000, 0), None);
+        assert_eq!(select_trigger(200_000, 1_000_000, 1_000_000, -1), None);
     }
 
     #[test]
@@ -743,8 +816,12 @@ mod tests {
             tool_output("recent", &"c".repeat(8_000)),
         ];
 
-        let batch =
-            build_prune_batch_for_reclaim(&input, &HashSet::new(), /*target_tokens*/ 3_000);
+        let batch = build_prune_batch_for_reclaim(
+            &input,
+            &HashSet::new(),
+            /*target_tokens*/ 3_000,
+            /*context_window*/ 20_000,
+        );
 
         assert_eq!(
             batch
@@ -756,26 +833,62 @@ mod tests {
     }
 
     #[test]
-    fn pressure_batch_never_consumes_the_current_turn() {
+    fn pressure_batch_reaches_into_a_turn_that_has_not_ended() {
+        // The regression this guards: a single tool-driven turn crosses the pressure
+        // boundary without ever completing. Cutting at the latest user message left
+        // every one of its outputs ineligible, so a session could climb from 30% to
+        // 85% used reclaiming nothing at all.
         let input = vec![
-            user_message("previous turn"),
-            tool_output("old", &"a".repeat(8_000)),
-            user_message("current turn"),
-            tool_output("current", &"b".repeat(8_000)),
+            user_message("the only turn"),
+            tool_output("first", &"a".repeat(8_000)),
+            tool_output("second", &"b".repeat(8_000)),
+            tool_output("newest", &"c".repeat(8_000)),
         ];
 
         let batch = build_prune_batch_for_reclaim(
             &input,
             &HashSet::new(),
             /*target_tokens*/ usize::MAX,
+            /*context_window*/ 20_000,
         );
 
+        // The newest output is the suffix the next follow-up reasons over; the two
+        // behind it are old enough to distill.
         assert_eq!(
             batch
                 .iter()
                 .map(|(call_id, _)| call_id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["old"]
+            vec!["first", "second"]
+        );
+    }
+
+    #[test]
+    fn pressure_fires_when_the_running_turn_holds_the_backlog() {
+        // Completed-turn backlog is zero for a turn still in flight, which used to
+        // rule out every trigger and leave pressure unreachable.
+        let input = vec![
+            user_message("the only turn"),
+            tool_output("first", &"a".repeat(8_000)),
+            tool_output("newest", &"b".repeat(8_000)),
+        ];
+        let pressure_uncovered =
+            uncovered_pressure_tokens(&input, &HashSet::new(), /*context_window*/ 20_000);
+
+        assert_eq!(
+            uncovered_completed_turn_tokens(&input, &HashSet::new()),
+            0,
+            "a turn that has not ended has no completed-turn backlog"
+        );
+        assert!(pressure_uncovered > 0);
+        assert_eq!(
+            select_trigger(
+                /*used_tokens*/ 12_000,
+                /*uncovered_tokens*/ 0,
+                pressure_uncovered,
+                /*context_window*/ 20_000,
+            ),
+            Some(PruneTrigger::Pressure)
         );
     }
 

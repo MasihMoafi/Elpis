@@ -117,8 +117,15 @@ async fn run_context_prune(
         .clone()
         .for_prompt(&turn_context.model_info.input_modalities);
     let uncovered = context_pruner::uncovered_completed_turn_tokens(&items, &covered_call_ids);
+    let pressure_uncovered =
+        context_pruner::uncovered_pressure_tokens(&items, &covered_call_ids, context_window);
     let trigger = requested_trigger.or_else(|| {
-        context_pruner::select_trigger(active_context_tokens, uncovered, context_window)
+        context_pruner::select_trigger(
+            active_context_tokens,
+            uncovered,
+            pressure_uncovered,
+            context_window,
+        )
     });
     let batch = match trigger {
         Some(context_pruner::PruneTrigger::Manual) => {
@@ -133,7 +140,12 @@ async fn run_context_prune(
             // no further. Anything larger distills evidence the session still needs.
             let reclaim_target =
                 context_pruner::reclaim_target_tokens(active_context_tokens, context_window, pct);
-            context_pruner::build_prune_batch_for_reclaim(&items, &covered_call_ids, reclaim_target)
+            context_pruner::build_prune_batch_for_reclaim(
+                &items,
+                &covered_call_ids,
+                reclaim_target,
+                context_window,
+            )
         }
         None => Vec::new(),
     };
