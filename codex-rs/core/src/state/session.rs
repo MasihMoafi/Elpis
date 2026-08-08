@@ -55,6 +55,9 @@ pub(crate) struct SessionState {
     pub(crate) context_prune_consecutive_failures: u32,
     /// Earliest instant an automatic pruning pass may run again. `/prune` ignores it.
     pub(crate) context_prune_retry_after: Option<Instant>,
+    /// Budget for automatic Pressure-triggered Ace passes within the current pressure
+    /// crossing. See `crate::context_pruner::PressureEpisode`.
+    pub(crate) context_prune_pressure_episode: crate::context_pruner::PressureEpisode,
 }
 
 impl SessionState {
@@ -89,6 +92,7 @@ impl SessionState {
             context_prune_saved_tokens: 0,
             context_prune_consecutive_failures: 0,
             context_prune_retry_after: None,
+            context_prune_pressure_episode: crate::context_pruner::PressureEpisode::default(),
         }
     }
 
@@ -111,6 +115,20 @@ impl SessionState {
     pub(crate) fn clear_context_prune_failures(&mut self) {
         self.context_prune_consecutive_failures = 0;
         self.context_prune_retry_after = None;
+    }
+
+    pub(crate) fn context_prune_pressure_episode_passes(&self) -> u32 {
+        self.context_prune_pressure_episode.passes()
+    }
+
+    /// Re-arms the pressure episode once active use is observed back under the
+    /// boundary. Called on every automatic pruning check, regardless of trigger.
+    pub(crate) fn observe_context_prune_pressure(&mut self, in_pressure: bool) {
+        self.context_prune_pressure_episode.observe(in_pressure);
+    }
+
+    pub(crate) fn record_context_prune_pressure_pass(&mut self) {
+        self.context_prune_pressure_episode.record_pass();
     }
 
     // History helpers

@@ -7,13 +7,23 @@
 //! model-visible trace.
 //!
 //! Two triggers drive the same pass, and both are needed. The steady trigger fires
-//! whenever completed turns hold at least 1% of the context window in uncovered tool
+//! whenever completed turns hold at least 5% of the context window in uncovered tool
 //! output, and takes that whole backlog: this is what keeps a long session from
 //! filling up in the first place. The pressure trigger fires once active use reaches
-//! 30% and takes only the oldest output needed to get back to 25%, preserving a recent
+//! 30% and takes only the oldest output needed to get back to 20%, preserving a recent
 //! verbatim suffix. Steady alone cannot catch a single turn that balloons past the
 //! boundary; pressure alone lets a session climb to 30% before anything is reclaimed,
 //! which is the state the steady pass exists to prevent.
+//!
+//! A pressure crossing is budgeted, not open-ended: `PressureEpisode` permits at most
+//! `MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE` Ace passes per crossing. A single pass is
+//! capped at `MAX_PRUNE_BATCH_TOKENS`, which on a large window can be smaller than the
+//! distance from 30% down to 20% — so without a budget, a session whose backlog grows
+//! faster than one pass reclaims would spend an unbounded number of small passes
+//! nibbling at the boundary instead of ever handing off. Once the budget is spent the
+//! session defers to the existing compaction/rollover mechanism instead. The episode
+//! re-arms (its budget resets) the next time active use is observed back under the
+//! pressure boundary, so the next crossing gets its own fresh budget.
 //!
 //! The steady trigger never touches the turn in flight. The pressure trigger has to:
 //! a single tool-driven turn can cross the boundary without ever ending, and cutting
@@ -52,9 +62,15 @@ pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 20;
 pub(crate) const PRESSURE_KEEP_RECENT_PERCENT: i64 = 10;
 
 /// Floor for the steady pass, as a percentage of the context window. Low enough that
-/// routine exploration is distilled the turn after it lands, high enough that a couple
-/// of small reads do not buy a model call.
-pub(crate) const STEADY_PRUNE_FLOOR_PERCENT: i64 = 1;
+/// routine exploration is distilled well before it can contribute to pressure, high
+/// enough that a couple of small reads do not buy a model call.
+pub(crate) const STEADY_PRUNE_FLOOR_PERCENT: i64 = 5;
+
+/// Upper bound on automatic Pressure-triggered Ace passes run within one pressure
+/// episode (one crossing of `AUTO_PRUNE_TRIGGER_PERCENT`). See the module docs for why
+/// this is bounded rather than open-ended. Manual `/prune` sweeps are not subject to
+/// this budget.
+pub(crate) const MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE: u32 = 2;
 
 /// Luna is sufficient for the pass's bounded keep/delete classification and avoids
 /// spending a larger model on routine context maintenance.
@@ -149,6 +165,44 @@ pub(crate) fn select_trigger(
         return None;
     }
     steady_floor_reached(uncovered_tokens, context_window).then_some(PruneTrigger::Steady)
+}
+
+/// Tracks how many automatic Pressure-triggered Ace passes have run since active use
+/// last crossed `AUTO_PRUNE_TRIGGER_PERCENT`. One crossing is one episode; its budget
+/// is `MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE` passes. Dropping back under the boundary
+/// re-arms it, so the next crossing gets a fresh budget. Manual passes never observe
+/// or record against this — it only tracks the automatic Pressure trigger.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PressureEpisode {
+    passes: u32,
+}
+
+impl PressureEpisode {
+    pub(crate) fn passes(&self) -> u32 {
+        self.passes
+    }
+
+    /// Re-arms the episode once active use is observed back under the boundary.
+    /// Call this on every automatic check, regardless of which trigger fires.
+    pub(crate) fn observe(&mut self, in_pressure: bool) {
+        if !in_pressure {
+            self.passes = 0;
+        }
+    }
+
+    pub(crate) fn record_pass(&mut self) {
+        self.passes = self.passes.saturating_add(1);
+    }
+}
+
+/// Whether an automatic pass under `trigger` should actually run an Ace pass, given
+/// how many Pressure passes the current episode has already spent. Steady and Manual
+/// are never budgeted; only automatic Pressure passes draw down the episode.
+pub(crate) fn should_run_automatic_pass(trigger: PruneTrigger, pressure_episode_passes: u32) -> bool {
+    match trigger {
+        PruneTrigger::Pressure => pressure_episode_passes < MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE,
+        PruneTrigger::Steady | PruneTrigger::Manual => true,
+    }
 }
 
 /// True when uncovered completed-turn output is worth a steady pass on its own.
@@ -663,15 +717,191 @@ mod tests {
     }
 
     #[test]
-    fn steady_trigger_fires_below_pressure_once_backlog_reaches_one_percent() {
+    fn steady_trigger_fires_below_pressure_once_backlog_reaches_five_percent() {
         // The regression this guards: under pressure-only gating, a session with a
         // real backlog but modest use pruned nothing and grew until it hit 30% used.
         assert_eq!(
-            select_trigger(200_000, 10_000, 0, 1_000_000),
+            select_trigger(200_000, 50_000, 0, 1_000_000),
             Some(PruneTrigger::Steady)
         );
-        assert_eq!(select_trigger(200_000, 9_999, 0, 1_000_000), None);
+        // Scenario: just below the 5% floor -> no steady prune.
+        assert_eq!(select_trigger(200_000, 49_999, 0, 1_000_000), None);
         assert_eq!(select_trigger(200_000, 0, 0, 1_000_000), None);
+    }
+
+    #[test]
+    fn steady_floor_is_five_percent_of_the_window() {
+        let window = 1_000_000;
+        // Scenario 1: just below 5% new eligible backlog -> no steady prune.
+        assert!(!steady_floor_reached(49_999, window));
+        // Scenario 2: exactly 5% -> one steady prune.
+        assert!(steady_floor_reached(50_000, window));
+    }
+
+    #[test]
+    fn steady_does_not_retrigger_until_another_five_percent_of_new_material_accumulates() {
+        // Scenario 3: after a steady pass covers the backlog, already-covered material
+        // must not count toward the next threshold -- only genuinely new material can.
+        let window = 1_000_000;
+        let mut covered = HashSet::new();
+        let big = "x".repeat(4_000 * 4); // 4,000 approx tokens, first steady pass's batch
+        let input = vec![
+            user_message("previous turn"),
+            tool_output("a", &big),
+            user_message("current turn"),
+        ];
+
+        // Steady pass covers "a".
+        covered.insert("a".to_string());
+        let after_cover = uncovered_completed_turn_tokens(&input, &covered);
+        assert_eq!(after_cover, 0);
+        assert!(!steady_floor_reached(after_cover, window));
+
+        // Only 49,999 tokens of genuinely new material arrive (still below the 5%
+        // floor) -- no second steady prune yet.
+        let small_new = "y".repeat(49_999 * 4);
+        let input_with_small_new = vec![
+            user_message("previous turn"),
+            tool_output("a", &big),
+            user_message("second turn"),
+            tool_output("b", &small_new),
+            user_message("current turn"),
+        ];
+        let uncovered_small = uncovered_completed_turn_tokens(&input_with_small_new, &covered);
+        assert!(!steady_floor_reached(uncovered_small, window));
+
+        // Once another ~5% of new material has accumulated, steady fires again.
+        let enough_new = "y".repeat(50_000 * 4);
+        let input_with_enough_new = vec![
+            user_message("previous turn"),
+            tool_output("a", &big),
+            user_message("second turn"),
+            tool_output("b", &enough_new),
+            user_message("current turn"),
+        ];
+        let uncovered_enough = uncovered_completed_turn_tokens(&input_with_enough_new, &covered);
+        assert!(steady_floor_reached(uncovered_enough, window));
+    }
+
+    #[test]
+    fn pressure_maintenance_boundary_is_exactly_thirty_percent_used() {
+        let window = 1_000_000;
+        // Scenario 4: just below 30% used -> no pressure maintenance.
+        assert!(!pressure_reached(299_999, window));
+        // Scenario 5: exactly 30% used -> pressure maintenance.
+        assert!(pressure_reached(300_000, window));
+    }
+
+    #[test]
+    fn pressure_outranks_steady_when_both_conditions_are_true() {
+        // Scenario 6: both a real steady backlog and pressure are true at once --
+        // pressure must win.
+        assert_eq!(
+            select_trigger(
+                /*used_tokens*/ 300_000,
+                /*uncovered_tokens*/ 60_000,
+                /*pressure_uncovered_tokens*/ 1,
+                /*context_window*/ 1_000_000,
+            ),
+            Some(PruneTrigger::Pressure)
+        );
+    }
+
+    #[test]
+    fn pressure_reclaim_targets_twenty_percent_used() {
+        // Scenario 7: pressure attempts to reduce context toward the 20% target.
+        let window = 1_000_000;
+        let used = 300_000;
+        let reclaim = reclaim_target_tokens(used, window, AUTO_PRUNE_TARGET_PERCENT);
+        assert_eq!(used - reclaim as i64, window * AUTO_PRUNE_TARGET_PERCENT / 100);
+        assert_eq!(AUTO_PRUNE_TARGET_PERCENT, 20);
+    }
+
+    #[test]
+    fn pressure_episode_permits_at_most_two_passes() {
+        // Scenario 8: no more than 2 Ace passes occur during one pressure episode.
+        let mut episode = PressureEpisode::default();
+        assert!(should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+        episode.record_pass();
+        assert_eq!(episode.passes(), 1);
+        assert!(should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+        episode.record_pass();
+        assert_eq!(episode.passes(), 2);
+        // Budget spent: a third automatic pass must not run.
+        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+        episode.record_pass();
+        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+    }
+
+    #[test]
+    fn exhausted_pressure_episode_defers_to_native_compaction() {
+        // Scenario 9: once the episode's Ace budget is spent, the caller must fall back
+        // to the existing compaction/rollover mechanism rather than run another pass.
+        // `should_run_automatic_pass` returning false is exactly the signal
+        // `run_context_prune` uses to skip straight to `request_new_context_window`.
+        let mut episode = PressureEpisode::default();
+        episode.record_pass();
+        episode.record_pass();
+        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+    }
+
+    #[test]
+    fn pressure_episode_re_arms_only_after_dropping_back_under_the_boundary() {
+        // Scenario 10: a pressure episode does not repeatedly retrigger without an
+        // appropriate re-arm condition -- staying at or above the boundary must not
+        // reset the budget on its own.
+        let mut episode = PressureEpisode::default();
+        episode.record_pass();
+        episode.record_pass();
+        assert_eq!(episode.passes(), 2);
+
+        // Still in pressure: observing that must NOT re-arm the episode.
+        episode.observe(/*in_pressure*/ true);
+        assert_eq!(episode.passes(), 2);
+        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+
+        // Active use finally drops back under the boundary: this re-arms it.
+        episode.observe(/*in_pressure*/ false);
+        assert_eq!(episode.passes(), 0);
+        assert!(should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+    }
+
+    #[test]
+    fn pressure_still_fires_once_steady_has_already_covered_completed_turn_evidence() {
+        // Scenario 11: pressure must still work when previous steady passes have
+        // already covered the completed-turn backlog -- the pressure region reaches
+        // further (into the running turn) than the steady region does.
+        let window = 20_000;
+        let input = vec![
+            user_message("previous turn"),
+            tool_output("already_covered", &"a".repeat(8_000)),
+            user_message("the running turn"),
+            tool_output("first", &"b".repeat(8_000)),
+            tool_output("newest", &"c".repeat(8_000)),
+        ];
+        let mut covered = HashSet::new();
+        covered.insert("already_covered".to_string());
+
+        assert_eq!(uncovered_completed_turn_tokens(&input, &covered), 0);
+        let pressure_uncovered = uncovered_pressure_tokens(&input, &covered, window);
+        assert!(pressure_uncovered > 0);
+        assert_eq!(
+            select_trigger(
+                /*used_tokens*/ 16_000,
+                /*uncovered_tokens*/ 0,
+                pressure_uncovered,
+                window,
+            ),
+            Some(PruneTrigger::Pressure)
+        );
+    }
+
+    #[test]
+    fn manual_trigger_is_never_budgeted_by_the_pressure_episode() {
+        // Scenario 12: existing manual pruning behavior remains unchanged -- Manual
+        // always may run, regardless of how many pressure passes have been spent.
+        assert!(should_run_automatic_pass(PruneTrigger::Manual, 0));
+        assert!(should_run_automatic_pass(PruneTrigger::Manual, u32::MAX));
     }
 
     #[test]

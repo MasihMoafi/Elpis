@@ -87,6 +87,28 @@ pub(crate) async fn run_manual_context_prune_with_target(
     }
 }
 
+/// Hands off to the existing compaction/rollover mechanism when Ace pruning cannot
+/// (or, for a spent pressure episode, must not) reclaim any further. Setting the
+/// request flag is idempotent -- repeated calls before it is consumed by the turn
+/// loop do not queue up multiple rollovers.
+async fn request_compaction_if_enabled(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    active_context_tokens: i64,
+    reason: &str,
+) {
+    if turn_context.config.automatic_compaction_enabled() {
+        tracing::info!(
+            "Context pruning is exhausted ({reason}) at {active_context_tokens} tokens; requesting compaction"
+        );
+        sess.request_new_context_window().await;
+    } else {
+        tracing::info!(
+            "Context pruning is exhausted ({reason}) at {active_context_tokens} tokens; automatic compaction is disabled"
+        );
+    }
+}
+
 async fn run_context_prune(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
@@ -127,6 +149,39 @@ async fn run_context_prune(
             context_window,
         )
     });
+
+    // Automatic checks (never manual) observe pressure every time, so the episode
+    // re-arms as soon as active use drops back under the boundary. When we're both
+    // in pressure and the trigger resolved to Pressure, also read the episode's spent
+    // passes so we can gate below: a crossing gets at most
+    // `MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE` Ace passes before handing off to the
+    // existing compaction/rollover mechanism instead of nibbling at the boundary
+    // forever.
+    let pressure_episode_passes = if requested_trigger.is_none() {
+        let mut state = sess.state.lock().await;
+        let in_pressure = context_pruner::pressure_reached(active_context_tokens, context_window);
+        state.observe_context_prune_pressure(in_pressure);
+        (in_pressure && trigger == Some(context_pruner::PruneTrigger::Pressure))
+            .then(|| state.context_prune_pressure_episode_passes())
+    } else {
+        None
+    };
+    if let Some(passes) = pressure_episode_passes {
+        if !context_pruner::should_run_automatic_pass(context_pruner::PruneTrigger::Pressure, passes)
+        {
+            if escalation == Escalation::Allowed {
+                request_compaction_if_enabled(
+                    sess,
+                    turn_context,
+                    active_context_tokens,
+                    "the pressure episode's Ace pass budget is spent",
+                )
+                .await;
+            }
+            return false;
+        }
+    }
+
     let batch = match trigger {
         Some(context_pruner::PruneTrigger::Manual) => {
             context_pruner::build_manual_prune_batch(&items, &covered_call_ids)
@@ -159,19 +214,22 @@ async fn run_context_prune(
             && escalation == Escalation::Allowed
             && context_pruner::pressure_reached(active_context_tokens, context_window)
         {
-            if turn_context.config.automatic_compaction_enabled() {
-                tracing::info!(
-                    "Context pruning is exhausted at {active_context_tokens} tokens; requesting compaction"
-                );
-                sess.request_new_context_window().await;
-            } else {
-                tracing::info!(
-                    "Context pruning is exhausted at {active_context_tokens} tokens; automatic compaction is disabled"
-                );
-            }
+            request_compaction_if_enabled(
+                sess,
+                turn_context,
+                active_context_tokens,
+                "nothing left to reclaim",
+            )
+            .await;
         }
         return false;
     };
+    if requested_trigger.is_none() && trigger == context_pruner::PruneTrigger::Pressure {
+        sess.state
+            .lock()
+            .await
+            .record_context_prune_pressure_pass();
+    }
     let active_question = context_pruner::latest_user_message_text(&items);
     // Keep maintenance inference isolated from the active turn's sticky routing and
     // incremental request state. This lets the pressure check run between tool
