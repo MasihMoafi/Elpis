@@ -178,15 +178,20 @@ async fn run_context_prune(
     // follow-ups without perturbing the user's model session.
     let mut prune_client_session = sess.services.model_client.load().new_session();
 
-    let Some((record, raw, model_slug, usage)) = run_prune_pass(
+    let (pass_result, attempts) = run_prune_pass(
         sess,
         turn_context,
         &mut prune_client_session,
         &batch,
         active_question.as_deref(),
     )
-    .await
-    else {
+    .await;
+
+    let Some((record, raw, model_slug, usage)) = pass_result else {
+        let log_dir = sess.codex_home().await.join("logs");
+        if let Err(err) = context_prune_audit::record_failed_attempts(&log_dir, &attempts) {
+            tracing::warn!("Failed to record failed pruning attempt audit: {err:#}");
+        }
         // Fail open. A failed or malformed pruning pass must not alter history or
         // mark any item as covered; the same batch remains eligible for a later pass,
         // once the backoff this records has elapsed.
@@ -214,6 +219,7 @@ async fn run_context_prune(
             ace_input: &ace_input,
             raw_response: &raw,
             usage: usage.as_ref(),
+            attempts: &attempts,
             batch: &batch,
             record: &record,
             before_model_items: &before_model_items,
@@ -277,12 +283,16 @@ async fn run_prune_pass(
     client_session: &mut ModelClientSession,
     batch: &[(String, String)],
     active_question: Option<&str>,
-) -> Option<(
-    crate::context_pruner::PruneRecord,
-    String,
-    String,
-    Option<TokenUsage>,
-)> {
+) -> (
+    Option<(
+        crate::context_pruner::PruneRecord,
+        String,
+        String,
+        Option<TokenUsage>,
+    )>,
+    Vec<context_prune_audit::PruneAttemptRecord>,
+) {
+    let mut attempts = Vec::new();
     let primary_slug =
         if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
             context_pruner::PRUNE_MODEL_SLUG
@@ -297,27 +307,39 @@ async fn run_prune_pass(
         batch,
         active_question,
         primary_slug,
+        context_prune_audit::PruneAttemptKind::Primary,
+        &mut attempts,
     )
     .await
     {
-        return Some((record, output, primary_slug.to_string(), usage));
+        return (
+            Some((record, output, primary_slug.to_string(), usage)),
+            attempts,
+        );
     }
 
     let fallback_slug = turn_context.model_info.slug.as_str();
     if primary_slug != fallback_slug {
-        return try_validated_prune_pass(
+        if let Some((record, output, usage)) = try_validated_prune_pass(
             sess,
             turn_context,
             client_session,
             batch,
             active_question,
             fallback_slug,
+            context_prune_audit::PruneAttemptKind::Fallback,
+            &mut attempts,
         )
         .await
-        .map(|(record, output, usage)| (record, output, fallback_slug.to_string(), usage));
+        {
+            return (
+                Some((record, output, fallback_slug.to_string(), usage)),
+                attempts,
+            );
+        }
     }
 
-    None
+    (None, attempts)
 }
 
 async fn try_validated_prune_pass(
@@ -327,12 +349,17 @@ async fn try_validated_prune_pass(
     batch: &[(String, String)],
     active_question: Option<&str>,
     prune_model_slug: &str,
+    kind: context_prune_audit::PruneAttemptKind,
+    attempts: &mut Vec<context_prune_audit::PruneAttemptRecord>,
 ) -> Option<(
     crate::context_pruner::PruneRecord,
     String,
     Option<TokenUsage>,
 )> {
-    let (output, usage) = try_stream_prune_pass(
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let reasoning_effort = Some(context_pruner::PRUNE_REASONING_EFFORT.as_str().to_string());
+
+    match try_stream_prune_pass(
         sess,
         turn_context,
         client_session,
@@ -340,23 +367,57 @@ async fn try_validated_prune_pass(
         active_question,
         prune_model_slug,
     )
-    .await?;
-    let Some(record) = context_pruner::parse_prune_output(&output, batch) else {
-        tracing::warn!(
-            "Context prune response was malformed for model {prune_model_slug}; preserving history"
-        );
-        let input_text = context_pruner::build_prune_input(batch, active_question);
-        log_prune_debug(
-            sess,
-            prune_model_slug,
-            &input_text,
-            "response did not parse as a decision manifest",
-            Some(&output),
-        )
-        .await;
-        return None;
-    };
-    Some((record, output, usage))
+    .await
+    {
+        Ok((output, usage)) => {
+            let Some(record) = context_pruner::parse_prune_output(&output, batch) else {
+                tracing::warn!(
+                    "Context prune response was malformed for model {prune_model_slug}; preserving history"
+                );
+                let input_text = context_pruner::build_prune_input(batch, active_question);
+                log_prune_debug(
+                    sess,
+                    prune_model_slug,
+                    &input_text,
+                    "response did not parse as a decision manifest",
+                    Some(&output),
+                )
+                .await;
+                attempts.push(context_prune_audit::PruneAttemptRecord {
+                    timestamp,
+                    kind,
+                    model_slug: prune_model_slug.to_string(),
+                    reasoning_effort,
+                    status: context_prune_audit::PruneAttemptStatus::ParseError,
+                    error: Some("response did not parse as a decision manifest".to_string()),
+                    usage,
+                });
+                return None;
+            };
+            attempts.push(context_prune_audit::PruneAttemptRecord {
+                timestamp,
+                kind,
+                model_slug: prune_model_slug.to_string(),
+                reasoning_effort,
+                status: context_prune_audit::PruneAttemptStatus::Success,
+                error: None,
+                usage: usage.clone(),
+            });
+            Some((record, output, usage))
+        }
+        Err((err_msg, usage)) => {
+            attempts.push(context_prune_audit::PruneAttemptRecord {
+                timestamp,
+                kind,
+                model_slug: prune_model_slug.to_string(),
+                reasoning_effort,
+                status: context_prune_audit::PruneAttemptStatus::StreamError,
+                error: Some(err_msg),
+                usage,
+            });
+            None
+        }
+    }
 }
 
 async fn try_stream_prune_pass(
@@ -366,7 +427,7 @@ async fn try_stream_prune_pass(
     batch: &[(String, String)],
     active_question: Option<&str>,
     prune_model_slug: &str,
-) -> Option<(String, Option<TokenUsage>)> {
+) -> Result<(String, Option<TokenUsage>), (String, Option<TokenUsage>)> {
     let model_info = sess
         .services
         .models_manager
@@ -414,16 +475,17 @@ async fn try_stream_prune_pass(
     {
         Ok(stream) => stream,
         Err(err) => {
+            let msg = format!("stream could not be opened: {err}");
             tracing::warn!("Context prune stream failed for model {prune_model_slug}: {err}");
             log_prune_debug(
                 sess,
                 prune_model_slug,
                 &input_text,
-                &format!("stream could not be opened: {err}"),
+                &msg,
                 None,
             )
             .await;
-            return None;
+            return Err((msg, None));
         }
     };
 
@@ -437,6 +499,7 @@ async fn try_stream_prune_pass(
     // but never appear in the response text, so the completion event is the only place
     // the cost of a pass can be observed.
     let mut usage: Option<TokenUsage> = None;
+    let mut stream_err: Option<String> = None;
     loop {
         match stream.next().await {
             Some(Ok(ResponseEvent::OutputItemDone(item))) => collected.push(item),
@@ -450,24 +513,32 @@ async fn try_stream_prune_pass(
             }
             Some(Ok(_)) => continue,
             Some(Err(err)) => {
+                let msg = format!("stream ended with an error: {err}");
                 tracing::warn!("Context prune stream error for model {prune_model_slug}: {err}");
                 log_prune_debug(
                     sess,
                     prune_model_slug,
                     &input_text,
-                    &format!("stream ended with an error: {err}"),
+                    &msg,
                     None,
                 )
                 .await;
-                return None;
+                stream_err = Some(msg);
+                break;
             }
             None => break,
         }
     }
+
+    if let Some(err_msg) = stream_err {
+        return Err((err_msg, usage));
+    }
+
     let result = super::turn::get_last_assistant_message_from_turn(&collected)
         .or_else(|| (!streamed_text.trim().is_empty()).then(|| streamed_text.clone()));
-    if let Some(ref text) = result {
+    if let Some(text) = result {
         tracing::info!("Context prune LLM response received ({prune_model_slug}): {text}");
+        Ok((text, usage))
     } else {
         tracing::warn!("Context prune LLM stream returned no assistant text ({prune_model_slug})");
         let reason = if safety_buffering {
@@ -476,8 +547,8 @@ async fn try_stream_prune_pass(
             "stream completed with no assistant text and no text deltas"
         };
         log_prune_debug(sess, prune_model_slug, &input_text, reason, None).await;
+        Err((reason.to_string(), usage))
     }
-    result.map(|text| (text, usage))
 }
 
 async fn log_prune_debug(

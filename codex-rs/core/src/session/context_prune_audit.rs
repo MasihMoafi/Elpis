@@ -9,6 +9,7 @@ use anyhow::Context;
 use anyhow::Result;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::TokenUsage;
+use serde::Deserialize;
 use serde::Serialize;
 use tempfile::Builder;
 use url::Url;
@@ -17,6 +18,33 @@ use uuid::Uuid;
 use crate::context_pruner::PruneRecord;
 
 const AUDIT_SCHEMA_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(super) struct PruneAttemptRecord {
+    pub(super) timestamp: String,
+    pub(super) kind: PruneAttemptKind,
+    pub(super) model_slug: String,
+    pub(super) reasoning_effort: Option<String>,
+    pub(super) status: PruneAttemptStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) error: Option<String>,
+    pub(super) usage: Option<TokenUsage>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum PruneAttemptKind {
+    Primary,
+    Fallback,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum PruneAttemptStatus {
+    Success,
+    StreamError,
+    ParseError,
+}
 
 pub(super) struct PruneAuditInput<'a> {
     /// Which trigger fired this pass: `steady` or `pressure`.
@@ -28,6 +56,7 @@ pub(super) struct PruneAuditInput<'a> {
     /// What the pruning call was billed. `None` when the provider reported nothing —
     /// distinct from a pass that genuinely cost zero.
     pub(super) usage: Option<&'a TokenUsage>,
+    pub(super) attempts: &'a [PruneAttemptRecord],
     pub(super) batch: &'a [(String, String)],
     pub(super) record: &'a PruneRecord,
     pub(super) before_model_items: &'a [ResponseItem],
@@ -48,6 +77,7 @@ struct AceConversation<'a> {
     input: &'a str,
     raw_response: &'a str,
     usage: Option<&'a TokenUsage>,
+    attempts: &'a [PruneAttemptRecord],
 }
 
 #[derive(Serialize)]
@@ -59,6 +89,7 @@ struct PassManifest<'a> {
     model: &'a str,
     saved_chars: usize,
     ace_conversation: &'static str,
+    attempts: &'a [PruneAttemptRecord],
     items: Vec<ManifestItem>,
 }
 
@@ -81,10 +112,48 @@ struct ItemArtifact<'a> {
     model_visible_after: Vec<&'a ResponseItem>,
 }
 
+pub(super) fn append_attempt_records(log_dir: &Path, attempts: &[PruneAttemptRecord]) -> Result<()> {
+    if attempts.is_empty() {
+        return Ok(());
+    }
+    let pruning_dir = log_dir.join("pruning");
+    std::fs::create_dir_all(&pruning_dir)?;
+    let attempts_file = pruning_dir.join("attempts.jsonl");
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&attempts_file)
+        .with_context(|| format!("failed to open attempt log file {}", attempts_file.display()))?;
+    let mut writer = BufWriter::new(file);
+    for attempt in attempts {
+        serde_json::to_writer(&mut writer, attempt)?;
+        writer.write_all(b"\n")?;
+    }
+    writer.flush()?;
+    writer.get_ref().sync_all()?;
+    Ok(())
+}
+
+pub(super) fn record_failed_attempts(log_dir: &Path, attempts: &[PruneAttemptRecord]) -> Result<()> {
+    if attempts.is_empty() {
+        return Ok(());
+    }
+    append_attempt_records(log_dir, attempts)?;
+    let failed_dir = log_dir.join("pruning").join("failed_attempts");
+    std::fs::create_dir_all(&failed_dir)?;
+    for attempt in attempts {
+        let attempt_id = Uuid::now_v7().to_string();
+        let file_path = failed_dir.join(format!("{attempt_id}.json"));
+        let _ = write_json_new(&file_path, attempt);
+    }
+    Ok(())
+}
+
 pub(super) fn write_applied_pass(
     log_dir: &Path,
     input: PruneAuditInput<'_>,
 ) -> Result<PruneAuditOutput> {
+    let _ = append_attempt_records(log_dir, input.attempts);
     let passes_dir = log_dir.join("pruning").join("passes");
     std::fs::create_dir_all(&passes_dir).with_context(|| {
         format!(
@@ -109,6 +178,7 @@ pub(super) fn write_applied_pass(
             input: input.ace_input,
             raw_response: input.raw_response,
             usage: input.usage,
+            attempts: input.attempts,
         },
     )?;
 
@@ -169,6 +239,7 @@ pub(super) fn write_applied_pass(
             model: input.model_slug,
             saved_chars: input.saved_chars,
             ace_conversation: "ace.json",
+            attempts: input.attempts,
             items: manifest_items,
         },
     )?;
@@ -403,6 +474,7 @@ mod tests {
                 ace_input: "ACE INPUT",
                 raw_response: "call/unsafe: found needle in source.rs",
                 usage: None,
+                attempts: &[],
                 batch: &batch,
                 record: &record,
                 before_model_items: &before,
@@ -478,6 +550,7 @@ mod tests {
                     ace_input: "input",
                     raw_response: "NOTHING_TO_KEEP",
                     usage: None,
+                    attempts: &[],
                     batch: &batch,
                     record: &record,
                     before_model_items: &before,
@@ -513,6 +586,7 @@ mod tests {
                 ace_input: "input",
                 raw_response: "NOTHING_TO_KEEP",
                 usage: None,
+                attempts: &[],
                 batch: &batch,
                 record: &record,
                 before_model_items: &[],
@@ -543,6 +617,7 @@ mod tests {
                 ace_input: "input",
                 raw_response: "NOTHING_TO_KEEP",
                 usage: usage.as_ref(),
+                attempts: &[],
                 batch: &batch,
                 record: &record,
                 before_model_items: &before,
@@ -583,5 +658,111 @@ mod tests {
         // A provider that reports nothing and a pass that genuinely cost nothing are
         // different facts; analysis has to be able to tell them apart.
         assert_eq!(ace.get("usage"), Some(&serde_json::Value::Null));
+    }
+
+    #[test]
+    fn records_multiple_attempts_and_retains_failed_billed_calls() {
+        let root = tempfile::tempdir().expect("audit root");
+        let primary_failed = PruneAttemptRecord {
+            timestamp: "2026-08-08T10:00:00Z".to_string(),
+            kind: PruneAttemptKind::Primary,
+            model_slug: "gpt-5.6-terra".to_string(),
+            reasoning_effort: Some("max".to_string()),
+            status: PruneAttemptStatus::ParseError,
+            error: Some("response did not parse as a decision manifest".to_string()),
+            usage: Some(TokenUsage {
+                input_tokens: 5_000,
+                cached_input_tokens: 2_000,
+                output_tokens: 200,
+                reasoning_output_tokens: 10_000,
+                total_tokens: 15_200,
+            }),
+        };
+        let fallback_success = PruneAttemptRecord {
+            timestamp: "2026-08-08T10:00:05Z".to_string(),
+            kind: PruneAttemptKind::Fallback,
+            model_slug: "gpt-4o".to_string(),
+            reasoning_effort: Some("max".to_string()),
+            status: PruneAttemptStatus::Success,
+            error: None,
+            usage: Some(TokenUsage {
+                input_tokens: 4_500,
+                cached_input_tokens: 1_500,
+                output_tokens: 150,
+                reasoning_output_tokens: 0,
+                total_tokens: 4_650,
+            }),
+        };
+
+        let attempts = vec![primary_failed, fallback_success];
+        let before = vec![tool_call("a", "first"), tool_output("a", "result")];
+        let batch = vec![("a".to_string(), "tool and output".to_string())];
+        let record = PruneRecord {
+            covered_call_ids: vec!["a".to_string()],
+            text: String::new(),
+        };
+
+        let written = write_applied_pass(
+            root.path(),
+            PruneAuditInput {
+                trigger: "pressure",
+                model_slug: "gpt-4o",
+                ace_instructions: "instructions",
+                ace_input: "input",
+                raw_response: "NOTHING_TO_KEEP",
+                usage: attempts[1].usage.as_ref(),
+                attempts: &attempts,
+                batch: &batch,
+                record: &record,
+                before_model_items: &before,
+                after_model_items: &[],
+                saved_chars: 10,
+            },
+        )
+        .expect("write applied pass");
+
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(written.pass_dir.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+
+        let attempts_json = manifest["attempts"].as_array().expect("attempts array");
+        assert_eq!(attempts_json.len(), 2);
+        assert_eq!(attempts_json[0]["kind"], "primary");
+        assert_eq!(attempts_json[0]["status"], "parse_error");
+        assert_eq!(attempts_json[0]["usage"]["reasoning_output_tokens"], 10_000);
+        assert_eq!(attempts_json[0]["usage"]["cached_input_tokens"], 2_000);
+
+        assert_eq!(attempts_json[1]["kind"], "fallback");
+        assert_eq!(attempts_json[1]["status"], "success");
+        assert_eq!(attempts_json[1]["model_slug"], "gpt-4o");
+
+        let attempts_log = std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
+        let lines: Vec<&str> = attempts_log.trim().lines().collect();
+        assert_eq!(lines.len(), 2);
+    }
+
+    #[test]
+    fn records_failed_attempts_when_pass_fails_completely() {
+        let root = tempfile::tempdir().expect("audit root");
+        let failed_attempt = PruneAttemptRecord {
+            timestamp: "2026-08-08T11:00:00Z".to_string(),
+            kind: PruneAttemptKind::Primary,
+            model_slug: "gpt-5.6-terra".to_string(),
+            reasoning_effort: Some("max".to_string()),
+            status: PruneAttemptStatus::StreamError,
+            error: Some("connection reset".to_string()),
+            usage: None,
+        };
+
+        record_failed_attempts(root.path(), &[failed_attempt]).unwrap();
+
+        let attempts_log = std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
+        assert!(attempts_log.contains("stream_error"));
+        assert!(attempts_log.contains("connection reset"));
+
+        let failed_dir = root.path().join("pruning/failed_attempts");
+        let entries: Vec<_> = std::fs::read_dir(failed_dir).unwrap().collect();
+        assert_eq!(entries.len(), 1);
     }
 }
