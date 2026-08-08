@@ -36,11 +36,13 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 30;
-/// Where a pressure pass stops reclaiming. Deliberately close to the 30% trigger:
-/// the pass buys headroom, it does not empty the window. Driving it lower would
-/// distill recent, still-relevant evidence and cost answer quality for context the
-/// session has not yet needed to give up.
-pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 25;
+/// Where a pressure pass stops reclaiming. The pass buys headroom, it does not empty
+/// the window — but it has to buy enough of it. A single pass runs between sampling
+/// steps, and a working turn adds several thousand tokens per step, so a target set
+/// just under the 30% trigger is spent again almost immediately and the session saws
+/// back across the boundary. Reclaiming to 20% leaves a margin that survives a few
+/// steps, which is what keeps use near the trigger instead of well past it.
+pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 20;
 
 /// How much of the newest tool evidence a pressure pass always leaves verbatim, as a
 /// percentage of the context window. Unlike the steady pass, a pressure pass reaches
@@ -673,10 +675,10 @@ mod tests {
         // every trigger, distilling recent evidence the session still needed.
         assert_eq!(
             reclaim_target_tokens(300_000, 1_000_000, AUTO_PRUNE_TARGET_PERCENT),
-            50_000
+            100_000
         );
         assert_eq!(
-            reclaim_target_tokens(249_999, 1_000_000, AUTO_PRUNE_TARGET_PERCENT),
+            reclaim_target_tokens(199_999, 1_000_000, AUTO_PRUNE_TARGET_PERCENT),
             0
         );
         // An explicit `/prune <pct>` targets that much context remaining.
