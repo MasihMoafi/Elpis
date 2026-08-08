@@ -261,9 +261,17 @@ fn completed_turn_items(input: &[ResponseItem]) -> &[ResponseItem] {
 /// every byte in the window belongs to the current turn — so stopping at the turn
 /// boundary leaves nothing eligible precisely when reclaiming matters most.
 ///
-/// Instead the cut is made by recency: walking back from the end, the newest outputs
+/// Instead the cut is made by recency: walking back from the end, the newest items
 /// totalling `PRESSURE_KEEP_RECENT_PERCENT` of the window are kept verbatim, and the
 /// prefix behind them is eligible.
+///
+/// The walk has to weigh every item, not only the prunable ones. Measuring the keep
+/// budget in tool output alone means a window that is mostly messages and reasoning --
+/// which is what a window looks like after a few passes have already distilled the
+/// tool output down to pointers -- never accumulates enough to reach the budget, so
+/// the walk falls off the front and reports nothing eligible. Pressure then stops
+/// firing exactly when the window is fullest: observed across the third message of a
+/// session, where the window fell from 57% remaining to 19% with zero passes.
 fn pressure_eligible_items(input: &[ResponseItem], context_window: i64) -> &[ResponseItem] {
     if context_window <= 0 {
         return &[];
@@ -275,16 +283,25 @@ fn pressure_eligible_items(input: &[ResponseItem], context_window: i64) -> &[Res
 
     let mut kept = 0usize;
     for (index, item) in input.iter().enumerate().rev() {
-        let Some((_, text)) = prunable_text(item) else {
-            continue;
-        };
-        kept = kept.saturating_add(approx_token_count(&text));
+        kept = kept.saturating_add(item_token_estimate(item));
         if kept >= keep_budget {
             return &input[..index];
         }
     }
     // The whole history fits inside the keep budget, so nothing is old enough to take.
     &[]
+}
+
+/// Rough size of any history item, for the recency cut only. Tool output is measured
+/// from the text a pass would actually rewrite; everything else is measured from its
+/// serialised form, which is what the request carries.
+fn item_token_estimate(item: &ResponseItem) -> usize {
+    if let Some((_, text)) = prunable_text(item) {
+        return approx_token_count(&text);
+    }
+    serde_json::to_string(item)
+        .map(|json| approx_token_count(&json))
+        .unwrap_or(0)
 }
 
 /// Approximate tokens of uncovered tool output a pressure pass could take right now.
@@ -889,6 +906,47 @@ mod tests {
                 /*uncovered_tokens*/ 0,
                 pressure_uncovered,
                 /*context_window*/ 20_000,
+            ),
+            Some(PruneTrigger::Pressure)
+        );
+    }
+
+    fn assistant_message(text: &str) -> ResponseItem {
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: text.to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        }
+    }
+
+    #[test]
+    fn pressure_still_fires_once_the_window_is_mostly_prose() {
+        // Late in a session the tool output has already been distilled to pointers and
+        // the window is carrying messages and reasoning instead. Sizing the keep budget
+        // from tool output alone never reached the budget here, so the walk fell off the
+        // front of the history and reported nothing eligible -- pressure stopped firing
+        // at the point it was needed most, and the window ran down unopposed.
+        let window = 20_000; // keep budget is 10% of it: 2,000 tokens
+        let input = vec![
+            tool_output("stale", &"a".repeat(4_000)),
+            assistant_message(&"b".repeat(12_000)),
+        ];
+
+        let uncovered = uncovered_pressure_tokens(&input, &HashSet::new(), window);
+        assert!(
+            uncovered > 0,
+            "old tool output behind a wall of prose must stay eligible"
+        );
+        assert_eq!(
+            select_trigger(
+                /*used_tokens*/ 16_000,
+                /*uncovered_tokens*/ 0,
+                uncovered,
+                window,
             ),
             Some(PruneTrigger::Pressure)
         );
