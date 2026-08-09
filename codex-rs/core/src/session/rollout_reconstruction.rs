@@ -155,41 +155,70 @@ impl Session {
         for (index, item) in rollout_items.iter().enumerate().rev() {
             match item {
                 RolloutItem::Compacted(compacted) => {
-                    let active_segment =
-                        active_segment.get_or_insert_with(ActiveReplaySegment::default);
                     let is_context_prune = compacted.is_context_prune_checkpoint();
-                    if !is_context_prune {
-                        active_segment.world_state_replay.push(item);
-                    }
-                    if !is_context_prune
-                        && active_segment.window.is_none()
-                        && let Some(window_number) = compacted.window_number
                     {
-                        active_segment.window = Some(ReconstructedWindow {
-                            number: window_number,
-                            first_id: compacted.first_window_id.as_deref().and_then(parse_uuid_v7),
-                            previous_id: compacted
-                                .previous_window_id
-                                .as_deref()
-                                .and_then(parse_uuid_v7),
-                            id: compacted.window_id.as_deref().and_then(parse_uuid_v7),
-                        });
+                        let active_segment =
+                            active_segment.get_or_insert_with(ActiveReplaySegment::default);
+                        if !is_context_prune {
+                            active_segment.world_state_replay.push(item);
+                        }
+                        if !is_context_prune
+                            && active_segment.window.is_none()
+                            && let Some(window_number) = compacted.window_number
+                        {
+                            active_segment.window = Some(ReconstructedWindow {
+                                number: window_number,
+                                first_id: compacted
+                                    .first_window_id
+                                    .as_deref()
+                                    .and_then(parse_uuid_v7),
+                                previous_id: compacted
+                                    .previous_window_id
+                                    .as_deref()
+                                    .and_then(parse_uuid_v7),
+                                id: compacted.window_id.as_deref().and_then(parse_uuid_v7),
+                            });
+                        }
+                        // Looking backward, compaction clears any older baseline unless a newer
+                        // `TurnContextItem` in this same segment has already re-established it.
+                        if !is_context_prune
+                            && matches!(
+                                active_segment.reference_context_item,
+                                TurnReferenceContextItem::NeverSet
+                            )
+                        {
+                            active_segment.reference_context_item =
+                                TurnReferenceContextItem::Cleared;
+                        }
+                        if active_segment.base_replacement_history.is_none()
+                            && let Some(replacement_history) = &compacted.replacement_history
+                        {
+                            active_segment.base_replacement_history = Some(replacement_history);
+                            rollout_suffix = &rollout_items[index + 1..];
+                        }
                     }
-                    // Looking backward, compaction clears any older baseline unless a newer
-                    // `TurnContextItem` in this same segment has already re-established it.
-                    if !is_context_prune
-                        && matches!(
-                            active_segment.reference_context_item,
-                            TurnReferenceContextItem::NeverSet
-                        )
+                    // A context-prune checkpoint's own maintenance turn has no `TurnStarted`
+                    // of its own (only a trailing `TurnComplete`, already absorbed above), so
+                    // leaving its segment open would make that turn id stick: every older
+                    // real turn's `TurnContext`/`TurnStarted` would then read as a mismatched,
+                    // incompatible turn and get silently discarded, all the way back to the
+                    // start of the rollout — losing `reference_context_item` and
+                    // `previous_turn_settings` entirely and forcing a spurious full context
+                    // reinjection on the next turn. Close the segment out here, the same way a
+                    // real `TurnStarted` would, so the preceding real turn starts its own fresh
+                    // segment.
+                    if is_context_prune
+                        && let Some(active_segment) = active_segment.take()
                     {
-                        active_segment.reference_context_item = TurnReferenceContextItem::Cleared;
-                    }
-                    if active_segment.base_replacement_history.is_none()
-                        && let Some(replacement_history) = &compacted.replacement_history
-                    {
-                        active_segment.base_replacement_history = Some(replacement_history);
-                        rollout_suffix = &rollout_items[index + 1..];
+                        finalize_active_segment(
+                            active_segment,
+                            &mut base_replacement_history,
+                            &mut previous_turn_settings,
+                            &mut reference_context_item,
+                            &mut world_state_replay,
+                            &mut window,
+                            &mut pending_rollback_turns,
+                        );
                     }
                 }
                 RolloutItem::EventMsg(EventMsg::ThreadRolledBack(rollback)) => {

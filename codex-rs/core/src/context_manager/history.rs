@@ -106,6 +106,10 @@ impl ContextManager {
         (fragments, rollout_item)
     }
 
+    pub(crate) fn world_state_baseline(&self) -> Option<WorldStateSnapshot> {
+        self.world_state_baseline.clone()
+    }
+
     pub(crate) fn set_world_state_baseline(&mut self, snapshot: WorldStateSnapshot) {
         self.world_state_baseline = Some(snapshot);
     }

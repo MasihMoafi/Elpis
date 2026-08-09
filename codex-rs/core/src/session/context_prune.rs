@@ -18,6 +18,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::TokenUsage;
+use codex_protocol::protocol::WorldStateItem;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
 
@@ -295,9 +296,20 @@ async fn run_context_prune(
     };
 
     let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(saved);
-    let (context_prune_saved_tokens, window_number, window_ids) = {
+    let (context_prune_saved_tokens, window_number, window_ids, world_state_snapshot) = {
         let mut state = sess.state.lock().await;
+        // `ContextManager::replace` unconditionally clears the world-state baseline (it
+        // has no way to know whether the rewritten items still match it). A prune pass
+        // never touches world-state sections like AGENTS.md, so the pre-replace baseline
+        // is still accurate — restore it immediately, the same way compaction re-applies
+        // its baseline right after `replace_history` in `replace_compacted_history`.
+        // Otherwise the very next turn treats every world-state section as unknown and
+        // reinjects a spurious replacement notice, even with no resume in between.
+        let world_state_snapshot = state.history.world_state_baseline();
         state.history.replace(after_items.clone());
+        if let Some(snapshot) = world_state_snapshot.clone() {
+            state.history.set_world_state_baseline(snapshot);
+        }
         state
             .context_prune_covered
             .extend(record.covered_call_ids.iter().cloned());
@@ -309,6 +321,7 @@ async fn run_context_prune(
             state.context_prune_saved_tokens,
             state.auto_compact_window_number(),
             state.auto_compact_window_ids(),
+            world_state_snapshot,
         )
     };
     // Persist the rewritten working set as an append-only replacement checkpoint.
@@ -322,6 +335,17 @@ async fn run_context_prune(
         window_id: Some(window_ids.window_id.to_string()),
     })])
     .await;
+    // Pair the checkpoint with a full world-state snapshot, mirroring what real
+    // compaction does in `replace_compacted_history`. Without this, resume's backward
+    // scan can resolve its replacement-history base at this checkpoint and stop before
+    // ever finding a world-state baseline, leaving sections like AGENTS.md looking
+    // "Unknown" and reinjected with a replacement notice even though nothing changed.
+    if let Some(snapshot) = world_state_snapshot {
+        sess.persist_rollout_items(&[RolloutItem::WorldState(WorldStateItem::full(
+            snapshot.into_value(),
+        ))])
+        .await;
+    }
     context_pruner::record_applied_prune(saved);
     // The server count describes the pre-prune request. Re-estimate from the
     // rewritten working history immediately so every context meter reflects the pass
