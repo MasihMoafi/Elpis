@@ -21,11 +21,10 @@ Context management acts as the primary gatekeeper between raw workspace/session 
            |
            v
 +----------+-------------------------------------------------------+
-|                    4-LAYER PRUNING PIPELINE                      |
+|                    3-LAYER PRUNING PIPELINE                      |
 |  Layer 1: RTK Shell-Output Filter (Pre-model command rewrite)   |
 |  Layer 2: Deterministic Safety Cap (Upper bound truncation)     |
-|  Layer 3: Ace Steady Pass (5% backlog trigger, whole backlog)    |
-|  Layer 4: Ace Pressure Pass (30% used trigger, 20% used target)  |
+|  Layer 3: Ace Pressure Cycle (30% used trigger, 20% used target) |
 +----------+-------------------------------------------------------+
            |
            v
@@ -53,21 +52,20 @@ Long agent sessions accumulate dead ends, voluminous search results, and repetit
 [Active Agent Turn Execution]  -> Tool outputs remain verbatim during active turn.
            |
            v
-[Layer 3: Ace Steady Pass]     -> Between follow-ups: distills the completed-turn backlog at 5%.
-           |
-           v
-[Layer 4: Ace Pressure Pass]   -> Between follow-ups: at 70% remaining, reclaims toward 80%.
+[Layer 3: Ace Pressure Cycle]  -> Between follow-ups: at 70% remaining, reclaims toward 80%,
+                                  then holds off until use regrows to 70% remaining again.
            |
            v
 [Native /compact]              -> Fallback only, when no layer can reclaim anything further.
 ```
 
-Layers 3 and 4 are the same Ace pass under two triggers, and both are load-bearing.
-The steady pass is what keeps a long session from filling up at all; the pressure pass
-exists for the case the steady pass cannot cover — a single turn that balloons past the
-boundary before its evidence is ever eligible. Running pressure alone lets a session
-climb to 30% used before anything is reclaimed, which is the state the steady pass exists to
-prevent.
+Layer 3 is a single trigger, run as a gated cycle rather than continuously. An earlier
+"steady" trigger also fired on backlog size alone, independently of how full the window was;
+it was removed because it produced runs of tiny passes inside the healthy 20-30% band, and
+every pass discards the reusable prompt-cache prefix past its first rewritten item. The case
+it was meant to cover -- a single turn that balloons past the boundary without ever ending --
+is already handled here, because the eligible region is cut by recency rather than at a turn
+boundary. See `cache-friendly-pruning.md`.
 
 ### Pipeline Layer Comparison
 
@@ -75,14 +73,13 @@ prevent.
 | :--- | :--- | :--- | :--- | :--- |
 | **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
-| **3. Ace Steady Pass** | Completed turns hold ≥5% of the context window in uncovered tool output | The whole uncovered backlog from completed turns | Distills routine exploration the turn after it lands, so the working set stays flat instead of accumulating. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely; the current turn stays verbatim. Already-covered material never counts a second time, so the next steady pass needs another ~5% of genuinely new material. | A failed pass changes nothing — the same backlog stays eligible for the next pass. |
-| **4. Ace Pressure Pass** | Exact model-window use reaches 30% (70% remaining) | Oldest eligible tool exploration, including the turn still running | Selects only enough old tool evidence to target roughly 20% use (80% remaining). Same keep/delete judgment as the steady pass; the newest 10% of the window stays verbatim. Unlike the steady pass it reaches into the current turn, because a single tool-driven turn can cross the boundary without ever ending. Outranks the steady trigger, so at 30% use the reclaim target governs. One crossing of the 30% boundary ("episode") gets at most 2 Ace passes; the episode re-arms once use drops back under 30%. | A failed pass changes nothing. Once the episode's 2-pass budget is spent, or when nothing reclaimable remains at this boundary, Elpis requests native compaction rather than let the window drift toward the model's hard limit. |
+| **3. Ace Pressure Cycle** | Exact model-window use reaches 30% (70% remaining), and a previous cycle has since been seen below 30% | Oldest eligible tool exploration, including the turn still running, but never a sealed epoch | Selects only enough old tool evidence to target roughly 20% use (80% remaining); the newest 10% of the window stays verbatim. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely. It reaches into the current turn, because a single tool-driven turn can cross the boundary without ever ending. One cycle gets at most 2 Ace passes, spent back to back; the cycle then closes and cannot reopen until use has been measured below 30% and has climbed back to it. Each applied pass seals its region with an epoch marker that later passes may not touch. | A failed pass changes nothing. Once the cycle's 2-pass budget is spent, or when nothing reclaimable remains at this boundary, Elpis requests native compaction rather than let the window drift toward the model's hard limit. |
 
-**All four layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
+**All three layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
 The Ace pass runs between model follow-ups as well as at the end of a turn, so one
-long-running tool-driven turn cannot skip either trigger. Each pass records which
-trigger fired (`manual`, `steady`, or `pressure`) in its manifest and report. OpenAI-backed passes use
+long-running tool-driven turn cannot skip the trigger. Each pass records which
+trigger fired (`manual` or `pressure`) in its manifest and report. OpenAI-backed passes use
 Luna at low reasoning effort. Every successful pass immediately recomputes the working
 history estimate and writes `prune_report.md` alongside the session logs
 (`codex-rs/core/src/session/context_prune_audit.rs`).

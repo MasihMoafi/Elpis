@@ -260,6 +260,7 @@ impl SlashCommand {
             | SlashCommand::Theme
             | SlashCommand::Fork
             | SlashCommand::Goal
+            | SlashCommand::Rename
             | SlashCommand::Copy
             // Inherited Codex features being re-evaluated for the Elpis contract:
             // multi-agent threads (I6 /multi-task), IDE context, and Plan mode
@@ -270,7 +271,6 @@ impl SlashCommand {
             | SlashCommand::Plan
             | SlashCommand::Clear => true,
             SlashCommand::Review
-            | SlashCommand::Rename
             | SlashCommand::Delete
             | SlashCommand::Side
             | SlashCommand::Btw

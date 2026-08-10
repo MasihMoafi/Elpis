@@ -2729,6 +2729,7 @@ mod tests {
             codex_protocol::protocol::TokenCountEvent {
                 info: Some(codex_protocol::protocol::TokenUsageInfo {
                     total_token_usage: codex_protocol::protocol::TokenUsage {
+                        cache_write_tokens: None,
                         input_tokens: 0,
                         cached_input_tokens: 0,
                         output_tokens: 0,

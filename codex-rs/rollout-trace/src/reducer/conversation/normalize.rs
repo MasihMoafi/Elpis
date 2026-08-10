@@ -50,6 +50,10 @@ pub(super) fn token_usage_from_value(value: &Value) -> Option<TokenUsage> {
     Some(TokenUsage {
         input_tokens: u64_field(value, "input_tokens")?,
         cached_input_tokens: u64_field(value, "cached_input_tokens")?,
+        // Optional on purpose: absent for every provider that does not report cache
+        // writes, and for every record written before the field existed. Requiring it
+        // here would drop those usage records entirely.
+        cache_write_tokens: u64_field(value, "cache_write_tokens"),
         output_tokens: u64_field(value, "output_tokens")?,
         reasoning_output_tokens: u64_field(value, "reasoning_output_tokens")?,
     })

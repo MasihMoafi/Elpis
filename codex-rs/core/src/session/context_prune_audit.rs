@@ -647,6 +647,7 @@ mod tests {
         let ace = write_pass_with_usage(
             root.path(),
             Some(TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 4_000,
                 cached_input_tokens: 1_000,
                 output_tokens: 120,
@@ -682,6 +683,7 @@ mod tests {
             status: PruneAttemptStatus::ParseError,
             error: Some("response did not parse as a decision manifest".to_string()),
             usage: Some(TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 5_000,
                 cached_input_tokens: 2_000,
                 output_tokens: 200,
@@ -698,6 +700,7 @@ mod tests {
             status: PruneAttemptStatus::Success,
             error: None,
             usage: Some(TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 4_500,
                 cached_input_tokens: 1_500,
                 output_tokens: 150,

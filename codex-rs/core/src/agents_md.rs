@@ -300,12 +300,35 @@ impl LoadedAgentsMd {
         }
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.user_instructions.is_none()
             && self
                 .entries
                 .iter()
                 .all(|entry| entry.contents.trim().is_empty())
+    }
+
+    /// The subset of discovered instructions the Context Ledger admits into model context.
+    ///
+    /// Discovery deliberately keeps every file it found so the ledger can still list a
+    /// withdrawn one and offer it back; only what the model sees is filtered. Instructions
+    /// with no file behind them are internal guidance, not a ledger row, so they stay.
+    pub(crate) fn admitted_by(&self, admits: &dyn Fn(&std::path::Path) -> bool) -> Self {
+        Self {
+            user_instructions: self
+                .user_instructions
+                .clone()
+                .filter(|instructions| admits(instructions.source.as_path())),
+            entries: self
+                .entries
+                .iter()
+                .filter(|entry| match entry.provenance.path() {
+                    Some(path) => path.to_abs_path().is_ok_and(|path| admits(path.as_path())),
+                    None => true,
+                })
+                .cloned()
+                .collect(),
+        }
     }
 
     /// Returns the concatenated model-visible instruction text.

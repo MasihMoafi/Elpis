@@ -6,33 +6,41 @@
 //! action: useful evidence earns one compact conclusion, while dead ends leave no
 //! model-visible trace.
 //!
-//! Two triggers drive the same pass, and both are needed. The steady trigger fires
-//! whenever completed turns hold at least 5% of the context window in uncovered tool
-//! output, and takes that whole backlog: this is what keeps a long session from
-//! filling up in the first place. The pressure trigger fires once active use reaches
-//! 30% and takes only the oldest output needed to get back to 20%, preserving a recent
-//! verbatim suffix. Steady alone cannot catch a single turn that balloons past the
-//! boundary; pressure alone lets a session climb to 30% before anything is reclaimed,
-//! which is the state the steady pass exists to prevent.
+//! Automatic pruning runs in **cycles with hysteresis**, not continuously. One cycle
+//! opens when active use reaches `AUTO_PRUNE_TRIGGER_PERCENT` (30%), spends at most
+//! `MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE` Ace passes driving use down toward
+//! `AUTO_PRUNE_TARGET_PERCENT` (20%), and then closes. Once closed, `PruneCycle` blocks
+//! every automatic pass until measured use has climbed back to the 30% trigger — so the
+//! 20–30% band is a healthy working region that no pass may touch. See
+//! `docs/cache-friendly-pruning.md`.
 //!
-//! A pressure crossing is budgeted, not open-ended: `PressureEpisode` permits at most
-//! `MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE` Ace passes per crossing. A single pass is
-//! capped at `MAX_PRUNE_BATCH_TOKENS`, which on a large window can be smaller than the
-//! distance from 30% down to 20% — so without a budget, a session whose backlog grows
-//! faster than one pass reclaims would spend an unbounded number of small passes
-//! nibbling at the boundary instead of ever handing off. Once the budget is spent the
-//! session defers to the existing compaction/rollover mechanism instead. The episode
-//! re-arms (its budget resets) the next time active use is observed back under the
-//! pressure boundary, so the next crossing gets its own fresh budget.
+//! There is deliberately no second, backlog-sized trigger. An earlier "steady" trigger
+//! fired whenever completed turns held a few percent of the window in uncovered tool
+//! output, independent of how full the window actually was. That is what produced runs
+//! of dozens of tiny passes inside the healthy band: each pass rewrote model-visible
+//! history, and every rewrite discards the reusable prompt-cache prefix past the first
+//! rewritten item. Pressure alone covers the case steady existed for, because its
+//! eligible region is cut by recency rather than at a turn boundary — a single
+//! tool-driven turn that balloons past 30% without ever ending is still prunable.
 //!
-//! The steady trigger never touches the turn in flight. The pressure trigger has to:
-//! a single tool-driven turn can cross the boundary without ever ending, and cutting
-//! at the latest user message would leave nothing eligible exactly then — so it cuts
-//! by recency instead, keeping the newest 10% of the window verbatim. On any failure (model error,
-//! timeout, unparseable output) the batch is left alone and can retry after the
-//! backoff in `retry_delay_after_failures` elapses — an untouched batch is otherwise
-//! re-selected identically on the next turn, so without the backoff one unluckily
-//! shaped batch retries forever and pruning never advances.
+//! A pass reaches into the turn in flight, so it keeps the newest
+//! `PRESSURE_KEEP_RECENT_PERCENT` of the window verbatim: the observations the next
+//! follow-up reasons over sit at the end of history, and only what is behind them may be
+//! rewritten. On any failure (model error, timeout, unparseable output) the batch is left
+//! alone and can retry after the backoff in `retry_delay_after_failures` elapses — an
+//! untouched batch is otherwise re-selected identically on the next turn, so without the
+//! backoff one unluckily shaped batch retries forever and pruning never advances.
+//!
+//! # Epochs
+//!
+//! An applied pass seals its rewritten region with a `prune_epoch_marker`: a small,
+//! byte-stable developer message recording the epoch number and cumulative reclaim.
+//! Everything up to and including the newest marker is the **frozen prefix**
+//! (`frozen_prefix_len`), and `pressure_eligible_items` refuses to look inside it. That
+//! makes "a later pass never rewrites an earlier epoch" a structural property of the
+//! candidate region rather than a side effect of the covered-id filter, and it gives the
+//! prompt cache a breakpoint-eligible boundary that survives the next pass
+//! (`crate::prompt_cache`).
 
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -61,16 +69,14 @@ pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 20;
 /// them may be rewritten.
 pub(crate) const PRESSURE_KEEP_RECENT_PERCENT: i64 = 10;
 
-/// Floor for the steady pass, as a percentage of the context window. Low enough that
-/// routine exploration is distilled well before it can contribute to pressure, high
-/// enough that a couple of small reads do not buy a model call.
-pub(crate) const STEADY_PRUNE_FLOOR_PERCENT: i64 = 5;
-
-/// Upper bound on automatic Pressure-triggered Ace passes run within one pressure
-/// episode (one crossing of `AUTO_PRUNE_TRIGGER_PERCENT`). See the module docs for why
-/// this is bounded rather than open-ended. Manual `/prune` sweeps are not subject to
-/// this budget.
-pub(crate) const MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE: u32 = 2;
+/// Upper bound on automatic Ace passes run within one pruning cycle (one crossing of
+/// `AUTO_PRUNE_TRIGGER_PERCENT`). A single pass is capped at `MAX_PRUNE_BATCH_TOKENS`,
+/// which on a large window can be smaller than the distance from 30% down to 20%, so a
+/// cycle is allowed more than one pass to reach its target. Those passes are one logical
+/// cycle: they run back-to-back without waiting for regrowth, and when they are spent the
+/// cycle closes rather than continuing to nibble at the boundary. Manual `/prune` sweeps
+/// are not subject to this budget.
+pub(crate) const MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE: u32 = 2;
 
 /// Luna is sufficient for the pass's bounded keep/delete classification and avoids
 /// spending a larger model on routine context maintenance.
@@ -121,14 +127,11 @@ impl PruneRecord {
     }
 }
 
-/// Which trigger a pass is running under. Pressure outranks steady: when use is
-/// already at 30% the reclaim target is what matters, not the backlog size.
+/// Which trigger a pass is running under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PruneTrigger {
     /// The user explicitly requested a selective pass with `/prune`.
     Manual,
-    /// Completed turns hold at least `STEADY_PRUNE_FLOOR_PERCENT` of the window.
-    Steady,
     /// Active use reached `AUTO_PRUNE_TRIGGER_PERCENT`.
     Pressure,
 }
@@ -137,7 +140,6 @@ impl PruneTrigger {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Manual => "manual",
-            Self::Steady => "steady",
             Self::Pressure => "pressure",
         }
     }
@@ -145,73 +147,136 @@ impl PruneTrigger {
 
 /// The trigger that applies right now, or `None` when no pass should run.
 ///
-/// The two triggers measure different regions, so they get their own backlog figures.
-/// A turn that drives dozens of tools without ever ending has no completed turns at
-/// all, so a shared `uncovered_tokens` of zero would rule out pressure exactly when
-/// the window is filling fastest.
+/// Pressure is the only automatic trigger: a pass runs when active use is at or past the
+/// boundary *and* the eligible region actually holds something to reclaim. Backlog size
+/// on its own never starts a pass — see the module docs for why that trigger was removed.
 pub(crate) fn select_trigger(
     used_tokens: i64,
-    uncovered_tokens: usize,
     pressure_uncovered_tokens: usize,
     context_window: i64,
 ) -> Option<PruneTrigger> {
-    if context_window <= 0 {
+    if context_window <= 0 || pressure_uncovered_tokens == 0 {
         return None;
     }
-    if pressure_uncovered_tokens > 0 && pressure_reached(used_tokens, context_window) {
-        return Some(PruneTrigger::Pressure);
-    }
-    if uncovered_tokens == 0 {
-        return None;
-    }
-    steady_floor_reached(uncovered_tokens, context_window).then_some(PruneTrigger::Steady)
+    pressure_reached(used_tokens, context_window).then_some(PruneTrigger::Pressure)
 }
 
-/// Tracks how many automatic Pressure-triggered Ace passes have run since active use
-/// last crossed `AUTO_PRUNE_TRIGGER_PERCENT`. One crossing is one episode; its budget
-/// is `MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE` passes. Dropping back under the boundary
-/// re-arms it, so the next crossing gets a fresh budget. Manual passes never observe
-/// or record against this — it only tracks the automatic Pressure trigger.
+/// Hysteresis gate for automatic pruning.
+///
+/// The invariant this type exists to enforce:
+///
+/// > After a cycle closes, no further automatic pass may run until measured context use
+/// > has grown from the target region back to `AUTO_PRUNE_TRIGGER_PERCENT`.
+///
+/// That is what makes 20–30% a healthy band instead of a place where a session saws
+/// against the boundary, and it is what bounds how often model-visible history — and with
+/// it the reusable prompt-cache prefix — is rewritten. Manual `/prune` never consults or
+/// mutates this; it only gates the automatic path.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct PressureEpisode {
-    passes: u32,
+pub(crate) enum PruneCycle {
+    /// No cycle has run yet, or a closed cycle has since seen use return to the trigger.
+    /// A pass may open a cycle as soon as `pressure_reached` holds.
+    #[default]
+    Armed,
+    /// A cycle is open and has spent `passes` of its budget. Its remaining passes run
+    /// back-to-back, without waiting for regrowth: they are one logical cycle finishing
+    /// the descent to the target.
+    Open { passes: u32 },
+    /// A cycle closed. Every automatic pass is blocked until use has been measured
+    /// *below* the trigger (`fell_below_trigger`) and has then climbed back up to it.
+    ///
+    /// Both halves are required, and the pair is the hysteresis. A closed cycle sits at
+    /// roughly the target, so the first half is satisfied on the very next check and the
+    /// gate reduces to "wait for 30% again" — the ~10-point regrowth band.
+    ///
+    /// The first half also carries the case where a cycle stops *without* getting use
+    /// down: budget spent, or nothing left to reclaim, while still past the boundary.
+    /// There `pressure_reached` is trivially true, so re-arming on the trigger alone
+    /// would start a fresh cycle on the very next step and the session would go straight
+    /// back to nibbling. Requiring a sub-trigger measurement first hands that case to
+    /// whatever can actually reclaim — compaction or rollover — exactly as before.
+    Cooling { fell_below_trigger: bool },
 }
 
-impl PressureEpisode {
-    pub(crate) fn passes(&self) -> u32 {
-        self.passes
-    }
-
-    /// Re-arms the episode once active use is observed back under the boundary.
-    /// Call this on every automatic check, regardless of which trigger fires.
-    pub(crate) fn observe(&mut self, in_pressure: bool) {
-        if !in_pressure {
-            self.passes = 0;
+impl PruneCycle {
+    /// Feeds the current measurement in. Call this on every automatic check, before
+    /// `may_run`. It is the only place a cycle re-arms.
+    ///
+    /// The two `Cooling` transitions are mutually exclusive by construction — one needs
+    /// use below the trigger, the other needs it at or above — so a cooling cycle always
+    /// spans at least two observations on opposite sides of the boundary before it can
+    /// run again.
+    pub(crate) fn observe(&mut self, used_tokens: i64, context_window: i64) {
+        // A cycle whose budget is spent closes here rather than sitting blocked forever:
+        // `observe` sees every automatic check, so this is where an exhausted cycle
+        // becomes a cooling one that regrowth can eventually re-arm.
+        if let Self::Open { passes } = self
+            && *passes >= MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE
+        {
+            self.close();
+        }
+        if let Self::Cooling { fell_below_trigger } = self {
+            let in_pressure = pressure_reached(used_tokens, context_window);
+            if !*fell_below_trigger && !in_pressure {
+                *fell_below_trigger = true;
+            } else if *fell_below_trigger && in_pressure {
+                *self = Self::Armed;
+            }
         }
     }
 
+    /// Whether an automatic pass may run right now. `Cooling` is the hysteresis block.
+    pub(crate) fn may_run(&self) -> bool {
+        match self {
+            Self::Armed => true,
+            Self::Open { passes } => *passes < MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE,
+            Self::Cooling { .. } => false,
+        }
+    }
+
+    /// True once a cycle has closed and use has still not been seen below the trigger:
+    /// pruning could not buy the headroom this session needs, which is the case the
+    /// existing compaction/rollover mechanism owns.
+    pub(crate) fn stalled_in_pressure(&self) -> bool {
+        matches!(
+            self,
+            Self::Cooling {
+                fell_below_trigger: false
+            }
+        )
+    }
+
+    /// Records that a pass was applied, opening the cycle if it was armed.
     pub(crate) fn record_pass(&mut self) {
-        self.passes = self.passes.saturating_add(1);
+        *self = match self {
+            Self::Armed => Self::Open { passes: 1 },
+            Self::Open { passes } => Self::Open {
+                passes: passes.saturating_add(1),
+            },
+            // Unreachable via `may_run`, but must never silently spend a blocked pass.
+            Self::Cooling { fell_below_trigger } => Self::Cooling {
+                fell_below_trigger: *fell_below_trigger,
+            },
+        };
+    }
+
+    /// Closes the cycle: the target was reached, the budget is spent, or there is
+    /// nothing left to reclaim.
+    pub(crate) fn close(&mut self) {
+        *self = Self::Cooling {
+            fell_below_trigger: false,
+        };
     }
 }
 
-/// Whether an automatic pass under `trigger` should actually run an Ace pass, given
-/// how many Pressure passes the current episode has already spent. Steady and Manual
-/// are never budgeted; only automatic Pressure passes draw down the episode.
-pub(crate) fn should_run_automatic_pass(trigger: PruneTrigger, pressure_episode_passes: u32) -> bool {
-    match trigger {
-        PruneTrigger::Pressure => pressure_episode_passes < MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE,
-        PruneTrigger::Steady | PruneTrigger::Manual => true,
-    }
-}
-
-/// True when uncovered completed-turn output is worth a steady pass on its own.
-pub(crate) fn steady_floor_reached(uncovered_tokens: usize, context_window: i64) -> bool {
+/// True once active use has fallen to `AUTO_PRUNE_TARGET_PERCENT` or below, which is the
+/// signal for the running cycle to close.
+pub(crate) fn target_reached(used_tokens: i64, context_window: i64) -> bool {
     if context_window <= 0 {
         return false;
     }
-    let uncovered = i64::try_from(uncovered_tokens).unwrap_or(i64::MAX);
-    uncovered.saturating_mul(100) >= context_window.saturating_mul(STEADY_PRUNE_FLOOR_PERCENT)
+    used_tokens.max(0).saturating_mul(100)
+        <= context_window.saturating_mul(AUTO_PRUNE_TARGET_PERCENT)
 }
 
 pub(crate) fn pressure_reached(used_tokens: i64, context_window: i64) -> bool {
@@ -293,34 +358,89 @@ pub(crate) fn latest_user_message_text(input: &[ResponseItem]) -> Option<String>
     })
 }
 
-/// Everything before the latest user message: the only region either trigger may
-/// rewrite. The current turn's own observations must survive for the next follow-up.
-fn completed_turn_items(input: &[ResponseItem]) -> &[ResponseItem] {
-    match input
-        .iter()
-        .rposition(|item| matches!(item, ResponseItem::Message { role, .. } if role == "user"))
-    {
-        Some(current_turn_start) => &input[..current_turn_start],
-        None => &[],
+/// Text that opens every epoch marker. Matched on to locate the frozen prefix, so it
+/// must stay in sync with `prune_epoch_marker`.
+const PRUNE_EPOCH_MARKER_PREFIX: &str = "[elpis.context-prune.epoch ";
+
+/// The checkpoint that seals one applied pass's rewritten region.
+///
+/// Deliberately tiny and deliberately **byte-stable**: its text is fixed by values that
+/// never change once the pass is applied, so from here on the marker and everything
+/// before it are immutable model-visible input. Two properties follow, and both matter:
+///
+/// * a later pass may not rewrite anything at or before it (`pressure_eligible_items`),
+/// * it is a `Message` carrying an `input_text` block, which is one of the few item
+///   shapes the Responses API accepts a `prompt_cache_breakpoint` on — so the epoch
+///   boundary can be written to the prompt cache and read back after the next pass.
+///
+/// The role is `developer` rather than `user` on purpose: `latest_user_message_text`
+/// resolves the active question by scanning for the last user message, and a marker
+/// posing as one would feed the pruning model a checkpoint line instead of the question.
+pub(crate) fn prune_epoch_marker(epoch: u64) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: format!(
+                "{PRUNE_EPOCH_MARKER_PREFIX}{epoch}] Earlier tool output in this thread has been \
+                 distilled into the evidence notes above. Exact originals remain in the session \
+                 rollout."
+            ),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
-/// Region a pressure pass may rewrite: everything except the newest tool evidence,
-/// which stays verbatim.
+fn is_prune_epoch_marker(item: &ResponseItem) -> bool {
+    let ResponseItem::Message { role, content, .. } = item else {
+        return false;
+    };
+    role == "developer"
+        && content.iter().any(|block| {
+            matches!(block, ContentItem::InputText { text } if text.starts_with(PRUNE_EPOCH_MARKER_PREFIX))
+        })
+}
+
+/// Length of the frozen prefix: everything up to and including the newest epoch marker.
 ///
-/// The steady pass stops at the latest user message, because between turns that is
-/// exactly the boundary between settled work and the question being answered. A
-/// pressure pass cannot use the same boundary. A single tool-driven turn can run for
-/// dozens of steps and cross the pressure line without ever ending, and at that point
-/// every byte in the window belongs to the current turn — so stopping at the turn
-/// boundary leaves nothing eligible precisely when reclaiming matters most.
+/// Zero before the first applied pass. This is the boundary the prompt cache is anchored
+/// to and the boundary the next pass starts after, so both sides read it from here rather
+/// than each deriving their own notion of "settled".
+pub(crate) fn frozen_prefix_len(input: &[ResponseItem]) -> usize {
+    input
+        .iter()
+        .rposition(is_prune_epoch_marker)
+        .map_or(0, |index| index + 1)
+}
+
+/// Region a pressure pass may rewrite: after the frozen prefix, and before whatever the
+/// session still needs verbatim.
 ///
-/// Instead the cut is made by recency: walking back from the end, the newest items
-/// totalling `PRESSURE_KEEP_RECENT_PERCENT` of the window are kept verbatim, and the
-/// prefix behind them is eligible.
+/// The **front** cut is the epoch boundary. Sealed epochs are immutable by construction,
+/// not merely by the covered-id filter happening to skip them — which is what lets the
+/// prompt-cache breakpoint on the newest marker survive this pass.
 ///
-/// The walk has to weigh every item, not only the prunable ones. Measuring the keep
-/// budget in tool output alone means a window that is mostly messages and reasoning --
+/// The **back** cut is the later of two boundaries, because each one alone leaves a gap:
+///
+/// * **The latest user message.** Everything before it belongs to a completed turn and is
+///   safe to distil however recently it landed. On its own this is useless for a single
+///   tool-driven turn that runs for dozens of steps and crosses the pressure line without
+///   ever ending: then every byte in the window belongs to the current turn, and stopping
+///   here would leave nothing eligible precisely when reclaiming matters most.
+/// * **A recency cut.** Walking back from the end, the newest items totalling
+///   `PRESSURE_KEEP_RECENT_PERCENT` of the window stay verbatim, which is what protects a
+///   running turn's observations. On its own *this* is what fails when one completed-turn
+///   output is large relative to the window: it falls inside the keep budget and becomes
+///   permanently unreachable even as the session sits well past the boundary.
+///
+/// Taking the later boundary means the keep budget only ever protects the turn in flight,
+/// which is what it was for. Neither boundary can expose a running turn's newest
+/// observations: past the latest user message the recency cut governs, and before it every
+/// item is settled work.
+///
+/// The recency walk has to weigh every item, not only the prunable ones. Measuring the
+/// keep budget in tool output alone means a window that is mostly messages and reasoning --
 /// which is what a window looks like after a few passes have already distilled the
 /// tool output down to pointers -- never accumulates enough to reach the budget, so
 /// the walk falls off the front and reports nothing eligible. Pressure then stops
@@ -330,6 +450,26 @@ fn pressure_eligible_items(input: &[ResponseItem], context_window: i64) -> &[Res
     if context_window <= 0 {
         return &[];
     }
+    let frozen = frozen_prefix_len(input);
+    let end = recency_cut(input, context_window).max(completed_turn_end(input));
+    if end <= frozen {
+        return &[];
+    }
+    &input[frozen..end]
+}
+
+/// Index one past the last item that belongs to a completed turn — i.e. the position of
+/// the latest user message, or 0 when the thread has none.
+fn completed_turn_end(input: &[ResponseItem]) -> usize {
+    input
+        .iter()
+        .rposition(|item| matches!(item, ResponseItem::Message { role, .. } if role == "user"))
+        .unwrap_or(0)
+}
+
+/// Index one past the oldest item that still fits inside the keep-recent budget: the
+/// newest items totalling `PRESSURE_KEEP_RECENT_PERCENT` of the window stay verbatim.
+fn recency_cut(input: &[ResponseItem], context_window: i64) -> usize {
     let keep_budget = usize::try_from(
         context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100,
     )
@@ -339,11 +479,11 @@ fn pressure_eligible_items(input: &[ResponseItem], context_window: i64) -> &[Res
     for (index, item) in input.iter().enumerate().rev() {
         kept = kept.saturating_add(item_token_estimate(item));
         if kept >= keep_budget {
-            return &input[..index];
+            return index;
         }
     }
     // The whole history fits inside the keep budget, so nothing is old enough to take.
-    &[]
+    0
 }
 
 /// Rough size of any history item, for the recency cut only. Tool output is measured
@@ -374,42 +514,15 @@ pub(crate) fn uncovered_pressure_tokens(
         .sum()
 }
 
-/// Approximate tokens of turn-lifetime tool output from completed turns not already
-/// covered by a prior record — the backlog the steady trigger measures. Durable rules,
-/// messages, the current turn, and already-covered items are all excluded.
-pub(crate) fn uncovered_completed_turn_tokens(
-    input: &[ResponseItem],
-    covered_call_ids: &HashSet<String>,
-) -> usize {
-    completed_turn_items(input)
-        .iter()
-        .filter_map(prunable_text)
-        .filter(|(call_id, _)| !covered_call_ids.contains(*call_id))
-        .map(|(_, text)| approx_token_count(&text))
-        .sum()
-}
-
-/// The whole uncovered backlog from completed turns, oldest first. The steady pass
-/// takes all of it rather than a size-bounded slice: at the 1% floor there is little
-/// to take, and leaving remnants would only buy another model call next turn.
-pub(crate) fn build_steady_prune_batch(
-    input: &[ResponseItem],
-    covered_call_ids: &HashSet<String>,
-) -> Vec<(String, String)> {
-    take_within_batch_budget(build_prune_candidates(
-        completed_turn_items(input),
-        covered_call_ids,
-    ))
-}
-
 /// The whole uncovered backlog for an explicit `/prune`. Unlike automatic pruning,
 /// this runs as a standalone task between turns, so the latest finished turn is also
-/// eligible.
+/// eligible. Sealed epochs stay off limits here too.
 pub(crate) fn build_manual_prune_batch(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
 ) -> Vec<(String, String)> {
-    take_within_batch_budget(build_prune_candidates(input, covered_call_ids))
+    let frozen = frozen_prefix_len(input);
+    take_within_batch_budget(build_prune_candidates(&input[frozen..], covered_call_ids))
 }
 
 /// Oldest-first prefix of `candidates` that fits one pass. The first candidate is
@@ -587,12 +700,19 @@ fn conclusions_by_call_id(record_text: &str) -> HashMap<&str, &str> {
         .collect()
 }
 
-/// Applies a validated deletion manifest to model-visible working history.
+/// Applies a validated deletion manifest to model-visible working history, then seals
+/// the rewritten region with a new epoch marker.
 ///
 /// A tool result that earned a conclusion becomes a compact receipt with an exact
 /// rollout pointer; its paired invocation remains so the operation is still legible.
 /// A covered item with no conclusion is a dead end, so both invocation and output are
 /// removed entirely. Exact originals remain in the durable rollout.
+///
+/// The marker goes immediately after the last covered item — the exact point past which
+/// nothing was touched — so it is both the frozen-prefix boundary for the next pass and a
+/// breakpoint-eligible anchor for the prompt cache. The epoch number is derived by
+/// counting the markers already present, so the epoch sequence lives in history itself and
+/// survives resume without any parallel counter to keep in step.
 pub(crate) fn apply_prune_record_untracked(
     input: &mut Vec<ResponseItem>,
     record: &PruneRecord,
@@ -600,11 +720,17 @@ pub(crate) fn apply_prune_record_untracked(
     if record.is_empty() {
         return 0;
     }
+    let epoch = input.iter().filter(|item| is_prune_epoch_marker(item)).count() as u64 + 1;
     let covered: HashSet<&str> = record.covered_call_ids.iter().map(String::as_str).collect();
     let conclusions = conclusions_by_call_id(&record.text);
     let mut saved = 0usize;
-    let mut rewritten = Vec::with_capacity(input.len());
+    let mut rewritten = Vec::with_capacity(input.len() + 1);
+    // Index in `rewritten` just past the last covered item, whether it survived as a
+    // receipt or was dropped outright. Stays `None` only if the record covered nothing
+    // present in `input`, in which case there is no region to seal.
+    let mut boundary: Option<usize> = None;
     for mut item in std::mem::take(input) {
+        let mut is_covered = true;
         let keep = match &mut item {
             ResponseItem::FunctionCall {
                 call_id, arguments, ..
@@ -635,30 +761,42 @@ pub(crate) fn apply_prune_record_untracked(
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
             } if covered.contains(call_id.as_str()) => {
-                let Some(conclusion) = conclusions.get(call_id.as_str()) else {
-                    saved += output.body.to_text().map_or(0, |text| text.chars().count());
-                    continue;
-                };
-                let Some(text) = output.body.to_text() else {
-                    rewritten.push(item);
-                    continue;
-                };
-                let original_chars = text.chars().count();
-                let receipt = format!(
-                    "[ELPIS CONTEXT UPDATE]\nkept={conclusion}\nevidence=rollout://tool-call/{call_id}\noriginal_chars={original_chars}"
-                );
-                let new_chars = receipt.chars().count();
-                if new_chars < original_chars {
-                    saved += original_chars - new_chars;
-                    output.body = FunctionCallOutputBody::Text(receipt);
+                match conclusions.get(call_id.as_str()) {
+                    // No conclusion: a dead end, so the output goes entirely.
+                    None => {
+                        saved += output.body.to_text().map_or(0, |text| text.chars().count());
+                        false
+                    }
+                    Some(conclusion) => {
+                        if let Some(text) = output.body.to_text() {
+                            let original_chars = text.chars().count();
+                            let receipt = format!(
+                                "[ELPIS CONTEXT UPDATE]\nkept={conclusion}\nevidence=rollout://tool-call/{call_id}\noriginal_chars={original_chars}"
+                            );
+                            let new_chars = receipt.chars().count();
+                            if new_chars < original_chars {
+                                saved += original_chars - new_chars;
+                                output.body = FunctionCallOutputBody::Text(receipt);
+                            }
+                        }
+                        true
+                    }
                 }
+            }
+            _ => {
+                is_covered = false;
                 true
             }
-            _ => true,
         };
         if keep {
             rewritten.push(item);
         }
+        if is_covered {
+            boundary = Some(rewritten.len());
+        }
+    }
+    if let Some(boundary) = boundary {
+        rewritten.insert(boundary, prune_epoch_marker(epoch));
     }
     *input = rewritten;
     saved
@@ -708,79 +846,133 @@ mod tests {
 
     #[test]
     fn pressure_trigger_starts_at_thirty_percent_use() {
-        assert_eq!(select_trigger(299_999, 9_999, 9_999, 1_000_000), None);
+        assert_eq!(select_trigger(299_999, 9_999, 1_000_000), None);
         assert_eq!(
-            select_trigger(300_000, 9_999, 9_999, 1_000_000),
+            select_trigger(300_000, 9_999, 1_000_000),
             Some(PruneTrigger::Pressure)
         );
-        assert_eq!(select_trigger(900_000, 0, 0, 1_000_000), None);
+        assert_eq!(select_trigger(900_000, 0, 1_000_000), None);
     }
 
     #[test]
-    fn steady_trigger_fires_below_pressure_once_backlog_reaches_five_percent() {
-        // The regression this guards: under pressure-only gating, a session with a
-        // real backlog but modest use pruned nothing and grew until it hit 30% used.
-        assert_eq!(
-            select_trigger(200_000, 50_000, 0, 1_000_000),
-            Some(PruneTrigger::Steady)
-        );
-        // Scenario: just below the 5% floor -> no steady prune.
-        assert_eq!(select_trigger(200_000, 49_999, 0, 1_000_000), None);
-        assert_eq!(select_trigger(200_000, 0, 0, 1_000_000), None);
-    }
-
-    #[test]
-    fn steady_floor_is_five_percent_of_the_window() {
+    fn backlog_alone_never_starts_an_automatic_pass() {
+        // The old steady trigger fired on backlog size regardless of how full the window
+        // was, which is what produced runs of tiny passes inside the healthy band. Use
+        // below the boundary must now select no trigger at all, however much uncovered
+        // tool output is sitting there.
         let window = 1_000_000;
-        // Scenario 1: just below 5% new eligible backlog -> no steady prune.
-        assert!(!steady_floor_reached(49_999, window));
-        // Scenario 2: exactly 5% -> one steady prune.
-        assert!(steady_floor_reached(50_000, window));
+        for used in [0, 100_000, 200_000, 299_999] {
+            assert_eq!(
+                select_trigger(used, 500_000, window),
+                None,
+                "use at {used} is inside the healthy band and must not prune"
+            );
+        }
+    }
+
+    /// Drives the gate the way `run_context_prune` does: observe, then ask.
+    fn may_prune(cycle: &mut PruneCycle, used: i64, window: i64) -> bool {
+        cycle.observe(used, window);
+        cycle.may_run()
     }
 
     #[test]
-    fn steady_does_not_retrigger_until_another_five_percent_of_new_material_accumulates() {
-        // Scenario 3: after a steady pass covers the backlog, already-covered material
-        // must not count toward the next threshold -- only genuinely new material can.
+    fn no_new_cycle_starts_while_use_stays_inside_the_healthy_band() {
+        // Properties 3 and 4: a cycle that reached its target blocks every automatic pass
+        // from 20% up to 30%, and becomes eligible again exactly at 30%.
         let window = 1_000_000;
-        let mut covered = HashSet::new();
-        let big = "x".repeat(4_000 * 4); // 4,000 approx tokens, first steady pass's batch
-        let input = vec![
-            user_message("previous turn"),
-            tool_output("a", &big),
-            user_message("current turn"),
-        ];
+        let mut cycle = PruneCycle::default();
 
-        // Steady pass covers "a".
-        covered.insert("a".to_string());
-        let after_cover = uncovered_completed_turn_tokens(&input, &covered);
-        assert_eq!(after_cover, 0);
-        assert!(!steady_floor_reached(after_cover, window));
+        // Pressure crossing: one pass takes use to the 20% target, which closes the cycle.
+        assert!(may_prune(&mut cycle, 300_000, window));
+        cycle.record_pass();
+        cycle.close();
 
-        // Only 49,999 tokens of genuinely new material arrive (still below the 5%
-        // floor) -- no second steady prune yet.
-        let small_new = "y".repeat(49_999 * 4);
-        let input_with_small_new = vec![
-            user_message("previous turn"),
-            tool_output("a", &big),
-            user_message("second turn"),
-            tool_output("b", &small_new),
-            user_message("current turn"),
-        ];
-        let uncovered_small = uncovered_completed_turn_tokens(&input_with_small_new, &covered);
-        assert!(!steady_floor_reached(uncovered_small, window));
+        // Normal agent work regrows the window one point at a time. Nothing may prune.
+        for used in [200_000, 210_000, 250_000, 290_000, 299_999] {
+            assert!(
+                !may_prune(&mut cycle, used, window),
+                "use at {used} is between the target and the trigger; no pass may run"
+            );
+        }
 
-        // Once another ~5% of new material has accumulated, steady fires again.
-        let enough_new = "y".repeat(50_000 * 4);
-        let input_with_enough_new = vec![
-            user_message("previous turn"),
-            tool_output("a", &big),
-            user_message("second turn"),
-            tool_output("b", &enough_new),
-            user_message("current turn"),
-        ];
-        let uncovered_enough = uncovered_completed_turn_tokens(&input_with_enough_new, &covered);
-        assert!(steady_floor_reached(uncovered_enough, window));
+        // Back at the boundary: the next cycle is eligible.
+        assert!(may_prune(&mut cycle, 300_000, window));
+    }
+
+    #[test]
+    fn a_cycle_that_stalled_in_pressure_does_not_re_arm_on_the_trigger_alone() {
+        // The failure this guards: a cycle whose budget ran out while use was still above
+        // the boundary. `pressure_reached` is trivially true there, so re-arming on the
+        // trigger alone would start a fresh cycle on the very next step -- exactly the
+        // unbounded-pass behaviour the budget exists to stop.
+        let window = 1_000_000;
+        let mut cycle = PruneCycle::default();
+
+        assert!(may_prune(&mut cycle, 350_000, window));
+        cycle.record_pass();
+        assert!(may_prune(&mut cycle, 340_000, window));
+        cycle.record_pass();
+
+        // Budget spent, use still above the boundary: blocked, and flagged for the
+        // compaction/rollover hand-off rather than re-armed.
+        assert!(!may_prune(&mut cycle, 340_000, window));
+        assert!(cycle.stalled_in_pressure());
+        assert!(!may_prune(&mut cycle, 360_000, window));
+
+        // Something that can actually reclaim brings use back under the boundary; only
+        // then does regrowth to the trigger re-arm pruning.
+        assert!(!may_prune(&mut cycle, 150_000, window));
+        assert!(!cycle.stalled_in_pressure());
+        assert!(!may_prune(&mut cycle, 299_999, window));
+        assert!(may_prune(&mut cycle, 300_000, window));
+    }
+
+    #[test]
+    fn a_cycle_that_closed_below_the_trigger_always_re_arms_again() {
+        // Guards a deadlock: if re-arming demanded a measurement down in the *target*
+        // region rather than merely under the trigger, a cycle that closed at, say, 24%
+        // and never returned to 20% could never prune again for the rest of the session.
+        let window = 1_000_000;
+        for closed_at in [0, 150_000, 200_000, 240_000, 299_999] {
+            let mut cycle = PruneCycle::default();
+            cycle.close();
+
+            assert!(
+                !may_prune(&mut cycle, closed_at, window),
+                "a cycle that just closed must not run again immediately"
+            );
+            assert!(
+                may_prune(&mut cycle, 300_000, window),
+                "a cycle closed at {closed_at} must re-arm once use is back at the trigger"
+            );
+        }
+    }
+
+    #[test]
+    fn one_cycle_may_spend_its_budget_back_to_back_without_waiting_for_regrowth() {
+        // A single pass is capped at `MAX_PRUNE_BATCH_TOKENS`, which on a large window can
+        // be less than the 30% -> 20% distance. Those follow-up passes are one logical
+        // cycle finishing its descent, so they must not be blocked by the gate.
+        let window = 1_000_000;
+        let mut cycle = PruneCycle::default();
+
+        assert!(may_prune(&mut cycle, 300_000, window));
+        cycle.record_pass();
+        // Still short of the target, so the cycle stays open and spends its second pass.
+        assert!(may_prune(&mut cycle, 260_000, window));
+        cycle.record_pass();
+        // Budget spent: the cycle closes rather than nibbling further.
+        assert!(!may_prune(&mut cycle, 240_000, window));
+    }
+
+    #[test]
+    fn target_is_twenty_percent_used() {
+        let window = 1_000_000;
+        assert!(target_reached(200_000, window));
+        assert!(target_reached(199_999, window));
+        assert!(!target_reached(200_001, window));
+        assert!(!target_reached(0, 0));
     }
 
     #[test]
@@ -790,21 +982,6 @@ mod tests {
         assert!(!pressure_reached(299_999, window));
         // Scenario 5: exactly 30% used -> pressure maintenance.
         assert!(pressure_reached(300_000, window));
-    }
-
-    #[test]
-    fn pressure_outranks_steady_when_both_conditions_are_true() {
-        // Scenario 6: both a real steady backlog and pressure are true at once --
-        // pressure must win.
-        assert_eq!(
-            select_trigger(
-                /*used_tokens*/ 300_000,
-                /*uncovered_tokens*/ 60_000,
-                /*pressure_uncovered_tokens*/ 1,
-                /*context_window*/ 1_000_000,
-            ),
-            Some(PruneTrigger::Pressure)
-        );
     }
 
     #[test]
@@ -818,59 +995,57 @@ mod tests {
     }
 
     #[test]
-    fn pressure_episode_permits_at_most_two_passes() {
-        // Scenario 8: no more than 2 Ace passes occur during one pressure episode.
-        let mut episode = PressureEpisode::default();
-        assert!(should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
-        episode.record_pass();
-        assert_eq!(episode.passes(), 1);
-        assert!(should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
-        episode.record_pass();
-        assert_eq!(episode.passes(), 2);
-        // Budget spent: a third automatic pass must not run.
-        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
-        episode.record_pass();
-        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+    fn completed_turn_evidence_stays_reachable_even_inside_the_keep_recent_budget() {
+        // The gap removing the steady trigger would otherwise have opened: one completed
+        // output that is large relative to the window sits inside the 10% keep-recent
+        // budget, so a recency-only cut makes it permanently unreachable -- and with no
+        // backlog trigger left, nothing would ever reclaim it. The session then grows past
+        // the boundary with pressure unable to select anything.
+        let window = 10_000; // keep budget is 10% of it: 1,000 tokens
+        let input = vec![
+            user_message("first turn"),
+            tool_call("old", "shell", r#"{"cmd":"dump"}"#),
+            tool_output("old", &"x".repeat(8_000)), // ~2,000 tokens, alone over budget
+            assistant_message("done"),
+            user_message("second turn"),
+        ];
+
+        let uncovered = uncovered_pressure_tokens(&input, &HashSet::new(), window);
+        assert!(
+            uncovered > 0,
+            "settled evidence before the latest user message must stay eligible"
+        );
+        assert_eq!(
+            select_trigger(/*used_tokens*/ 5_000, uncovered, window),
+            Some(PruneTrigger::Pressure)
+        );
+        assert_eq!(
+            build_prune_batch_for_reclaim(&input, &HashSet::new(), 1, window)
+                .iter()
+                .map(|(call_id, _)| call_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["old"]
+        );
     }
 
     #[test]
-    fn exhausted_pressure_episode_defers_to_native_compaction() {
-        // Scenario 9: once the episode's Ace budget is spent, the caller must fall back
-        // to the existing compaction/rollover mechanism rather than run another pass.
-        // `should_run_automatic_pass` returning false is exactly the signal
-        // `run_context_prune` uses to skip straight to `request_new_context_window`.
-        let mut episode = PressureEpisode::default();
-        episode.record_pass();
-        episode.record_pass();
-        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
+    fn the_running_turns_newest_evidence_is_never_eligible() {
+        // The other half of the boundary: past the latest user message the recency cut
+        // governs, so the observations the next follow-up reasons over stay verbatim.
+        let window = 10_000;
+        let input = vec![
+            user_message("the running turn"),
+            tool_output("newest", &"x".repeat(8_000)),
+        ];
+
+        assert_eq!(uncovered_pressure_tokens(&input, &HashSet::new(), window), 0);
     }
 
     #[test]
-    fn pressure_episode_re_arms_only_after_dropping_back_under_the_boundary() {
-        // Scenario 10: a pressure episode does not repeatedly retrigger without an
-        // appropriate re-arm condition -- staying at or above the boundary must not
-        // reset the budget on its own.
-        let mut episode = PressureEpisode::default();
-        episode.record_pass();
-        episode.record_pass();
-        assert_eq!(episode.passes(), 2);
-
-        // Still in pressure: observing that must NOT re-arm the episode.
-        episode.observe(/*in_pressure*/ true);
-        assert_eq!(episode.passes(), 2);
-        assert!(!should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
-
-        // Active use finally drops back under the boundary: this re-arms it.
-        episode.observe(/*in_pressure*/ false);
-        assert_eq!(episode.passes(), 0);
-        assert!(should_run_automatic_pass(PruneTrigger::Pressure, episode.passes()));
-    }
-
-    #[test]
-    fn pressure_still_fires_once_steady_has_already_covered_completed_turn_evidence() {
-        // Scenario 11: pressure must still work when previous steady passes have
-        // already covered the completed-turn backlog -- the pressure region reaches
-        // further (into the running turn) than the steady region does.
+    fn pressure_still_fires_inside_a_long_running_turn() {
+        // Pressure must still work when earlier evidence is already covered: the eligible
+        // region is cut by recency, so it reaches into the turn that is still running.
+        // This is the case the removed steady trigger could never have handled anyway.
         let window = 20_000;
         let input = vec![
             user_message("previous turn"),
@@ -882,26 +1057,23 @@ mod tests {
         let mut covered = HashSet::new();
         covered.insert("already_covered".to_string());
 
-        assert_eq!(uncovered_completed_turn_tokens(&input, &covered), 0);
         let pressure_uncovered = uncovered_pressure_tokens(&input, &covered, window);
         assert!(pressure_uncovered > 0);
         assert_eq!(
-            select_trigger(
-                /*used_tokens*/ 16_000,
-                /*uncovered_tokens*/ 0,
-                pressure_uncovered,
-                window,
-            ),
+            select_trigger(/*used_tokens*/ 16_000, pressure_uncovered, window),
             Some(PruneTrigger::Pressure)
         );
     }
 
     #[test]
-    fn manual_trigger_is_never_budgeted_by_the_pressure_episode() {
-        // Scenario 12: existing manual pruning behavior remains unchanged -- Manual
-        // always may run, regardless of how many pressure passes have been spent.
-        assert!(should_run_automatic_pass(PruneTrigger::Manual, 0));
-        assert!(should_run_automatic_pass(PruneTrigger::Manual, u32::MAX));
+    fn manual_pruning_is_never_gated_by_the_cycle() {
+        // Existing manual behaviour is unchanged: `/prune` passes a requested trigger, so
+        // `run_context_prune` never consults the cycle at all. Guard the property the
+        // gate depends on -- a cooling cycle blocks only the automatic path.
+        let mut cycle = PruneCycle::default();
+        cycle.close();
+        assert!(!cycle.may_run());
+        assert_eq!(PruneTrigger::Manual.as_str(), "manual");
     }
 
     #[test]
@@ -911,8 +1083,8 @@ mod tests {
 
     #[test]
     fn no_trigger_fires_for_non_positive_context_window() {
-        assert_eq!(select_trigger(200_000, 1_000_000, 1_000_000, 0), None);
-        assert_eq!(select_trigger(200_000, 1_000_000, 1_000_000, -1), None);
+        assert_eq!(select_trigger(200_000, 1_000_000, 0), None);
+        assert_eq!(select_trigger(200_000, 1_000_000, -1), None);
     }
 
     #[test]
@@ -967,7 +1139,7 @@ mod tests {
             tool_output("b", &big),
             user_message("current turn"),
         ];
-        let batch = build_steady_prune_batch(&input, &HashSet::new());
+        let batch = build_manual_prune_batch(&input, &HashSet::new());
         // One oversized output is still eligible on its own; it does not drag a
         // second one into the same call, and it never jams the queue behind itself.
         assert_eq!(batch.len(), 1);
@@ -975,64 +1147,44 @@ mod tests {
     }
 
     #[test]
-    fn uncovered_backlog_excludes_covered_items_and_the_current_turn() {
+    fn uncovered_pressure_backlog_excludes_covered_items() {
+        let window = 40_000;
         let input = vec![
             user_message("previous turn"),
-            tool_output("a", &"a".repeat(4_000)),
-            tool_output("b", &"b".repeat(4_000)),
+            tool_output("a", &"a".repeat(16_000)),
+            tool_output("b", &"b".repeat(16_000)),
             user_message("current turn"),
-            tool_output("current", &"c".repeat(4_000)),
+            tool_output("current", &"c".repeat(16_000)),
         ];
 
         let mut covered = HashSet::new();
-        let both = uncovered_completed_turn_tokens(&input, &covered);
+        let both = uncovered_pressure_tokens(&input, &covered, window);
         covered.insert("a".to_string());
-        let one = uncovered_completed_turn_tokens(&input, &covered);
+        let one = uncovered_pressure_tokens(&input, &covered, window);
 
-        // Messages and the current turn's output never count toward the backlog, so
-        // covering one of the two completed outputs halves it.
+        // Covering one of the two eligible outputs removes exactly its share; the newest
+        // output stays outside the eligible region either way.
         assert!(both > 0);
         assert_eq!(one * 2, both);
     }
 
     #[test]
-    fn steady_batch_takes_the_whole_backlog_but_skips_covered_ids() {
+    fn manual_batch_skips_covered_ids() {
         let input = vec![
             user_message("previous turn"),
             tool_call("a", "exec_command", r#"{"cmd":"first"}"#),
             tool_output("a", "aaaa"),
             tool_call("b", "exec_command", r#"{"cmd":"second"}"#),
             tool_output("b", "bb"),
-            user_message("current turn"),
         ];
         let covered: HashSet<String> = ["a".to_string()].into_iter().collect();
-        let batch = build_steady_prune_batch(&input, &covered);
+        let batch = build_manual_prune_batch(&input, &covered);
         assert_eq!(
             batch,
             vec![(
                 "b".to_string(),
                 "tool: exec_command\ninput: {\"cmd\":\"second\"}\noutput:\nbb".to_string()
             )]
-        );
-    }
-
-    #[test]
-    fn steady_batch_never_consumes_the_current_turn() {
-        let input = vec![
-            user_message("previous turn"),
-            tool_output("old", "aaaa"),
-            user_message("current turn"),
-            tool_output("current", "bbbb"),
-        ];
-
-        let batch = build_steady_prune_batch(&input, &HashSet::new());
-
-        assert_eq!(
-            batch
-                .iter()
-                .map(|(call_id, _)| call_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["old"]
         );
     }
 
@@ -1124,16 +1276,10 @@ mod tests {
         let pressure_uncovered =
             uncovered_pressure_tokens(&input, &HashSet::new(), /*context_window*/ 20_000);
 
-        assert_eq!(
-            uncovered_completed_turn_tokens(&input, &HashSet::new()),
-            0,
-            "a turn that has not ended has no completed-turn backlog"
-        );
         assert!(pressure_uncovered > 0);
         assert_eq!(
             select_trigger(
                 /*used_tokens*/ 12_000,
-                /*uncovered_tokens*/ 0,
                 pressure_uncovered,
                 /*context_window*/ 20_000,
             ),
@@ -1172,12 +1318,7 @@ mod tests {
             "old tool output behind a wall of prose must stay eligible"
         );
         assert_eq!(
-            select_trigger(
-                /*used_tokens*/ 16_000,
-                /*uncovered_tokens*/ 0,
-                uncovered,
-                window,
-            ),
+            select_trigger(/*used_tokens*/ 16_000, uncovered, window),
             Some(PruneTrigger::Pressure)
         );
     }
@@ -1200,9 +1341,15 @@ mod tests {
             latest_user_message_text(&input).as_deref(),
             Some("Find the source of the bug.")
         );
-        // The question is classification context; its own turn's output is not
-        // eligible, so no batch forms from it alone.
-        assert!(build_steady_prune_batch(&input, &HashSet::new()).is_empty());
+        // The question is classification context, never part of the deletable batch: it
+        // is a message, and only tool output is ever a candidate.
+        assert_eq!(
+            build_manual_prune_batch(&input, &HashSet::new())
+                .iter()
+                .map(|(call_id, _)| call_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a"]
+        );
     }
 
     #[test]
@@ -1289,10 +1436,62 @@ mod tests {
         // into the receipt, not just a generic "covered" marker.
         assert!(text.contains("found X at foo.rs:1 — mattered because Y"));
 
-        let ResponseItem::FunctionCallOutput { output, .. } = &input[3] else {
+        // The pass seals its region: the marker lands right after the last covered item,
+        // so the untouched `b` pair now sits behind it.
+        assert!(is_prune_epoch_marker(&input[2]));
+        assert_eq!(frozen_prefix_len(&input), 3);
+
+        let ResponseItem::FunctionCallOutput { output, .. } = &input[4] else {
             panic!("function output");
         };
         assert_eq!(output.text_content(), Some(large.as_str()));
+    }
+
+    #[test]
+    fn each_applied_pass_seals_a_new_epoch_and_never_rewrites_an_earlier_one() {
+        // The structural half of the invariant: a later pass may not select anything from
+        // a sealed epoch, so the bytes before the newest marker -- and therefore the
+        // prompt-cache prefix anchored to it -- survive that pass untouched.
+        let large = "x".repeat(2_000);
+        let mut input = vec![
+            tool_call("a", "exec_command", r#"{"cmd":"first"}"#),
+            tool_output("a", &large),
+        ];
+        apply_prune_record_untracked(
+            &mut input,
+            &PruneRecord {
+                covered_call_ids: vec!["a".to_string()],
+                text: "a: kept".to_string(),
+            },
+        );
+        let first_frozen = frozen_prefix_len(&input);
+        let epoch_one = input[..first_frozen].to_vec();
+
+        // More work arrives, then a second pass over only the new material.
+        input.push(tool_call("b", "exec_command", r#"{"cmd":"second"}"#));
+        input.push(tool_output("b", &large));
+        // The sealed epoch is not even a candidate, regardless of the covered-id filter.
+        let batch = build_manual_prune_batch(&input, &HashSet::new());
+        assert_eq!(
+            batch.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            vec!["b"]
+        );
+
+        apply_prune_record_untracked(
+            &mut input,
+            &PruneRecord {
+                covered_call_ids: vec!["b".to_string()],
+                text: "b: kept".to_string(),
+            },
+        );
+
+        assert_eq!(input[..first_frozen], epoch_one[..]);
+        assert!(frozen_prefix_len(&input) > first_frozen);
+        assert_eq!(
+            input.iter().filter(|item| is_prune_epoch_marker(item)).count(),
+            2,
+            "each pass seals exactly one epoch"
+        );
     }
 
     #[test]
@@ -1311,7 +1510,9 @@ mod tests {
 
         apply_prune_record_untracked(&mut input, &record);
 
-        assert_eq!(input.len(), 2);
+        // The dead-end pair leaves no trace; what remains is the kept pair plus the epoch
+        // marker that seals the rewritten region.
+        assert_eq!(input.len(), 3);
         assert!(matches!(
             &input[0],
             ResponseItem::FunctionCall { call_id, .. } if call_id == "a"
@@ -1320,6 +1521,7 @@ mod tests {
             &input[1],
             ResponseItem::FunctionCallOutput { call_id, .. } if call_id == "a"
         ));
+        assert!(is_prune_epoch_marker(&input[2]));
     }
 
     #[test]

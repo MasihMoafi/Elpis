@@ -109,7 +109,9 @@ use crate::attestation::X_OAI_ATTESTATION_HEADER;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
+use crate::prompt_cache;
 use crate::responses_metadata::CodexResponsesMetadata;
+use crate::responses_metadata::CodexResponsesRequestKind;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider::AgentIdentitySessionFallback;
 use codex_model_provider::ProviderAuthScope;
@@ -240,6 +242,10 @@ pub struct ModelClient {
     state: Arc<ModelClientState>,
     agent_identity_policy: AgentIdentityAuthPolicy,
     prompt_cache_key_override: Option<String>,
+    /// Send explicit `prompt_cache_options`/`prompt_cache_breakpoint` instead of relying
+    /// on the server's implicit breakpoint. Off unless `Feature::ExplicitPromptCache` is
+    /// enabled; also requires an OpenAI provider and a GPT-5.6+ model at request time.
+    explicit_prompt_cache: bool,
     http_client_factory: HttpClientFactory,
 }
 
@@ -308,6 +314,9 @@ fn responses_request_properties_match(
         include: previous_include,
         service_tier: previous_service_tier,
         prompt_cache_key: previous_prompt_cache_key,
+        prompt_cache_options: previous_prompt_cache_options,
+        // Breakpoint positions are indices into `input`, which is compared separately.
+        prompt_cache_breakpoints: _,
         text: previous_text,
         client_metadata: _,
     } = previous;
@@ -325,6 +334,8 @@ fn responses_request_properties_match(
         include: current_include,
         service_tier: current_service_tier,
         prompt_cache_key: current_prompt_cache_key,
+        prompt_cache_options: current_prompt_cache_options,
+        prompt_cache_breakpoints: _,
         text: current_text,
         client_metadata: _,
     } = current;
@@ -342,6 +353,7 @@ fn responses_request_properties_match(
         && previous_include == current_include
         && previous_service_tier == current_service_tier
         && previous_prompt_cache_key == current_prompt_cache_key
+        && previous_prompt_cache_options == current_prompt_cache_options
         && previous_text == current_text
 }
 
@@ -434,6 +446,7 @@ impl ModelClient {
             }),
             agent_identity_policy,
             prompt_cache_key_override: None,
+            explicit_prompt_cache: false,
             http_client_factory,
         }
     }
@@ -443,6 +456,11 @@ impl ModelClient {
         prompt_cache_key_override: Option<String>,
     ) -> Self {
         self.prompt_cache_key_override = prompt_cache_key_override;
+        self
+    }
+
+    pub(crate) fn with_explicit_prompt_cache(mut self, explicit_prompt_cache: bool) -> Self {
+        self.explicit_prompt_cache = explicit_prompt_cache;
         self
     }
 
@@ -479,14 +497,33 @@ impl ModelClient {
             }),
             agent_identity_policy: self.agent_identity_policy,
             prompt_cache_key_override: self.prompt_cache_key_override.clone(),
+            explicit_prompt_cache: self.explicit_prompt_cache,
             http_client_factory: self.http_client_factory.clone(),
         }
     }
 
+    /// Cache key for one request.
+    ///
+    /// The turn loop keeps the bare session id: it is fixed for the life of the session,
+    /// so pruning, compaction, and any other history rewrite leave it untouched. Only the
+    /// prefix changes, which is what the cache is supposed to notice.
+    ///
+    /// Background calls that reuse the session's client -- context pruning and memory --
+    /// send an entirely unrelated prefix. Sharing one key would make them compete with the
+    /// turn prefix for the same cache slot for no possible hit, so they get their own
+    /// namespace. That namespace is itself constant per session and kind.
     fn prompt_cache_key(&self, responses_metadata: &CodexResponsesMetadata) -> String {
-        self.prompt_cache_key_override
-            .clone()
-            .unwrap_or_else(|| responses_metadata.session_id.clone())
+        if let Some(override_key) = &self.prompt_cache_key_override {
+            return override_key.clone();
+        }
+        let session_id = &responses_metadata.session_id;
+        match responses_metadata
+            .request_kind
+            .and_then(CodexResponsesRequestKind::cache_namespace)
+        {
+            Some(namespace) => format!("{session_id}:{namespace}"),
+            None => session_id.clone(),
+        }
     }
 
     /// Creates a fresh turn-scoped streaming session.
@@ -826,6 +863,18 @@ impl ModelClient {
             prompt.output_schema_strict,
         );
         let prompt_cache_key = Some(self.prompt_cache_key(responses_metadata));
+        // Cache breakpoints are an OpenAI Responses feature that older families reject, so
+        // the model check is a hard gate, not a preference. Within that gate the
+        // breakpoints ship on by default: they ride alongside the server's implicit
+        // breakpoint rather than replacing it, so they can only add cache reads.
+        // `Feature::ExplicitPromptCache` additionally switches the server to explicit
+        // mode, which is off by default -- see `crate::prompt_cache`.
+        let prompt_cache_plan = prompt_cache::plan_prompt_cache_for_provider(
+            is_openai,
+            &model_info.slug,
+            &input,
+            self.explicit_prompt_cache,
+        );
         let service_tier = model_info.service_tier_for_request(service_tier);
         let request = ResponsesApiRequest {
             model: model_info.slug.clone(),
@@ -841,6 +890,8 @@ impl ModelClient {
             include,
             service_tier,
             prompt_cache_key,
+            prompt_cache_options: prompt_cache_plan.options,
+            prompt_cache_breakpoints: prompt_cache_plan.breakpoints,
             text,
             client_metadata: Some(responses_metadata.client_metadata()),
         };
@@ -1161,6 +1212,12 @@ impl ModelClientSession {
             ResponsesWsRequest::ResponseCreate(ResponseCreateWsRequest {
                 previous_response_id: Some(last_response.response_id),
                 input: incremental_items,
+                // Breakpoint positions index the full input; this request sends only the
+                // delta, so they no longer address anything. The prefix they marked is
+                // already what `previous_response_id` refers to. Explicit mode has to go
+                // with them: explicit mode plus zero breakpoints disables caching outright.
+                prompt_cache_options: None,
+                prompt_cache_breakpoints: Vec::new(),
                 ..payload
             }),
             previous_response_id_from_untraced_warmup,

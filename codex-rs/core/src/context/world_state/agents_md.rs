@@ -6,10 +6,6 @@ use crate::context::UserInstructions;
 use serde::Deserialize;
 use serde::Serialize;
 
-const REPLACEMENT_NOTICE: &str =
-    "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.";
-const REMOVAL_NOTICE: &str = "The previously provided AGENTS.md instructions no longer apply.";
-
 /// The AGENTS.md instructions currently visible to the model.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AgentsMdState {
@@ -49,6 +45,31 @@ impl WorldStateSection for AgentsMdState {
         role == "user" && UserInstructions::matches_text(text)
     }
 
+    fn has_retained_fragment_matcher() -> bool {
+        true
+    }
+
+    fn matches_retained_fragment(role: &str, text: &str) -> bool {
+        Self::matches_legacy_fragment(role, text)
+    }
+
+    /// The rendered fragment carries the full instruction text, so a lost baseline can be
+    /// answered exactly rather than guessed at.
+    fn snapshot_from_retained_fragment(role: &str, text: &str) -> Option<Self::Snapshot> {
+        if !Self::matches_retained_fragment(role, text) {
+            return None;
+        }
+        parse_rendered_instructions(text)
+    }
+
+    fn owns_single_history_slot() -> bool {
+        true
+    }
+
+    fn has_model_visible_content(&self) -> bool {
+        self.instructions.is_some()
+    }
+
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Self::Snapshot>,
@@ -58,25 +79,36 @@ impl WorldStateSection for AgentsMdState {
             return None;
         }
 
-        let previous_may_contain_instructions = match previous {
-            PreviousSectionState::Known(previous) => previous.text.is_some(),
-            PreviousSectionState::Unknown => true,
-            PreviousSectionState::Absent => false,
-        };
-        let instructions = match (&self.instructions, previous_may_contain_instructions) {
-            (Some(instructions), true) => UserInstructions {
-                directory: instructions.directory.clone(),
-                text: format!("{REPLACEMENT_NOTICE}\n\n{}", instructions.text),
-            },
-            (Some(instructions), false) => instructions.clone(),
-            (None, true) => UserInstructions {
-                directory: None,
-                text: REMOVAL_NOTICE.to_string(),
-            },
-            (None, false) => return None,
-        };
-        Some(Box::new(instructions))
+        // This section owns one history slot: any earlier copy is removed before this one
+        // is recorded, and withdrawal empties the slot outright. There is therefore never
+        // a previous copy left to supersede, so nothing has to be said about one.
+        self.instructions
+            .clone()
+            .map(|instructions| Box::new(instructions) as Box<dyn ContextualUserFragment>)
     }
+}
+
+/// Inverse of `UserInstructions::render` for the shapes this section produces:
+/// `# AGENTS.md instructions[ for <dir>]\n\n<INSTRUCTIONS>\n<text>\n</INSTRUCTIONS>`.
+fn parse_rendered_instructions(text: &str) -> Option<AgentsMdSnapshot> {
+    let (start_marker, end_marker) = UserInstructions::type_markers();
+    let body = text
+        .trim()
+        .strip_prefix(start_marker)?
+        .strip_suffix(end_marker)?;
+    let (heading, instructions) = body.split_once("\n\n<INSTRUCTIONS>\n")?;
+    let directory = heading.trim().strip_prefix("for ").map(str::to_string);
+    // `body` appends exactly one newline after the text; removing more would recover a
+    // different snapshot than the one that produced this fragment.
+    Some(AgentsMdSnapshot {
+        directory,
+        text: Some(
+            instructions
+                .strip_suffix('\n')
+                .unwrap_or(instructions)
+                .to_string(),
+        ),
+    })
 }
 
 #[cfg(test)]

@@ -139,43 +139,37 @@ async fn run_context_prune(
     let before_model_items = history
         .clone()
         .for_prompt(&turn_context.model_info.input_modalities);
-    let uncovered = context_pruner::uncovered_completed_turn_tokens(&items, &covered_call_ids);
     let pressure_uncovered =
         context_pruner::uncovered_pressure_tokens(&items, &covered_call_ids, context_window);
     let trigger = requested_trigger.or_else(|| {
-        context_pruner::select_trigger(
-            active_context_tokens,
-            uncovered,
-            pressure_uncovered,
-            context_window,
-        )
+        context_pruner::select_trigger(active_context_tokens, pressure_uncovered, context_window)
     });
 
-    // Automatic checks (never manual) observe pressure every time, so the episode
-    // re-arms as soon as active use drops back under the boundary. When we're both
-    // in pressure and the trigger resolved to Pressure, also read the episode's spent
-    // passes so we can gate below: a crossing gets at most
-    // `MAX_PRESSURE_PRUNE_PASSES_PER_EPISODE` Ace passes before handing off to the
-    // existing compaction/rollover mechanism instead of nibbling at the boundary
-    // forever.
-    let pressure_episode_passes = if requested_trigger.is_none() {
+    // The hysteresis gate, and the only place an automatic pass is authorised.
+    //
+    // Every automatic check feeds the current measurement in: a cooling cycle re-arms
+    // here, and *only* here, once use has climbed back to the 30% trigger. While it is
+    // cooling `may_run` is false and we return without so much as selecting a batch, so
+    // the 20-30% band cannot produce a pass of any kind. An open cycle keeps its
+    // remaining budget available back-to-back, because those passes are one cycle
+    // finishing its descent rather than separate cycles.
+    if requested_trigger.is_none() {
         let mut state = sess.state.lock().await;
-        let in_pressure = context_pruner::pressure_reached(active_context_tokens, context_window);
-        state.observe_context_prune_pressure(in_pressure);
-        (in_pressure && trigger == Some(context_pruner::PruneTrigger::Pressure))
-            .then(|| state.context_prune_pressure_episode_passes())
-    } else {
-        None
-    };
-    if let Some(passes) = pressure_episode_passes {
-        if !context_pruner::should_run_automatic_pass(context_pruner::PruneTrigger::Pressure, passes)
-        {
-            if escalation == Escalation::Allowed {
+        if !state.observe_context_prune_usage(active_context_tokens, context_window) {
+            let stalled = state.context_prune_cycle_stalled();
+            drop(state);
+            // A cycle that closed without reaching its target, while use is still past
+            // the boundary, is the case the existing compaction/rollover mechanism owns.
+            // A cycle merely cooling below the boundary is healthy and hands off nothing.
+            if stalled
+                && escalation == Escalation::Allowed
+                && context_pruner::pressure_reached(active_context_tokens, context_window)
+            {
                 request_compaction_if_enabled(
                     sess,
                     turn_context,
                     active_context_tokens,
-                    "the pressure episode's Ace pass budget is spent",
+                    "the pruning cycle's Ace pass budget is spent",
                 )
                 .await;
             }
@@ -186,9 +180,6 @@ async fn run_context_prune(
     let batch = match trigger {
         Some(context_pruner::PruneTrigger::Manual) => {
             context_pruner::build_manual_prune_batch(&items, &covered_call_ids)
-        }
-        Some(context_pruner::PruneTrigger::Steady) => {
-            context_pruner::build_steady_prune_batch(&items, &covered_call_ids)
         }
         Some(context_pruner::PruneTrigger::Pressure) => {
             let pct = target_pct.unwrap_or(context_pruner::AUTO_PRUNE_TARGET_PERCENT);
@@ -211,26 +202,24 @@ async fn run_context_prune(
         // evidence — so the working set would climb from here with no layer left to
         // stop it. Hand off to compaction instead of letting it drift toward the
         // model's hard limit. The turn loop performs the rollover on its next step.
-        if requested_trigger.is_none()
-            && escalation == Escalation::Allowed
-            && context_pruner::pressure_reached(active_context_tokens, context_window)
-        {
-            request_compaction_if_enabled(
-                sess,
-                turn_context,
-                active_context_tokens,
-                "nothing left to reclaim",
-            )
-            .await;
+        // Only a cycle that actually wanted to prune is ended here. When the trigger did
+        // not resolve at all, use is simply below the boundary and no cycle is running --
+        // closing one then would leave the gate cooling with no sub-trigger observation
+        // still owed, and pruning could never re-arm.
+        if requested_trigger.is_none() && trigger == Some(context_pruner::PruneTrigger::Pressure) {
+            sess.state.lock().await.close_context_prune_cycle();
+            if escalation == Escalation::Allowed {
+                request_compaction_if_enabled(
+                    sess,
+                    turn_context,
+                    active_context_tokens,
+                    "nothing left to reclaim",
+                )
+                .await;
+            }
         }
         return false;
     };
-    if requested_trigger.is_none() && trigger == context_pruner::PruneTrigger::Pressure {
-        sess.state
-            .lock()
-            .await
-            .record_context_prune_pressure_pass();
-    }
     let active_question = context_pruner::latest_user_message_text(&items);
     // Keep maintenance inference isolated from the active turn's sticky routing and
     // incremental request state. This lets the pressure check run between tool
@@ -347,10 +336,26 @@ async fn run_context_prune(
         .await;
     }
     context_pruner::record_applied_prune(saved);
+    // Count only an applied pass. A stream or parse failure leaves history untouched and must
+    // not spend the hysteresis cycle's successful-pass budget.
+    if requested_trigger.is_none() {
+        sess.state.lock().await.record_context_prune_pass();
+    }
     // The server count describes the pre-prune request. Re-estimate from the
     // rewritten working history immediately so every context meter reflects the pass
     // instead of staying stale until the next model response.
     sess.recompute_token_usage(turn_context).await;
+    // Close the cycle as soon as the re-estimate says the target was met. This is what
+    // turns "one pass reached 20%" into the ~10-point regrowth band: from here the gate
+    // above refuses every automatic pass until use climbs back to 30%. If the target was
+    // not met the cycle stays open and may spend the rest of its budget on the next
+    // step -- still one logical cycle, still bounded.
+    if requested_trigger.is_none() {
+        let remaining = sess.get_total_token_usage().await;
+        if context_pruner::target_reached(remaining, context_window) {
+            sess.state.lock().await.close_context_prune_cycle();
+        }
+    }
     if let Err(err) = context_prune_audit::write_latest_report(&log_dir, &audit.report) {
         tracing::warn!(
             "Immutable pruning audit was saved at {}, but the latest report could not be updated: {err:#}",
@@ -679,6 +684,7 @@ mod tests {
     #[test]
     fn successful_completed_stream_yields_success_and_provider_usage() {
         let usage = TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 1_000,
             cached_input_tokens: 300,
             output_tokens: 50,
@@ -711,6 +717,7 @@ mod tests {
     #[test]
     fn stream_failure_yields_stream_error_and_retains_partial_usage() {
         let usage = TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 2_000,
             cached_input_tokens: 500,
             output_tokens: 20,
@@ -743,6 +750,7 @@ mod tests {
         let prune_model_slug = "gpt-5.6-terra";
         let output = "invalid manifest format".to_string();
         let usage = Some(TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 800,
             cached_input_tokens: 100,
             output_tokens: 30,
@@ -797,6 +805,7 @@ mod tests {
             status: context_prune_audit::PruneAttemptStatus::Success,
             error: None,
             usage: Some(TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 300,
                 cached_input_tokens: 0,
                 output_tokens: 20,

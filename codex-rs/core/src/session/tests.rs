@@ -2237,6 +2237,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
 
     let info1 = TokenUsageInfo {
         total_token_usage: TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 10,
             cached_input_tokens: 0,
             output_tokens: 20,
@@ -2244,6 +2245,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             total_tokens: 30,
         },
         last_token_usage: TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 3,
             cached_input_tokens: 0,
             output_tokens: 4,
@@ -2254,6 +2256,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
     };
     let info2 = TokenUsageInfo {
         total_token_usage: TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 100,
             cached_input_tokens: 50,
             output_tokens: 200,
@@ -2261,6 +2264,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             total_tokens: 375,
         },
         last_token_usage: TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 10,
             cached_input_tokens: 0,
             output_tokens: 20,
@@ -2433,6 +2437,7 @@ async fn record_token_usage_info_notifies_extension_contributors() {
         .insert(ThreadTokenUsageMarker);
 
     let first_usage = TokenUsage {
+        cache_write_tokens: None,
         input_tokens: 10,
         cached_input_tokens: 2,
         output_tokens: 20,
@@ -2440,6 +2445,7 @@ async fn record_token_usage_info_notifies_extension_contributors() {
         total_tokens: 33,
     };
     let second_usage = TokenUsage {
+        cache_write_tokens: None,
         input_tokens: 7,
         cached_input_tokens: 1,
         output_tokens: 8,
@@ -2559,6 +2565,7 @@ async fn turn_start_lifecycle_exposes_turn_metadata_and_token_baseline() {
         .insert(ThreadTurnStartMarker);
 
     let token_usage_at_turn_start = TokenUsage {
+        cache_write_tokens: None,
         input_tokens: 100,
         cached_input_tokens: 40,
         output_tokens: 25,

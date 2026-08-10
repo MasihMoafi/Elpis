@@ -56,7 +56,10 @@ fn find_codex_home_from_env(codex_home_env: Option<&str>) -> std::io::Result<Abs
                     "Could not find home directory",
                 )
             })?;
-            p.push(".codex");
+            // Elpis owns its own home. Sharing `~/.codex` with an installed upstream
+            // Codex makes the two fight over one state DB (their migrations differ) and
+            // one cached release version, so each one breaks the other.
+            p.push(".elpis");
             AbsolutePathBuf::from_absolute_path(p)
         }
     }
@@ -127,7 +130,7 @@ mod tests {
         let resolved =
             find_codex_home_from_env(/*codex_home_env*/ None).expect("default CODEX_HOME");
         let mut expected = home_dir().expect("home dir");
-        expected.push(".codex");
+        expected.push(".elpis");
         let expected = AbsolutePathBuf::from_absolute_path(expected).expect("absolute home");
         assert_eq!(resolved, expected);
     }

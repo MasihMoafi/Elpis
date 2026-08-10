@@ -35,12 +35,6 @@ C1, E1 = load("exp1-codex"), load("exp1-elpis")
 sC, sE = stats(C1), stats(E1)
 PROMPT = C1.get("prompt") or "thoroughly familiarize yourself with this project"
 
-def rbins(rem):
-    edges = [(0, 20), (20, 40), (40, 55), (55, 65), (65, 75), (75, 85), (85, 101)]
-    return [sum(1 for x in rem if lo <= x < hi) for lo, hi in edges], \
-           ["0–20", "20–40", "40–55", "55–65", "65–75", "75–85", "85+"]
-
-
 def cmp2(a, b, lower_is_better=True, f="{:,.0f}"):
     """Two cells, winner green, loser red. Green always means Elpis-side better."""
     if a == b:
@@ -90,14 +84,11 @@ and Elpis {sE['n']}.</p>
 <div class="key"><span><i style="background:{TEAL}"></i>Elpis</span><span><i style="background:{GRN}"></i>Codex</span>
 <span><i style="background:{AMB}"></i>under pressure</span><span><i style="background:{RED}"></i>critical</span>
 <span><i class="dash"></i>compaction</span></div>
-<p class="cap">Model calls below 65% remaining — Codex <b>{sC['below65']} of {sC['n']}</b>,
-Elpis <b>{sE['below65']} of {sE['n']}</b>. Elpis ran {sE['passes']} prune passes; Codex ran
+<p class="cap">Share of the run spent below 65% remaining — Codex <b>{100*sC['below65']/sC['n']:.0f}%</b>,
+Elpis <b>{100*sE['below65']/sE['n']:.0f}%</b>. Elpis ran {sE['passes']} prune passes; Codex ran
 {sC['comp']} compaction.</p></section>""")
 
-cb, cl = rbins(sC['rem']); eb, _ = rbins(sE['rem'])
 S.append(f"""<section class="card"><h3>Distribution of context remaining</h3>
-{ch.histogram([("Codex", cb, GRN, .55), ("Elpis", eb, TEAL, 1)], cl,
-              xlabel="% of context window remaining · faded = Codex, solid = Elpis")}
 {ch.box([("Codex", sC['rem'], GRN), ("Elpis", sE['rem'], TEAL)], h=180, vmax=100)}
 <p class="cap">Box = interquartile range, line = median, whiskers = full range.
 Codex median {sC['rmed']:.1f}%, range {min(sC['rem']):.1f}–{max(sC['rem']):.1f}%.
@@ -112,9 +103,9 @@ S.append(f"""<div class="part"><span class="pnum">Tokens</span>
 · largest {sC['imax']:,.0f} / {sE['imax']:,.0f}.</p></section>
 
 <section class="card"><h3>Token expenditure, whole message</h3>
-<p class="sub"><b>Green = Elpis did better. Red = Codex did better.</b> Every token figure is a
-<em>sum across the whole message</em>, not one request: each of the {sC['n']} Codex and {sE['n']} Elpis
-model calls re-sends the conversation so far, so the totals are much larger than the window itself.</p>
+<p class="sub"><b>Green = Elpis did better. Red = Codex did better.</b> Every figure is a sum across
+the whole message. Because each round trip re-sends the conversation, the totals run far larger than
+the window itself.</p>
 {ch.hbars([("Codex · total input", sC['tin'], GRN), ("Elpis · total input", sE['tin'], TEAL),
            ("Codex · of that, cached", sC['cached'], GRN), ("Elpis · of that, cached", sE['cached'], TEAL),
            ("Codex · of that, fresh", sC['fresh'], RED), ("Elpis · of that, fresh", sE['fresh'], RED),
@@ -122,16 +113,14 @@ model calls re-sends the conversation so far, so the totals are much larger than
           pl=250, fmtf=ch.fmt)}
 <div class="scroll"><table>
 <tr><th>gpt-5.6-luna</th><th>Codex</th><th>Elpis</th><th>Better</th></tr>
-<tr><td>Model calls (round trips)</td>{plain(sC['n'], sE['n'])}<td class="neu">neither — more requests is more work, not worse work</td></tr>
-<tr><td>Tool calls</td>{plain(sC['tools'], sE['tools'])}<td class="neu">neither — same reason</td></tr>
 <tr><td>Lowest context remaining</td>{cmp2(sC['floor'], sE['floor'], False, "{:.1f}%")}<td class="win">Elpis</td></tr>
 <tr><td>Median context remaining</td>{cmp2(sC['rmed'], sE['rmed'], False, "{:.1f}%")}<td class="win">Elpis</td></tr>
-<tr><td>Model calls below 65% remaining</td>{cmp2(sC['below65'], sE['below65'])}<td class="win">Elpis</td></tr>
+<tr><td>Share of the run below 65% remaining</td>{cmp2(100*sC['below65']/sC['n'], 100*sE['below65']/sE['n'], True, "{:.0f}%")}<td class="win">Elpis</td></tr>
 <tr><td>Spread of the window (σ)</td>{cmp2(sC['sd'], sE['sd'], True, "{:.1f}")}<td class="win">Elpis</td></tr>
 <tr><td>Compactions — history destroyed</td>{cmp2(sC['comp'], sE['comp'])}<td class="win">Elpis</td></tr>
 <tr><td>Total input tokens sent</td>{cmp2(sC['tin'], sE['tin'])}<td class="win">Elpis</td></tr>
-<tr><td>— of that, billed at the cached rate</td>{plain(sC['cached'], sE['cached'])}<td class="neu">component, not a score</td></tr>
-<tr><td>— of that, billed at full rate</td>{cmp2(sC['fresh'], sE['fresh'])}<td class="lose">Codex</td></tr>
+<tr><td>— of that, served from cache</td>{plain(sC['cached'], sE['cached'])}<td class="neu">component, not a score</td></tr>
+<tr><td>— of that, sent fresh</td>{cmp2(sC['fresh'], sE['fresh'])}<td class="lose">Codex</td></tr>
 <tr><td>Cache hit rate</td>{cmp2(sC['hit'], sE['hit'], False, "{:.1f}%")}<td class="lose">Codex</td></tr>
 <tr><td>Mean input per model call</td>{cmp2(sC['imean'], sE['imean'])}<td class="win">Elpis</td></tr>
 <tr><td>Output tokens</td>{cmp2(sC['tout'], sE['tout'])}<td class="lose">Codex</td></tr>

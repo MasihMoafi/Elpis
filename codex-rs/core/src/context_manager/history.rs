@@ -92,8 +92,17 @@ impl ContextManager {
         world_state: &WorldState,
     ) -> (Vec<Box<dyn ContextualUserFragment>>, Option<WorldStateItem>) {
         let snapshot = world_state.snapshot();
-        let fragments =
-            world_state.render_history_diff(self.world_state_baseline.as_ref(), &self.items);
+        let rendered = world_state
+            .render_history_diff_with_ids(self.world_state_baseline.as_ref(), &self.items);
+        // Single-slot sections keep at most one live copy: empty the slot of anything that
+        // is about to be re-rendered, and of anything that no longer has content at all.
+        // Without this, every re-render appends beside the copy it was meant to supersede.
+        let refilled = rendered.iter().map(|(id, _)| *id).collect();
+        world_state.vacate_single_slot_fragments(&mut self.items, &refilled);
+        let fragments = rendered
+            .into_iter()
+            .map(|(_, fragment)| fragment)
+            .collect::<Vec<_>>();
         let rollout_item = self.world_state_baseline.as_ref().map_or_else(
             || Some(WorldStateItem::full(snapshot.clone().into_value())),
             |previous| {

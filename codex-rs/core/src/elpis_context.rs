@@ -15,7 +15,16 @@ const GLOBAL_RULES: &str = "Global AGENTS.md";
 const PROJECT_RULES: &str = "Project AGENTS.md";
 const DEV_SOURCE_PREFIX: &str = "dev/";
 
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+/// Whether an optional ledger row is admitted before the user has said anything about it.
+/// A file existing on disk is not consent to spend the model's context window on it.
+const DEFAULT_OPTIONAL_ADMISSION: bool = false;
+
+/// Which context sources the user has admitted for this workspace.
+///
+/// Every field defaults to off: an unset row means the user has not asked for that file,
+/// not that Elpis may spend context on it. Rows the user has never touched are absent
+/// from the stored maps and follow [`DEFAULT_OPTIONAL_ADMISSION`].
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 struct ContinuityAdmission {
     global_rules: bool,
@@ -24,21 +33,30 @@ struct ContinuityAdmission {
     checkpoint: bool,
     memory: bool,
     /// Per-file admission for `skills/dev/*.md`, keyed by file name.
-    /// Files absent from the map are admitted by default.
     dev_sources: BTreeMap<String, bool>,
     custom_sources: BTreeMap<String, bool>,
 }
 
-impl Default for ContinuityAdmission {
-    fn default() -> Self {
-        Self {
-            global_rules: true,
-            project_rules: true,
-            goal: true,
-            checkpoint: true,
-            memory: true,
-            dev_sources: BTreeMap::new(),
-            custom_sources: BTreeMap::new(),
+impl ContinuityAdmission {
+    /// Whether the named ledger row is admitted. Rows absent from the stored map follow
+    /// the same default as every other optional row.
+    fn admits_row(&self, name: &str) -> bool {
+        match name {
+            GLOBAL_RULES => self.global_rules,
+            PROJECT_RULES => self.project_rules,
+            "GOAL.md" => self.goal,
+            "ES.md" => self.checkpoint,
+            "MEMORY.md" => self.memory,
+            name if name.starts_with(DEV_SOURCE_PREFIX) => self
+                .dev_sources
+                .get(&name[DEV_SOURCE_PREFIX.len()..])
+                .copied()
+                .unwrap_or(DEFAULT_OPTIONAL_ADMISSION),
+            name => self
+                .custom_sources
+                .get(name)
+                .copied()
+                .unwrap_or(DEFAULT_OPTIONAL_ADMISSION),
         }
     }
 }
@@ -234,37 +252,8 @@ pub fn continuity_sources(
     }
 
     for path in &instruction_paths {
-        let file_name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        let is_dev_source = path.to_string_lossy().contains("skills/dev")
-            || path.to_string_lossy().contains("/dev/")
-            || path
-                .parent()
-                .is_some_and(|dir| dir.ends_with("skills/dev") || dir.ends_with("dev"));
-        let (name, reason): (String, &'static str) = if is_dev_source {
-            (
-                format!("{DEV_SOURCE_PREFIX}{file_name}"),
-                "configured development rules",
-            )
-        } else if file_name == "AGENTS.md" && path.starts_with(cwd) {
-            (PROJECT_RULES.to_string(), "applicable project rules")
-        } else if file_name == "AGENTS.md" {
-            (GLOBAL_RULES.to_string(), "applicable global rules")
-        } else {
-            (file_name.to_string(), "instruction source")
-        };
-        let admitted = if is_dev_source {
-            let key = name.strip_prefix(DEV_SOURCE_PREFIX).unwrap_or(file_name);
-            admission.dev_sources.get(key).copied().unwrap_or(true)
-        } else if name == GLOBAL_RULES {
-            admission.global_rules
-        } else if name == PROJECT_RULES {
-            admission.project_rules
-        } else {
-            true
-        };
+        let (name, reason) = instruction_source_row(path, cwd);
+        let admitted = admission.admits_row(&name);
         if let Some(source) = existing_file_source(
             name,
             path.clone(),
@@ -370,6 +359,61 @@ pub fn continuity_sources(
             }),
     );
     sources
+}
+
+/// Maps an instruction file to the Context Ledger row that governs it, together with the
+/// reason shown beside that row. Admission and the ledger listing must agree on this
+/// naming or a row would govern a file the model never sees, or miss one it does.
+///
+/// Project docs are grouped by where they are, not by what they are called. Codex reaches
+/// the same instructions through `AGENTS.md`, `AGENTS.override.md`, and any configured
+/// `project_doc_fallback_filenames`; giving each filename its own row would mean rows that
+/// `set_continuity_source_admitted` cannot switch, so an override file could be listed and
+/// never admitted.
+fn instruction_source_row(path: &Path, cwd: &Path) -> (String, &'static str) {
+    let is_dev_source = path.to_string_lossy().contains("skills/dev")
+        || path.to_string_lossy().contains("/dev/")
+        || path
+            .parent()
+            .is_some_and(|dir| dir.ends_with("skills/dev") || dir.ends_with("dev"));
+    if is_dev_source {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        (
+            format!("{DEV_SOURCE_PREFIX}{file_name}"),
+            "configured development rules",
+        )
+    } else if path.starts_with(cwd) {
+        (PROJECT_RULES.to_string(), "applicable project rules")
+    } else {
+        (GLOBAL_RULES.to_string(), "applicable global rules")
+    }
+}
+
+/// Whether the Context Ledger currently admits this instruction file into model context.
+///
+/// This is the single authority. The native instruction path used to assemble global and
+/// project AGENTS.md without consulting the ledger at all, which left those two rows
+/// decorative: switching them off changed the display and nothing else.
+///
+/// A host with no Elpis context storage has no ledger to consult, so the gate stays open
+/// rather than silently swallowing every instruction file.
+pub fn instruction_source_admitted(memories_root: Option<&Path>, cwd: &Path, path: &Path) -> bool {
+    let Some(workspace_dir) = workspace_context_dir(memories_root, cwd) else {
+        return true;
+    };
+    let (name, _) = instruction_source_row(path, cwd);
+    read_admission(&workspace_dir).admits_row(&name)
+}
+
+/// Cheap identity of the stored admission state, used to invalidate cached instruction
+/// assembly so a toggle takes effect on the very next request instead of the next time
+/// the environment selection happens to change.
+pub fn admission_fingerprint(memories_root: Option<&Path>, cwd: &Path) -> Option<String> {
+    let workspace_dir = workspace_context_dir(memories_root, cwd)?;
+    std::fs::read_to_string(workspace_dir.join(ADMISSION_FILE)).ok()
 }
 
 fn existing_file_source(
@@ -678,6 +722,15 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// Admission is off until asked for, so a test that is about what reaches the model
+    /// has to say which rows it turned on. That is the point of the default.
+    fn admit_all(memories_root: Option<&Path>, cwd: &Path, names: &[&str]) -> std::io::Result<()> {
+        for name in names {
+            set_continuity_source_admitted(memories_root, cwd, name, true)?;
+        }
+        Ok(())
+    }
+
     #[test]
     fn workspace_path_is_stable_readable_and_path_specific() {
         let memories = Path::new("/tmp/home/.elpis/memories");
@@ -798,6 +851,119 @@ mod tests {
         Ok(())
     }
 
+    /// A file on disk is not consent. Nothing optional may reach the model until the
+    /// Context Ledger admits it, so a fresh workspace starts with every row switched off
+    /// while still listing every row so it can be switched on.
+    #[tokio::test]
+    async fn optional_sources_are_listed_but_not_admitted_on_a_fresh_workspace()
+    -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("projects/Elpis");
+        let dev = home.path().join(".elpis/skills/dev");
+        let workspace = workspace_context_dir(Some(&memories), &cwd).expect("workspace path");
+        let global = home.path().join("global/AGENTS.md");
+        std::fs::create_dir_all(&memories)?;
+        std::fs::create_dir_all(&cwd)?;
+        std::fs::create_dir_all(&dev)?;
+        std::fs::create_dir_all(&workspace)?;
+        std::fs::create_dir_all(global.parent().expect("global parent"))?;
+        std::fs::write(&global, "Global rule")?;
+        std::fs::write(cwd.join("AGENTS.md"), "Project rule")?;
+        std::fs::write(dev.join("SKILL.md"), "Dev rule")?;
+        std::fs::write(workspace.join("GOAL.md"), "Ship it")?;
+        std::fs::write(workspace.join("ES.md"), "Checkpoint")?;
+        std::fs::write(memories.join("MEMORY.md"), "Durable memory")?;
+
+        let project = cwd.join("AGENTS.md");
+        let instructions = vec![global.clone(), project.clone()];
+        let sources = continuity_sources(Some(&memories), &cwd, &instructions);
+        for name in [
+            GLOBAL_RULES,
+            PROJECT_RULES,
+            "dev/SKILL.md",
+            "GOAL.md",
+            "ES.md",
+            "MEMORY.md",
+        ] {
+            let source = sources
+                .iter()
+                .find(|source| source.name == name)
+                .unwrap_or_else(|| panic!("{name} must stay listed so it can be switched on"));
+            assert!(!source.admitted, "{name} must default to off");
+            assert!(source.selectable, "{name} must stay switchable");
+        }
+        assert_eq!(
+            build_continuity_prompt(Some(&memories), &cwd).await,
+            None,
+            "nothing may be injected before the ledger admits it"
+        );
+        Ok(())
+    }
+
+    /// The ledger is the only authority over instruction files. Global and project
+    /// AGENTS.md ride a native instruction path that used to ignore admission entirely,
+    /// so their rows have to answer this question the same way every other row does.
+    #[test]
+    fn instruction_admission_tracks_the_ledger_through_repeated_toggles() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("projects/Elpis");
+        let dev = home.path().join(".elpis/skills/dev");
+        let global = home.path().join("global/AGENTS.md");
+        std::fs::create_dir_all(&memories)?;
+        std::fs::create_dir_all(&cwd)?;
+        std::fs::create_dir_all(&dev)?;
+        std::fs::create_dir_all(global.parent().expect("global parent"))?;
+        std::fs::write(&global, "Global rule")?;
+        std::fs::write(cwd.join("AGENTS.md"), "Project rule")?;
+        let project = cwd.join("AGENTS.md");
+
+        assert!(!instruction_source_admitted(Some(&memories), &cwd, &global));
+        assert!(!instruction_source_admitted(
+            Some(&memories),
+            &cwd,
+            &project
+        ));
+
+        for expected in [true, false, true] {
+            set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, expected)?;
+            set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, expected)?;
+            assert_eq!(
+                instruction_source_admitted(Some(&memories), &cwd, &global),
+                expected
+            );
+            assert_eq!(
+                instruction_source_admitted(Some(&memories), &cwd, &project),
+                expected
+            );
+        }
+
+        // A host without Elpis context storage has no ledger to consult, so the gate
+        // must stay open rather than silently swallowing every instruction file.
+        assert!(instruction_source_admitted(None, &cwd, &project));
+        Ok(())
+    }
+
+    /// Instruction assembly caches its discovery per turn. A live toggle has to invalidate
+    /// that cache, so the ledger's state needs a cheap fingerprint that changes with it.
+    #[test]
+    fn admission_fingerprint_changes_when_a_row_is_toggled() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("projects/Elpis");
+        std::fs::create_dir_all(&memories)?;
+        std::fs::create_dir_all(&cwd)?;
+
+        let before = admission_fingerprint(Some(&memories), &cwd);
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, true)?;
+        let after = admission_fingerprint(Some(&memories), &cwd);
+        assert_ne!(before, after, "a toggle must invalidate cached assembly");
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, false)?;
+        assert_ne!(after, admission_fingerprint(Some(&memories), &cwd));
+        Ok(())
+    }
+
     #[tokio::test]
     async fn prompt_loads_only_portable_goal_and_checkpoint() -> anyhow::Result<()> {
         let home = tempdir()?;
@@ -808,6 +974,7 @@ mod tests {
         tokio::fs::write(workspace.join("GOAL.md"), "Ship Elpis").await?;
         tokio::fs::write(workspace.join("ES.md"), "Next: visible context").await?;
         tokio::fs::write(workspace.join("raw.log"), "must not load").await?;
+        admit_all(Some(&memories), cwd, &["GOAL.md", "ES.md"])?;
 
         let prompt = build_continuity_prompt(Some(&memories), cwd)
             .await
@@ -827,6 +994,7 @@ mod tests {
         tokio::fs::create_dir_all(&workspace).await?;
         tokio::fs::write(workspace.join("GOAL.md"), "Ship the ledger").await?;
         tokio::fs::write(workspace.join("ES.md"), "Keep the checkpoint").await?;
+        admit_all(Some(&memories), cwd, &["GOAL.md", "ES.md"])?;
 
         set_continuity_source_admitted(Some(&memories), cwd, "ES.md", false)?;
         let prompt = build_continuity_prompt(Some(&memories), cwd)
@@ -922,6 +1090,11 @@ mod tests {
             dev.join("AGENTS.md"),
             dev.join("SKILL.md"),
         ];
+        admit_all(
+            Some(&memories),
+            &cwd,
+            &[GLOBAL_RULES, PROJECT_RULES, "dev/AGENTS.md", "dev/SKILL.md"],
+        )?;
         let sources = continuity_sources(Some(&memories), &cwd, &instructions);
         assert!(
             sources
@@ -969,7 +1142,7 @@ mod tests {
     /// The regression this guards: the app server's `instruction_source_paths` only ever
     /// contains global/project AGENTS.md, never `skills/dev/*.md` — so passing the
     /// server's real (dev-less) list must still surface dev rules, both in the ledger and
-    /// in the injected prompt. Dev rules are on by default; the ledger turns them off.
+    /// in the injected prompt once the ledger admits them.
     #[tokio::test]
     async fn dev_rules_are_discovered_even_when_server_omits_them() -> anyhow::Result<()> {
         let home = tempdir()?;
@@ -987,15 +1160,17 @@ mod tests {
             .iter()
             .find(|source| source.path == dev.join("AGENTS.md"))
             .unwrap_or_else(|| panic!("dev file missing from ledger sources: {sources:?}"));
-        assert!(dev_source.admitted, "dev rules must default to on");
+        assert!(!dev_source.admitted, "dev rules must default to off");
 
+        let dev_source_name = dev_source.name.clone();
+        admit_all(Some(&memories), &cwd, &[&dev_source_name])?;
         let prompt = build_continuity_prompt(Some(&memories), &cwd)
             .await
             .expect("dev rule should be injected since the server never sends it");
         assert!(prompt.contains("Dev rule"));
 
         // ...and the ledger can still switch an individual dev file off.
-        set_continuity_source_admitted(Some(&memories), &cwd, &dev_source.name, false)?;
+        set_continuity_source_admitted(Some(&memories), &cwd, &dev_source_name, false)?;
         assert!(
             !build_continuity_prompt(Some(&memories), &cwd)
                 .await
@@ -1032,6 +1207,7 @@ mod tests {
         assert_eq!(dev_sources[0].name, "dev/AGENTS.md");
         assert_eq!(dev_sources[0].path, home_dev.join("AGENTS.md"));
 
+        admit_all(Some(&memories), &cwd, &["dev/AGENTS.md"])?;
         let prompt = build_continuity_prompt(Some(&memories), &cwd)
             .await
             .expect("installed dev rule should be admitted");
@@ -1131,6 +1307,7 @@ mod tests {
             &goal,
             "# Elpis Goal\n\n- Status: active\n\n## Objective\n\nShip it.\n",
         )?;
+        admit_all(Some(&memories), &cwd, &["GOAL.md"])?;
         let active = continuity_sources(Some(&memories), &cwd, &[]);
         let active_goal = active
             .iter()

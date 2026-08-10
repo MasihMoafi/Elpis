@@ -3677,6 +3677,7 @@ mod tests {
 
         let info = TokenUsageInfo {
             total_token_usage: TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 100,
                 cached_input_tokens: 25,
                 output_tokens: 50,
@@ -3684,6 +3685,7 @@ mod tests {
                 total_tokens: 200,
             },
             last_token_usage: TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 10,
                 cached_input_tokens: 5,
                 output_tokens: 7,

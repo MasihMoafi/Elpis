@@ -131,12 +131,17 @@ struct ResponseCompletedUsage {
 
 impl From<ResponseCompletedUsage> for TokenUsage {
     fn from(val: ResponseCompletedUsage) -> Self {
+        let input_tokens_details = val.input_tokens_details;
         TokenUsage {
             input_tokens: val.input_tokens,
-            cached_input_tokens: val
-                .input_tokens_details
+            cached_input_tokens: input_tokens_details
+                .as_ref()
                 .map(|d| d.cached_tokens)
                 .unwrap_or(0),
+            // Left as `None` when the provider did not report the field at all, so a model
+            // that does not support cache-write accounting stays distinguishable from one
+            // that reported a genuine zero.
+            cache_write_tokens: input_tokens_details.and_then(|d| d.cache_write_tokens),
             output_tokens: val.output_tokens,
             reasoning_output_tokens: val
                 .output_tokens_details
@@ -150,6 +155,9 @@ impl From<ResponseCompletedUsage> for TokenUsage {
 #[derive(Debug, Deserialize)]
 struct ResponseCompletedInputTokensDetails {
     cached_tokens: i64,
+    /// Reported by GPT-5.6 and later; absent everywhere else.
+    #[serde(default)]
+    cache_write_tokens: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1631,4 +1639,57 @@ mod tests {
     }
 
     const CYBER_RESTRICTED_MODEL_FOR_TESTS: &str = "gpt-5.3-codex";
+
+    fn usage_from_details(input_tokens_details: serde_json::Value) -> TokenUsage {
+        let usage: ResponseCompletedUsage = serde_json::from_value(json!({
+            "input_tokens": 1_200,
+            "input_tokens_details": input_tokens_details,
+            "output_tokens": 30,
+            "output_tokens_details": {"reasoning_tokens": 10},
+            "total_tokens": 1_230,
+        }))
+        .expect("usage should deserialize");
+        usage.into()
+    }
+
+    #[test]
+    fn gpt_5_6_cache_write_tokens_are_parsed_not_inferred() {
+        let usage = usage_from_details(json!({
+            "cached_tokens": 1_024,
+            "cache_write_tokens": 176,
+        }));
+
+        assert_eq!(usage.cached_input_tokens, 1_024);
+        assert_eq!(usage.cache_write_tokens, Some(176));
+        // `input_tokens` is the provider's total input and already contains both
+        // breakdowns; nothing here may add them back on top of it.
+        assert_eq!(usage.input_tokens, 1_200);
+        assert_eq!(usage.total_tokens, 1_230);
+    }
+
+    #[test]
+    fn a_provider_that_omits_cache_write_tokens_reports_none_not_zero() {
+        let usage = usage_from_details(json!({"cached_tokens": 512}));
+
+        assert_eq!(usage.cached_input_tokens, 512);
+        assert_eq!(usage.cache_write_tokens, None);
+    }
+
+    #[test]
+    fn a_reported_zero_stays_distinguishable_from_an_absent_field() {
+        let usage = usage_from_details(json!({
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+        }));
+
+        assert_eq!(usage.cache_write_tokens, Some(0));
+    }
+
+    #[test]
+    fn usage_without_input_token_details_still_parses() {
+        let usage = usage_from_details(json!(null));
+
+        assert_eq!(usage.cached_input_tokens, 0);
+        assert_eq!(usage.cache_write_tokens, None);
+    }
 }

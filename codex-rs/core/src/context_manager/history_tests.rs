@@ -161,6 +161,131 @@ fn world_state_reconciles_matching_legacy_history_once() {
     assert_eq!(rollout_item, None);
 }
 
+fn agents_md_world_state(instructions: Option<&str>) -> WorldState {
+    let mut state = WorldState::default();
+    match instructions {
+        Some(text) => {
+            let loaded = crate::agents_md::LoadedAgentsMd::from_text_for_testing(text);
+            state.add_section(crate::context::world_state::AgentsMdState::new(Some(
+                &loaded,
+            )));
+        }
+        None => state.add_section(crate::context::world_state::AgentsMdState::default()),
+    }
+    state
+}
+
+/// Applies one turn's world-state update the way the session does: render the diff, then
+/// record whatever it produced into model-visible history. Returns the fragment count.
+fn apply_world_state(history: &mut ContextManager, world_state: &WorldState) -> usize {
+    let (fragments, _) = history.update_world_state(world_state);
+    let emitted = fragments.len();
+    let items = crate::context_manager::updates::merge_contextual_fragments(fragments);
+    history.record_items(items.iter(), TruncationPolicy::Tokens(10_000));
+    emitted
+}
+
+fn history_texts(history: &ContextManager) -> Vec<String> {
+    history
+        .raw_items()
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { content, .. } => Some(content),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|content| match content {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                Some(text.clone())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn instruction_copies(history: &ContextManager) -> usize {
+    history_texts(history)
+        .iter()
+        .filter(|text| UserInstructions::matches_text(text))
+        .count()
+}
+
+fn instruction_lifecycle_notices(history: &ContextManager) -> usize {
+    history_texts(history)
+        .iter()
+        .filter(|text| {
+            text.contains("replace all previously provided") || text.contains("no longer apply")
+        })
+        .count()
+}
+
+/// The observed failure: repeated history rewrites stacked AGENTS.md copy after copy into
+/// the same request, each one prefixed with a replacement notice. Pruning manages
+/// conversational context; it must not own the instruction lifecycle.
+#[test]
+fn repeated_history_rewrites_keep_exactly_one_instruction_copy() {
+    let mut history = ContextManager::new();
+    assert_eq!(
+        apply_world_state(&mut history, &agents_md_world_state(Some("project rule"))),
+        1
+    );
+    assert_eq!(instruction_copies(&history), 1);
+
+    for pass in 0..3 {
+        // Every rewrite path -- context pruning, rollback, end-of-turn reasoning expiry --
+        // replaces history and clears the baseline while the fragment itself survives.
+        let retained = history.raw_items().to_vec();
+        history.replace(retained);
+        assert_eq!(
+            apply_world_state(&mut history, &agents_md_world_state(Some("project rule"))),
+            0,
+            "rewrite {pass} resupplied unchanged instructions"
+        );
+        assert_eq!(
+            instruction_copies(&history),
+            1,
+            "rewrite {pass} left a duplicate instruction copy"
+        );
+    }
+    assert_eq!(
+        instruction_lifecycle_notices(&history),
+        0,
+        "pruning must not generate AGENTS.md replacement/removal messages"
+    );
+}
+
+/// Off means absent. An earlier appended copy must not survive to keep the instruction
+/// active, and switching the row back on must restore exactly one copy.
+#[test]
+fn withdrawing_instructions_removes_the_earlier_copy_from_history() {
+    let mut history = ContextManager::new();
+    apply_world_state(&mut history, &agents_md_world_state(Some("project rule")));
+    assert_eq!(instruction_copies(&history), 1);
+
+    assert_eq!(
+        apply_world_state(&mut history, &agents_md_world_state(None)),
+        0
+    );
+    assert_eq!(
+        instruction_copies(&history),
+        0,
+        "a withdrawn instruction source must not remain in model-visible history"
+    );
+    assert!(
+        !history_texts(&history)
+            .iter()
+            .any(|text| text.contains("project rule")),
+        "withdrawn instruction text must be gone, not merely superseded"
+    );
+
+    assert_eq!(
+        apply_world_state(&mut history, &agents_md_world_state(Some("project rule"))),
+        1
+    );
+    assert_eq!(instruction_copies(&history), 1);
+    assert_eq!(instruction_lifecycle_notices(&history), 0);
+}
+
 fn user_msg(text: &str) -> ResponseItem {
     ResponseItem::Message {
         id: None,

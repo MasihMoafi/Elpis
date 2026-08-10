@@ -891,3 +891,99 @@ async fn non_chatgpt_codex_endpoints_omit_attestation_generation() {
     );
     assert_eq!(attestation_calls.load(Ordering::Relaxed), 0);
 }
+
+fn prune_metadata(session_id: &str) -> CodexResponsesMetadata {
+    CodexResponsesMetadata {
+        request_kind: Some(crate::responses_metadata::CodexResponsesRequestKind::ContextPrune),
+        ..CodexResponsesMetadata::new(
+            TEST_INSTALLATION_ID.to_string(),
+            session_id.to_string(),
+            "thread-1".to_string(),
+            "window-1".to_string(),
+        )
+    }
+}
+
+fn memory_metadata(session_id: &str) -> CodexResponsesMetadata {
+    CodexResponsesMetadata {
+        request_kind: Some(crate::responses_metadata::CodexResponsesRequestKind::Memory),
+        ..CodexResponsesMetadata::new(
+            TEST_INSTALLATION_ID.to_string(),
+            session_id.to_string(),
+            "thread-1".to_string(),
+            "window-1".to_string(),
+        )
+    }
+}
+
+fn turn_metadata(session_id: &str, turn_id: &str) -> CodexResponsesMetadata {
+    test_responses_metadata(
+        TEST_INSTALLATION_ID,
+        session_id,
+        "thread-1",
+        Some(turn_id),
+        "window-1".to_string(),
+        &SessionSource::Cli,
+        /*parent_thread_id*/ None,
+        TestCodexResponsesRequestKind::Turn,
+    )
+}
+
+#[test]
+fn the_turn_cache_key_is_the_session_id_and_never_moves_within_a_session() {
+    let client = test_model_client(SessionSource::Cli);
+
+    // Turn 1, then a later turn after pruning has rewritten history. Only `turn_id` and
+    // the history differ; the key must not.
+    let first = client.prompt_cache_key(&turn_metadata("session-1", "turn-1"));
+    let after_pruning = client.prompt_cache_key(&turn_metadata("session-1", "turn-9"));
+
+    assert_eq!(first, "session-1");
+    assert_eq!(first, after_pruning);
+}
+
+#[test]
+fn background_pruning_calls_do_not_share_the_turn_cache_slot() {
+    let client = test_model_client(SessionSource::Cli);
+
+    let turn = client.prompt_cache_key(&turn_metadata("session-1", "turn-1"));
+    let prune = client.prompt_cache_key(&prune_metadata("session-1"));
+
+    assert_ne!(turn, prune);
+    assert_eq!(prune, "session-1:context-prune");
+    // Still stable: every pruning pass in this session reuses the one key.
+    assert_eq!(prune, client.prompt_cache_key(&prune_metadata("session-1")));
+}
+
+#[test]
+fn background_memory_and_pruning_calls_keep_separate_stable_namespaces() {
+    let client = test_model_client(SessionSource::Cli);
+
+    let turn = client.prompt_cache_key(&turn_metadata("session-1", "turn-1"));
+    let prune = client.prompt_cache_key(&prune_metadata("session-1"));
+    let memory = client.prompt_cache_key(&memory_metadata("session-1"));
+
+    assert_eq!(turn, "session-1");
+    assert_eq!(prune, "session-1:context-prune");
+    assert_eq!(memory, "session-1:memory");
+    assert_ne!(prune, memory);
+    assert_eq!(
+        memory,
+        client.prompt_cache_key(&memory_metadata("session-1"))
+    );
+}
+
+#[test]
+fn a_prompt_cache_key_override_still_wins_for_every_request_kind() {
+    let client = test_model_client(SessionSource::Cli)
+        .with_prompt_cache_key_override(Some("review-key".to_string()));
+
+    assert_eq!(
+        client.prompt_cache_key(&turn_metadata("session-1", "turn-1")),
+        "review-key"
+    );
+    assert_eq!(
+        client.prompt_cache_key(&prune_metadata("session-1")),
+        "review-key"
+    );
+}

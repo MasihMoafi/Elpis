@@ -885,7 +885,8 @@ async fn send_websocket_request(
 }
 
 fn serialize_websocket_request(request: &ResponsesWsRequest) -> Result<String, ApiError> {
-    serde_json::to_string(request)
+    crate::common::encode_responses_ws_request(request)
+        .and_then(|value| serde_json::to_string(&value))
         .map_err(|err| ApiError::Stream(format!("failed to encode websocket request: {err}")))
 }
 
@@ -903,6 +904,8 @@ mod tests {
     #[test]
     fn direct_serialization_preserves_websocket_request_payload() {
         let request = ResponsesWsRequest::ResponseCreate(ResponseCreateWsRequest {
+            prompt_cache_options: None,
+            prompt_cache_breakpoints: Vec::new(),
             model: "gpt-test".to_string(),
             instructions: "Use the available tools.".to_string(),
             previous_response_id: Some("resp-1".to_string()),

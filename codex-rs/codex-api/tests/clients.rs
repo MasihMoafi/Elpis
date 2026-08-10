@@ -307,6 +307,8 @@ async fn responses_client_stream_request_preserves_item_ids() -> Result<()> {
     let transport = RecordingTransport::new(state.clone());
     let client = ResponsesClient::new(transport, provider("openai"), Arc::new(NoAuth));
     let request = ResponsesApiRequest {
+        prompt_cache_options: None,
+        prompt_cache_breakpoints: Vec::new(),
         model: "gpt-test".into(),
         instructions: "Say hi".into(),
         input: vec![ResponseItem::Message {
@@ -400,6 +402,8 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
     provider.retry.max_attempts = 2;
 
     let request = ResponsesApiRequest {
+        prompt_cache_options: None,
+        prompt_cache_breakpoints: Vec::new(),
         model: "gpt-test".into(),
         instructions: "Say hi".into(),
         input: Vec::new(),
@@ -514,6 +518,8 @@ async fn azure_store_sends_ids_and_headers() -> Result<()> {
     let client = ResponsesClient::new(transport, provider("azure"), Arc::new(NoAuth));
 
     let request = ResponsesApiRequest {
+        prompt_cache_options: None,
+        prompt_cache_breakpoints: Vec::new(),
         model: "gpt-test".into(),
         instructions: "Say hi".into(),
         input: vec![ResponseItem::Message {

@@ -347,6 +347,7 @@ mod tests {
             had_prior_review_context: Some(true),
             reviewed_action_truncated: true,
             token_usage: Some(TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 10,
                 cached_input_tokens: 4,
                 output_tokens: 3,

@@ -133,6 +133,9 @@ pub enum Feature {
     DeferredExecutor,
     /// Enable runtime metrics snapshots via a manual reader.
     RuntimeMetrics,
+    /// Send `prompt_cache_options`/`prompt_cache_breakpoint` on GPT-5.6+ requests instead
+    /// of leaving the server on its implicit breakpoint. See `docs/prompt-caching.md`.
+    ExplicitPromptCache,
     /// Route user turns between the configured Sol, Terra, and Luna models.
     AutomaticModelRouting,
     /// Compress cold local thread-store rollout files.
@@ -916,6 +919,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::RuntimeMetrics,
         key: "runtime_metrics",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ExplicitPromptCache,
+        key: "explicit_prompt_cache",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

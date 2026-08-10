@@ -135,6 +135,21 @@ impl CodexResponsesRequestKind {
             CodexResponsesRequestKind::Memory | CodexResponsesRequestKind::ContextPrune
         )
     }
+
+    /// Suffix that separates this kind's `prompt_cache_key` from the turn loop's.
+    ///
+    /// `None` means "share the session key". Only background calls that send a prefix
+    /// unrelated to the conversation get their own namespace; anything on the turn path
+    /// must keep the plain session id so its prefix keeps matching across turns.
+    pub(crate) fn cache_namespace(self) -> Option<&'static str> {
+        match self {
+            CodexResponsesRequestKind::Turn
+            | CodexResponsesRequestKind::Prewarm
+            | CodexResponsesRequestKind::Compaction(_) => None,
+            CodexResponsesRequestKind::Memory => Some("memory"),
+            CodexResponsesRequestKind::ContextPrune => Some("context-prune"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Default)]

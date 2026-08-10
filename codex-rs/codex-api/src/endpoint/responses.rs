@@ -81,7 +81,8 @@ impl<T: HttpTransport> ResponsesClient<T> {
             turn_state,
         } = options;
 
-        let body = EncodedJsonBody::encode(&request)
+        let body = crate::common::encode_responses_request(&request)
+            .and_then(|value| EncodedJsonBody::encode(&value))
             .map_err(|e| ApiError::Stream(format!("failed to encode responses request: {e}")))?;
 
         let mut headers = extra_headers;

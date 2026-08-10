@@ -70,6 +70,7 @@ mod hooks_mcp;
 mod image_rollout;
 mod items;
 mod json_result;
+mod ledger_admission;
 mod live_cli;
 mod mcp_auth_elicitation;
 mod mcp_auth_refresh;

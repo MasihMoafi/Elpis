@@ -22,6 +22,26 @@ const OLD_CALL_ID: &str = "old-pressure-output";
 const CURRENT_CALL_ID: &str = "current-turn-output";
 const GLOBAL_INSTRUCTIONS: &str = "global instructions for the prune/AGENTS.md regression test";
 
+/// Pins the thread to one workspace and admits the global AGENTS.md row there, so build
+/// and resume address the same Context Ledger entry.
+fn pin_workspace_and_admit_global_rules(
+    workspace: Arc<TempDir>,
+) -> impl FnOnce(&mut codex_core::config::Config) + Send + 'static {
+    move |config| {
+        config.cwd = codex_utils_absolute_path::AbsolutePathBuf::try_from(
+            workspace.path().to_path_buf(),
+        )
+        .expect("absolute workspace path");
+        codex_core::elpis_context::set_continuity_source_admitted(
+            Some(config.memory_dir.as_path()),
+            config.cwd.as_path(),
+            "Global AGENTS.md",
+            true,
+        )
+        .expect("admit AGENTS.md in the ledger");
+    }
+}
+
 fn shell_arguments(command: &str) -> String {
     serde_json::to_string(&json!({
         "command": command,
@@ -214,7 +234,13 @@ async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() 
     // would fail and consume a response meant for a later request in the sequence).
     // Only the manual `/prune` path under test should run here.
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_home(Arc::clone(&home)).with_model(MAIN_MODEL);
+    // The Context Ledger governs AGENTS.md and is keyed per workspace, so this pins the
+    // workspace across build and resume and admits the row the assertions are about.
+    let workspace = Arc::new(TempDir::new()?);
+    let mut builder = test_codex()
+        .with_home(Arc::clone(&home))
+        .with_model(MAIN_MODEL)
+        .with_config(pin_workspace_and_admit_global_rules(Arc::clone(&workspace)));
     let initial = builder.build(&server).await?;
 
     let call_ids = ["prune-target-1", "prune-target-2", "prune-target-3"];
@@ -281,6 +307,8 @@ async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() 
         .expect("rollout path");
     drop(initial);
 
+    let mut builder =
+        builder.with_config(pin_workspace_and_admit_global_rules(Arc::clone(&workspace)));
     let resumed = builder.resume(&server, home, rollout_path).await?;
     resumed.submit_turn("continue after resuming").await?;
 

@@ -313,6 +313,12 @@ impl Default for GoalAccountingState {
 
 fn token_delta_since_last_accounting(last: &TokenUsage, current: &TokenUsage) -> i64 {
     let delta = TokenUsage {
+        // Not part of `goal_token_delta_for_usage`; carried so the delta stays a faithful
+        // element-wise difference rather than silently dropping a reported field.
+        cache_write_tokens: match (last.cache_write_tokens, current.cache_write_tokens) {
+            (None, None) => None,
+            (last, current) => Some(current.unwrap_or(0).saturating_sub(last.unwrap_or(0))),
+        },
         input_tokens: current.input_tokens.saturating_sub(last.input_tokens),
         cached_input_tokens: current
             .cached_input_tokens

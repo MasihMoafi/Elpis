@@ -628,6 +628,19 @@ async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (S
     (next_main_request, rollout)
 }
 
+
+/// The Context Ledger admits nothing until asked, so a test about AGENTS.md surviving
+/// compaction has to say so. Apply last in a builder chain: admission is keyed to the cwd.
+fn admit_global_agents_md(config: &mut codex_core::config::Config) {
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(config.memory_dir.as_path()),
+        config.cwd.as_path(),
+        "Global AGENTS.md",
+        true,
+    )
+    .expect("admit AGENTS.md in the ledger");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn compact_preservation_control_without_compaction_keeps_all_markers() {
     skip_if_no_network!();
@@ -5474,7 +5487,8 @@ async fn manual_compaction_keeps_the_creation_time_global_instructions() -> Resu
         .with_home(Arc::clone(&home))
         .with_config(move |config| {
             config.model_provider = provider;
-        });
+        })
+        .with_config(admit_global_agents_md);
     let test = builder.build(&server).await?;
 
     // Assert the pre-compaction source list points at the creation-time file.
@@ -5554,7 +5568,8 @@ async fn mid_turn_compaction_keeps_the_creation_time_global_instructions() -> Re
             config.model_provider = provider;
             config.model_context_window = Some(100);
             config.model_auto_compact_token_limit = Some(90);
-        });
+        })
+        .with_config(admit_global_agents_md);
     let test = builder.build(&server).await?;
 
     // Assert the pre-compaction source list points at the creation-time file.
@@ -5626,7 +5641,8 @@ async fn remote_v2_compaction_keeps_creation_time_instructions_after_same_path_m
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             let _ = config.features.enable(Feature::RemoteCompactionV2);
-        });
+        })
+        .with_config(admit_global_agents_md);
     let test = builder.build(&server).await?;
 
     // Materialize the old snapshot, rewrite the selected file in place, and compact remotely.
@@ -5697,27 +5713,54 @@ async fn remote_v2_compaction_keeps_creation_time_instructions_after_same_path_m
         .submit_turn("after remote v2 compaction cold resume")
         .await?;
 
-    // Cold resume replays the persisted old context, then appends the newly loaded instructions as
-    // an explicit replacement.
+    // Cold resume replays the persisted context and refills the instruction slot in place:
+    // the newly loaded text appears once, and the superseded text is gone rather than left
+    // in the request behind a note telling the model to disregard it.
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 4);
-    let replacement_fragment = expected_instruction_fragment(&format!(
-        "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{NEW_GLOBAL_INSTRUCTIONS}"
-    ));
+    let replacement_fragment = expected_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
     assert_eq!(
         instruction_fragments(&requests[3]),
-        vec![old_fragment.clone(), replacement_fragment]
+        vec![replacement_fragment]
     );
+    assert!(
+        !requests[3].body_contains_text(OLD_GLOBAL_INSTRUCTIONS),
+        "the superseded instruction text must not survive cold resume"
+    );
+    // The conversation itself is still replayed verbatim; only the instruction slot moved.
     let resumed_input = requests[3].input();
+    // Strip the instruction fragment at content-item granularity, the same way the
+    // instruction slot is maintained: it shares a message with `environment_context`, so
+    // dropping whole messages would also drop context the resumed request still carries.
+    let instruction_free = |items: &[serde_json::Value]| -> Vec<serde_json::Value> {
+        items
+            .iter()
+            .cloned()
+            .filter_map(|mut item| {
+                let Some(content) = item.get_mut("content").and_then(|c| c.as_array_mut()) else {
+                    return Some(item);
+                };
+                content.retain(|entry| {
+                    !entry
+                        .get("text")
+                        .and_then(|text| text.as_str())
+                        .is_some_and(|text| text.starts_with("# AGENTS.md instructions"))
+                });
+                (!content.is_empty()).then_some(item)
+            })
+            .collect()
+    };
+    let replayed = instruction_free(&resumed_input);
+    let persisted = instruction_free(&replacement_history);
     assert_eq!(
-        resumed_input.get(..replacement_history.len()),
-        Some(replacement_history.as_slice()),
+        replayed.get(..persisted.len()),
+        Some(persisted.as_slice()),
         "remote-v2 cold resume should replay persisted replacement history verbatim"
     );
-    let post_compact_input = requests[2].input();
+    let post_compact = instruction_free(&requests[2].input());
     assert_eq!(
-        resumed_input.get(..post_compact_input.len()),
-        Some(post_compact_input.as_slice()),
+        replayed.get(..post_compact.len()),
+        Some(post_compact.as_slice()),
         "remote-v2 cold resume should replay the complete post-compaction structured prefix"
     );
     assert_eq!(

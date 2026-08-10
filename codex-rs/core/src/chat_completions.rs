@@ -854,6 +854,7 @@ fn gemini_usage(metadata: &Value) -> TokenUsage {
         .as_i64()
         .unwrap_or(input_tokens + output_tokens + reasoning_output_tokens);
     TokenUsage {
+        cache_write_tokens: None,
         input_tokens,
         cached_input_tokens,
         output_tokens,
@@ -869,6 +870,7 @@ fn token_usage(
     reasoning_output_tokens: i64,
 ) -> TokenUsage {
     TokenUsage {
+        cache_write_tokens: None,
         input_tokens,
         cached_input_tokens,
         output_tokens,
@@ -1084,6 +1086,7 @@ where
 
     let token_usage = if input_tokens > 0 || output_tokens > 0 {
         Some(TokenUsage {
+            cache_write_tokens: None,
             input_tokens,
             output_tokens,
             total_tokens: input_tokens + output_tokens,
@@ -1148,6 +1151,8 @@ mod tests {
 
     fn request() -> ResponsesApiRequest {
         ResponsesApiRequest {
+            prompt_cache_options: None,
+            prompt_cache_breakpoints: Vec::new(),
             model: "test-model".to_string(),
             instructions: "Be exact.".to_string(),
             input: vec![

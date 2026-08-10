@@ -2077,6 +2077,7 @@ async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Re
             "payload": serde_json::to_value(EventMsg::TokenCount(TokenCountEvent {
                 info: Some(TokenUsageInfo {
                     total_token_usage: TokenUsage {
+                        cache_write_tokens: None,
                         input_tokens: 180,
                         cached_input_tokens: 40,
                         output_tokens: 50,
@@ -2084,6 +2085,7 @@ async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Re
                         total_tokens: 230,
                     },
                     last_token_usage: TokenUsage {
+                        cache_write_tokens: None,
                         input_tokens: 90,
                         cached_input_tokens: 30,
                         output_tokens: 40,

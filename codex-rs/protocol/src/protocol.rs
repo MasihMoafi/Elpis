@@ -2044,10 +2044,19 @@ pub struct ThreadSettingsSnapshot {
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq, JsonSchema, TS)]
 pub struct TokenUsage {
+    /// Total input for the request. Per provider semantics this already contains both the
+    /// cached-read and cache-write portions; they are breakdowns of it, not additions to it.
     #[ts(type = "number")]
     pub input_tokens: i64,
     #[ts(type = "number")]
     pub cached_input_tokens: i64,
+    /// Input tokens written to the prompt cache by this request (GPT-5.6 and later).
+    ///
+    /// `None` means the provider did not report the field, which is not the same as a
+    /// reported zero -- keep the distinction when analysing cache behaviour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null", optional)]
+    pub cache_write_tokens: Option<i64>,
     #[ts(type = "number")]
     pub output_tokens: i64,
     #[ts(type = "number")]
@@ -2211,6 +2220,12 @@ impl TokenUsage {
         self.cached_input_tokens.max(0)
     }
 
+    /// Cache writes as a plain number, for display and arithmetic. Use the field itself
+    /// when "the provider never reported this" has to stay visible.
+    pub fn cache_write(&self) -> i64 {
+        self.cache_write_tokens.unwrap_or(0).max(0)
+    }
+
     pub fn non_cached_input(&self) -> i64 {
         (self.input_tokens - self.cached_input()).max(0)
     }
@@ -2248,9 +2263,16 @@ impl TokenUsage {
     }
 
     /// In-place element-wise sum of token counts.
+    ///
+    /// `cache_write_tokens` stays `None` only while neither side ever reported it; once one
+    /// request does, the running total is a number and further silent requests add nothing.
     pub fn add_assign(&mut self, other: &TokenUsage) {
         self.input_tokens += other.input_tokens;
         self.cached_input_tokens += other.cached_input_tokens;
+        self.cache_write_tokens = match (self.cache_write_tokens, other.cache_write_tokens) {
+            (None, None) => None,
+            (current, incoming) => Some(current.unwrap_or(0) + incoming.unwrap_or(0)),
+        };
         self.output_tokens += other.output_tokens;
         self.reasoning_output_tokens += other.reasoning_output_tokens;
         self.total_tokens += other.total_tokens;
@@ -6223,6 +6245,7 @@ mod tests {
             model_context_window: Some(258_400),
         });
         let last = Some(TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 10,
             cached_input_tokens: 0,
             output_tokens: 0,
@@ -6244,6 +6267,7 @@ mod tests {
             model_context_window: Some(258_400),
         });
         let last = Some(TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 10,
             cached_input_tokens: 0,
             output_tokens: 0,
@@ -6256,5 +6280,62 @@ mod tests {
                 .expect("new_or_append should return info");
 
         assert_eq!(info.model_context_window, Some(258_400));
+    }
+
+    fn usage(input: i64, cached: i64, cache_write: Option<i64>) -> TokenUsage {
+        TokenUsage {
+            input_tokens: input,
+            cached_input_tokens: cached,
+            cache_write_tokens: cache_write,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: input,
+        }
+    }
+
+    #[test]
+    fn cache_writes_accumulate_across_requests() {
+        let mut total = usage(1_000, 0, Some(900));
+        total.add_assign(&usage(2_000, 900, Some(1_100)));
+
+        assert_eq!(total.cache_write_tokens, Some(2_000));
+        assert_eq!(total.cache_write(), 2_000);
+        // The breakdowns are components of `input_tokens`, so summing them must not
+        // change how input itself accumulates.
+        assert_eq!(total.input_tokens, 3_000);
+        assert_eq!(total.cached_input_tokens, 900);
+        assert_eq!(total.non_cached_input(), 2_100);
+    }
+
+    #[test]
+    fn a_session_that_never_saw_the_field_keeps_reporting_none() {
+        let mut total = usage(1_000, 0, None);
+        total.add_assign(&usage(2_000, 500, None));
+
+        assert_eq!(total.cache_write_tokens, None);
+        assert_eq!(total.cache_write(), 0);
+    }
+
+    #[test]
+    fn one_reporting_request_makes_the_running_total_a_number() {
+        let mut total = usage(1_000, 0, None);
+        total.add_assign(&usage(2_000, 500, Some(700)));
+        total.add_assign(&usage(3_000, 900, None));
+
+        assert_eq!(total.cache_write_tokens, Some(700));
+    }
+
+    #[test]
+    fn usage_recorded_before_the_field_existed_still_deserializes() {
+        let usage: TokenUsage = serde_json::from_str(
+            r#"{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3,
+                "reasoning_output_tokens":1,"total_tokens":13}"#,
+        )
+        .expect("older rollout usage should deserialize");
+
+        assert_eq!(usage.cache_write_tokens, None);
+        // And a `None` must not add a null key back into new rollout records.
+        let round_tripped = serde_json::to_value(&usage).expect("usage should serialize");
+        assert_eq!(round_tripped.get("cache_write_tokens"), None);
     }
 }

@@ -189,6 +189,19 @@ fn assert_codex_client_metadata(
     );
 }
 
+
+/// The Context Ledger admits nothing until asked, so a test about AGENTS.md reaching the
+/// model has to say so. Apply last in a builder chain: admission is keyed to the final cwd.
+fn admit_global_agents_md(config: &mut codex_core::config::Config) {
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(config.memory_dir.as_path()),
+        config.cwd.as_path(),
+        "Global AGENTS.md",
+        true,
+    )
+    .expect("admit AGENTS.md in the ledger");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn openai_stateless_responses_requests_preserve_item_turn_metadata_across_turns() {
     let server = MockServer::start().await;
@@ -777,7 +790,8 @@ async fn resume_includes_initial_messages_and_sends_prior_items() {
         .with_home(codex_home.clone())
         .with_pre_build_hook(|home| {
             std::fs::write(home.join("AGENTS.md"), "be nice").expect("write global instructions");
-        });
+        })
+        .with_config(admit_global_agents_md);
     let test = builder
         .resume(&server, codex_home, session_path.clone())
         .await
@@ -1630,7 +1644,8 @@ async fn includes_user_instructions_message_in_request() {
         .with_auth(CodexAuth::from_api_key("Test API Key"))
         .with_pre_build_hook(|home| {
             std::fs::write(home.join("AGENTS.md"), "be nice").expect("write global instructions");
-        });
+        })
+        .with_config(admit_global_agents_md);
     let codex = builder
         .build(&server)
         .await
@@ -2925,7 +2940,8 @@ async fn includes_developer_instructions_message_in_request() {
         })
         .with_config(|config| {
             config.developer_instructions = Some("be useful".to_string());
-        });
+        })
+        .with_config(admit_global_agents_md);
     let codex = builder
         .build(&server)
         .await

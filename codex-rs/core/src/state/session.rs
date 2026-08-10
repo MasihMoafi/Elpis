@@ -55,9 +55,9 @@ pub(crate) struct SessionState {
     pub(crate) context_prune_consecutive_failures: u32,
     /// Earliest instant an automatic pruning pass may run again. `/prune` ignores it.
     pub(crate) context_prune_retry_after: Option<Instant>,
-    /// Budget for automatic Pressure-triggered Ace passes within the current pressure
-    /// crossing. See `crate::context_pruner::PressureEpisode`.
-    pub(crate) context_prune_pressure_episode: crate::context_pruner::PressureEpisode,
+    /// Hysteresis gate for automatic pruning: which phase of the 30% -> 20% -> regrow
+    /// cycle the session is in. See `crate::context_pruner::PruneCycle`.
+    pub(crate) context_prune_cycle: crate::context_pruner::PruneCycle,
 }
 
 impl SessionState {
@@ -92,7 +92,7 @@ impl SessionState {
             context_prune_saved_tokens: 0,
             context_prune_consecutive_failures: 0,
             context_prune_retry_after: None,
-            context_prune_pressure_episode: crate::context_pruner::PressureEpisode::default(),
+            context_prune_cycle: crate::context_pruner::PruneCycle::default(),
         }
     }
 
@@ -117,18 +117,33 @@ impl SessionState {
         self.context_prune_retry_after = None;
     }
 
-    pub(crate) fn context_prune_pressure_episode_passes(&self) -> u32 {
-        self.context_prune_pressure_episode.passes()
+    /// Feeds the latest measurement into the pruning hysteresis gate and reports whether
+    /// an automatic pass may run. A cooling cycle re-arms here, and only here, once use
+    /// has climbed back to the pressure trigger.
+    pub(crate) fn observe_context_prune_usage(
+        &mut self,
+        used_tokens: i64,
+        context_window: i64,
+    ) -> bool {
+        self.context_prune_cycle
+            .observe(used_tokens, context_window);
+        self.context_prune_cycle.may_run()
     }
 
-    /// Re-arms the pressure episode once active use is observed back under the
-    /// boundary. Called on every automatic pruning check, regardless of trigger.
-    pub(crate) fn observe_context_prune_pressure(&mut self, in_pressure: bool) {
-        self.context_prune_pressure_episode.observe(in_pressure);
+    pub(crate) fn record_context_prune_pass(&mut self) {
+        self.context_prune_cycle.record_pass();
     }
 
-    pub(crate) fn record_context_prune_pressure_pass(&mut self) {
-        self.context_prune_pressure_episode.record_pass();
+    /// Closes the running cycle: the target was reached, the budget is spent, or nothing
+    /// is left to reclaim. Blocks every further automatic pass until regrowth.
+    pub(crate) fn close_context_prune_cycle(&mut self) {
+        self.context_prune_cycle.close();
+    }
+
+    /// True when the closed cycle gave up while still in pressure, so pruning alone
+    /// cannot buy this session the headroom it needs.
+    pub(crate) fn context_prune_cycle_stalled(&self) -> bool {
+        self.context_prune_cycle.stalled_in_pressure()
     }
 
     // History helpers

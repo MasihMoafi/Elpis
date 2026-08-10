@@ -1439,6 +1439,7 @@ fn token_usage(
     total_tokens: i64,
 ) -> TokenUsage {
     TokenUsage {
+        cache_write_tokens: None,
         input_tokens,
         cached_input_tokens,
         output_tokens,

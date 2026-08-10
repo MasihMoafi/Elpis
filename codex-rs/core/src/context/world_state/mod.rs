@@ -16,6 +16,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Map;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fmt;
 
 pub(crate) use agents_md::AgentsMdState;
@@ -31,6 +32,12 @@ trait ErasedWorldStateSection: Send + Sync {
     fn has_retained_fragment_matcher(&self) -> bool;
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool;
+
+    fn snapshot_from_retained_fragment(&self, role: &str, text: &str) -> Option<Value>;
+
+    fn owns_single_history_slot(&self) -> bool;
+
+    fn has_model_visible_content(&self) -> bool;
 
     fn render_diff(
         &self,
@@ -72,6 +79,29 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {
         S::matches_retained_fragment(role, text)
+    }
+
+    fn snapshot_from_retained_fragment(&self, role: &str, text: &str) -> Option<Value> {
+        let snapshot = S::snapshot_from_retained_fragment(role, text)?;
+        let mut snapshot = serde_json::to_value(snapshot)
+            .inspect_err(|err| {
+                tracing::warn!(
+                    section_id = S::ID,
+                    %err,
+                    "failed to serialize world-state section snapshot recovered from history"
+                );
+            })
+            .ok()?;
+        remove_null_object_fields(&mut snapshot);
+        (!snapshot.is_null()).then_some(snapshot)
+    }
+
+    fn owns_single_history_slot(&self) -> bool {
+        S::owns_single_history_slot()
+    }
+
+    fn has_model_visible_content(&self) -> bool {
+        WorldStateSection::has_model_visible_content(self)
     }
 
     fn render_diff(
@@ -122,6 +152,20 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {
         self.0.matches_retained_fragment(role, text)
+    }
+
+    /// Extension-owned sections keep the conservative behaviour: without a way to recover
+    /// their state from a rendered fragment, a lost baseline stays unknown.
+    fn snapshot_from_retained_fragment(&self, _role: &str, _text: &str) -> Option<Value> {
+        None
+    }
+
+    fn owns_single_history_slot(&self) -> bool {
+        false
+    }
+
+    fn has_model_visible_content(&self) -> bool {
+        true
     }
 
     fn render_diff(
@@ -196,6 +240,41 @@ pub(crate) trait WorldStateSection: Send + Sync + 'static {
     /// Recognizes this section's rendered fragment in retained model history.
     fn matches_retained_fragment(_role: &str, _text: &str) -> bool {
         false
+    }
+
+    /// Recovers the previously model-visible snapshot from this section's own rendered
+    /// fragment in retained history.
+    ///
+    /// History is rewritten routinely -- context pruning, rollback, and the end-of-turn
+    /// reasoning expiry -- and each rewrite drops the persisted baseline while leaving the
+    /// rendered fragment in place. Without recovery those rewrites look like "the model
+    /// was told something, but we no longer know what", and the only safe answer is to say
+    /// it all again. Sections whose fragment carries their full state can answer exactly
+    /// instead, so an unchanged section stays byte-identical and provider-cacheable.
+    fn snapshot_from_retained_fragment(_role: &str, _text: &str) -> Option<Self::Snapshot>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
+    /// Whether this section owns exactly one slot in model-visible history.
+    ///
+    /// A single-slot section never accumulates: any earlier copy is removed before a new
+    /// one is appended, and the slot is vacated outright once the section has no content.
+    /// This is what makes withdrawal real rather than a note saying to ignore the copy
+    /// that is still sitting in the request.
+    fn owns_single_history_slot() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+
+    /// Whether this section currently has anything the model should see. Single-slot
+    /// sections that answer `false` have their retained fragment removed from history.
+    fn has_model_visible_content(&self) -> bool {
+        true
     }
 
     fn render_diff(
@@ -281,7 +360,7 @@ impl WorldState {
 
     /// Renders every section as new, without any known previous state.
     pub(crate) fn render_full(&self) -> Vec<Box<dyn ContextualUserFragment>> {
-        self.render_with(|_, _| PreviousSectionState::Absent)
+        drop_section_ids(self.render_with(|_, _| PreviousSectionState::Absent))
     }
 
     /// Renders each section against the exact persisted snapshot when available.
@@ -289,10 +368,10 @@ impl WorldState {
         &self,
         previous: &WorldStateSnapshot,
     ) -> Vec<Box<dyn ContextualUserFragment>> {
-        self.render_with(|id, _| match previous.sections.get(id) {
+        drop_section_ids(self.render_with(|id, _| match previous.sections.get(id) {
             Some(previous) => PreviousSectionState::Known(previous),
             None => PreviousSectionState::Absent,
-        })
+        }))
     }
 
     /// Falls back to retained model history when no exact persisted snapshot is available.
@@ -301,6 +380,32 @@ impl WorldState {
         previous: Option<&WorldStateSnapshot>,
         items: &[ResponseItem],
     ) -> Vec<Box<dyn ContextualUserFragment>> {
+        self.render_history_diff_with_ids(previous, items)
+            .into_iter()
+            .map(|(_, fragment)| fragment)
+            .collect()
+    }
+
+    /// Same as [`Self::render_history_diff`], but names the section each fragment came
+    /// from so history can refill exactly the slots that re-rendered.
+    pub(crate) fn render_history_diff_with_ids(
+        &self,
+        previous: Option<&WorldStateSnapshot>,
+        items: &[ResponseItem],
+    ) -> Vec<(&'static str, Box<dyn ContextualUserFragment>)> {
+        // A baseline that survived is authoritative. Where it did not, a section that can
+        // read its own rendered fragment back out of history recovers the exact previous
+        // state instead of guessing, so a routine history rewrite stops looking like a
+        // change and stops resupplying content the model is already holding.
+        let recovered: BTreeMap<&str, Value> = self
+            .sections
+            .iter()
+            .filter(|(id, _)| previous.is_none_or(|previous| !previous.sections.contains_key(**id)))
+            .filter_map(|(id, section)| {
+                recovered_snapshot(items, section.as_ref()).map(|snapshot| (*id, snapshot))
+            })
+            .collect();
+
         self.render_with(|id, section| {
             if let Some(previous) = previous.and_then(|previous| previous.sections.get(id)) {
                 if section.has_retained_fragment_matcher() && !has_retained_fragment(items, section)
@@ -309,6 +414,8 @@ impl WorldState {
                 } else {
                     PreviousSectionState::Known(previous)
                 }
+            } else if let Some(recovered) = recovered.get(id) {
+                PreviousSectionState::Known(recovered)
             } else if has_legacy_fragment(items, section) {
                 PreviousSectionState::Unknown
             } else {
@@ -317,15 +424,87 @@ impl WorldState {
         })
     }
 
+    /// Empties the history slot of every single-slot section that is about to refill it or
+    /// no longer has anything to say. Returns whether any item was changed.
+    ///
+    /// This is what keeps an admitted source to one effective copy and makes a withdrawn
+    /// one actually disappear, instead of leaving earlier copies in the request and
+    /// talking the model out of them.
+    pub(crate) fn vacate_single_slot_fragments(
+        &self,
+        items: &mut Vec<ResponseItem>,
+        refilled: &BTreeSet<&str>,
+    ) -> bool {
+        let vacating = self
+            .sections
+            .iter()
+            .filter(|(id, section)| {
+                section.owns_single_history_slot()
+                    && (refilled.contains(*id) || !section.has_model_visible_content())
+            })
+            .map(|(_, section)| section.as_ref())
+            .collect::<Vec<_>>();
+        if vacating.is_empty() {
+            return false;
+        }
+
+        let mut changed = false;
+        items.retain_mut(|item| {
+            let ResponseItem::Message { role, content, .. } = item else {
+                return true;
+            };
+            let before = content.len();
+            content.retain(|content| {
+                let ContentItem::InputText { text } = content else {
+                    return true;
+                };
+                !vacating
+                    .iter()
+                    .any(|section| section.matches_retained_fragment(role, text))
+            });
+            changed |= content.len() != before;
+            !content.is_empty()
+        });
+        changed
+    }
+
     fn render_with<'a>(
         &self,
         mut previous: impl FnMut(&str, &dyn ErasedWorldStateSection) -> PreviousSectionState<'a, Value>,
-    ) -> Vec<Box<dyn ContextualUserFragment>> {
+    ) -> Vec<(&'static str, Box<dyn ContextualUserFragment>)> {
         self.sections
             .iter()
-            .filter_map(|(id, section)| section.render_diff(previous(id, section.as_ref())))
+            .filter_map(|(id, section)| {
+                section
+                    .render_diff(previous(id, section.as_ref()))
+                    .map(|fragment| (*id, fragment))
+            })
             .collect()
     }
+}
+
+fn drop_section_ids(
+    rendered: Vec<(&'static str, Box<dyn ContextualUserFragment>)>,
+) -> Vec<Box<dyn ContextualUserFragment>> {
+    rendered.into_iter().map(|(_, fragment)| fragment).collect()
+}
+
+/// Reads a section's previous state back out of its own rendered fragment in history.
+fn recovered_snapshot(
+    items: &[ResponseItem],
+    section: &dyn ErasedWorldStateSection,
+) -> Option<Value> {
+    items.iter().rev().find_map(|item| {
+        let ResponseItem::Message { role, content, .. } = item else {
+            return None;
+        };
+        content.iter().rev().find_map(|content| {
+            let ContentItem::InputText { text } = content else {
+                return None;
+            };
+            section.snapshot_from_retained_fragment(role, text)
+        })
+    })
 }
 
 fn has_retained_fragment(items: &[ResponseItem], section: &dyn ErasedWorldStateSection) -> bool {

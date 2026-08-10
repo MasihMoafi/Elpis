@@ -829,6 +829,7 @@ mod tests {
             Ok(ResponseEvent::Completed {
                 response_id: "resp-compact".to_string(),
                 token_usage: Some(TokenUsage {
+                    cache_write_tokens: None,
                     input_tokens: 123_456,
                     cached_input_tokens: 7_890,
                     output_tokens: 42,
@@ -850,6 +851,7 @@ mod tests {
         assert_eq!(
             output.token_usage,
             Some(TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 123_456,
                 cached_input_tokens: 7_890,
                 output_tokens: 42,

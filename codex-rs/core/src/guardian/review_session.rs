@@ -127,6 +127,10 @@ fn had_prior_review_context(prompt_mode: &GuardianPromptMode) -> bool {
 
 fn token_usage_delta(start: &TokenUsage, end: &TokenUsage) -> TokenUsage {
     TokenUsage {
+        cache_write_tokens: match (start.cache_write_tokens, end.cache_write_tokens) {
+            (None, None) => None,
+            (start, end) => Some((end.unwrap_or(0) - start.unwrap_or(0)).max(0)),
+        },
         input_tokens: (end.input_tokens - start.input_tokens).max(0),
         cached_input_tokens: (end.cached_input_tokens - start.cached_input_tokens).max(0),
         output_tokens: (end.output_tokens - start.output_tokens).max(0),
@@ -1629,6 +1633,7 @@ mod tests {
     #[test]
     fn token_usage_delta_never_reports_negative_usage() {
         let start = TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 10,
             cached_input_tokens: 8,
             output_tokens: 6,
@@ -1636,6 +1641,7 @@ mod tests {
             total_tokens: 28,
         };
         let end = TokenUsage {
+            cache_write_tokens: None,
             input_tokens: 15,
             cached_input_tokens: 7,
             output_tokens: 10,
@@ -1646,6 +1652,7 @@ mod tests {
         assert_eq!(
             token_usage_delta(&start, &end),
             TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 5,
                 cached_input_tokens: 0,
                 output_tokens: 4,

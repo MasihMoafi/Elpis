@@ -2814,13 +2814,15 @@ impl Session {
         } else {
             turn_context.environments.clone()
         };
-        if deferred_executor_enabled {
-            self.services
-                .agents_md_manager
-                .refresh(&turn_context.config, &environments)
-                .await;
-        }
-        let loaded_agents_md = self.services.agents_md_manager.get_loaded().await;
+        // Refresh every step, not just when environments can move: the Context Ledger is
+        // consulted here, so a toggle has to take effect on the next request. The refresh
+        // short-circuits when neither the environments nor the ledger changed, which keeps
+        // an ordinary turn on its creation-time instruction snapshot.
+        self.services
+            .agents_md_manager
+            .refresh(&turn_context.config, &environments)
+            .await;
+        let loaded_agents_md = self.services.agents_md_manager.get_admitted().await;
         let selected_capability_roots = self
             .resolve_selected_capability_roots_for_step(&environments)
             .await;
@@ -3675,6 +3677,7 @@ impl Session {
             // them, so store the estimate net of that addition; storing it raw makes
             // every reader report a total larger than the history it just measured.
             info.last_token_usage = TokenUsage {
+                cache_write_tokens: None,
                 input_tokens: 0,
                 cached_input_tokens: 0,
                 output_tokens: 0,
