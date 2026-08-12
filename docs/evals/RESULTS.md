@@ -50,6 +50,18 @@ survived because they remained intact in primary history; the run does not show 
 or replaced fact being recovered. The retention result does not establish a
 task-performance improvement.
 
+Pruning can only ever rewrite tool output, from the source rather than an experiment:
+
+```rust
+match item {
+    FunctionCallOutput { .. } | CustomToolCallOutput { .. } => …
+    _ => None,   // reasoning, assistant messages, user messages
+}
+```
+
+User instructions, assistant messages, and model reasoning are structurally ineligible.
+That is a property of the code, not a result, and it is stated here as such.
+
 ## RQ3 — Task performance · not established
 
 The available runs do not support a comparative correctness or task-performance claim.
@@ -72,7 +84,7 @@ misleading.
 We therefore report no cost figure for the current design. The direction of the trade-off
 is established: pruning adds model cost and wall-clock latency and can reduce cache reuse.
 Without a demonstrated task-performance benefit, context reduction alone does not justify
-that overhead.
+that overhead. This remains the most important open question about the approach.
 
 ## RQ5 — Auditability · answered
 
@@ -118,6 +130,15 @@ successful task over native compaction. The measured facts are narrower: it redu
 context, retained all six tested targets in post-prune context, and leaves an inspectable
 audit trail. It also adds model cost and latency. Treat that as a trade-off, not a
 performance improvement.
+
+## What we suspect, and why
+
+Stated as a hypothesis, not a result. We suspect selective pruning may preserve
+task-relevant detail better than summarising compaction, because it removes individual tool
+outputs and leaves the rest verbatim, while summarisation replaces a whole span with prose.
+RQ5 shows each decision is inspectable, so the claim is at least checkable. It remains
+untested against compaction directly — RQ2's forensic audit shows retention within Elpis's
+own pruning, not a head-to-head comparison with compaction's information loss.
 
 ## Known limitations
 
