@@ -107,19 +107,10 @@ fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, el
     config_overrides.raw_overrides.splice(
         0..0,
         [
-            "model_auto_compact_enabled=false".to_string(),
             format!("memories.root={memories_value}"),
             format!("memories.state_root={state_value}"),
         ],
     );
-}
-
-fn enforce_elpis_no_auto_compaction(config_overrides: &mut CliConfigOverrides) {
-    // This is appended after user/config-file overrides so the Elpis TUI never
-    // silently falls back to the host's automatic context compaction.
-    config_overrides
-        .raw_overrides
-        .push("model_auto_compact_enabled=false".to_string());
 }
 
 fn resolve_elpis_home() -> anyhow::Result<PathBuf> {
@@ -217,28 +208,10 @@ mod tests {
         assert_eq!(
             overrides.raw_overrides,
             vec![
-                "model_auto_compact_enabled=false",
                 "memories.root=\"/tmp/home/.elpis/memories\"",
                 "memories.state_root=\"/tmp/home/.elpis/state\"",
                 "memories.root=\"/tmp/custom-memories\"",
                 "memories.state_root=\"/tmp/custom-state\"",
-            ]
-        );
-    }
-
-    #[test]
-    fn elpis_auto_compaction_is_forced_off_after_user_config() {
-        let mut overrides = CliConfigOverrides {
-            raw_overrides: vec!["model_auto_compact_enabled=true".to_string()],
-        };
-
-        enforce_elpis_no_auto_compaction(&mut overrides);
-
-        assert_eq!(
-            overrides.raw_overrides,
-            vec![
-                "model_auto_compact_enabled=true",
-                "model_auto_compact_enabled=false",
             ]
         );
     }
@@ -357,7 +330,6 @@ fn main() -> anyhow::Result<()> {
             .raw_overrides
             .splice(0..0, top_cli.config_overrides.raw_overrides);
         prepend_elpis_memories_defaults(&mut inner.config_overrides, &elpis_home);
-        enforce_elpis_no_auto_compaction(&mut inner.config_overrides);
         let loader_overrides = LoaderOverrides {
             project_config_dir_name: Some(".elpis".to_string()),
             ..LoaderOverrides::default()

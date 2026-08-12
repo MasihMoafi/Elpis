@@ -4001,7 +4001,7 @@ impl Config {
             personality,
             developer_instructions,
             compact_prompt,
-            elpis_compact_cleanup: true,
+            elpis_compact_cleanup: false,
             include_permissions_instructions,
             include_apps_instructions,
             include_collaboration_mode_instructions,
