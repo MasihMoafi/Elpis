@@ -1,0 +1,1 @@
+FINAL_RESPONSE_SHAPE=exactly six non-empty plain-text lines and nothing else

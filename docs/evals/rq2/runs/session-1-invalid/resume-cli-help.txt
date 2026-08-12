@@ -1,0 +1,103 @@
+CLI option that captures arbitrary configuration overrides specified as `-c key=value`. It
+intentionally keeps both halves **unparsed** so that the calling code can decide how to interpret
+the right-hand side
+
+Usage: elpis [OPTIONS] [PROMPT]
+
+Arguments:
+  [PROMPT]
+          Optional user prompt to start the session
+
+Options:
+      --update
+          Update the user-local Elpis installation and exit
+
+      --migrate-from-codex
+          Preview a selective, non-destructive migration from Codex state
+
+      --migration-include <MIGRATION_CATEGORIES>
+          Categories to copy when applying a Codex-state migration
+          
+          [possible values: config, hooks, rules, skills, plugins, history, sessions, cache]
+
+      --apply-migration
+          Apply the selected migration categories after showing the preview
+
+      --provider <PROVIDER>
+          Select a direct Elpis provider or a curated OpenRouter compatibility route
+          
+          [possible values: openai, openrouter, anthropic, google-gemini, claude, gemini,
+          gemini-flash, amazon-bedrock, ollama, lmstudio]
+
+  -c, --config <key=value>
+          Override a configuration value that would otherwise be loaded from `~/.codex/config.toml`.
+          Use a dotted path (`foo.bar.baz`) to override nested values. The `value` portion is parsed
+          as TOML. If it fails to parse as TOML, the raw string is used as a literal.
+          
+          Examples: - `-c model="o3"` - `-c 'sandbox_permissions=["disk-full-read-access"]'` - `-c
+          shell_environment_policy.inherit=all`
+
+      --strict-config
+          Error out when config.toml contains fields that are not recognized by this version of
+          Codex
+
+  -i, --image <FILE>...
+          Optional image(s) to attach to the initial prompt
+
+  -m, --model <MODEL>
+          Model the agent should use
+
+      --oss
+          Use open-source provider
+
+      --local-provider <OSS_PROVIDER>
+          Specify which local provider to use (lmstudio or ollama). If not specified with --oss,
+          will use config default or show selection
+
+  -p, --profile <CONFIG_PROFILE_V2>
+          Layer $CODEX_HOME/<name>.config.toml on top of the base user config
+
+  -s, --sandbox <SANDBOX_MODE>
+          Select the sandbox policy to use when executing model-generated shell commands
+          
+          [possible values: read-only, workspace-write, danger-full-access]
+
+      --dangerously-bypass-approvals-and-sandbox
+          Skip all confirmation prompts and execute commands without sandboxing. EXTREMELY
+          DANGEROUS. Intended solely for running in environments that are externally sandboxed
+
+      --dangerously-bypass-hook-trust
+          Run enabled hooks without requiring persisted hook trust for this invocation. DANGEROUS.
+          Intended only for automation that already vets hook sources
+
+  -C, --cd <DIR>
+          Tell the agent to use the specified directory as its working root
+
+      --add-dir <DIR>
+          Additional directories that should be writable alongside the primary workspace
+
+  -a, --ask-for-approval <APPROVAL_POLICY>
+          Configure when the model requires human approval before executing a command
+
+          Possible values:
+          - untrusted:  Only run "trusted" commands (e.g. ls, cat, sed) without asking for user
+            approval. Will escalate to the user if the model proposes a command that is not in the
+            "trusted" set
+          - on-request: The model decides when to ask the user for approval
+          - never:      Never ask for user approval Execution failures are immediately returned to
+            the model
+
+      --search
+          Enable live web search. When enabled, the native Responses `web_search` tool is available
+          to the model (no per‑call approval)
+
+      --no-alt-screen
+          Disable alternate screen mode
+          
+          Runs the TUI in inline mode, preserving terminal scrollback history.
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
