@@ -43,8 +43,6 @@ story again.
 Elpis keeps the two apart. The next request gets a small working set you can inspect. The
 full record stays on disk and is fetched only when it is needed.
 
-![Context window used per request: Codex peaks above 90% in all three runs, Elpis stays between 33% and 50%](docs/assets/rq1-context-trajectory.svg)
-
 ![Peak context per request across three paired runs: Codex 243k/242k/238k versus Elpis 84k/128k/124k](docs/assets/rq1-peak-context.svg)
 
 Three paired runs, one byte-identical prompt, same model and commit on both arms. Peak
