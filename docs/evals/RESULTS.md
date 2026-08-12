@@ -65,13 +65,9 @@ not been run.
 
 ## RQ3 — Task correctness · inconclusive
 
-One paired graded task exists (LHTB vector-db): Codex reward **0.428**, Elpis **0.311**,
-identical Recall@10. A second task was graded on one arm only and is unusable.
-
-n=1 supports no conclusion, and the result does not favour Elpis. A real answer needs a
-Terminal-Bench-class benchmark across several tasks, which is expensive to run.
-
-**We are looking for collaborators to run it** — see issue #104.
+No public correctness claim is made. The available pilot work is not sufficient to support
+a conclusion about whether Elpis changes task correctness. A real answer requires a
+proper multi-task benchmark under a fixed protocol.
 
 ## RQ4 — Overhead and cache · needs further study
 
