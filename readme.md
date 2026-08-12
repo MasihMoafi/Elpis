@@ -53,6 +53,13 @@ context per request fell **47–65%**, in the same direction every run. Median c
 request fell 42–52%. Codex peaked above 90% of the window in all three runs; Elpis peaked
 between 33% and 50%.
 
+The more reproducible finding sits underneath the peaks: Elpis's median context usage was
+stable at 26.6–27.1% across all three independent runs, regardless of how many pruning
+passes a given run needed (10 to 42). The cross-run analysis also corrected a
+misclassification — Elpis's true native-compaction count is 0 in all three runs; earlier
+figures counted its own pruning/rollover checkpoints as native compactions, which they are
+not.
+
 That is what has been measured end to end, on one task repeated three times. What pruning
 costs, and whether it changes the quality of the work, are open questions — both are
 written up with the raw records in [evaluation status](docs/evals/RESULTS.md).
