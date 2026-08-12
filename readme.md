@@ -28,6 +28,9 @@ choose a provider and sign in or enter its API key.
 
 ## What is Elpis
 
+Elpis forks OpenAI's Apache-2.0 [Codex CLI](https://github.com/openai/codex) and builds a
+context, continuity, memory, retrieval, and provider-control layer around it.
+
 The agent runs the model loop. Elpis owns everything around it: context, memory, continuity, retrieval, permissions, and provider choice.
 
 Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
