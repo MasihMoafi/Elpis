@@ -48,6 +48,8 @@ full record stays on disk and is fetched only when it is needed.
 
 ![Peak context per request across three paired runs: Codex 243k/242k/238k versus Elpis 84k/128k/124k](docs/assets/rq1-peak-context.svg)
 
+![Live context per request, all 3 runs overlaid and normalized to each run's own request sequence: Codex climbs into the pressure region every time, Elpis stays low and stable](docs/assets/rq1-normalized-overlay.svg)
+
 Three paired runs, one byte-identical prompt, same model and commit on both arms. Peak
 context per request fell **47–65%**, in the same direction every run. Median context per
 request fell 42–52%. Codex peaked above 90% of the window in all three runs; Elpis peaked
@@ -60,9 +62,10 @@ misclassification — Elpis's true native-compaction count is 0 in all three run
 figures counted its own pruning/rollover checkpoints as native compactions, which they are
 not.
 
-That is what has been measured end to end, on one task repeated three times. What pruning
-costs, and whether it changes the quality of the work, are open questions — both are
-written up with the raw records in [evaluation status](docs/evals/RESULTS.md).
+That is what has been measured end to end, on one task repeated three times. Pruning also
+adds a model call and latency and can reduce prompt-cache reuse. No task-quality benefit
+has been established, and the current design's exact overhead has not been measured under
+the same protocol. See [evaluation status](docs/evals/RESULTS.md).
 
 Elpis never modifies a model's own output and never alters a request in flight: pruning
 rewrites tool output only, from a separate model instance, sequenced against the main
@@ -176,12 +179,9 @@ Goal and checkpoint state survive compaction, model switches, and restarts, so w
 
 ### Memory with provenance
 
-Reusable memory is designed to be selective, size-capped, and attributable. It ships
-off, matching upstream Codex. Extraction works, but durable promotion has not produced a
-real `MEMORY.md` commit on Masih's install because the current recall threshold is not
-reached in normal use. `/memories` controls recall and writing independently; no claim
-that durable memory works is accepted without a promotion commit in the memories
-repository.
+Elpis can admit a user-maintained `MEMORY.md` into context. The automated extraction and
+promotion pipeline was removed after it failed to demonstrate a real durable-memory
+promotion. Elpis currently makes no automatic durable-memory claim.
 
 ### MCP integrations you plug in
 

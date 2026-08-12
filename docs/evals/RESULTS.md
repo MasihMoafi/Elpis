@@ -47,8 +47,7 @@ and two exact values from the initial tool output.
 
 This establishes **6/6 post-prune context retention for the tested targets**. Those targets
 survived because they remained intact in primary history; the run does not show a deleted
-or replaced fact being recovered. Provider capacity errors prevented a subsequent final
-response, so final-answer use was not observed. The retention result does not establish a
+or replaced fact being recovered. The retention result does not establish a
 task-performance improvement.
 
 ## RQ3 — Task performance · not established

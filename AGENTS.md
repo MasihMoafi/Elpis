@@ -36,11 +36,14 @@ Behavior that can silently do nothing needs an eval before it is changed. Every 
 
 Prefer behavioral evidence over plumbing-only tests: plant something only the feature could know or produce, run the real path, assert that it arrives, then disable or break the feature and assert that it does not.
 
-## Known Gap: Durable Memory Promotion
+## Durable Memory Status
 
-Memory extraction and phase-2 processing run, but real-machine promotion into `MEMORY.md` has not been demonstrated. Promotion currently requires `recall_count >= 3` and `unique_query_count >= 2`, and real usage has not reached that gate reliably.
+The automated extraction, consolidation, and promotion pipeline was removed in commit
+`0c105e3` after no real durable-memory promotion was demonstrated. Elpis can still admit a
+user-maintained `MEMORY.md` into context, but it has no automatic promotion pipeline.
 
-Do not change the promotion gate or memory default without Masih's explicit approval. Memory ships off. Anything claiming durable memory works must show a real promotion commit in `~/.elpis/memories/.git`; passing plumbing tests is insufficient.
+Do not restore an automated memory pipeline or change memory defaults without Masih's
+explicit approval. Do not claim automatic durable memory works.
 
 ## Agent Dispatch
 

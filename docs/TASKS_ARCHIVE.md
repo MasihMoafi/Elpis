@@ -222,6 +222,10 @@ Version map: **Foundational = v0.1** (publish gate), **Important = v0.2**,
 
 ### F4. Durable memory — implemented; end-to-end acceptance pending
 
+> Superseded on 2026-08-12: commit `0c105e3` removed the automated extraction,
+> consolidation, and promotion pipeline after no real promotion was demonstrated. The
+> bullets below describe historical implementation, not current behavior.
+
 - Elpis-owned memory artifacts and database state live under `~/.elpis`.
 - Implemented and remotely verified: recall-context tracking, promotion after three recalls
   across two contexts, age-aware diverse retrieval, semantic fallback, provenance, and hard

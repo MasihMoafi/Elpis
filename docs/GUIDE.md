@@ -104,9 +104,7 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 - `~/.elpis/context/workspaces/<workspace>/GOAL.md` — active goal.
 - `~/.elpis/context/workspaces/<workspace>/ES.md` — compact latest checkpoint.
-- `~/.elpis/memories/MEMORY.md` — curated durable memory.
-- `~/.elpis/memories/archive.md` — faded/deleted memory evidence.
-- `~/.elpis/state/memories_1.sqlite` — recall, promotion, and consolidation state.
+- `~/.elpis/memories/MEMORY.md` — user-maintained memory admitted into context.
 - `~/.elpis/state/state_5.sqlite` — threads, agent jobs, persisted work graphs, task claims, evidence, and transition events.
 - Provider transcripts and workspace artifacts remain exact evidence sources.
 
