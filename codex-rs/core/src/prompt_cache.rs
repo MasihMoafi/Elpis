@@ -70,14 +70,20 @@ pub(crate) struct PromptCachePlan {
 /// Applies the provider/model capability gate before planning request fields.
 ///
 /// The Responses cache fields are not merely optional on unsupported backends: older model
-/// families reject them, and non-OpenAI providers do not promise the same wire contract.
+/// families reject them, non-OpenAI providers do not promise the same wire contract, and the
+/// ChatGPT/Codex backend is not the direct OpenAI Responses API endpoint even though its
+/// provider is named `OpenAI`.
 pub(crate) fn plan_prompt_cache_for_provider(
     is_openai: bool,
+    provider_base_url: &str,
     model_slug: &str,
     input: &[ResponseItem],
     explicit_mode: bool,
 ) -> PromptCachePlan {
-    if is_openai && model_supports_explicit_prompt_cache(model_slug) {
+    if is_openai
+        && !provider_base_url.contains("/backend-api")
+        && model_supports_explicit_prompt_cache(model_slug)
+    {
         plan_prompt_cache(input, explicit_mode)
     } else {
         PromptCachePlan::default()

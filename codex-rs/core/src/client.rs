@@ -863,14 +863,16 @@ impl ModelClient {
             prompt.output_schema_strict,
         );
         let prompt_cache_key = Some(self.prompt_cache_key(responses_metadata));
-        // Cache breakpoints are an OpenAI Responses feature that older families reject, so
-        // the model check is a hard gate, not a preference. Within that gate the
+        // Cache breakpoints are a direct OpenAI Responses API feature that older families and
+        // the ChatGPT/Codex backend reject, so the endpoint/model check is a hard gate, not a
+        // preference. Within that gate the
         // breakpoints ship on by default: they ride alongside the server's implicit
         // breakpoint rather than replacing it, so they can only add cache reads.
         // `Feature::ExplicitPromptCache` additionally switches the server to explicit
         // mode, which is off by default -- see `crate::prompt_cache`.
         let prompt_cache_plan = prompt_cache::plan_prompt_cache_for_provider(
             is_openai,
+            &provider.base_url,
             &model_info.slug,
             &input,
             self.explicit_prompt_cache,

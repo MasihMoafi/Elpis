@@ -95,10 +95,82 @@ fn unsupported_models_and_providers_receive_no_cache_fields() {
         (false, "claude-opus-5"),
     ] {
         assert_eq!(
-            plan_prompt_cache_for_provider(is_openai, slug, &session_input(), false),
+            plan_prompt_cache_for_provider(
+                is_openai,
+                "https://api.openai.com/v1",
+                slug,
+                &session_input(),
+                false,
+            ),
             PromptCachePlan::default(),
             "unsupported cache fields must be absent for provider={is_openai}, model={slug}"
         );
+    }
+}
+
+#[test]
+fn chatgpt_codex_gpt_5_6_request_omits_the_rejected_breakpoint() {
+    let input = session_input();
+    let direct_api_plan = plan_prompt_cache_for_provider(
+        true,
+        "https://api.openai.com/v1",
+        "gpt-5.6-luna",
+        &input,
+        false,
+    );
+    assert_eq!(
+        direct_api_plan.breakpoints,
+        vec![PromptCacheBreakpointPosition {
+            item: 1,
+            content: 0,
+        }]
+    );
+    let plan = plan_prompt_cache_for_provider(
+        true,
+        "https://chatgpt.com/backend-api/codex",
+        "gpt-5.6-luna",
+        &input,
+        false,
+    );
+    let request = codex_api::ResponsesApiRequest {
+        model: "gpt-5.6-luna".to_string(),
+        instructions: String::new(),
+        input,
+        tools: None,
+        tool_choice: "auto".to_string(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: true,
+        stream_options: None,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: Some("019fecbd-bba1-7841-ad60-44fb9226dbf5".to_string()),
+        prompt_cache_options: plan.options,
+        prompt_cache_breakpoints: plan.breakpoints,
+        text: None,
+        client_metadata: None,
+    };
+
+    let body = codex_api::encode_responses_ws_request(
+        &codex_api::ResponsesWsRequest::ResponseCreate((&request).into()),
+    )
+    .expect("request should encode");
+    assert_eq!(body["type"], "response.create");
+    assert_eq!(body["model"], "gpt-5.6-luna");
+    assert_eq!(
+        body["prompt_cache_key"],
+        "019fecbd-bba1-7841-ad60-44fb9226dbf5"
+    );
+    assert_eq!(body.get("prompt_cache_options"), None);
+    for item in body["input"].as_array().expect("input should be an array") {
+        if let Some(content) = item.get("content").and_then(serde_json::Value::as_array) {
+            assert!(
+                content
+                    .iter()
+                    .all(|block| block.get("prompt_cache_breakpoint").is_none())
+            );
+        }
     }
 }
 
