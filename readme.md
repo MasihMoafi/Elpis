@@ -48,6 +48,8 @@ full record stays on disk and is fetched only when it is needed.
 
 ![Peak context per request across three paired runs: Codex 243k/242k/238k versus Elpis 84k/128k/124k](docs/assets/rq1-peak-context.svg)
 
+![Live context per request across Run 1, normalized to each arm's own request sequence: Codex climbs to a 94.0% peak with one native compaction, Elpis stays under 32.5% with zero](docs/assets/rq1-run1-trajectory.svg)
+
 Three paired runs, one byte-identical prompt, same model and commit on both arms. Peak
 context per request fell **47–65%**, in the same direction every run. Median context per
 request fell 42–52%. Codex peaked above 90% of the window in all three runs; Elpis peaked
