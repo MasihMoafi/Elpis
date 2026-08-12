@@ -132,6 +132,18 @@ The finding survives; the two hundred lines of noise do not. `evidence=` resolve
 untouched original, still sitting in the session rollout — so a pruned session can always
 be asked what it used to know. Every pass writes this record, for every item it judged.
 
+### Every pruning decision is auditable
+
+A forensic reconstruction audit checked, against artifacts on disk rather than source code
+or design docs, whether an evaluator can rebuild what a pruning pass actually did: **7 of 9
+properties fully reconstructible, 2 partial, 0 not reconstructible.** Recoverable for any
+pass: when it ran and under which trigger, the exact material Ace reviewed, its per-item
+keep/delete decision, the verbatim pre- and post-mutation text, and Ace's own token usage.
+Partial on two counts — passes record character savings rather than exact token deltas, and
+session linkage is reconstructed indirectly through item `call_id` rather than stored
+directly. Full methodology, a worked example against a real pass ID, and the audit table:
+[`docs/evals/rq5/FINAL_RESULTS.md`](docs/evals/rq5/FINAL_RESULTS.md).
+
 ### Context Ledger
 
 `Tab` — or `Alt+C` while a turn is running — opens a side panel listing every source admitted into the working set, each with its size and whether it is included. Toggling a row changes what the next turn actually receives, so context selection becomes an intentional operation instead of a side effect.
