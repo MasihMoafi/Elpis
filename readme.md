@@ -1,12 +1,8 @@
 <div align="center">
 
-<img width="493" alt="Screenshot from 2026-08-03 20-06-18" src="https://github.com/user-attachments/assets/14a244b4-2f80-4efc-b870-0cebde11330a" />
-
 # Never lose the thread.
 
 **You run an agent inside Elpis, and it becomes Elpis.**
-
-More **QUALITY**. More **QUANTITY**.
 
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
@@ -40,26 +36,32 @@ Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
-Long sessions fill up with transcripts, file reads, searches, and dead ends. Agents consume massive token budgets and execute dense sequences of tool calls to gather context—most of which is redundant and unnecessary. What matters gets buried in the story of how the agent got there, and every request pays for it.
+Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters
+gets buried in the story of how the agent got there, and every request carries the whole
+story again.
 
-![Agents using excessive tool calls and tokens to gather redundant context](docs/assets/showcase-of-how-much-tool-calls.png)
+Elpis keeps the two apart. The next request gets a small working set you can inspect. The
+full record stays on disk and is fetched only when it is needed.
 
-Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
+![Context window used per request: Codex peaks above 90% in all three runs, Elpis stays between 33% and 50%](docs/assets/rq1-context-trajectory.svg)
 
-![Context trajectory](docs/assets/context-remaining-trajectory-band.svg)
+![Peak context per request across three paired runs: Codex 243k/242k/238k versus Elpis 84k/128k/124k](docs/assets/rq1-peak-context.svg)
 
-![Context retention](docs/assets/context-remaining-benchmark.svg)
+Three paired runs, one byte-identical prompt, same model and commit on both arms. Peak
+context per request fell **47–65%**, in the same direction every run. Median context per
+request fell 42–52%. Codex peaked above 90% of the window in all three runs; Elpis peaked
+between 33% and 50%.
 
-![Per-persona context](docs/assets/context-remaining-second-run.svg)
+That is what has been measured end to end, on one task repeated three times. What pruning
+costs, and whether it changes the quality of the work, are open questions — both are
+written up with the raw records in [evaluation status](docs/evals/RESULTS.md).
 
-The screenshots below are historical examples of the same prompt in Elpis and Codex.
-The original per-run records were not preserved.
+Elpis never modifies a model's own output and never alters a request in flight: pruning
+rewrites tool output only, from a separate model instance, sequenced against the main
+agent. See [provider rules](docs/evals/RESULTS.md#provider-rules).
 
-A pinned, synthetic 3×10 comparison for exact recall, paraphrased recall, and negative
-controls is specified in
-[docs/evals/context-continuity](docs/evals/context-continuity/README.md). It has a
-deterministic scorer, but no score is published because the required provider runs and
-raw transcripts have not been produced.
+The screenshots below are historical examples of the same prompt in Elpis and Codex. The
+original per-run records were not preserved, so they illustrate rather than evidence.
 
 <details>
 <summary>Historical screenshots</summary>
@@ -85,10 +87,10 @@ Example end state — Codex:
 
 | Level | What it does | When |
 | --- | --- | --- |
-| **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook, before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. The installer installs [RTK](https://github.com/rtk-ai/rtk) and Elpis registers the hook on first launch, where you trust it like any other hook. | Before the agent sees it |
+| **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook, before their output ever reaches the model. The installer installs [RTK](https://github.com/rtk-ai/rtk) and Elpis registers the hook on first launch, where you trust it like any other hook. | Before the agent sees it |
 | **2. Safety cap** | Deterministic truncation bounds exceptionally large tool output. Inherited from Codex, unchanged. | Before the agent sees it |
 | **3. Ace steady pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After completed work creates enough eligible output |
-| **4. Ace pressure pass** | Runs the same selective process earlier, at 70% remaining, and aims to return the session to 75% remaining. | Before context pressure harms the next turn |
+| **4. Ace pressure pass** | Runs the same selective process earlier, when the window reaches 30% used, and reclaims back toward 20% used. | Before context pressure harms the next turn |
 
 `/prune` runs Ace selectively on demand while keeping the conversation intact.
 `/compact` replaces the conversation with a full summary and starts a new context window.
