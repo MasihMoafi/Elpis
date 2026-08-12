@@ -4,6 +4,8 @@
 
 **You run an agent inside Elpis, and it becomes Elpis.**
 
+**Elpis is an open-source fork of OpenAI's Codex CLI, adding explicit context control, continuity, retrieval, memory, and provider-neutral model access around the Codex execution foundation.**
+
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
@@ -27,6 +29,8 @@ choose a provider and sign in or enter its API key.
 `v0.1.2` is the current release.
 
 ## What is Elpis
+
+Elpis starts from OpenAI's Apache-2.0 Codex CLI and keeps its execution foundation — terminal UI, patches, permissions, sandboxing, and sessions. Elpis adds a system layer around that foundation for explicit context management, continuity, memory, retrieval, and provider choice.
 
 The agent runs the model loop. Elpis owns everything around it: context, memory, continuity, retrieval, permissions, and provider choice.
 
