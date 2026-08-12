@@ -1,12 +1,8 @@
 <div align="center">
 
-<img width="493" alt="Screenshot from 2026-08-03 20-06-18" src="https://github.com/user-attachments/assets/14a244b4-2f80-4efc-b870-0cebde11330a" />
-
 # Never lose the thread.
 
 **You run an agent inside Elpis, and it becomes Elpis.**
-
-More **QUALITY**. More **QUANTITY**.
 
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
@@ -40,26 +36,32 @@ Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
-Long sessions fill up with transcripts, file reads, searches, and dead ends. Agents consume massive token budgets and execute dense sequences of tool calls to gather context—most of which is redundant and unnecessary. What matters gets buried in the story of how the agent got there, and every request pays for it.
+Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters
+gets buried in the story of how the agent got there, and every request carries the whole
+story again.
 
-![Agents using excessive tool calls and tokens to gather redundant context](docs/assets/showcase-of-how-much-tool-calls.png)
+Elpis keeps the two apart. The next request gets a small working set you can inspect. The
+full record stays on disk and is fetched only when it is needed.
 
-Elpis keeps the two apart. The next request gets a small working set you can inspect. The full record stays on disk and is fetched only when it is needed.
+![Context window used per request: Codex peaks above 90% in all three runs, Elpis stays between 33% and 50%](docs/assets/rq1-context-trajectory.svg)
 
-![Context trajectory](docs/assets/context-remaining-trajectory-band.svg)
+![Peak context per request across three paired runs: Codex 243k/242k/238k versus Elpis 84k/128k/124k](docs/assets/rq1-peak-context.svg)
 
-![Context retention](docs/assets/context-remaining-benchmark.svg)
+Three paired runs, one byte-identical prompt, same model and commit on both arms. Peak
+context per request fell **47–65%**, in the same direction every run. Median context per
+request fell 42–52%. Codex peaked above 90% of the window in all three runs; Elpis peaked
+between 33% and 50%.
 
-![Per-persona context](docs/assets/context-remaining-second-run.svg)
+That is what has been measured end to end, on one task repeated three times. What pruning
+costs, and whether it changes the quality of the work, are open questions — both are
+written up with the raw records in [evaluation status](docs/evals/RESULTS.md).
 
-The screenshots below are historical examples of the same prompt in Elpis and Codex.
-The original per-run records were not preserved.
+Elpis never modifies a model's own output and never alters a request in flight: pruning
+rewrites tool output only, from a separate model instance, sequenced against the main
+agent. See [provider rules](docs/evals/RESULTS.md#provider-rules).
 
-A pinned, synthetic 3×10 comparison for exact recall, paraphrased recall, and negative
-controls is specified in
-[docs/evals/context-continuity](docs/evals/context-continuity/README.md). It has a
-deterministic scorer, but no score is published because the required provider runs and
-raw transcripts have not been produced.
+The screenshots below are historical examples of the same prompt in Elpis and Codex. The
+original per-run records were not preserved, so they illustrate rather than evidence.
 
 <details>
 <summary>Historical screenshots</summary>
@@ -85,13 +87,49 @@ Example end state — Codex:
 
 | Level | What it does | When |
 | --- | --- | --- |
-| **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook, before their output ever reaches the model. In one real investigation it removed 72–97% of three broad `rg` outputs. The installer installs [RTK](https://github.com/rtk-ai/rtk) and Elpis registers the hook on first launch, where you trust it like any other hook. | Before the agent sees it |
+| **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook, before their output ever reaches the model. The installer installs [RTK](https://github.com/rtk-ai/rtk) and Elpis registers the hook on first launch, where you trust it like any other hook. | Before the agent sees it |
 | **2. Safety cap** | Deterministic truncation bounds exceptionally large tool output. Inherited from Codex, unchanged. | Before the agent sees it |
 | **3. Ace steady pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After completed work creates enough eligible output |
-| **4. Ace pressure pass** | Runs the same selective process earlier, at 70% remaining, and aims to return the session to 80% remaining. | Before context pressure harms the next turn |
+| **4. Ace pressure pass** | Runs the same selective process earlier, when the window reaches 30% used, and reclaims back toward 20% used. | Before context pressure harms the next turn |
 
 `/prune` runs Ace selectively on demand while keeping the conversation intact.
 `/compact` replaces the conversation with a full summary and starts a new context window.
+
+### What a pruning decision looks like
+
+One real pass, taken from the archive on disk. A single search command whose output ran to
+18,930 characters — close to 5,000 tokens carried into every subsequent request, for one
+tool call.
+
+**Before** — what the model was carrying:
+
+```text
+Script completed · Wall time 0.1 seconds · Output:
+
+tui/src/external_agent_config_migration.rs:800:   item_type: …ItemType::AgentsMd,
+tui/src/external_agent_config_migration_flow.rs:75: …ItemType::AgentsMd
+tui/src/theme_picker.rs:283:  fn theme_picker_subtitle(home: …) -> String
+tui/src/theme_picker.rs:392:     subtitle: Some(theme_picker_subtitle(
+tui/src/theme_picker.rs:605:     let subtitle = theme_picker_subtitle(…, Some(200));
+tui/src/theme_picker.rs:617:     let subtitle = theme_picker_subtitle(…, Some(140));
+tui/src/app_event.rs:152:        OpenAgentPicker,
+… roughly two hundred more lines of the same shape …
+```
+
+**After** — what the model carries now:
+
+```text
+[ELPIS CONTEXT UPDATE]
+kept=`/agent` and `/subagents` already open the agent picker
+     — tui/src/chatwidget/slash_dispatch.rs:305
+     — preserves the selected graph UX entry point
+evidence=rollout://tool-call/call_0nK3lZKWgHXkqYoNy3Sux5Gj
+original_chars=18199
+```
+
+The finding survives; the two hundred lines of noise do not. `evidence=` resolves to the
+untouched original, still sitting in the session rollout — so a pruned session can always
+be asked what it used to know. Every pass writes this record, for every item it judged.
 
 ### Context Ledger
 
@@ -123,13 +161,13 @@ off, matching upstream Codex. Extraction works, but durable promotion has not pr
 real `MEMORY.md` commit on Masih's install because the current recall threshold is not
 reached in normal use. `/memories` controls recall and writing independently; no claim
 that durable memory works is accepted without a promotion commit in the memories
-repository. See [the measured state and eval](docs/memory.md).
+repository.
 
 ### MCP integrations you plug in
 
 Elpis ships no retrieval or speech engine and downloads no models. MCP servers keep optional capabilities in their own processes, with their own dependencies and disk costs; `/mcp` confirms the servers you register are connected.
 
-- **Workspace retrieval:** [rag-mcp](https://github.com/MasihMoafi/rag-mcp) provides local semantic search over your own documents. Its embeddings, vector store, reranker, and any API key remain yours. See [docs/rag.md](docs/rag.md).
+- **Workspace retrieval:** [rag-mcp](https://github.com/MasihMoafi/rag-mcp) provides local semantic search over your own documents. Its embeddings, vector store, reranker, and any API key remain yours. Elpis ships no retrieval engine of its own.
 - **Voice transcription:** [Voice Commander](https://github.com/MasihMoafi/Voice-commander) records speech, transcribes it locally, and pastes at the active cursor. It remains an external companion; it can expose transcription as an MCP tool rather than adding Whisper, CUDA, Python, or model downloads to Elpis.
 
 ### Privacy and ownership
@@ -148,10 +186,8 @@ No analytics are uploaded, and every OpenTelemetry exporter defaults to off — 
 
 - [Context and pruning](docs/context.md) — the four context-control layers and the Context Ledger
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
-- [Memory](docs/memory.md) — the two-stage pipeline, the archive, and what you control
 - [Evals](docs/evals/) — source data, reproducible scorers, and publication gates
 - [Providers](docs/providers.md) — every supported route, including local inference
-- [Workspace retrieval](docs/rag.md) — how to plug in semantic search over your own documents
 - [Technical guide](docs/GUIDE.md) — product vision and architecture
 
 ## License
