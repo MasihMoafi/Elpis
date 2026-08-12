@@ -1,5 +1,10 @@
 # Final Elpis Paper Evaluation Control Document
 
+> **Superseded by [`RESULTS.md`](RESULTS.md), 2026-08-12.** The three worktrees this document
+> points at (`elpis-rq2-final`, `elpis-rq3-final`, `elpis-rq5-final`) no longer exist; their
+> evidence is consolidated under `docs/evals/rq2/` and `docs/evals/rq5/`. RQ5 is answered, not
+> "evidence consolidation only." Kept for history; `RESULTS.md` is current.
+
 ## 1. Frozen Implementation
 
 - **Repository Absolute Path**: `/home/masih/Desktop/p/Elpis`
