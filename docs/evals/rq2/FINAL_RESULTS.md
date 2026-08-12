@@ -1,8 +1,15 @@
 # FINAL RQ2 results
 
-## Outcome
+> **Historical invalid attempt.** This file records session
+> `019ff148-e0d6-79e1-84ce-d352a866bdcb`, which never reached a qualifying prune. It is not
+> the current RQ2 conclusion. The later
+> [`INDEPENDENT_AUDIT.md`](INDEPENDENT_AUDIT.md) establishes that all six tested targets
+> remained in post-prune context in session `019ff1b2-be61-7ea3-b835-652379b13f91`; see
+> [`../RESULTS.md`](../RESULTS.md) for the current status.
 
-The RQ2 measurement has not completed and has no defensible retention estimate. The preserved session-1 attempt captured all six predeclared items, but Elpis returned `server_overloaded` before producing a qualifying pruning event; under the resumed protocol, that external interruption is not counted as an experimental run. Resume of the existing session ID was then rejected by the frozen binary’s CLI, so session 2 was not started and no replacement session was launched. No final probe was issued, so no item-level retention score exists.
+## Outcome of this invalid attempt
+
+This attempted RQ2 measurement did not complete and produced no retention estimate. The preserved session-1 attempt captured all six predeclared items, but Elpis returned `server_overloaded` before producing a qualifying pruning event; under the resumed protocol, that external interruption is not counted as an experimental run. Resume of the existing session ID was then rejected by the frozen binary’s CLI, so session 2 was not started and no replacement session was launched. No final probe was issued, so no item-level retention score exists for this attempt.
 
 The interrupted attempt and the failed resume are preserved; neither is silently retried or relabeled as a completed run.
 
@@ -66,9 +73,11 @@ No item is classified as unaffected, because an unaffected classification requir
 
 No LLM judge was used. The fixed rubric scores C1/C2 from exact line count/order and absence of extra text, and F1/F2/O1/O2 from exact `key=value` payload equality. Since the frozen final probe was never issued, every session-1 final score is `not scored`, not pass or fail.
 
-## Strongest defensible RQ2 conclusion
+## Conclusion for this invalid attempt
 
-This experiment provides no evidence for or against information retention across an actual Elpis pruning event. The only supported operational finding is that this controlled session’s selected model became unavailable while accumulating context, before the required pruning event; that is a run-validity failure, not an information-retention result.
+This attempt says nothing about retention because it never crossed an actual Elpis pruning
+event. The later independent audit did cross that boundary and established 6/6 target
+presence in post-prune context; it is the current RQ2 result.
 
 ## Limitations
 

@@ -1,6 +1,8 @@
 # Context-Continuity Comparison
 
-Status: protocol and deterministic scorer implemented; provider runs not performed.
+Status: this comparative protocol and deterministic scorer are implemented; its paired
+provider runs were not performed. A separate forensic audit established 6/6 target
+presence in one post-prune Elpis context; see [`../rq2/INDEPENDENT_AUDIT.md`](../rq2/INDEPENDENT_AUDIT.md).
 No comparative score is published until both systems have complete raw transcripts.
 
 ## Question

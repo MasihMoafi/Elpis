@@ -10,9 +10,9 @@ derived analysis with per-metric provenance and cross-checks:
 | | Question | Status |
 |---|---|---|
 | RQ1 | Context efficiency | **Answered** |
-| RQ2 | Information retention | Not established |
-| RQ3 | Task correctness | Inconclusive — needs a real benchmark |
-| RQ4 | Overhead and cache | Needs further study |
+| RQ2 | Information retention | **Established for the tested post-prune targets** |
+| RQ3 | Task performance | Not established |
+| RQ4 | Overhead and cache | Cost and latency penalty established; current magnitude open |
 | RQ5 | Auditability | **Answered** |
 
 ---
@@ -37,43 +37,27 @@ runs of this workload and no further. Four runtime controls were not matched bet
 `comparability.csv`. They affect cost comparisons, not the peak-context measurement, which
 is a within-arm property.
 
-## RQ2 — Information retention · not established
+## RQ2 — Information retention · established for the tested targets
 
-The intended experiment planted facts and checked whether pruning preserved them. It never
-produced a usable measurement: the planted facts sat in regions pruning does not touch, so
-the design could not have answered its own question, and both attempted sessions were
-interrupted by provider capacity errors before completion.
+An [independent forensic audit](rq2/INDEPENDENT_AUDIT.md) reconstructed controlled session
+`019ff1b2-be61-7ea3-b835-652379b13f91` from its raw rollout after 11 automatic Ace pruning
+passes. All six planted task-relevant targets were explicitly present in the post-prune
+model context (`replacement_history`, record 298): four requirements from the user prompt
+and two exact values from the initial tool output.
 
-**We therefore make no retention claim in either direction.** No evidence that information
-was lost; no evidence that it was preserved.
+This establishes **6/6 post-prune context retention for the tested targets**. Those targets
+survived because they remained intact in primary history; the run does not show a deleted
+or replaced fact being recovered. Provider capacity errors prevented a subsequent final
+response, so final-answer use was not observed. The retention result does not establish a
+task-performance improvement.
 
-One thing *is* established, from the source rather than an experiment — pruning can only
-ever rewrite tool output:
+## RQ3 — Task performance · not established
 
-```rust
-match item {
-    FunctionCallOutput { .. } | CustomToolCallOutput { .. } => …
-    _ => None,   // reasoning, assistant messages, user messages
-}
-```
+The available runs do not support a comparative correctness or task-performance claim.
+No per-arm score from an incomplete, unreplicated benchmark is reported here. In
+particular, there is no evidence that pruning improves task completion or output quality.
 
-User instructions, assistant messages, and model reasoning are structurally ineligible.
-That is a property of the code, not a result, and it is stated here as such.
-
-A corrected protocol is written up in `RQ2_PROTOCOL.md` on the `eval/rq2-v2` branch. It has
-not been run.
-
-## RQ3 — Task correctness · inconclusive
-
-One paired graded task exists (LHTB vector-db): Codex reward **0.428**, Elpis **0.311**,
-identical Recall@10. A second task was graded on one arm only and is unusable.
-
-n=1 supports no conclusion, and the result does not favour Elpis. A real answer needs a
-Terminal-Bench-class benchmark across several tasks, which is expensive to run.
-
-**We are looking for collaborators to run it** — see issue #104.
-
-## RQ4 — Overhead and cache · needs further study
+## RQ4 — Overhead and cache · penalty established; current magnitude open
 
 Pruning is not free. It runs a second model call per pass, and rewriting history
 invalidates the provider's cached prefix, since [cache hits require an exact prefix
@@ -86,8 +70,10 @@ reduce prefix invalidation. **The current design has not been measured under the
 protocol**, so publishing the old numbers as the cost of the current system would be
 misleading.
 
-We therefore report no cost figure yet. This needs further study, and it is the most
-important open question about the approach.
+We therefore report no cost figure for the current design. The direction of the trade-off
+is established: pruning adds model cost and wall-clock latency and can reduce cache reuse.
+Without a demonstrated task-performance benefit, context reduction alone does not justify
+that overhead.
 
 ## RQ5 — Auditability · answered
 
@@ -126,17 +112,13 @@ be done in ways that are not.
 We will not adopt any technique that violates a provider's stated requirements, and any
 future change to what pruning may rewrite will be checked against them first.
 
-## What we suspect, and why
+## What is not established
 
-Stated as a hypothesis, not a result.
-
-We suspect selective pruning may preserve task-relevant detail better than summarising
-compaction, because it removes individual tool outputs and leaves the rest verbatim, while
-summarisation replaces a whole span with prose. RQ5 shows each decision is inspectable, so
-the claim is at least checkable.
-
-It is untested. Neither mechanism's information loss has been measured — including
-compaction's. RQ2 is the experiment that would settle it.
+No evidence shows that selective pruning improves coding quality, task success, or cost per
+successful task over native compaction. The measured facts are narrower: it reduces active
+context, retained all six tested targets in post-prune context, and leaves an inspectable
+audit trail. It also adds model cost and latency. Treat that as a trade-off, not a
+performance improvement.
 
 ## Known limitations
 
