@@ -686,8 +686,8 @@ pub struct Config {
     /// Token usage threshold triggering auto-compaction of conversation history.
     pub model_auto_compact_token_limit: Option<i64>,
 
-    /// Whether automatic context compaction is allowed. `None` preserves the
-    /// upstream default (enabled); Elpis disables it in its binary defaults.
+    /// Whether automatic context compaction is allowed. `None` keeps the
+    /// default enabled behavior; set false to stop at the context-window limit.
     pub model_auto_compact_enabled: Option<bool>,
 
     /// Controls whether `model_auto_compact_token_limit` applies to the full

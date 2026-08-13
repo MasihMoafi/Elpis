@@ -130,9 +130,11 @@ request now falls back to instead of the initial prefix.
 ## What is unchanged
 
 - 30% trigger, ~20% target.
-- Native Codex-style automatic compaction stays disabled in Elpis; the pruning layer is
-  still what holds context down, and the hand-off to compaction fires only when a cycle
-  stalls in pressure.
+- Native Codex-style automatic compaction is enabled by default in Elpis; the pruning layer
+  is still what holds context down, and the hand-off to compaction fires when a cycle stalls
+  in pressure. `model_auto_compact_token_limit_scope` selects total context or the body after
+  the carried prefix, and `model_auto_compact_enabled = false` keeps the documented
+  context-window error path instead.
 - Every applied pass still writes a full audit record (`~/.elpis/logs/pruning/`) and a
   rollout checkpoint. Raw evidence remains intact in the rollout.
 - `/prune` is unaffected: it passes an explicit trigger, so it never consults the cycle gate.
