@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::context_pruner::PruneRecord;
 
-const AUDIT_SCHEMA_VERSION: u32 = 2;
+const AUDIT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(super) struct PruneAttemptRecord {
@@ -49,6 +49,8 @@ pub(super) enum PruneAttemptStatus {
 
 pub(super) struct PruneAuditInput<'a> {
     pub(super) pass_id: &'a str,
+    pub(super) session_id: Option<&'a str>,
+    pub(super) turn_id: Option<&'a str>,
     /// Which trigger fired this pass: `steady` or `pressure`.
     pub(super) trigger: &'a str,
     pub(super) model_slug: &'a str,
@@ -86,6 +88,10 @@ struct AceConversation<'a> {
 struct PassManifest<'a> {
     schema_version: u32,
     pass_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    turn_id: Option<&'a str>,
     timestamp: String,
     trigger: &'a str,
     model: &'a str,
@@ -236,6 +242,8 @@ pub(super) fn write_applied_pass(
         &PassManifest {
             schema_version: AUDIT_SCHEMA_VERSION,
             pass_id: pass_id.clone(),
+            session_id: input.session_id,
+            turn_id: input.turn_id,
             timestamp: chrono::Utc::now().to_rfc3339(),
             trigger: input.trigger,
             model: input.model_slug,
@@ -471,6 +479,8 @@ mod tests {
             root.path(),
             PruneAuditInput {
                 pass_id: "test-pass-id",
+                session_id: None,
+                turn_id: None,
                 trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "PRUNING INSTRUCTIONS",
@@ -551,6 +561,8 @@ mod tests {
                 root.path(),
                 PruneAuditInput {
                     pass_id: &pass_id,
+                    session_id: None,
+                    turn_id: None,
                     trigger: "pressure",
                     model_slug: "terra",
                     ace_instructions: "instructions",
@@ -574,6 +586,11 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.join("manifest.json").is_file());
         assert!(second.join("manifest.json").is_file());
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(first.join("manifest.json")).unwrap())
+                .unwrap();
+        assert!(manifest.get("session_id").is_none());
+        assert!(manifest.get("turn_id").is_none());
     }
 
     #[test]
@@ -588,6 +605,8 @@ mod tests {
             root.path(),
             PruneAuditInput {
                 pass_id: "test-pass-id",
+                session_id: None,
+                turn_id: None,
                 trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "instructions",
@@ -620,6 +639,8 @@ mod tests {
             root,
             PruneAuditInput {
                 pass_id: "usage-pass-id",
+                session_id: None,
+                turn_id: None,
                 trigger: "pressure",
                 model_slug: "terra",
                 ace_instructions: "instructions",
@@ -721,6 +742,8 @@ mod tests {
             root.path(),
             PruneAuditInput {
                 pass_id: &pass_id,
+                session_id: None,
+                turn_id: None,
                 trigger: "pressure",
                 model_slug: "gpt-4o",
                 ace_instructions: "instructions",
@@ -788,5 +811,46 @@ mod tests {
         let failed_dir = root.path().join("pruning/failed_attempts");
         let entries: Vec<_> = std::fs::read_dir(failed_dir).unwrap().collect();
         assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn applied_pass_manifest_has_direct_session_and_turn_linkage() {
+        let root = tempfile::tempdir().expect("audit root");
+        let before = vec![tool_call("a", "first"), tool_output("a", "result")];
+        let batch = vec![("a".to_string(), "tool and output".to_string())];
+        let record = PruneRecord {
+            covered_call_ids: vec!["a".to_string()],
+            text: String::new(),
+        };
+
+        let written = write_applied_pass(
+            root.path(),
+            PruneAuditInput {
+                pass_id: "linked-pass-id",
+                session_id: Some("session-baseline-123"),
+                turn_id: Some("turn-baseline-456"),
+                trigger: "pressure",
+                model_slug: "terra",
+                ace_instructions: "instructions",
+                ace_input: "input",
+                raw_response: "NOTHING_TO_KEEP",
+                usage: None,
+                attempts: &[],
+                batch: &batch,
+                record: &record,
+                before_model_items: &before,
+                after_model_items: &[],
+                saved_chars: 10,
+            },
+        )
+        .expect("write audit");
+
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(written.pass_dir.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["schema_version"], 3);
+        assert_eq!(manifest["session_id"], "session-baseline-123");
+        assert_eq!(manifest["turn_id"], "turn-baseline-456");
     }
 }

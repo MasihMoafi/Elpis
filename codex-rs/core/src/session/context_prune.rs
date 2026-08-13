@@ -258,10 +258,13 @@ async fn run_context_prune(
     let after_model_items = after_history.for_prompt(&turn_context.model_info.input_modalities);
     let ace_input = context_pruner::build_prune_input(&batch, active_question.as_deref());
     let log_dir = sess.codex_home().await.join("logs");
+    let session_id = sess.session_id().to_string();
     let audit = match context_prune_audit::write_applied_pass(
         &log_dir,
         context_prune_audit::PruneAuditInput {
             pass_id: &pass_id,
+            session_id: Some(&session_id),
+            turn_id: Some(turn_context.sub_id.as_str()),
             trigger: trigger.as_str(),
             model_slug: &model_slug,
             ace_instructions: codex_prompts::CONTEXT_PRUNE_PROMPT,
