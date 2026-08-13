@@ -557,7 +557,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
             Span::styled(pruning, Style::default().fg(Color::LightGreen).bold()),
         ]));
         lines.push(Line::from(vec![
-            Span::from("   Native compaction "),
+            Span::from("   Native compaction (process) "),
             format!("{} recorded", snapshot.native_compaction_count).cyan(),
         ]));
         lines.push(Line::from(vec![
@@ -573,7 +573,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
         lines.push(Line::from(vec![
             Span::from("   Pruning "),
             Span::styled(pruning, Style::default().fg(Color::LightGreen).bold()),
-            "  ·  Native compaction ".dim(),
+            "  ·  Native compaction (process) ".dim(),
             format!("{} recorded", snapshot.native_compaction_count).cyan(),
             "  ·  Backtrack ".dim(),
             format!("{} available", snapshot.backtrack_points).yellow(),
@@ -587,12 +587,12 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     if let Some(latest) = &snapshot.latest_native_compaction {
         if narrow {
             lines
-                .push(format!("   Latest compaction: {} · {}", latest.reason, latest.count).into());
+                .push(format!("   Latest process compaction: {} · {}", latest.reason, latest.count).into());
             lines.push(format!("     evidence {}", latest.evidence).dim().into());
         } else {
             lines.push(
                 format!(
-                    "   Latest compaction: {} · {} · evidence {}",
+                    "   Latest process compaction: {} · {} · evidence {}",
                     latest.reason, latest.count, latest.evidence
                 )
                 .into(),
@@ -1073,9 +1073,9 @@ Context Ledger
       the active objective · until goal completion
 
 Continuity evidence
-  Pruning ~6k reclaimed  ·  Native compaction 1 recorded  ·  Backtrack 2 available
+  Pruning ~6k reclaimed  ·  Native compaction (process) 1 recorded  ·  Backtrack 2 available
   Pruning checkpoint count: not recorded in the current UI snapshot.
-  Latest compaction: context compaction · 1 · evidence thread:t/turn:u
+  Latest process compaction: context compaction · 1 · evidence thread:t/turn:u
   Rollout /tmp/rollout.jsonl
 
 Context accounting only · no task-quality, cost, or causal claims.
@@ -1098,10 +1098,10 @@ Context Ledger
 
 Continuity evidence
   Pruning ~6k reclaimed
-  Native compaction 1 recorded
+  Native compaction (process) 1 recorded
   Backtrack 2 available
   Pruning checkpoint count unavailable in this UI snapshot.
-  Latest compaction: context compaction · 1
+  Latest process compaction: context compaction · 1
     evidence thread:t/turn:u
   Rollout /tmp/rollout.jsonl
 
