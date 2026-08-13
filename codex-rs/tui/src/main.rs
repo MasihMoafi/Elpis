@@ -107,13 +107,6 @@ fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, el
     config_overrides.raw_overrides.splice(
         0..0,
         [
-            // Pruning is the first line of context control, but a stalled pruning cycle
-            // needs something underneath it. Automatic compaction is the backstop; see
-            // `ELPIS_COMPACT_REMAINING_PERCENT` for where it fires. Prepended, so a user
-            // config file can still turn it off deliberately.
-            "model_auto_compact_enabled=true".to_string(),
-            // The Elpis threshold is expressed against the whole active context.
-            "model_auto_compact_token_limit_scope=total".to_string(),
             format!("memories.root={memories_value}"),
             format!("memories.state_root={state_value}"),
         ],
@@ -215,31 +208,11 @@ mod tests {
         assert_eq!(
             overrides.raw_overrides,
             vec![
-                "model_auto_compact_enabled=true",
-                "model_auto_compact_token_limit_scope=total",
                 "memories.root=\"/tmp/home/.elpis/memories\"",
                 "memories.state_root=\"/tmp/home/.elpis/state\"",
                 "memories.root=\"/tmp/custom-memories\"",
                 "memories.state_root=\"/tmp/custom-state\"",
             ]
-        );
-    }
-
-    #[test]
-    fn a_user_config_can_still_turn_the_compaction_backstop_off() {
-        let mut overrides = CliConfigOverrides {
-            raw_overrides: vec!["model_auto_compact_enabled=false".to_string()],
-        };
-
-        prepend_elpis_memories_defaults(&mut overrides, Path::new("/tmp/home/.elpis"));
-
-        assert_eq!(
-            overrides.raw_overrides.first().map(String::as_str),
-            Some("model_auto_compact_enabled=true")
-        );
-        assert_eq!(
-            overrides.raw_overrides.last().map(String::as_str),
-            Some("model_auto_compact_enabled=false")
         );
     }
 

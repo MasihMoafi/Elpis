@@ -28,7 +28,7 @@ fn tokens_remaining(limit: Option<i64>, used: i64) -> Option<i64> {
 /// window to exhaustion and errors.
 pub(crate) const ELPIS_COMPACT_REMAINING_PERCENT: i64 = 40;
 
-/// The Elpis auto-compaction threshold in absolute tokens: compact once fewer than
+/// The Elpis auto-compaction threshold in absolute tokens: compact once no more than
 /// `ELPIS_COMPACT_REMAINING_PERCENT` of the window is left.
 fn elpis_auto_compact_token_limit(full_context_window_limit: Option<i64>) -> Option<i64> {
     full_context_window_limit
@@ -133,9 +133,8 @@ mod tests {
     fn the_backstop_sits_well_clear_of_the_pruning_trigger() {
         let limit = elpis_auto_compact_token_limit(Some(GPT_5_6_LUNA_WINDOW))
             .expect("a known window yields a limit");
-        let prune_trigger = GPT_5_6_LUNA_WINDOW
-            * crate::context_pruner::AUTO_PRUNE_TRIGGER_PERCENT
-            / 100;
+        let prune_trigger =
+            GPT_5_6_LUNA_WINDOW * crate::context_pruner::AUTO_PRUNE_TRIGGER_PERCENT / 100;
 
         assert!(
             limit > prune_trigger,

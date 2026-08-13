@@ -3220,23 +3220,31 @@ impl WorldStateItem {
 // `Serialize` is implemented by hand in `crate::compacted_item` so every record carries an
 // explicit `kind` discriminator. Elpis reuses this item for pruning checkpoints, and a reader
 // that only sees `"type": "compacted"` cannot tell a pruning pass from a real compaction.
-#[derive(Clone, Debug, PartialEq, JsonSchema, TS)]
+#[derive(Clone, Debug, PartialEq, TS)]
+#[ts(as = "CompactedItemWireSchema")]
 pub struct CompactedItem {
     pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement_history: Option<Vec<ResponseItem>>,
     /// Monotonic position of this context window within the thread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_number: Option<u64>,
     /// UUIDv7 identity of the first context window in this thread's window chain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_window_id: Option<String>,
     /// UUIDv7 identity of the context window immediately before this one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_window_id: Option<String>,
     /// UUIDv7 identity of this context window.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_id: Option<String>,
+}
+
+#[derive(JsonSchema, TS)]
+#[allow(dead_code)]
+struct CompactedItemWireSchema {
+    message: String,
+    kind: CompactedKind,
+    replacement_history: Option<Vec<ResponseItem>>,
+    window_number: Option<u64>,
+    first_window_id: Option<String>,
+    previous_window_id: Option<String>,
+    window_id: Option<String>,
 }
 
 pub(crate) const CONTEXT_PRUNE_CHECKPOINT_PREFIX: &str = "elpis.context-prune.v1:";
@@ -3247,7 +3255,7 @@ pub(crate) const CONTEXT_PRUNE_CHECKPOINT_PREFIX: &str = "elpis.context-prune.v1
 /// over-reports compactions: every prune looks like one. This is the discriminator that
 /// separates them in the rollout, derived from the record rather than stored, so no
 /// construction site can forget to set it or set it wrongly.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactedKind {
     /// A real context compaction or window rollover: history was replaced by a summary
@@ -3256,6 +3264,16 @@ pub enum CompactedKind {
     /// An Elpis pruning checkpoint. Not a compaction — tool output was rewritten in place
     /// and the context window is unchanged.
     ContextPrune,
+}
+
+impl JsonSchema for CompactedItem {
+    fn schema_name() -> String {
+        "CompactedItem".to_string()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        CompactedItemWireSchema::json_schema(generator)
+    }
 }
 
 impl CompactedItem {

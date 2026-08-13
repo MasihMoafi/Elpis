@@ -113,7 +113,9 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use pretty_assertions::assert_eq;
+    use schemars::schema_for;
     use serde_json::json;
+    use ts_rs::TS;
 
     #[test]
     fn serializes_window_number_and_id() -> Result<()> {
@@ -178,6 +180,14 @@ mod tests {
         }))?;
 
         assert_eq!(serde_json::to_value(item)?["kind"], "context_prune");
+        Ok(())
+    }
+
+    #[test]
+    fn generated_contract_includes_compaction_kind() -> Result<()> {
+        let schema = serde_json::to_value(schema_for!(CompactedItem))?;
+        assert_eq!(schema["schema"]["required"], json!(["kind", "message"]));
+        assert!(CompactedItem::inline().contains("kind: CompactedKind"));
         Ok(())
     }
 
