@@ -65,6 +65,7 @@ struct StatusContextWindowData {
 pub(crate) struct StatusTokenUsageData {
     total: i64,
     input: i64,
+    cache_write_tokens: Option<i64>,
     output: i64,
     context_window: Option<StatusContextWindowData>,
 }
@@ -347,6 +348,7 @@ impl StatusHistoryCell {
         let token_usage = StatusTokenUsageData {
             total: total_usage.blended_total(),
             input: total_usage.non_cached_input(),
+            cache_write_tokens: total_usage.cache_write_tokens,
             output: total_usage.output_tokens,
             context_window,
         };
@@ -394,7 +396,7 @@ impl StatusHistoryCell {
         let input_fmt = format_tokens_compact(self.token_usage.input);
         let output_fmt = format_tokens_compact(self.token_usage.output);
 
-        vec![
+        let mut spans = vec![
             Span::from(total_fmt),
             Span::from(" total "),
             Span::from(" (").dim(),
@@ -404,7 +406,15 @@ impl StatusHistoryCell {
             Span::from(output_fmt).dim(),
             Span::from(" output").dim(),
             Span::from(")").dim(),
-        ]
+        ];
+        if let Some(cache_write_tokens) = self.token_usage.cache_write_tokens {
+            spans.extend([
+                Span::from("; ").dim(),
+                Span::from(format_tokens_compact(cache_write_tokens)).dim(),
+                Span::from(" cache writes").dim(),
+            ]);
+        }
+        spans
     }
 
     fn context_window_spans(&self) -> Option<Vec<Span<'static>>> {

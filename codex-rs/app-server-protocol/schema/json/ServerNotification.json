@@ -2569,54 +2569,6 @@
       ],
       "type": "string"
     },
-    "MemoryCitation": {
-      "properties": {
-        "entries": {
-          "items": {
-            "$ref": "#/definitions/MemoryCitationEntry"
-          },
-          "type": "array"
-        },
-        "threadIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "entries",
-        "threadIds"
-      ],
-      "type": "object"
-    },
-    "MemoryCitationEntry": {
-      "properties": {
-        "lineEnd": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "lineStart": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "note": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "lineEnd",
-        "lineStart",
-        "note",
-        "path"
-      ],
-      "type": "object"
-    },
     "MessagePhase": {
       "description": "Classifies an assistant message as interim commentary or final answer text.\n\nProviders do not emit this consistently, so callers must treat `None` as \"phase unknown\" and keep compatibility behavior for legacy models.",
       "oneOf": [
@@ -4056,17 +4008,6 @@
             "id": {
               "type": "string"
             },
-            "memoryCitation": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/MemoryCitation"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": null
-            },
             "phase": {
               "anyOf": [
                 {
@@ -5141,6 +5082,12 @@
     },
     "ThreadTokenUsage": {
       "properties": {
+        "contextPruneSavedTokens": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "last": {
           "$ref": "#/definitions/TokenUsageBreakdown"
         },
@@ -5193,6 +5140,14 @@
     },
     "TokenUsageBreakdown": {
       "properties": {
+        "cacheWriteTokens": {
+          "description": "Input tokens written to the prompt cache by this request.\n\n`None` means the provider did not report the field, which is not the same as a reported zero.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "cachedInputTokens": {
           "format": "int64",
           "type": "integer"

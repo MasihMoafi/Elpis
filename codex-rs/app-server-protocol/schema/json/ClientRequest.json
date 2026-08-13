@@ -3943,13 +3943,6 @@
       },
       "type": "object"
     },
-    "ThreadMemoryMode": {
-      "enum": [
-        "enabled",
-        "disabled"
-      ],
-      "type": "string"
-    },
     "ThreadMetadataGitInfoUpdateParams": {
       "properties": {
         "branch": {
@@ -4000,6 +3993,13 @@
     },
     "ThreadPruneStartParams": {
       "properties": {
+        "targetPct": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "threadId": {
           "type": "string"
         }

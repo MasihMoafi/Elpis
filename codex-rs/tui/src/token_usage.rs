@@ -11,6 +11,8 @@ use serde::Serialize;
 pub struct TokenUsage {
     pub input_tokens: i64,
     pub cached_input_tokens: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<i64>,
     pub output_tokens: i64,
     pub reasoning_output_tokens: i64,
     pub total_tokens: i64,
@@ -71,13 +73,21 @@ impl fmt::Display for TokenUsage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Token usage: total={} input={}{} output={}{}",
+            "Token usage: total={} input={}{}{} output={}{}",
             format_with_separators(self.blended_total()),
             format_with_separators(self.non_cached_input()),
             if self.cached_input() > 0 {
                 format!(
                     " (+ {} cached)",
                     format_with_separators(self.cached_input())
+                )
+            } else {
+                String::new()
+            },
+            if let Some(cache_write_tokens) = self.cache_write_tokens {
+                format!(
+                    " (+ {} cache writes)",
+                    format_with_separators(cache_write_tokens)
                 )
             } else {
                 String::new()

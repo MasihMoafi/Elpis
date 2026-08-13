@@ -110,6 +110,124 @@ async fn context_indicator_shows_used_tokens_when_window_unknown() {
 }
 
 #[tokio::test]
+async fn token_usage_notification_preserves_reported_cache_write_tokens() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = chat
+        .thread_id()
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    let notification = serde_json::from_value::<
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification,
+    >(serde_json::json!({
+        "threadId": thread_id,
+        "turnId": "turn-1",
+        "tokenUsage": {
+            "total": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "cacheWriteTokens": 37,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "last": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "cacheWriteTokens": 37,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "modelContextWindow": 100_000
+        }
+    }))
+    .expect("token usage notification");
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(notification),
+        /*replay_kind*/ None,
+    );
+
+    let usage = chat.token_usage();
+    assert_eq!(usage.input_tokens, 1_200);
+    assert_eq!(usage.cached_input_tokens, 200);
+    assert_eq!(usage.output_tokens, 900);
+    assert_eq!(usage.total_tokens, 2_100);
+    assert_eq!(
+        serde_json::to_value(usage)
+            .expect("serialize TUI token usage")
+            .get("cache_write_tokens")
+            .and_then(serde_json::Value::as_i64),
+        Some(37)
+    );
+
+    chat.add_status_output(
+        /*refreshing_rate_limits*/ false, /*request_id*/ None,
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = lines_to_single_string(cells.last().expect("status output inserted"));
+    assert!(
+        rendered.contains("37 cache writes"),
+        "status output: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn token_usage_notification_omits_unreported_cache_write_tokens() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = chat
+        .thread_id()
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    let notification = serde_json::from_value::<
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification,
+    >(serde_json::json!({
+        "threadId": thread_id,
+        "turnId": "turn-1",
+        "tokenUsage": {
+            "total": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "last": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "modelContextWindow": 100_000
+        }
+    }))
+    .expect("token usage notification");
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(notification),
+        /*replay_kind*/ None,
+    );
+
+    assert!(
+        serde_json::to_value(chat.token_usage())
+            .expect("serialize TUI token usage")
+            .get("cache_write_tokens")
+            .is_none()
+    );
+
+    chat.add_status_output(
+        /*refreshing_rate_limits*/ false, /*request_id*/ None,
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = lines_to_single_string(cells.last().expect("status output inserted"));
+    assert!(
+        !rendered.contains("cache writes"),
+        "status output: {rendered}"
+    );
+}
+
+#[tokio::test]
 async fn token_usage_update_uses_runtime_context_window() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 

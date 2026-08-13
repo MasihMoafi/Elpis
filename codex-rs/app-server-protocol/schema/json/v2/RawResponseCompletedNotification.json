@@ -3,6 +3,14 @@
   "definitions": {
     "TokenUsageBreakdown": {
       "properties": {
+        "cacheWriteTokens": {
+          "description": "Input tokens written to the prompt cache by this request.\n\n`None` means the provider did not report the field, which is not the same as a reported zero.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "cachedInputTokens": {
           "format": "int64",
           "type": "integer"

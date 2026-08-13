@@ -41,6 +41,7 @@ use codex_protocol::protocol::ExecCommandSource as CoreExecCommandSource;
 use codex_protocol::protocol::GranularApprovalConfig as CoreGranularApprovalConfig;
 use codex_protocol::protocol::NetworkAccess as CoreNetworkAccess;
 use codex_protocol::protocol::SubAgentActivityKind as CoreSubAgentActivityKind;
+use codex_protocol::protocol::TokenUsage as CoreTokenUsage;
 use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
 use codex_protocol::user_input::UserInput as CoreUserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -69,6 +70,34 @@ fn absolute_path(path: &str) -> AbsolutePathBuf {
 
 fn test_absolute_path() -> AbsolutePathBuf {
     absolute_path("readable")
+}
+
+#[test]
+fn token_usage_breakdown_preserves_optional_cache_writes() {
+    for cache_write_tokens in [None, Some(0), Some(37)] {
+        let breakdown = TokenUsageBreakdown::from(CoreTokenUsage {
+            input_tokens: 10,
+            cached_input_tokens: 2,
+            cache_write_tokens,
+            output_tokens: 3,
+            reasoning_output_tokens: 1,
+            total_tokens: 13,
+        });
+
+        assert_eq!(breakdown.cache_write_tokens, cache_write_tokens);
+        assert_eq!(breakdown.total_tokens, 13);
+
+        let serialized = serde_json::to_value(&breakdown).expect("serialize token usage");
+        match cache_write_tokens {
+            Some(value) => assert_eq!(
+                serialized
+                    .get("cacheWriteTokens")
+                    .and_then(serde_json::Value::as_i64),
+                Some(value)
+            ),
+            None => assert!(serialized.get("cacheWriteTokens").is_none()),
+        }
+    }
 }
 
 #[test]

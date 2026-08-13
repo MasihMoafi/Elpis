@@ -12460,54 +12460,6 @@
         ],
         "type": "string"
       },
-      "MemoryCitation": {
-        "properties": {
-          "entries": {
-            "items": {
-              "$ref": "#/definitions/v2/MemoryCitationEntry"
-            },
-            "type": "array"
-          },
-          "threadIds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "entries",
-          "threadIds"
-        ],
-        "type": "object"
-      },
-      "MemoryCitationEntry": {
-        "properties": {
-          "lineEnd": {
-            "format": "uint32",
-            "minimum": 0.0,
-            "type": "integer"
-          },
-          "lineStart": {
-            "format": "uint32",
-            "minimum": 0.0,
-            "type": "integer"
-          },
-          "note": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "lineEnd",
-          "lineStart",
-          "note",
-          "path"
-        ],
-        "type": "object"
-      },
       "MergeStrategy": {
         "enum": [
           "replace",
@@ -18120,17 +18072,6 @@
               "id": {
                 "type": "string"
               },
-              "memoryCitation": {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/v2/MemoryCitation"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "default": null
-              },
               "phase": {
                 "anyOf": [
                   {
@@ -19004,13 +18945,6 @@
         "title": "ThreadLoadedListResponse",
         "type": "object"
       },
-      "ThreadMemoryMode": {
-        "enum": [
-          "enabled",
-          "disabled"
-        ],
-        "type": "string"
-      },
       "ThreadMetadataGitInfoUpdateParams": {
         "properties": {
           "branch": {
@@ -19096,6 +19030,13 @@
       "ThreadPruneStartParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
+          "targetPct": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "threadId": {
             "type": "string"
           }
@@ -20119,6 +20060,12 @@
       },
       "ThreadTokenUsage": {
         "properties": {
+          "contextPruneSavedTokens": {
+            "default": 0,
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
           "last": {
             "$ref": "#/definitions/v2/TokenUsageBreakdown"
           },
@@ -20235,6 +20182,14 @@
       },
       "TokenUsageBreakdown": {
         "properties": {
+          "cacheWriteTokens": {
+            "description": "Input tokens written to the prompt cache by this request.\n\n`None` means the provider did not report the field, which is not the same as a reported zero.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "cachedInputTokens": {
             "format": "int64",
             "type": "integer"
