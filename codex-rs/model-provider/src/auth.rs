@@ -220,6 +220,15 @@ pub(crate) fn resolve_provider_auth(
         return Ok(Arc::new(auth));
     }
 
+    if matches!(provider.wire_api, WireApi::AnthropicMessages)
+        && let Some(env_key) = &provider.env_key
+    {
+        return Err(CodexErr::EnvVar(codex_protocol::error::EnvVarError {
+            var: env_key.clone(),
+            instructions: provider.env_key_instructions.clone(),
+        }));
+    }
+
     if !provider.requires_openai_auth {
         return Ok(unauthenticated_auth_provider());
     }
@@ -516,6 +525,28 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer openai-secret")
         );
+    }
+
+    #[test]
+    fn native_provider_without_api_key_returns_a_typed_error() {
+        let provider = ModelProviderInfo {
+            name: "Anthropic test".to_string(),
+            env_key: Some("ELPIS_TEST_MISSING_ANTHROPIC_KEY".to_string()),
+            env_key_instructions: Some("set the test key".to_string()),
+            wire_api: WireApi::AnthropicMessages,
+            ..ModelProviderInfo::default()
+        };
+
+        let error = resolve_provider_auth(None, &provider)
+            .err()
+            .expect("missing native provider credentials should fail");
+        match error {
+            codex_protocol::error::CodexErr::EnvVar(error) => {
+                assert_eq!(error.var, "ELPIS_TEST_MISSING_ANTHROPIC_KEY");
+                assert_eq!(error.instructions.as_deref(), Some("set the test key"));
+            }
+            other => panic!("expected missing credential error, got {other}"),
+        }
     }
 
     #[test]
