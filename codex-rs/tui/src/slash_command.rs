@@ -56,6 +56,7 @@ pub enum SlashCommand {
     Mention,
     Usage,
     Context,
+    Dashboard,
     DebugConfig,
     Title,
     Statusline,
@@ -104,6 +105,9 @@ impl SlashCommand {
             }
             SlashCommand::Context => {
                 "show context usage as a grid, by category, with checkpoints and system files"
+            }
+            SlashCommand::Dashboard => {
+                "show the current context window, admitted sources, and pruning evidence"
             }
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Title => "configure which items appear in the terminal title",
@@ -176,6 +180,7 @@ impl SlashCommand {
                 | SlashCommand::Mention
                 | SlashCommand::Usage
                 | SlashCommand::Context
+                | SlashCommand::Dashboard
                 | SlashCommand::Ide
         )
     }
@@ -215,6 +220,7 @@ impl SlashCommand {
             | SlashCommand::Hooks
             | SlashCommand::Usage
             | SlashCommand::Context
+            | SlashCommand::Dashboard
             | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop
@@ -254,6 +260,7 @@ impl SlashCommand {
             | SlashCommand::Diff
             | SlashCommand::Usage
             | SlashCommand::Context
+            | SlashCommand::Dashboard
             | SlashCommand::Mcp
             | SlashCommand::Quit
             | SlashCommand::Keymap
@@ -394,6 +401,23 @@ mod tests {
         assert!(SlashCommand::Title.available_during_task());
         assert!(SlashCommand::Statusline.available_during_task());
         assert!(SlashCommand::App.available_during_task());
+    }
+
+    #[test]
+    fn dashboard_is_a_visible_read_only_context_command() {
+        assert_eq!(
+            SlashCommand::from_str("dashboard"),
+            Ok(SlashCommand::Dashboard)
+        );
+        assert_eq!(SlashCommand::Dashboard.command(), "dashboard");
+        assert!(SlashCommand::Dashboard.available_in_side_conversation());
+        assert!(SlashCommand::Dashboard.available_during_task());
+        assert!(
+            super::built_in_slash_commands()
+                .into_iter()
+                .any(|(name, command)| name == "dashboard" && command == SlashCommand::Dashboard)
+        );
+        assert!(SlashCommand::Dashboard.description().contains("context"));
     }
 
     #[test]

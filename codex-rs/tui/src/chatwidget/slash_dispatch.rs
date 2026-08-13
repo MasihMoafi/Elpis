@@ -467,6 +467,9 @@ impl ChatWidget {
             SlashCommand::Context => {
                 self.app_event_tx.send(AppEvent::RequestContextUsageReport);
             }
+            SlashCommand::Dashboard => {
+                self.app_event_tx.send(AppEvent::OpenContextDashboard);
+            }
             SlashCommand::Ide => {
                 self.handle_ide_command();
             }
@@ -669,6 +672,9 @@ impl ChatWidget {
             }
             SlashCommand::Context => {
                 self.app_event_tx.send(AppEvent::RequestContextUsageReport);
+            }
+            SlashCommand::Dashboard => {
+                self.app_event_tx.send(AppEvent::OpenContextDashboard);
             }
             SlashCommand::Ide => {
                 self.handle_ide_command_args(trimmed);
@@ -1038,6 +1044,7 @@ impl ChatWidget {
             SlashCommand::Ide
             | SlashCommand::Usage
             | SlashCommand::Context
+            | SlashCommand::Dashboard
             | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop

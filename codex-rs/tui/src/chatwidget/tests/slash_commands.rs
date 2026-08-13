@@ -183,6 +183,18 @@ async fn slash_prune_takes_no_arguments_so_a_bare_prune_always_runs() {
 }
 
 #[tokio::test]
+async fn slash_dashboard_requests_a_read_only_context_snapshot() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Dashboard);
+
+    match rx.try_recv() {
+        Ok(AppEvent::OpenContextDashboard) => {}
+        other => panic!("expected dashboard event, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn slash_force_prune_with_percentage_submits_target_to_runtime() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

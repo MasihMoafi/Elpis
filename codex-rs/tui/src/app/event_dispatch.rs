@@ -144,6 +144,17 @@ impl App {
                 self.chat_widget.add_context_usage_output(totals);
                 tui.frame_requester().schedule_frame();
             }
+            AppEvent::OpenContextDashboard => {
+                let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                let dashboard = self.chat_widget.context_dashboard_renderable(totals);
+                let _ = tui.enter_alt_screen();
+                self.overlay = Some(Overlay::new_static_with_renderables(
+                    vec![dashboard],
+                    "C O N T E X T   D A S H B O A R D".to_string(),
+                    self.keymap.pager.clone(),
+                ));
+                tui.frame_requester().schedule_frame();
+            }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
                 match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
                     Some(target_session) => {

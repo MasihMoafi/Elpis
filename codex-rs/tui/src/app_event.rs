@@ -228,6 +228,9 @@ pub(crate) enum AppEvent {
     /// (checkpoint count, per-category totals), so it cannot be built inside `ChatWidget`.
     RequestContextUsageReport,
 
+    /// Open a read-only dashboard of the current context window and its provenance.
+    OpenContextDashboard,
+
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
 

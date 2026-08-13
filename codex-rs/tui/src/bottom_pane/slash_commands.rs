@@ -301,6 +301,7 @@ mod tests {
                 SlashCommand::Diff,
                 SlashCommand::Usage,
                 SlashCommand::Context,
+                SlashCommand::Dashboard,
             ]
         );
     }

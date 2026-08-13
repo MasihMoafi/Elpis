@@ -164,6 +164,11 @@ pub(crate) fn record_compaction(thread_id: &str, turn_id: &str) -> EvictionNotic
     })
 }
 
+pub(crate) fn compaction_evidence() -> (u64, Option<EvictionNotice>) {
+    let state = read_runtime_identity();
+    (state.eviction_count, state.latest_eviction)
+}
+
 pub(crate) fn record_model_reroute(from_model: &str, to_model: &str) {
     mutate_runtime_identity(|state| {
         state.model = normalized_value(to_model, "starting");
