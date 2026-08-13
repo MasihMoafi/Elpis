@@ -3217,7 +3217,10 @@ impl WorldStateItem {
     }
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, TS)]
+// `Serialize` is implemented by hand in `crate::compacted_item` so every record carries an
+// explicit `kind` discriminator. Elpis reuses this item for pruning checkpoints, and a reader
+// that only sees `"type": "compacted"` cannot tell a pruning pass from a real compaction.
+#[derive(Clone, Debug, PartialEq, JsonSchema, TS)]
 pub struct CompactedItem {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3236,9 +3239,35 @@ pub struct CompactedItem {
     pub window_id: Option<String>,
 }
 
-const CONTEXT_PRUNE_CHECKPOINT_PREFIX: &str = "elpis.context-prune.v1:";
+pub(crate) const CONTEXT_PRUNE_CHECKPOINT_PREFIX: &str = "elpis.context-prune.v1:";
+
+/// What a `compacted` rollout record actually was.
+///
+/// Elpis writes its pruning checkpoints through `CompactedItem`, so the record type alone
+/// over-reports compactions: every prune looks like one. This is the discriminator that
+/// separates them in the rollout, derived from the record rather than stored, so no
+/// construction site can forget to set it or set it wrongly.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactedKind {
+    /// A real context compaction or window rollover: history was replaced by a summary
+    /// or a fresh window.
+    Compaction,
+    /// An Elpis pruning checkpoint. Not a compaction — tool output was rewritten in place
+    /// and the context window is unchanged.
+    ContextPrune,
+}
 
 impl CompactedItem {
+    /// Whether this record is a pruning checkpoint or a real compaction.
+    pub fn kind(&self) -> CompactedKind {
+        if self.is_context_prune_checkpoint() {
+            CompactedKind::ContextPrune
+        } else {
+            CompactedKind::Compaction
+        }
+    }
+
     pub fn context_prune_checkpoint_message(saved_tokens: u64) -> String {
         format!("{CONTEXT_PRUNE_CHECKPOINT_PREFIX}{saved_tokens}")
     }
