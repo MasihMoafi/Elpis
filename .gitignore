@@ -50,6 +50,9 @@ src/rag/rag_db_v2/
 scratch/
 src/fix_cuda.sh
 
+# Local isolated agent worktrees
+.worktrees/
+
 # Logs and caches
 *.log
 *.sqlite3
