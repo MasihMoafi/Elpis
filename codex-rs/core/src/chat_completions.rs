@@ -492,6 +492,7 @@ where
     let mut response_id = String::new();
     let mut input_tokens = 0_i64;
     let mut cached_input_tokens = 0_i64;
+    let mut cache_write_tokens = None;
     let mut output_tokens = 0_i64;
     let mut stop_reason: Option<String> = None;
     let mut text = String::new();
@@ -523,6 +524,7 @@ where
                 let usage = &message["usage"];
                 input_tokens = anthropic_input_tokens(usage);
                 cached_input_tokens = usage["cache_read_input_tokens"].as_i64().unwrap_or(0);
+                cache_write_tokens = usage["cache_creation_input_tokens"].as_i64();
             }
             "content_block_start" => {
                 let index = value["index"].as_u64().unwrap_or(0);
@@ -618,7 +620,8 @@ where
                     )
                     .await?;
                 }
-                let usage = token_usage(input_tokens, cached_input_tokens, output_tokens, 0);
+                let mut usage = token_usage(input_tokens, cached_input_tokens, output_tokens, 0);
+                usage.cache_write_tokens = cache_write_tokens;
                 send(
                     tx,
                     ResponseEvent::Completed {
@@ -1126,6 +1129,7 @@ mod tests {
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
+    use wiremock::matchers::body_json;
     use wiremock::matchers::body_partial_json;
     use wiremock::matchers::header;
     use wiremock::matchers::method;
@@ -1246,12 +1250,52 @@ mod tests {
             .and(path("/v1/messages"))
             .and(header("x-api-key", "anthropic-test"))
             .and(header("anthropic-version", "2023-06-01"))
-            .and(body_partial_json(json!({"model": "test-model", "stream": true})))
+            .and(body_json(json!({
+                "model": "test-model",
+                "max_tokens": 8192,
+                "stream": true,
+                "system": [{"type": "text", "text": "Be exact."}],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Use the weather tool."}]
+                    },
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "I will check."},
+                            {
+                                "type": "tool_use",
+                                "id": "call-1",
+                                "name": "weather",
+                                "input": {"city": "Helsinki"}
+                            }
+                        ]
+                    },
+                    {
+                        "role": "user",
+                        "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": "12 C",
+                            "is_error": false
+                        }]
+                    }
+                ],
+                "tools": [{
+                    "name": "weather",
+                    "description": "Read weather",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}}
+                    }
+                }]
+            })))
             .respond_with(
                 ResponseTemplate::new(200)
                     .insert_header("content-type", "text/event-stream")
                     .set_body_string(concat!(
-                        "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-1\",\"usage\":{\"input_tokens\":4}}}\n\n",
+                        "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-1\",\"usage\":{\"input_tokens\":4,\"cache_creation_input_tokens\":2,\"cache_read_input_tokens\":1}}}\n\n",
                         "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
                         "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n",
                         "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
@@ -1304,9 +1348,11 @@ mod tests {
                 ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
                     name,
                     arguments,
+                    call_id,
                     ..
                 }) => {
-                    saw_tool |= name == "weather" && arguments.contains("Helsinki");
+                    saw_tool |=
+                        name == "weather" && call_id == "call-42" && arguments.contains("Helsinki");
                 }
                 ResponseEvent::Completed {
                     token_usage,
@@ -1322,8 +1368,68 @@ mod tests {
         assert!(saw_text);
         assert!(saw_tool);
         let (usage, end_turn) = completed.expect("completed");
-        assert_eq!(usage.expect("usage").total_tokens, 6);
+        let usage = usage.expect("usage");
+        assert_eq!(usage.input_tokens, 7);
+        assert_eq!(usage.cached_input_tokens, 1);
+        assert_eq!(usage.cache_write_tokens, Some(2));
+        assert_eq!(usage.total_tokens, 9);
         assert_eq!(end_turn, Some(false));
+    }
+
+    #[tokio::test]
+    async fn anthropic_http_errors_are_typed_without_fallback() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(
+                ResponseTemplate::new(401)
+                    .set_body_json(json!({"error": {"message": "invalid x-api-key"}})),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = Provider {
+            name: "Anthropic".to_string(),
+            base_url: format!("{}/v1", server.uri()),
+            query_params: None,
+            headers: HeaderMap::from_iter([(
+                http::HeaderName::from_static("anthropic-version"),
+                http::HeaderValue::from_static("2023-06-01"),
+            )]),
+            retry: codex_api::RetryConfig {
+                max_attempts: 1,
+                base_delay: std::time::Duration::from_millis(1),
+                retry_429: false,
+                retry_5xx: false,
+                retry_transport: false,
+            },
+            stream_idle_timeout: std::time::Duration::from_secs(5),
+        };
+        let auth: SharedAuthProvider = Arc::new(TestAuth {
+            header: "x-api-key",
+            value: "anthropic-test",
+        });
+
+        let error = match stream_native_request(
+            provider,
+            auth.as_ref(),
+            &HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            request(),
+            WireApi::AnthropicMessages,
+        )
+        .await
+        {
+            Ok(_) => panic!("401 should not fall back to another provider"),
+            Err(error) => error,
+        };
+        match error {
+            ApiError::Api { status, message } => {
+                assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+                assert_eq!(message, "invalid x-api-key");
+            }
+            error => panic!("expected typed Anthropic API error, got {error:?}"),
+        }
+        assert_eq!(server.received_requests().await.expect("requests").len(), 1);
     }
 
     #[tokio::test]
