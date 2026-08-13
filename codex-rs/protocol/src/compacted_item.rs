@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn generated_contract_includes_compaction_kind() -> Result<()> {
         let schema = serde_json::to_value(schema_for!(CompactedItem))?;
-        assert_eq!(schema["schema"]["required"], json!(["kind", "message"]));
+        assert_eq!(schema["required"], json!(["kind", "message"]));
         assert!(CompactedItem::inline().contains("kind: CompactedKind"));
         Ok(())
     }
