@@ -214,3 +214,30 @@ This switches `prompt_cache_options.mode` to `"explicit"` and adds a rolling-tai
 breakpoint to replace the automatic one it disables. It affects only GPT-5.6+ requests to
 OpenAI, and it is **not** needed to get Elpis's breakpoints — those ship on by default. See
 "Why implicit rather than explicit" above; keep it off unless a paired run shows otherwise.
+
+## Provider Prompt-Cache Lifecycle Awareness
+
+In addition to breakpoint placement, Elpis manages provider-specific prompt-cache lifecycles (`codex-model-provider::cache_lifecycle`):
+
+### 1. Anthropic TTL Tracking (5-minute ephemeral window)
+
+Anthropic Claude enforces a 5-minute (300-second) TTL on cached prompt prefixes:
+- **`Hot` / `Fresh`:** Elapsed time since last request < 270s (well within TTL).
+- **`NearExpiry`:** Elapsed time between 270s and 300s (warning window, 30s remaining).
+- **`Cold` / `Expired`:** Elapsed time >= 300s (cache evicted by provider; requires full write).
+
+Subsequent requests within the active TTL window refresh the 5-minute timer from the newest request timestamp.
+
+### 2. Cache-Miss Detection & Metrics
+
+The tracker records per-thread/session and per-provider metrics:
+- **Miss Categorization:** Differentiates `ColdStart`, `TtlExpired`, `BelowTokenThreshold` (< 1,024 tokens), and `PrefixInvalidated`.
+- **Metrics Tracked:** Total requests, hits, misses, creations, total input tokens, cached tokens, created tokens, `hit_rate()`, and `token_cached_ratio()`.
+
+### 3. Safe Input Queueing
+
+To prevent busting cached prompt prefixes during rapid user interaction or multi-turn bursts:
+- **Prefix Preservation:** Enforces append-only invariants on queued inputs, ensuring existing prompt history is not mutated or reordered.
+- **Turn Coalescing:** Batches rapid micro-inputs arriving during active tool runs into a single consolidated turn payload to avoid cache thrashing.
+- **TTL-Aware Urgency:** Evaluates `should_flush_urgently` when queued messages exist and cache state enters `NearExpiry` (e.g. at 270s+ for Anthropic), dispatching immediately before the 5-minute window expires.
+

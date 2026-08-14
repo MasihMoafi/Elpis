@@ -2,6 +2,7 @@
 mod amazon_bedrock;
 mod auth;
 mod bearer_auth_provider;
+pub mod cache_lifecycle;
 mod models_endpoint;
 mod provider;
 
@@ -14,6 +15,16 @@ pub use auth::auth_provider_from_auth_manager;
 pub use auth::unauthenticated_auth_provider;
 pub use bearer_auth_provider::BearerAuthProvider;
 pub use bearer_auth_provider::BearerAuthProvider as CoreAuthProvider;
+pub use cache_lifecycle::CacheImpactPreview;
+pub use cache_lifecycle::CacheKey;
+pub use cache_lifecycle::CacheMetrics;
+pub use cache_lifecycle::CacheMissReason;
+pub use cache_lifecycle::CacheState;
+pub use cache_lifecycle::ProviderCachePolicy;
+pub use cache_lifecycle::ProviderCacheTracker;
+pub use cache_lifecycle::QueuedTurnPayload;
+pub use cache_lifecycle::QueuedUserInput;
+pub use cache_lifecycle::SafeInputQueue;
 pub use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 pub use codex_model_provider_info::CHATGPT_CODEX_BASE_URL;
 pub use codex_protocol::account::ProviderAccount;
