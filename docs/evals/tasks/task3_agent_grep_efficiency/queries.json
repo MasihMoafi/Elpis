@@ -1,0 +1,113 @@
+[
+  {
+    "id": "Q01",
+    "name": "Exact Struct Definition",
+    "pattern": "pub struct ContextPruner",
+    "is_regex": false,
+    "category": "symbol_def",
+    "targets": [
+      {"file": "fixtures/src/context_pruner.rs", "line": 5}
+    ]
+  },
+  {
+    "id": "Q02",
+    "name": "Common Keyword Result<",
+    "pattern": "Result<",
+    "is_regex": false,
+    "category": "keyword",
+    "targets": [
+      {"file": "fixtures/src/context_pruner.rs", "line": 22},
+      {"file": "fixtures/src/context_pruner.rs", "line": 30},
+      {"file": "fixtures/src/prompt_cache.rs", "line": 39},
+      {"file": "fixtures/src/ledger.rs", "line": 34},
+      {"file": "fixtures/src/errors.rs", "line": 3}
+    ]
+  },
+  {
+    "id": "Q03",
+    "name": "Cross-Module Method Call",
+    "pattern": "ContextLedger::record",
+    "is_regex": false,
+    "category": "cross_module",
+    "targets": [
+      {"file": "fixtures/src/context_pruner.rs", "line": 33}
+    ]
+  },
+  {
+    "id": "Q04",
+    "name": "Trait Implementation",
+    "pattern": "impl PromptCache for",
+    "is_regex": false,
+    "category": "trait_impl",
+    "targets": [
+      {"file": "fixtures/src/prompt_cache.rs", "line": 15}
+    ]
+  },
+  {
+    "id": "Q05",
+    "name": "Async Function Regex",
+    "pattern": "pub async fn \\w+_prune",
+    "is_regex": true,
+    "category": "regex_fn",
+    "targets": [
+      {"file": "fixtures/src/context_pruner.rs", "line": 30}
+    ]
+  },
+  {
+    "id": "Q06",
+    "name": "Configuration Option",
+    "pattern": "explicit_prompt_cache",
+    "is_regex": false,
+    "category": "config",
+    "targets": [
+      {"file": "fixtures/src/prompt_cache.rs", "line": 35},
+      {"file": "fixtures/src/config.rs", "line": 5},
+      {"file": "fixtures/src/config.rs", "line": 14},
+      {"file": "fixtures/tests/integration_tests.rs", "line": 25}
+    ]
+  },
+  {
+    "id": "Q07",
+    "name": "Epoch Marker Constant",
+    "pattern": "[elpis.context-prune.epoch",
+    "is_regex": false,
+    "category": "marker",
+    "targets": [
+      {"file": "fixtures/src/context_pruner.rs", "line": 32},
+      {"file": "fixtures/src/prompt_cache.rs", "line": 42}
+    ]
+  },
+  {
+    "id": "Q08",
+    "name": "Error Enum Variant",
+    "pattern": "ContextOverflow",
+    "is_regex": false,
+    "category": "error_type",
+    "targets": [
+      {"file": "fixtures/src/errors.rs", "line": 8}
+    ]
+  },
+  {
+    "id": "Q09",
+    "name": "Broad Test Functions Pattern",
+    "pattern": "fn test_",
+    "is_regex": false,
+    "category": "broad_pattern",
+    "targets": [
+      {"file": "fixtures/tests/integration_tests.rs", "line": 4},
+      {"file": "fixtures/tests/integration_tests.rs", "line": 15},
+      {"file": "fixtures/tests/integration_tests.rs", "line": 23}
+    ]
+  },
+  {
+    "id": "Q10",
+    "name": "Chained Method Invocation",
+    "pattern": "run_cycle",
+    "is_regex": false,
+    "category": "chained_method",
+    "targets": [
+      {"file": "fixtures/src/context_pruner.rs", "line": 22},
+      {"file": "fixtures/tests/integration_tests.rs", "line": 9}
+    ]
+  }
+]

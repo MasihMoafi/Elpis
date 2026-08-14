@@ -90,7 +90,7 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R7. Claims require proof** — Documentation separates implemented behavior, remote tests, and outstanding user acceptance. Design documents and hidden code are not proof.
 
-**R8. Expensive capabilities are plugged in, not built in** — Elpis ships no retrieval or speech engine and no model weights. Workspace semantic search is provided by an MCP server the user registers. Voice capture/transcription belongs to an external program such as [Voice Commander](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
+**R8. Expensive capabilities are plugged in, not built in** — Elpis ships no retrieval or speech engine and no model weights. Workspace semantic search is provided by an MCP server the user registers. Voice capture/transcription belongs to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused checks. Exhaustive inherited TUI/app-server regression runs belong to nightly/manual/release verification unless a change directly touches that surface. CI must not edit source or create status-only commits. Dependency deletion follows measured cost and product optionality, not crate names.
 

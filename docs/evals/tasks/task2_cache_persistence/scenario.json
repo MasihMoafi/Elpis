@@ -1,0 +1,97 @@
+{
+  "task_id": "task2_cache_persistence",
+  "title": "Multi-turn prompt-cache persistence and epoch boundary verification",
+  "description": "8-turn interactive development workload measuring prompt cache hit rates, epoch marker boundaries, and hysteresis gating.",
+  "target_model": "gpt-5.6-luna",
+  "min_cacheable_tokens": 1024,
+  "acceptance_thresholds": {
+    "min_overall_hit_rate": 65.0,
+    "min_turn2_plus_hit_rate": 80.0,
+    "min_post_prune_retained_ratio": 40.0,
+    "max_invalidations_per_cycle": 1
+  },
+  "turns": [
+    {
+      "turn_index": 1,
+      "name": "Project Ingestion",
+      "user_prompt": "Analyze the codebase architecture and list all core subsystems in docs/GUIDE.md.",
+      "expected_behavior": "Ingests system prompt, developer rules, and tool definitions. Establishes initial stable prefix.",
+      "expected_input_tokens_range": [15000, 25000],
+      "expected_cached_tokens_range": [0, 5000],
+      "expected_hit_rate_min": 0.0,
+      "is_cold_start": true
+    },
+    {
+      "turn_index": 2,
+      "name": "Interface Inspection",
+      "user_prompt": "What are the exact method signatures defined in core/src/prompt_cache.rs?",
+      "expected_behavior": "Appends brief user message and tool call. Reads entire previous turn from prompt cache.",
+      "expected_input_tokens_range": [18000, 28000],
+      "expected_cached_tokens_range": [15000, 25000],
+      "expected_hit_rate_min": 85.0,
+      "is_cold_start": false
+    },
+    {
+      "turn_index": 3,
+      "name": "Method Deep Dive",
+      "user_prompt": "Explain how plan_prompt_cache places breakpoints on the frozen epoch boundary.",
+      "expected_behavior": "Appends analysis. Continues prefix cache hit.",
+      "expected_input_tokens_range": [22000, 34000],
+      "expected_cached_tokens_range": [19000, 30000],
+      "expected_hit_rate_min": 85.0,
+      "is_cold_start": false
+    },
+    {
+      "turn_index": 4,
+      "name": "Context Pressure Surge",
+      "user_prompt": "Run extensive multi-file searches across all crates to find every usage of ContextPruner and compile output logs.",
+      "expected_behavior": "Produces high tool output volume, pushing window occupancy past the 30% trigger threshold (~80k tokens).",
+      "expected_input_tokens_range": [70000, 95000],
+      "expected_cached_tokens_range": [25000, 35000],
+      "expected_hit_rate_min": 35.0,
+      "is_cold_start": false
+    },
+    {
+      "turn_index": 5,
+      "name": "Post-Prune Follow-Up",
+      "user_prompt": "Summarize the findings and verify whether any errors were logged during the search.",
+      "expected_behavior": "Ace Pruning Pass 1 runs. Seals Epoch 1 with marker. Request hits cache on Epoch 1 boundary instead of dropping to zero.",
+      "expected_input_tokens_range": [25000, 45000],
+      "expected_cached_tokens_range": [18000, 35000],
+      "expected_hit_rate_min": 60.0,
+      "is_cold_start": false,
+      "requires_epoch_marker": 1
+    },
+    {
+      "turn_index": 6,
+      "name": "Targeted Code Modification",
+      "user_prompt": "Draft a patch in core/src/context_pruner.rs to refine the hysteresis cooling condition.",
+      "expected_behavior": "Appends patch diff. Stable cache hit over Epoch 1 prefix.",
+      "expected_input_tokens_range": [30000, 52000],
+      "expected_cached_tokens_range": [26000, 48000],
+      "expected_hit_rate_min": 85.0,
+      "is_cold_start": false
+    },
+    {
+      "turn_index": 7,
+      "name": "Second Context Pressure Cycle",
+      "user_prompt": "Run full test suite outputs and trace analysis on all test cases.",
+      "expected_behavior": "Pushes context back to 30% trigger. Ace Prune Cycle 2 runs and seals Epoch 2.",
+      "expected_input_tokens_range": [75000, 100000],
+      "expected_cached_tokens_range": [32000, 55000],
+      "expected_hit_rate_min": 40.0,
+      "is_cold_start": false,
+      "requires_epoch_marker": 2
+    },
+    {
+      "turn_index": 8,
+      "name": "Final Acceptance Check",
+      "user_prompt": "Review all completed changes and confirm that no invariants were violated.",
+      "expected_behavior": "Final summary turn. Hits cache on Epoch 2 prefix with high reuse.",
+      "expected_input_tokens_range": [35000, 55000],
+      "expected_cached_tokens_range": [30000, 50000],
+      "expected_hit_rate_min": 80.0,
+      "is_cold_start": false
+    }
+  ]
+}
