@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "agent-grep",
     "aws-auth",
     "agent-graph-store",
     "agent-identity",
@@ -130,6 +131,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 # Internal
 app_test_support = { path = "app-server/tests/common" }
+codex-agent-grep = { path = "agent-grep" }
 codex-agent-graph-store = { path = "agent-graph-store" }
 codex-agent-identity = { path = "agent-identity" }
 codex-ansi-escape = { path = "ansi-escape" }

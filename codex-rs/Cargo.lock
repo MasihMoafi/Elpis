@@ -1705,6 +1705,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-agent-grep"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "glob",
+ "ignore",
+ "pretty_assertions",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tree-sitter",
+ "tree-sitter-bash",
+]
+
+[[package]]
 name = "codex-agent-identity"
 version = "0.0.0"
 dependencies = [
