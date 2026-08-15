@@ -71,36 +71,86 @@ pub(crate) struct TokenUsageInfo {
 
 impl fmt::Display for TokenUsage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let cached = self.cached_input();
+        let non_cached = self.non_cached_input();
+        let total_input = non_cached + cached;
+
         write!(
             f,
-            "Token usage: total={} input={}{}{} output={}{}",
-            format_with_separators(self.blended_total()),
-            format_with_separators(self.non_cached_input()),
-            if self.cached_input() > 0 {
-                format!(
-                    " (+ {} cached)",
-                    format_with_separators(self.cached_input())
-                )
+            "Token usage: total={} input={}",
+            format_with_separators(self.total_tokens.max(0)),
+            format_with_separators(total_input),
+        )?;
+        if cached > 0 {
+            let cache_pct = if total_input > 0 {
+                (cached as f64 / total_input as f64) * 100.0
             } else {
-                String::new()
-            },
-            if let Some(cache_write_tokens) = self.cache_write_tokens {
-                format!(
-                    " (+ {} cache writes)",
-                    format_with_separators(cache_write_tokens)
-                )
-            } else {
-                String::new()
-            },
+                0.0
+            };
+            write!(
+                f,
+                " ({} cached, {:.1}% cache hit)",
+                format_with_separators(cached),
+                cache_pct,
+            )?;
+        }
+        if let Some(cache_write_tokens) = self.cache_write_tokens {
+            write!(
+                f,
+                " (+ {} cache writes)",
+                format_with_separators(cache_write_tokens),
+            )?;
+        }
+        write!(
+            f,
+            " output={}",
             format_with_separators(self.output_tokens),
-            if self.reasoning_output_tokens > 0 {
-                format!(
-                    " (reasoning {})",
-                    format_with_separators(self.reasoning_output_tokens)
-                )
-            } else {
-                String::new()
-            }
-        )
+        )?;
+        if self.reasoning_output_tokens > 0 {
+            write!(
+                f,
+                " (reasoning {})",
+                format_with_separators(self.reasoning_output_tokens),
+            )?;
+        }
+        Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_formats_standard_usage() {
+        let usage = TokenUsage {
+            input_tokens: 1000,
+            cached_input_tokens: 0,
+            cache_write_tokens: None,
+            output_tokens: 200,
+            reasoning_output_tokens: 0,
+            total_tokens: 1200,
+        };
+        assert_eq!(
+            usage.to_string(),
+            "Token usage: total=1,200 input=1,000 output=200"
+        );
+    }
+
+    #[test]
+    fn display_formats_cached_usage_with_percentage() {
+        let usage = TokenUsage {
+            input_tokens: 1000,
+            cached_input_tokens: 650,
+            cache_write_tokens: None,
+            output_tokens: 200,
+            reasoning_output_tokens: 50,
+            total_tokens: 1200,
+        };
+        assert_eq!(
+            usage.to_string(),
+            "Token usage: total=1,200 input=1,000 (650 cached, 65.0% cache hit) output=200 (reasoning 50)"
+        );
+    }
+}
+
