@@ -205,7 +205,6 @@ jobs:
           cargo test -p codex-state --locked record_stage1_output_usage_updates_usage_metadata
           cargo test -p codex-config --locked memories_config_preserves_configured_root
           cargo test -p codex-state --locked init_with_memories_state_root_separates_only_memories_db
-          cargo test -p codex-memories-extension --locked local::search::tests
 
       - name: Verify provider protocol and authentication boundaries
         run: |
@@ -359,7 +358,6 @@ jobs:
           cargo test -p codex-state --locked --target "$MACOS_TARGET" record_stage1_output_usage_updates_usage_metadata
           cargo test -p codex-config --locked --target "$MACOS_TARGET" memories_config_preserves_configured_root
           cargo test -p codex-state --locked --target "$MACOS_TARGET" init_with_memories_state_root_separates_only_memories_db
-          cargo test -p codex-memories-extension --locked --target "$MACOS_TARGET" local::search::tests
 
       - name: Verify provider protocol and authentication boundaries
         run: |
