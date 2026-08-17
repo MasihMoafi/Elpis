@@ -486,7 +486,7 @@ fn next_elpis_tip_index() -> usize {
 /// Builds the one-line tip that replaces the ambient footer without adding layout height.
 fn elpis_tip_line(index: usize) -> Line<'static> {
     let (name, description) = ELPIS_TIPS[index % ELPIS_TIPS.len()];
-    Line::from(vec![name.cyan(), "  ".into(), description.dim()])
+    Line::from(vec![name.into(), "  ".into(), description.into()])
 }
 
 impl ChatComposer {

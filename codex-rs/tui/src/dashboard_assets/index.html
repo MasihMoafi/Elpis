@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Elpis · Context Dashboard</title>
+<style>
+:root{--ink:#15130f;--paper:#f7f4ee;--card:#fff;--line:#e3ddd1;--mut:#6b635a;--teal:#17a398;--red:#c8442c}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}}
+:root[data-theme=dark]{--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);margin:0;padding:44px 22px 100px;font:16px/1.62 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+h1{font:600 34px/1.1 ui-serif,Georgia,serif;letter-spacing:-.023em;margin:0}
+.sub{color:var(--mut);margin:6px 0 0;max-width:76ch;font-size:14px}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-top:8px}
+.tab{background:none;border:none;color:var(--mut);font:600 13px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;padding:10px 4px;margin-right:18px;cursor:pointer;border-bottom:2px solid transparent}
+.tab.active{color:var(--ink);border-bottom-color:var(--teal)}
+.panel{display:none;flex-direction:column;gap:18px}
+.panel.active{display:flex}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px}
+.kpi .k{font:600 10.5px/1.3 ui-sans-serif,system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--mut)}
+.kpi .n{font:600 26px/1.15 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.022em;margin-top:6px}
+.kpi .l{color:var(--mut);font-size:12px;margin-top:3px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:20px 22px;display:flex;flex-direction:column;gap:11px}
+.card h3{font:600 15px/1.25 ui-sans-serif,system-ui,sans-serif;margin:0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;font-variant-numeric:normal;white-space:normal}
+th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.foot{color:var(--mut);font-size:12px;text-align:right}
+.admitted{color:var(--teal)}
+.notadmitted{color:var(--mut)}
+</style></head><body>
+<div class="wrap">
+<header>
+<h1>Elpis context dashboard</h1>
+<p class="sub" id="model-line">connecting…</p>
+<div class="tabs">
+<button class="tab active" data-tab="context">Context</button>
+<button class="tab" data-tab="tokens">Tokens</button>
+</div>
+</header>
+
+<section class="panel active" id="panel-context">
+<div class="kpis">
+<div class="kpi"><div class="k">Used</div><div class="n" id="ctx-used">–</div><div class="l" id="ctx-used-pct"></div></div>
+<div class="kpi"><div class="k">Window</div><div class="n" id="ctx-window">–</div><div class="l">token budget</div></div>
+<div class="kpi"><div class="k">Pruned this session</div><div class="n" id="ctx-saved">–</div><div class="l">tokens reclaimed</div></div>
+<div class="kpi"><div class="k">Checkpoints</div><div class="n" id="ctx-checkpoints">–</div><div class="l">backtrack points</div></div>
+</div>
+<div class="card">
+<h3>Token usage by category</h3>
+<div class="bar" id="ctx-bar"></div>
+<div class="legend" id="ctx-legend"></div>
+</div>
+<div class="card">
+<h3>Admitted sources</h3>
+<div class="foot" id="src-summary"></div>
+<div style="max-height:340px;overflow-y:auto">
+<table>
+<thead><tr><th>Source</th><th>Category</th><th>Tokens</th><th>Status</th></tr></thead>
+<tbody id="src-rows"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+<section class="panel" id="panel-tokens">
+<div class="kpis">
+<div class="kpi"><div class="k">Session input</div><div class="n" id="tok-input">–</div><div class="l" id="tok-cached"></div></div>
+<div class="kpi"><div class="k">Session output</div><div class="n" id="tok-output">–</div><div class="l" id="tok-reasoning"></div></div>
+<div class="kpi"><div class="k">Session total</div><div class="n" id="tok-total">–</div><div class="l">cumulative, all turns</div></div>
+<div class="kpi"><div class="k">Last turn</div><div class="n" id="tok-last">–</div><div class="l">most recent request</div></div>
+</div>
+<div class="card">
+<h3>About this tab</h3>
+<p class="sub" style="margin:0">Elpis is plan-based (ChatGPT/Codex subscription), not metered API billing, so
+there is no real $ cost figure to show here — only measured token counts.</p>
+</div>
+</section>
+
+<p class="foot" id="updated">–</p>
+</div>
+<script>
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.panel');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.classList.remove('active'));
+  panels.forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+}));
+
+function fmt(n) {
+  if (n === undefined || n === null) return '–';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n);
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/data.json', { cache: 'no-store' });
+    const d = await res.json();
+    document.getElementById('model-line').textContent = d.model + ' · updated live from the running session';
+
+    document.getElementById('ctx-used').textContent = fmt(d.used_tokens);
+    document.getElementById('ctx-used-pct').textContent = d.used_percent + '% of window';
+    document.getElementById('ctx-window').textContent = fmt(d.window_tokens);
+    document.getElementById('ctx-saved').textContent = fmt(d.saved_tokens);
+    document.getElementById('ctx-checkpoints').textContent = d.backtrack_points;
+
+    const bar = document.getElementById('ctx-bar');
+    const legend = document.getElementById('ctx-legend');
+    bar.innerHTML = '';
+    legend.innerHTML = '';
+    const window = d.window_tokens || 1;
+    (d.categories || []).forEach(c => {
+      const pct = Math.max(0, Math.min(100, (c.tokens / window) * 100));
+      const seg = document.createElement('i');
+      seg.style.width = pct + '%';
+      seg.style.background = c.color;
+      bar.appendChild(seg);
+      const item = document.createElement('span');
+      item.innerHTML = '<i style="background:' + c.color + '"></i>' + c.label + ': ' + fmt(c.tokens);
+      legend.appendChild(item);
+    });
+
+    const sources = d.sources || [];
+    const admitted = sources.filter(s => s.admitted).length;
+    document.getElementById('src-summary').textContent = admitted + ' of ' + sources.length + ' discovered sources admitted to context';
+    const rows = document.getElementById('src-rows');
+    rows.innerHTML = '';
+    sources.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + s.name + '</td><td>' + s.category + '</td><td>' + fmt(s.estimated_tokens) +
+        '</td><td class="' + (s.admitted ? 'admitted' : 'notadmitted') + '">' + (s.admitted ? 'admitted' : '—') + '</td>';
+      rows.appendChild(tr);
+    });
+
+    const t = d.session_total || {};
+    const lt = d.last_turn || {};
+    document.getElementById('tok-input').textContent = fmt(t.input);
+    document.getElementById('tok-cached').textContent = fmt(t.cached_input) + ' cached';
+    document.getElementById('tok-output').textContent = fmt(t.output);
+    document.getElementById('tok-reasoning').textContent = fmt(t.reasoning_output) + ' reasoning';
+    document.getElementById('tok-total').textContent = fmt(t.total);
+    document.getElementById('tok-last').textContent = fmt(lt.total);
+
+    document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('model-line').textContent = 'waiting for session data…';
+  }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body></html>

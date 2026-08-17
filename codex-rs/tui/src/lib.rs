@@ -109,6 +109,7 @@ pub(crate) mod custom_terminal;
 pub use custom_terminal::Terminal;
 mod auto_review_denials;
 mod cwd_prompt;
+mod dashboard_server;
 mod debug_config;
 mod diff_model;
 mod diff_render;

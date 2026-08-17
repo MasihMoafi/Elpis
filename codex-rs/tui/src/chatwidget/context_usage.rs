@@ -23,7 +23,6 @@ use super::ChatWidget;
 use crate::app_backtrack::ContextUsageTranscriptTotals;
 use crate::history_cell::HistoryCell;
 use crate::legacy_core::elpis_context::ContinuitySourceCategory;
-use crate::render::renderable::Renderable;
 
 const GRID_COLUMNS: usize = 26;
 const GRID_ROWS: usize = 10;
@@ -110,21 +109,6 @@ impl HistoryCell for ContextUsageHistoryCell {
     fn transcript_animation_tick(&self) -> Option<u64> {
         (self.animations_enabled && self.started_at.elapsed() < Self::ANIMATION_DURATION)
             .then(|| (self.started_at.elapsed().as_millis() / 60) as u64)
-    }
-}
-
-#[derive(Debug)]
-struct ContextDashboardCell {
-    snapshot: ContextUsageSnapshot,
-}
-
-impl HistoryCell for ContextDashboardCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        render_dashboard_lines(&self.snapshot, width)
-    }
-
-    fn raw_lines(&self) -> Vec<Line<'static>> {
-        render_dashboard_lines(&self.snapshot, 100)
     }
 }
 
@@ -292,14 +276,75 @@ impl ChatWidget {
         }
     }
 
-    pub(crate) fn context_dashboard_renderable(
-        &self,
-        totals: ContextUsageTranscriptTotals,
-    ) -> Box<dyn Renderable> {
-        let cell: Box<dyn HistoryCell> = Box::new(ContextDashboardCell {
-            snapshot: self.context_usage_snapshot(&totals),
+    /// Refreshes the `/dashboard` web view's live snapshot. Cheap: only recomputes
+    /// the same numbers `/context` already computes and serializes them to JSON.
+    pub(crate) fn publish_dashboard_snapshot(&self, totals: &ContextUsageTranscriptTotals) {
+        let snapshot = self.context_usage_snapshot(totals);
+        let to_css_color = |color: Color| -> String {
+            match color {
+                Color::Blue => "#3b82f6",
+                Color::Green => "#22c55e",
+                Color::Yellow => "#eab308",
+                Color::Magenta => "#d946ef",
+                Color::Cyan => "#06b6d4",
+                Color::DarkGray => "#6b635a",
+                _ => "#6b635a",
+            }
+            .to_string()
+        };
+
+        let categories = snapshot
+            .categories
+            .iter()
+            .map(|category| crate::dashboard_server::DashboardCategory {
+                label: category.label.to_string(),
+                tokens: category.tokens,
+                color: to_css_color(category.color),
+            })
+            .collect();
+
+        let sources = snapshot
+            .sources
+            .iter()
+            .map(|source| crate::dashboard_server::DashboardSource {
+                name: source.name.clone(),
+                category: format!("{:?}", source.category),
+                estimated_tokens: source.estimated_tokens,
+                admitted: source.admitted,
+            })
+            .collect();
+
+        let to_totals = |usage: &crate::token_usage::TokenUsage| crate::dashboard_server::DashboardTokenTotals {
+            input: usage.input_tokens,
+            cached_input: usage.cached_input_tokens,
+            output: usage.output_tokens,
+            reasoning_output: usage.reasoning_output_tokens,
+            total: usage.total_tokens,
+        };
+        let default_usage = crate::token_usage::TokenUsage::default();
+        let session_total = self
+            .token_info
+            .as_ref()
+            .map(|info| to_totals(&info.total_token_usage))
+            .unwrap_or_else(|| to_totals(&default_usage));
+        let last_turn = self
+            .token_info
+            .as_ref()
+            .map(|info| to_totals(&info.last_token_usage))
+            .unwrap_or_else(|| to_totals(&default_usage));
+
+        crate::dashboard_server::publish(&crate::dashboard_server::DashboardSnapshot {
+            model: snapshot.model,
+            used_tokens: snapshot.used_tokens.unwrap_or(0),
+            window_tokens: snapshot.window_tokens,
+            used_percent: snapshot.used_percent.unwrap_or(0),
+            categories,
+            saved_tokens: snapshot.saved_tokens,
+            sources,
+            backtrack_points: snapshot.backtrack_points,
+            session_total,
+            last_turn,
         });
-        Box::new(cell)
     }
 
     pub(crate) fn add_context_usage_output(&mut self, totals: ContextUsageTranscriptTotals) {
@@ -435,6 +480,7 @@ impl ChatWidget {
     }
 }
 
+#[cfg(test)]
 fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Line<'static>> {
     let narrow = width < 80;
     let mut lines = Vec::new();

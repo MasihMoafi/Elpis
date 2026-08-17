@@ -141,18 +141,26 @@ impl App {
             }
             AppEvent::RequestContextUsageReport => {
                 let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                self.chat_widget.publish_dashboard_snapshot(&totals);
                 self.chat_widget.add_context_usage_output(totals);
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenContextDashboard => {
                 let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
-                let dashboard = self.chat_widget.context_dashboard_renderable(totals);
-                let _ = tui.enter_alt_screen();
-                self.overlay = Some(Overlay::new_static_with_renderables(
-                    vec![dashboard],
-                    "C O N T E X T   D A S H B O A R D".to_string(),
-                    self.keymap.pager.clone(),
-                ));
+                self.chat_widget.publish_dashboard_snapshot(&totals);
+                match crate::dashboard_server::ensure_running() {
+                    Some(url) => {
+                        let _ = webbrowser::open(&url);
+                        self.chat_widget.add_info_message(
+                            format!("Opened the context dashboard at {url}"),
+                            None,
+                        );
+                    }
+                    None => {
+                        self.chat_widget
+                            .add_error_message("Could not start the local dashboard server".to_string());
+                    }
+                }
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
