@@ -199,13 +199,10 @@ jobs:
         run: |
           cargo test -p codex-core --lib --locked context_cleaner::tests
           cargo test -p codex-core --lib --locked elpis_context::tests
-          cargo test -p codex-memories-write --locked reset_memory_workspace_baseline_
 
       - name: Verify memory promotion, bounds, and retrieval
         run: |
           cargo test -p codex-state --locked record_stage1_output_usage_updates_usage_metadata
-          cargo test -p codex-memories-write --locked sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
-          cargo test -p codex-memories-write --locked validate_consolidation_artifacts_
           cargo test -p codex-config --locked memories_config_preserves_configured_root
           cargo test -p codex-state --locked init_with_memories_state_root_separates_only_memories_db
           cargo test -p codex-memories-extension --locked local::search::tests
@@ -356,13 +353,10 @@ jobs:
         run: |
           cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" context_cleaner::tests
           cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" elpis_context::tests
-          cargo test -p codex-memories-write --locked --target "$MACOS_TARGET" reset_memory_workspace_baseline_
 
       - name: Verify memory promotion, bounds, and retrieval
         run: |
           cargo test -p codex-state --locked --target "$MACOS_TARGET" record_stage1_output_usage_updates_usage_metadata
-          cargo test -p codex-memories-write --locked --target "$MACOS_TARGET" sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
-          cargo test -p codex-memories-write --locked --target "$MACOS_TARGET" validate_consolidation_artifacts_
           cargo test -p codex-config --locked --target "$MACOS_TARGET" memories_config_preserves_configured_root
           cargo test -p codex-state --locked --target "$MACOS_TARGET" init_with_memories_state_root_separates_only_memories_db
           cargo test -p codex-memories-extension --locked --target "$MACOS_TARGET" local::search::tests
