@@ -364,7 +364,6 @@ mod tests {
             "personality",
             "plugins",
             "raw",
-            "rename",
             "review",
             "settings",
             "status",
