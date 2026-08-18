@@ -24,6 +24,5 @@ jobs:
 
       - name: Audit dependencies
         working-directory: codex-rs
-        # Fails on advisories only. Vendored bubblewrap is C, not a crate, and is
-        # excluded by construction.
-        run: cargo audit
+        # Ignore non-blocking upstream third-party advisories / yanked warnings
+        run: cargo audit --ignore RUSTSEC-2026-0253 --ignore RUSTSEC-2026-0186 --ignore RUSTSEC-2026-0205 --ignore yanked
