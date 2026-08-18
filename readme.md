@@ -38,6 +38,15 @@ Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
+![Elpis demo](docs/assets/demo.gif)
+
+<details>
+<summary>Full uncut session</summary>
+
+![Elpis evidence — full context-management session](docs/assets/evidence.gif)
+
+</details>
+
 Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters
 gets buried in the story of how the agent got there, and every request carries the whole
 story again.
