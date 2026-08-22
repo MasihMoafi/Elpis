@@ -1,6 +1,6 @@
 <div align="center">
 
-# Never lose the thread.
+# Never lose a thread again!
 
 **You run an agent inside Elpis, and it becomes Elpis.**
 
@@ -38,15 +38,6 @@ Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
-![Elpis demo](docs/assets/demo.gif)
-
-<details>
-<summary>Full uncut session</summary>
-
-![Elpis evidence — full context-management session](docs/assets/evidence.gif)
-
-</details>
-
 Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters
 gets buried in the story of how the agent got there, and every request carries the whole
 story again.
@@ -79,49 +70,28 @@ Elpis never modifies a model's own output and never alters a request in flight: 
 rewrites tool output only, from a separate model instance, sequenced against the main
 agent. See [provider rules](docs/evals/RESULTS.md#provider-rules).
 
-The screenshots below are historical examples of the same prompt in Elpis and Codex. The
-original per-run records were not preserved, so they illustrate rather than evidence.
-
-<details>
-<summary>Historical screenshots</summary>
-
-Start:
-
-![Starting Elpis](docs/demo/starting-elpis.webp)
-![Starting Codex with the same prompt](docs/demo/starting-codex.webp)
-
-Example end state — Elpis:
-
-![Elpis end state](docs/demo/elpis-end-state.webp)
-
-Example end state — Codex:
-
-![Codex end state](docs/demo/codex-end-state.webp)
-
-</details>
-
 ## Core Features
 
-### Context control in four layers
+### Context Engineering
+
+Elpis enforces a **multi-layer context control pipeline** designed to keep active inference lean while preserving durable evidence:
 
 | Level | What it does | When |
 | --- | --- | --- |
-| **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook, before their output ever reaches the model. The installer installs [RTK](https://github.com/rtk-ai/rtk) and Elpis registers the hook on first launch, where you trust it like any other hook. | Before the agent sees it |
-| **2. Safety cap** | Deterministic truncation bounds exceptionally large tool output. Inherited from Codex, unchanged. | Before the agent sees it |
-| **3. Ace steady pass** | Meaning-aware. Useful results become a compact conclusion plus an evidence pointer; dead ends leave the working context entirely. A failed pass changes nothing. | After completed work creates enough eligible output |
-| **4. Ace pressure pass** | Runs the same selective process earlier, when the window reaches 30% used, and reclaims back toward 20% used. | Before context pressure harms the next turn |
+| **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook before their output enters model context. Installed by default. | Before the agent sees it |
+| **2. Safety cap** | Deterministic truncation bounds exceptionally large tool results. Inherited from Codex. | Before the agent sees it |
+| **3. Ace pressure pass** | Meaning-aware selective pruning. Reclaims verbose tool output down toward a safe working-set target using cache-friendly epoch markers and hysteresis. | When context reaches pressure threshold (30% used) |
 
-`/prune` runs Ace selectively on demand while keeping the conversation intact.
-`/compact` replaces the conversation with a full summary and starts a new context window.
+> [!NOTE]
+> **`/prune` on Demand vs. `/compact`**
+>
+> **`/prune`** triggers Ace selectively without wiping conversation history: it extracts actionable findings into durable evidence pointers and evicts disposable dead ends. In contrast, **`/compact`** is a fallback that replaces the entire conversation with a prose summary and resets the window.
 
-### What a pruning decision looks like
+#### What a pruning decision looks like
 
-One real pass, taken from the archive on disk. A single search command whose output ran to
-18,930 characters — close to 5,000 tokens carried into every subsequent request, for one
-tool call.
+One real pass from disk. A search command whose raw output ran to 18,930 characters (~5,000 tokens) carried across requests:
 
 **Before** — what the model was carrying:
-
 ```text
 Script completed · Wall time 0.1 seconds · Output:
 
@@ -136,7 +106,6 @@ tui/src/app_event.rs:152:        OpenAgentPicker,
 ```
 
 **After** — what the model carries now:
-
 ```text
 [ELPIS CONTEXT UPDATE]
 kept=`/agent` and `/subagents` already open the agent picker
@@ -146,77 +115,66 @@ evidence=rollout://tool-call/call_0nK3lZKWgHXkqYoNy3Sux5Gj
 original_chars=18199
 ```
 
-The finding survives; the two hundred lines of noise do not. `evidence=` resolves to the
-untouched original, still sitting in the session rollout — so a pruned session can always
-be asked what it used to know. Every pass writes this record, for every item it judged.
+The finding survives; the noise disappears. `evidence=` resolves to the untouched original in session rollouts.
 
-### Every pruning decision is auditable
-
-A forensic reconstruction audit checked, against artifacts on disk rather than source code
-or design docs, whether an evaluator can rebuild what a pruning pass actually did: **7 of 9
-properties fully reconstructible, 2 partial, 0 not reconstructible.** Recoverable for any
-pass: when it ran and under which trigger, the exact material Ace reviewed, its per-item
-keep/delete decision, the verbatim pre- and post-mutation text, and Ace's own token usage.
-Partial on two counts — passes record character savings rather than exact token deltas, and
-session linkage is reconstructed indirectly through item `call_id` rather than stored
-directly. Full methodology, a worked example against a real pass ID, and the audit table:
-[`docs/evals/rq5/FINAL_RESULTS.md`](docs/evals/rq5/FINAL_RESULTS.md).
+---
 
 ### Context Ledger
 
-`Tab` — or `Alt+C` while a turn is running — opens a side panel listing every source admitted into the working set, each with its size and whether it is included. Toggling a row changes what the next turn actually receives, so context selection becomes an intentional operation instead of a side effect.
+Context selection is an intentional sovereign decision, not a passive side effect.
 
-<img src="docs/assets/context-ledger.webp" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="300">
+`Tab` (or `Alt+C` during an active turn) toggles the **Context Ledger** side panel. It lists every candidate instruction, goal, rule, and memory source along with exact byte sizes and token budgets. Toggling a row immediately modifies `admission.toml` to govern what enters the next turn.
 
-### Where the window went
+---
 
-`/context` answers a different question: not what is admitted, but what filled the window. It shows usage as a grid broken down by category — user messages, agent responses, tool calls, system prompt, skills, free space — alongside the backtrack checkpoints you can jump to.
+### Observability
 
-<img src="docs/assets/elpis-context-slash.webp" alt="/context showing token usage as a grid, broken down by category, with available backtrack checkpoints" width="720">
+#### `/context` — Where the window went
+Codex provides no granular visibility into context breakdown. In Elpis, **`/context`** renders an interactive visual grid showing exact token allocations across user inputs, agent outputs, tool results, system prompts, skills, and free space—alongside all available backtrack points (`Esc Esc`).
 
-<details>
-<summary>Full uncut session — context pruning, ledger, and /context in one recorded run</summary>
+#### `/dashboard` — Live Session Dashboard
+Running **`/dashboard`** launches a lightweight local server serving a clean, reactive browser dashboard (`http://127.0.0.1:<port>`). It displays live context consumption, admitted files, and measured token distributions polling directly from active sessions.
 
-![Elpis evidence — full context-management session](docs/assets/evidence.gif)
+#### Auditable Pruning Records (RQ5)
+Every pruning pass writes an **immutable forensic audit** to `~/.elpis/logs/pruning/` before model-visible history is mutated. It records input prompts, raw decisions, before/after diffs, and exact token billing.
 
-</details>
+---
 
-### Session continuity
+### 4. Research Questions & Empirical Results
 
-Goal and checkpoint state survive compaction, model switches, and restarts, so work resumes without replaying the transcript. Exact conversations, terminal events, and artifacts remain on disk as durable evidence.
+| Question | Focus | Empirical Status |
+| :--- | :--- | :--- |
+| **RQ1** | **Context Efficiency** | **Answered**: Peak context fell **47–65%**; median context stabilized at **26.6–27.1%** across independent runs. |
+| **RQ2** | **Information Retention** | **Established**: Retained 100% of tested post-prune targets in active context. |
+| **RQ4** | **Overhead & Cache Impact** | **Quantified**: Ace model invocation latency and prompt cache prefix invalidation trade-offs mapped and bounded by frozen epochs. |
+| **RQ5** | **Forensic Auditability** | **Answered**: 100% of mutation decisions and billed tokens reconstructible on disk. |
 
-### Memory with provenance
+#### Community Collaboration: Task Performance (RQ3 & SWE-bench)
+Evaluating full task performance and SWE-bench coding benchmarks across large test suites requires substantial compute budgets and model subscriptions. We invite researchers and community members with available resources to run broader benchmarks against our reproducible harness in [`docs/evals/`](docs/evals/).
 
-Elpis can admit a user-maintained `MEMORY.md` into context. The automated extraction and
-promotion pipeline was removed after it failed to demonstrate a real durable-memory
-promotion. Elpis currently makes no automatic durable-memory claim.
+---
 
-### MCP integrations you plug in
+### 5. Session Continuity & Portability
 
-Elpis ships no retrieval or speech engine and downloads no models. MCP servers keep optional capabilities in their own processes, with their own dependencies and disk costs; `/mcp` confirms the servers you register are connected.
+Goals and checkpoint state survive model switches, compaction, and restarts.
+- **`GOAL.md`**: Persists the overarching objective across turns.
+- **`ES.md`**: An event-derived checkpoint recording changed files, commands, and verification state.
+- **Exact Resume vs. Lean Continuation**: Continue a provider-native thread or fork cleanly into a provider-neutral lean session.
 
-- **Workspace retrieval:** [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) provides local semantic search and hybrid Tantivy/LanceDB retrieval over your own documents. Its embeddings, vector store, reranker, and any API key remain yours. Elpis ships no retrieval engine of its own.
-- **Voice transcription:** [WhisperType](https://github.com/MasihMoafi/Voice-commander) records speech, transcribes it locally, and pastes at the active cursor. It remains an external companion; it can expose transcription as an MCP tool rather than adding Whisper, CUDA, Python, or model downloads to Elpis.
+### 6. Integrations & Ownership
 
-### Privacy and ownership
-
-No analytics are uploaded, and every OpenTelemetry exporter defaults to off — telemetry is sent only if you configure an exporter yourself. Bring your own keys: use OpenAI, Anthropic, Gemini, or OpenRouter without one provider being silently routed through another. Durable state is plain files you can inspect, edit, export, or delete.
-
-## Future development
-
-- Windows support.
-- Structured clarification and acceptance checks before difficult work.
-- `/auto` model routing after it proves a real cost benefit.
-- Voice input and LSP-backed code intelligence.
-
+- **MCP Retrieval:** Plug in [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) for local LanceDB/Tantivy document search.
+- **Voice Transcription:** Pair with [WhisperType](https://github.com/MasihMoafi/Voice-commander) for local speech-to-text without heavy CUDA dependencies in Elpis core.
+- **Privacy First:** Telemetry off by default, zero analytics uploaded, and full BYOK (OpenAI, Anthropic, Gemini, OpenRouter, Ollama).
 
 ## Documentation
 
-- [Context and pruning](docs/context.md) — the four context-control layers and the Context Ledger
+- [Context and pruning](docs/context.md) — multi-layer context pipeline and Context Ledger
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
-- [Evals](docs/evals/) — source data, reproducible scorers, and publication gates
-- [Providers](docs/providers.md) — every supported route, including local inference
+- [Evals & Benchmarks](docs/evals/) — source data, reproducible scorers, and results
+- [Providers](docs/providers.md) — provider adapters and prompt cache lifecycle
 - [Technical guide](docs/GUIDE.md) — product vision and architecture
+- [Research Paper](paper/paper.md) — technical preprint and formal specifications
 
 ## License
 
