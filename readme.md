@@ -38,6 +38,13 @@ Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
+<details>
+<summary>Context Audit & Observability — See what Ace did</summary>
+
+![Context Audit & Observability — Inspecting what Ace did](docs/assets/evidence.gif)
+
+</details>
+
 Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters
 gets buried in the story of how the agent got there, and every request carries the whole
 story again.
