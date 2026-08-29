@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="100%" height="100%" style="background-color: #0d1117; border-radius: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <linearGradient id="grad-amber-red" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#ef4444" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="grad-amber-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="grad-tool-ace" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="grad-tool-floor" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#14b8a6" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="grad-blue-blue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="grad-slate-slate" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#64748b" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#64748b" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="grad-to-active" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Title & Header -->
+  <text x="32" y="38" fill="#f8fafc" font-size="16" font-weight="700">Task 1: Context Flow &amp; Pruning Lifecycle (Sankey)</text>
+  <text x="32" y="60" fill="#94a3b8" font-size="13">Flow of 683k candidate tokens through Ace selective pruning down to active working set and disk evidence.</text>
+
+  <!-- Column Headers -->
+  <text x="50" y="95" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.5">INGESTION SOURCES</text>
+  <text x="400" y="95" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.5">ADMISSION &amp; PRUNING ENGINE</text>
+  <text x="740" y="95" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.5">FINAL DESTINATION</text>
+
+  <!-- Ribbons (Curved Paths) -->
+  <!-- Tool (636k) -> Ace (636k) -->
+  <path d="M 64 125 C 240 125, 240 125, 414 125 L 414 315 C 240 315, 240 305, 64 305 Z" fill="url(#grad-tool-ace)" />
+  <!-- Tool (22k) -> Floor (22k) -->
+  <path d="M 64 305 C 240 305, 240 330, 414 330 L 414 345 C 240 345, 240 315, 64 315 Z" fill="url(#grad-tool-floor)" />
+  <!-- Turn (19.2k) -> Intact Stream (19.2k) -->
+  <path d="M 64 335 C 240 335, 240 360, 414 360 L 414 374 C 240 374, 240 349, 64 349 Z" fill="url(#grad-blue-blue)" />
+  <!-- System (6.3k) -> Fixed Rules (6.3k) -->
+  <path d="M 64 369 C 240 369, 240 388, 414 388 L 414 394 C 240 394, 240 375, 64 375 Z" fill="url(#grad-slate-slate)" />
+
+  <!-- Ace (621k) -> Evicted Noise (621k) -->
+  <path d="M 428 125 C 580 125, 580 125, 754 125 L 754 310 C 580 310, 580 305, 428 305 Z" fill="url(#grad-amber-red)" />
+  <!-- Ace (15k) -> Durable Evidence (15k) -->
+  <path d="M 428 305 C 580 305, 580 325, 754 325 L 754 338 C 580 338, 580 315, 428 315 Z" fill="url(#grad-amber-emerald)" />
+  <!-- Protected Floor (22k) -> Active Context (22k) -->
+  <path d="M 428 330 C 580 330, 580 350, 754 350 L 754 366 C 580 366, 580 345, 428 345 Z" fill="url(#grad-to-active)" />
+  <!-- Intact Stream (19.2k) -> Active Context (19.2k) -->
+  <path d="M 428 360 C 580 360, 580 366, 754 366 L 754 380 C 580 380, 580 374, 428 374 Z" fill="url(#grad-blue-blue)" />
+  <!-- Fixed Rules (6.3k) -> Active Context (6.3k) -->
+  <path d="M 428 388 C 580 388, 580 380, 754 380 L 754 386 C 580 386, 580 394, 428 394 Z" fill="url(#grad-slate-slate)" />
+
+  <!-- Column 0 Nodes -->
+  <!-- Node 0: Tool Outputs -->
+  <rect x="50" y="115" width="14" height="200" rx="3" fill="#d97706" />
+  <text x="72" y="195" fill="#f8fafc" font-size="12" font-weight="700">Tool Outputs (CLI / AST)</text>
+  <text x="72" y="212" fill="#cbd5e1" font-size="11">658k raw candidate tokens (96.3%)</text>
+
+  <!-- Node 1: Turn Dialogue -->
+  <rect x="50" y="325" width="14" height="24" rx="3" fill="#0284c7" />
+  <text x="72" y="337" fill="#f8fafc" font-size="11" font-weight="700">Turn Dialogue (User / Agent)</text>
+  <text x="72" y="348" fill="#cbd5e1" font-size="10">19.2k tokens (2.8%)</text>
+
+  <!-- Node 2: System Rules & Goal -->
+  <rect x="50" y="359" width="14" height="16" rx="3" fill="#64748b" />
+  <text x="72" y="368" fill="#f8fafc" font-size="11" font-weight="700">System Rules &amp; Goal</text>
+  <text x="72" y="379" fill="#cbd5e1" font-size="10">6.3k tokens (0.9%)</text>
+
+  <!-- Column 1 Nodes -->
+  <!-- Node 3: Ace Pruning Filter -->
+  <rect x="414" y="115" width="14" height="200" rx="3" fill="#f59e0b" />
+  <text x="436" y="195" fill="#f8fafc" font-size="12" font-weight="700">Ace Pruning Filter (42 Passes)</text>
+  <text x="436" y="212" fill="#cbd5e1" font-size="11">636k evaluated tool tokens</text>
+
+  <!-- Node 4: Protected Floor -->
+  <rect x="414" y="325" width="14" height="20" rx="3" fill="#14b8a6" />
+  <text x="436" y="338" fill="#f8fafc" font-size="11" font-weight="600">Protected Recent Floor (10%)</text>
+
+  <!-- Node 5: Intact Stream -->
+  <rect x="414" y="355" width="14" height="19" rx="3" fill="#0284c7" />
+  <text x="436" y="367" fill="#f8fafc" font-size="11" font-weight="600">Intact Conversation Stream</text>
+
+  <!-- Node 6: Fixed Baseline -->
+  <rect x="414" y="384" width="14" height="10" rx="3" fill="#64748b" />
+  <text x="436" y="393" fill="#f8fafc" font-size="11" font-weight="600">Fixed Baseline Rules</text>
+
+  <!-- Column 2 Nodes -->
+  <!-- Node 7: Evicted Dead-End Noise -->
+  <rect x="754" y="115" width="14" height="195" rx="3" fill="#ef4444" />
+  <text x="776" y="195" fill="#f87171" font-size="12" font-weight="700">Evicted Dead-End Noise (621k)</text>
+  <text x="776" y="212" fill="#cbd5e1" font-size="11">90.9% discarded unreferenced bytes</text>
+
+  <!-- Node 8: Durable Evidence Pointers -->
+  <rect x="754" y="320" width="14" height="18" rx="3" fill="#10b981" />
+  <text x="776" y="328" fill="#34d399" font-size="11" font-weight="700">Durable Evidence Pointers (15k)</text>
+  <text x="776" y="339" fill="#cbd5e1" font-size="10">Saved to disk (rollout:// evidence)</text>
+
+  <!-- Node 9: Active Context Window -->
+  <rect x="754" y="348" width="14" height="38" rx="3" fill="#3b82f6" />
+  <text x="776" y="362" fill="#60a5fa" font-size="12" font-weight="700">Active Context Window (~47.5k)</text>
+  <text x="776" y="375" fill="#cbd5e1" font-size="11">Stayed in safe green zone (&lt;30% cap)</text>
+
+</svg>

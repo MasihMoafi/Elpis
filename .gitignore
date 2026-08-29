@@ -81,9 +81,7 @@ src/fix_cuda.sh
 !docs/demo/elpis-end-state.webp
 !docs/demo/codex-end-state.webp
 *.svg
-!docs/assets/accountable-work-graph-eval.svg
-!docs/assets/context-remaining-second-run.svg
-!docs/assets/context-remaining-trajectory-band.svg
+!docs/assets/*.svg
 *.mp4
 *.mp3
 *.wav
