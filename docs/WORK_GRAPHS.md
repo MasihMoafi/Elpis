@@ -1,6 +1,7 @@
 # Deterministic Work Graphs
 
 Status: implemented behind the under-development `enable_fanout` feature;
+![Elpis deterministic work graph](assets/elpis-work-graph.svg)
 agent-verified on Linux; awaiting Masih's functional acceptance.
 
 ## Objective

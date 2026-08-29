@@ -1,6 +1,7 @@
 # Provider-Neutral Architecture & Model Adapters
 
 Elpis maintains a **Provider-Neutral Architecture**: Elpis owns context admission, durable memory, session continuity, permissions, tool execution, and the TUI interface. The selected provider owns inference.
+![Elpis provider-neutral architecture](assets/elpis-provider-architecture.svg)
 
 ---
 

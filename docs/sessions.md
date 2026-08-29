@@ -1,6 +1,7 @@
 # Session Continuity
 
 Elpis keeps work, goals, decisions, and evidence alive across restarts, model switches, and thread compaction without forcing the model to re-read an ever-growing transcript.
+![Elpis session continuity modes](assets/elpis-session-continuity.svg)
 
 ---
 

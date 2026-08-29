@@ -1,6 +1,7 @@
 # Elpis Context Sovereignty & 4-Layer Pruning Pipeline
 
 Elpis enforces **Context Sovereignty**: the principle that context is a strictly budgeted working set, not a dumped chat transcript. The user maintains live visibility and explicit control over every byte admitted to the agent's context window.
+![Elpis context control pipeline](assets/elpis-context-control.svg)
 
 ---
 

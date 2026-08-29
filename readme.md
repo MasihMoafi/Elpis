@@ -1,6 +1,11 @@
 <div align="center">
 
 # Never lose a thread again!
+![Elpis context control pipeline](docs/assets/elpis-context-control.svg)
+![Elpis immutable audit trail](docs/assets/elpis-audit-trail-template.svg)
+![Elpis session continuity modes](docs/assets/elpis-session-continuity.svg)
+![Elpis provider-neutral architecture](docs/assets/elpis-provider-architecture.svg)
+
 
 **You run an agent inside Elpis, and it becomes Elpis.**
 
