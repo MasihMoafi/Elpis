@@ -39,7 +39,25 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
-![Elpis context control pipeline](assets/elpis-context-control.svg)
+```text
+[Raw Tool / Terminal Output]
+           |
+           v
+[Layer 1: RTK Filter]          -> Pre-model: compacts verbose CLI output (rg, find).
+           |
+           v
+[Layer 2: Safety Cap]          -> Pre-model: Hard deterministic upper-bound truncation.
+           |
+           v
+[Active Agent Turn Execution]  -> Tool outputs remain verbatim during active turn.
+           |
+           v
+[Layer 3: Ace Pressure Cycle]  -> Between follow-ups: at 70% remaining, reclaims toward 80%,
+                                  then holds off until use regrows to 70% remaining again.
+           |
+           v
+[Native /compact]              -> Fallback only, when no layer can reclaim anything further.
+```
 
 Layer 3 is a single trigger, run as a gated cycle rather than continuously. An earlier
 "steady" trigger also fired on backlog size alone, independently of how full the window was;
@@ -62,11 +80,12 @@ boundary. See `cache-friendly-pruning.md`.
 The Ace pass runs between model follow-ups as well as at the end of a turn, so one
 long-running tool-driven turn cannot skip the trigger. Each pass records which
 trigger fired (`manual` or `pressure`) in its manifest and report. OpenAI-backed passes use
-Luna at maximal reasoning effort (`PRUNE_REASONING_EFFORT = ReasoningEffort::Max`). Every successful pass immediately recomputes the working
+Luna at low reasoning effort. Every successful pass immediately recomputes the working
 history estimate and writes `prune_report.md` alongside the session logs
 (`codex-rs/core/src/session/context_prune_audit.rs`).
-When a pressure pass runs during an active turn, it keeps the newest 10% of the window verbatim
-so the current follow-up observations remain intact while older evidence is pruned.
+The pass may run during a current turn, but it only receives and rewrites tool evidence
+from earlier completed turns; current-turn observations remain intact for the next
+follow-up.
 
 `/prune` runs the Ace pass on demand across eligible tool evidence from completed turns.
 It keeps user and assistant messages, the current turn, and durable rollout evidence.
@@ -82,7 +101,14 @@ number is authoritative after either path.
 
 Every applied Ace pass writes an immutable audit before the working history changes. If that audit cannot be written, Elpis keeps the working history and does not record the pass as applied.
 
-![Elpis immutable audit trail](assets/elpis-audit-trail-template.svg)
+```text
+~/.elpis/logs/
+├── prune_report.md              # points at the latest pass; contains clickable file:// links
+└── pruning/passes/<pass-id>/
+    ├── ace.json                 # Ace's exact instructions, input, and raw response
+    ├── manifest.json            # every reviewed call ID and its kept/deleted decision
+    └── items/*.json             # exact model-visible before/after for one call
+```
 
 You do not have to go looking for these: `prune_report.md` renders `ace.json` and `manifest.json` as clickable links (`context_prune_audit.rs`). The audit deliberately omits the system prompt, skills, and transcript, so it stays readable.
 

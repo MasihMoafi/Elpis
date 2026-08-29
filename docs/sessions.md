@@ -8,8 +8,6 @@ Elpis keeps work, goals, decisions, and evidence alive across restarts, model sw
 
 Elpis separates the model provider's native thread from its own provider-neutral session state, which gives two ways to continue work:
 
-![Elpis session continuity modes](assets/elpis-session-continuity.svg)
-
 | | Exact resume | Lean continuation |
 | :--- | :--- | :--- |
 | **What continues** | The provider's native thread, with its accumulated history. | A fresh thread, re-anchored from portable checkpoints. |
