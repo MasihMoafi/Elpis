@@ -1,8 +1,6 @@
 # Session Continuity
 
 Elpis keeps work, goals, decisions, and evidence alive across restarts, model switches, and thread compaction without forcing the model to re-read an ever-growing transcript.
-![Elpis session continuity modes](assets/elpis-session-continuity.svg)
-
 ---
 
 ## 1. Two Continuation Modes
@@ -29,16 +27,11 @@ Continuity is a context contribution, not a separate replay path. `ElpisContinui
 
 ---
 
+![Elpis session continuity modes](assets/elpis-session-continuity.svg)
+
 ## 3. Portable Checkpoint Layout
 
 Portable session state lives independently of provider threads:
-
-```text
-~/.elpis/context/workspaces/<workspace>/
-├── GOAL.md          # Active objective for this workspace
-├── ES.md            # Session checkpoint, rewritten after each completed turn
-└── admission.toml   # Per-source admission flags driven by the Context Ledger
-```
 
 The `<workspace>` segment is a slug derived from the working directory plus a short hash, so separate checkouts never share a checkpoint.
 

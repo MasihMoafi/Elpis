@@ -1,64 +1,19 @@
 # Elpis Context Sovereignty & 4-Layer Pruning Pipeline
 
 Elpis enforces **Context Sovereignty**: the principle that context is a strictly budgeted working set, not a dumped chat transcript. The user maintains live visibility and explicit control over every byte admitted to the agent's context window.
-![Elpis context control pipeline](assets/elpis-context-control.svg)
-
 ---
+
+![Elpis context control pipeline](assets/elpis-context-control.svg)
 
 ## 1. Systemic Role in Elpis
 
 Context management acts as the primary gatekeeper between raw workspace/session events and the active model inference loop:
-
-```text
-[User Prompt / Task Input]
-           |
-           v
-+----------+-------------------------------------------------------+
-|                 ELPIS CONTEXT ADMISSION GATE                     |
-|  - GOAL.md (Active Goal)       - ES.md (Executive Summary)       |
-|  - MEMORY.md (Curated Facts)   - AGENTS.md / Skill Rules         |
-|  - Context Ledger Selections   - Admitted @file references       |
-+----------+-------------------------------------------------------+
-           |
-           v
-+----------+-------------------------------------------------------+
-|                    3-LAYER PRUNING PIPELINE                      |
-|  Layer 1: RTK Shell-Output Filter (Pre-model command rewrite)   |
-|  Layer 2: Deterministic Safety Cap (Upper bound truncation)     |
-|  Layer 3: Ace Pressure Cycle (30% used trigger, 20% used target) |
-+----------+-------------------------------------------------------+
-           |
-           v
-+----------+-------------------------------------------------------+
-|                 MODEL INFERENCE (Selected Provider)              |
-+------------------------------------------------------------------+
-```
 
 ---
 
 ## 2. The 4-Layer Pruning Pipeline
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
-
-```text
-[Raw Tool / Terminal Output]
-           |
-           v
-[Layer 1: RTK Filter]          -> Pre-model: compacts verbose CLI output (rg, find).
-           |
-           v
-[Layer 2: Safety Cap]          -> Pre-model: Hard deterministic upper-bound truncation.
-           |
-           v
-[Active Agent Turn Execution]  -> Tool outputs remain verbatim during active turn.
-           |
-           v
-[Layer 3: Ace Pressure Cycle]  -> Between follow-ups: at 70% remaining, reclaims toward 80%,
-                                  then holds off until use regrows to 70% remaining again.
-           |
-           v
-[Native /compact]              -> Fallback only, when no layer can reclaim anything further.
-```
 
 Layer 3 is a single trigger, run as a gated cycle rather than continuously. An earlier
 "steady" trigger also fired on backlog size alone, independently of how full the window was;
@@ -102,14 +57,7 @@ number is authoritative after either path.
 
 Every applied Ace pass writes an immutable audit before the working history changes. If that audit cannot be written, Elpis keeps the working history and does not record the pass as applied.
 
-```text
-~/.elpis/logs/
-├── prune_report.md              # points at the latest pass; contains clickable file:// links
-└── pruning/passes/<pass-id>/
-    ├── ace.json                 # Ace's exact instructions, input, and raw response
-    ├── manifest.json            # every reviewed call ID and its kept/deleted decision
-    └── items/*.json             # exact model-visible before/after for one call
-```
+![Elpis immutable audit trail](assets/elpis-audit-trail-template.svg)
 
 You do not have to go looking for these: `prune_report.md` renders `ace.json` and `manifest.json` as clickable links (`context_prune_audit.rs`). The audit deliberately omits the system prompt, skills, and transcript, so it stays readable.
 

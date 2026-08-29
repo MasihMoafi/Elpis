@@ -1,10 +1,6 @@
 <div align="center">
 
 # Never lose a thread again!
-![Elpis context control pipeline](docs/assets/elpis-context-control.svg)
-![Elpis immutable audit trail](docs/assets/elpis-audit-trail-template.svg)
-![Elpis session continuity modes](docs/assets/elpis-session-continuity.svg)
-![Elpis provider-neutral architecture](docs/assets/elpis-provider-architecture.svg)
 
 
 **You run an agent inside Elpis, and it becomes Elpis.**
@@ -57,9 +53,7 @@ story again.
 Elpis keeps the two apart. The next request gets a small working set you can inspect. The
 full record stays on disk and is fetched only when it is needed.
 
-![Peak context per request across three paired runs: Codex 243k/242k/238k versus Elpis 84k/128k/124k](docs/assets/rq1-peak-context.svg)
 
-![Live context per request, all 3 runs overlaid and normalized to each run's own request sequence: Codex climbs into the pressure region every time, Elpis stays low and stable](docs/assets/rq1-normalized-overlay.svg)
 
 Three paired runs, one byte-identical prompt, same model and commit on both arms. Peak
 context per request fell **47–65%**, in the same direction every run. Median context per
