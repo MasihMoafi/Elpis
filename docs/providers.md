@@ -6,27 +6,7 @@ Elpis maintains a **Provider-Neutral Architecture**: Elpis owns context admissio
 
 ## 1. Systemic Architecture
 
-```text
-                               +-----------------------------+
-                               |     ELPIS TUI / CONTROL     |
-                               | (Context, Memory, Continuity)|
-                               +--------------+--------------+
-                                              |
-                                              v
-                               +--------------+--------------+
-                               |  PROVIDER ADAPTER LAYER     |
-                               |  (Canonical ResponseEvent)  |
-                               +------+-------+-------+------+
-                                      |       |       |
-                 +--------------------+       |       +--------------------+
-                 |                            |                            |
-                 v                            v                            v
-+----------------+------------+ +-------------+--------------+ +-----------+----------------+
-| OpenAI Responses API        | | Anthropic Messages API     | | Gemini GenerateContent API   |
-| Base: api.openai.com/v1     | | Base: api.anthropic.com/v1 | | Base: generativelanguage...  |
-| Header: Authorization Bearer| | Header: x-api-key          | | Header: x-goog-api-key       |
-+-----------------------------+ +----------------------------+ +----------------------------+
-```
+![Elpis provider-neutral architecture](assets/elpis-provider-architecture.svg)
 
 ---
 

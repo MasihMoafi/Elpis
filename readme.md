@@ -1,10 +1,10 @@
 <div align="center">
 
-# Never lose a thread again!
+# Never lose the thread.
 
 **You run an agent inside Elpis, and it becomes Elpis.**
 
-**Elpis is an open-source fork of OpenAI's Codex CLI that extends the Codex execution foundation with selective context pruning, explicit context admission and inspection, auditable pruning records, portable continuity checkpoints, and cross-provider control.**
+**Elpis is an open-source fork of OpenAI's Codex CLI that keeps the proven execution foundation while adding explicit context control, durable continuity, auditable pruning, and provider-neutral ownership around the model loop.**
 
 [![Linux verification](https://img.shields.io/github/actions/workflow/status/MasihMoafi/Elpis/embedded-elpis-linux.yml?branch=main&label=verification&style=flat-square)](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
@@ -22,7 +22,7 @@ Linux x86_64 and macOS on Apple Silicon:
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
-The installer picks the right binary for your machine and also installs
+The installer picks the right binary for your machine and installs
 [RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
 choose a provider and sign in or enter its API key.
 
@@ -30,75 +30,135 @@ choose a provider and sign in or enter its API key.
 
 ## What is Elpis
 
-The agent runs the model loop. Elpis owns everything around it: context, memory, continuity, retrieval, permissions, and provider choice.
+Elpis is a provider-neutral coding-agent environment. The selected model or runtime performs
+inference; Elpis owns the surrounding working state: context admission, continuity, memory,
+permissions, tools, evidence, and the terminal interface.
 
-Swap the agent and it inherits the same environment. Nothing about your project has to be explained twice.
+It starts from OpenAI's Apache-2.0 Codex CLI and preserves its execution foundation — terminal
+UI, patches, permissions, sandboxing, sessions, and tool lifecycle — while adding a continuity-
+first control layer around it. Change the provider without throwing away the project context.
+Nothing about the project has to be explained twice.
 
 Different paths. Same roots. One shared project.
 
 ## Why Elpis
 
-<details>
-<summary>Context Audit & Observability — See what Ace did</summary>
+![Elpis demo](docs/assets/demo.gif)
 
-![Context Audit & Observability — Inspecting what Ace did](docs/assets/evidence.gif)
+<details>
+<summary>Full uncut session</summary>
+
+![Elpis evidence — full context-management session](docs/assets/evidence.gif)
 
 </details>
 
-Long sessions fill up with transcripts, file reads, searches, and dead ends. What matters
-gets buried in the story of how the agent got there, and every request carries the whole
-story again.
+Long sessions fill up with transcripts, file reads, searches, command output, and dead ends.
+The useful state gets buried in the story of how the agent reached it, while every request pays
+for more context.
 
-Elpis keeps the two apart. The next request gets a small working set you can inspect. The
-full record stays on disk and is fetched only when it is needed.
+Elpis separates the active working set from durable evidence. The next request receives a small,
+inspectable context; the exact record stays on disk and can be retrieved when it is needed.
 
-![Peak context per request across three paired runs: Codex 243k/242k/238k versus Elpis 84k/128k/124k](docs/assets/rq1-peak-context.svg)
+### A compact evidence set
 
-![Live context per request, all 3 runs overlaid and normalized to each run's own request sequence: Codex climbs into the pressure region every time, Elpis stays low and stable](docs/assets/rq1-normalized-overlay.svg)
+Three paired runs used one byte-identical prompt, the same model, and the same source commit on
+both arms. The figures below keep the per-run observations visible rather than smoothing them
+into a pooled headline. Peak context fell **47–65%** in all three runs; median context stayed
+near **27% used** for Elpis while Codex climbed above 90% of the window.
 
-Three paired runs, one byte-identical prompt, same model and commit on both arms. Peak
-context per request fell **47–65%**, in the same direction every run. Median context per
-request fell 42–52%. Codex peaked above 90% of the window in all three runs; Elpis peaked
-between 33% and 50%.
+![Context dynamics across three paired runs. The red diamonds distinguish Codex native compaction from Elpis pressure-budget rollovers.](docs/assets/elpis-context-dynamics.svg)
 
-The more reproducible finding sits underneath the peaks: Elpis's median context usage was
-stable at 26.6–27.1% across all three independent runs, regardless of how many pruning
-passes a given run needed (10 to 42). The cross-run analysis also corrected a
-misclassification — Elpis's true native-compaction count is 0 in all three runs; earlier
-figures counted its own pruning/rollover checkpoints as native compactions, which they are
-not.
+The context figure's red diamonds are intentionally not one shared event type: Codex reaches a
+native compaction near the window ceiling, while Elpis's 1/3/3 events are Elpis-owned
+pressure-budget rollovers. The corrected audit found **0 true native compactions for Elpis in
+all three runs**. Green triangles are routine Ace pruning passes.
 
-That is what has been measured end to end, on one task repeated three times. Pruning also
-adds a model call and latency and can reduce prompt-cache reuse. No task-quality benefit
-has been established, and the current design's exact overhead has not been measured under
-the same protocol. See [evaluation status](docs/evals/RESULTS.md).
+![Context operating zones by run, showing request share in the green, amber, and red regions.](docs/assets/elpis-operating-zones.svg)
 
-Elpis never modifies a model's own output and never alters a request in flight: pruning
-rewrites tool output only, from a separate model instance, sequenced against the main
-agent. See [provider rules](docs/evals/RESULTS.md#provider-rules).
+The operating-zone view makes the central result legible at a glance: Elpis spends most requests
+in the <=30% band, with short tool-burst excursions; Codex spends a large final share in the
+high-pressure band before compaction.
+
+![Main-agent token traffic by run: raw input, uncached reprocessing, and output.](docs/assets/elpis-token-traffic.svg)
+
+This is a **main-agent-only** comparison. It shows the cache/reprocessing trade-off without
+mixing Elpis's Ace traffic into the main-agent totals: raw input and output vary by run, while
+uncached input is higher for Elpis by 56–534% in this workload.
+
+<details>
+<summary>Benchmark-era pruning workload</summary>
+
+![Elpis pruning economics across the three recorded runs: pruning-model overhead, reclaimed context, and token ratio.](docs/assets/elpis-pruning-economics.svg)
+
+The pruning panel records the measured configuration behind this evaluation: 42, 13, and 10
+Ace passes reclaimed 621k, 247k, and 195k context tokens, at 1.17–1.23 pruning-model tokens
+spent per token reclaimed. It is useful for understanding the mechanism, **not a current cost
+promise**: the evaluation records establish added model cost, latency, and possible cache-prefix
+invalidation, while the current design's magnitude remains open.
+
+</details>
+
+See the [corrected evaluation analysis](docs/evals/analysis/final-rq1-rq4-analysis/final_analysis.md),
+[metric provenance](docs/evals/analysis/provenance.csv), and [evaluation status](docs/evals/RESULTS.md)
+for scope and raw-record limits.
+
+Elpis never modifies a model's own output or a request already in flight. Pruning rewrites only
+harness-supplied tool output, using a separate model instance sequenced against the main agent.
+See [provider rules](docs/evals/RESULTS.md#provider-rules).
+
+### Historical comparison screenshots
+
+These four screenshots show a recorded Elpis/Codex comparison and make the difference concrete.
+They are presentation evidence for the workflow, not a replacement for the reproducible figures
+above; the original per-run records for the screenshots were not preserved.
+
+<details>
+<summary>Show the comparison screenshots</summary>
+
+**Starting Elpis**
+
+![Starting Elpis](docs/demo/starting-elpis.webp)
+
+**Starting Codex with the same prompt**
+
+![Starting Codex with the same prompt](docs/demo/starting-codex.webp)
+
+**Elpis end state**
+
+![Elpis end state](docs/demo/elpis-end-state.webp)
+
+**Codex end state**
+
+![Codex end state](docs/demo/codex-end-state.webp)
+
+</details>
 
 ## Core Features
 
-### Context Engineering
+### Context engineering
 
-Elpis enforces a **multi-layer context control pipeline** designed to keep active inference lean while preserving durable evidence:
+Context is a budgeted working set, not a dumped transcript. Elpis makes admission visible and
+uses a layered pipeline to keep useful findings while removing disposable exploration:
 
-| Level | What it does | When |
+![Elpis context control pipeline](docs/assets/elpis-context-control.svg)
+
+| Layer | What it does | When |
 | --- | --- | --- |
-| **1. Shell-output filtering** | Supported commands are rewritten through RTK's `PreToolUse` hook before their output enters model context. Installed by default. | Before the agent sees it |
-| **2. Safety cap** | Deterministic truncation bounds exceptionally large tool results. Inherited from Codex. | Before the agent sees it |
-| **3. Ace pressure pass** | Meaning-aware selective pruning. Reclaims verbose tool output down toward a safe working-set target using cache-friendly epoch markers and hysteresis. | When context reaches pressure threshold (30% used) |
+| **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
+| **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
+| **3. Ace pressure cycle** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | When measured model-window use reaches the pressure threshold |
 
-> [!NOTE]
-> **`/prune` on Demand vs. `/compact`**
->
-> **`/prune`** triggers Ace selectively without wiping conversation history: it extracts actionable findings into durable evidence pointers and evicts disposable dead ends. In contrast, **`/compact`** is a fallback that replaces the entire conversation with a prose summary and resets the window.
+`/prune` runs the audited Ace pass on demand without rewriting user instructions, assistant
+messages, or model reasoning. Elpis's `/compact` remains the conservative fallback when selective
+pruning cannot reclaim enough context; the raw transcript remains durable evidence.
 
 #### What a pruning decision looks like
 
-One real pass from disk. A search command whose raw output ran to 18,930 characters (~5,000 tokens) carried across requests:
+One real pass from disk. A search command whose raw output ran to 18,930 characters — close to
+5,000 tokens carried across requests:
 
 **Before** — what the model was carrying:
+
 ```text
 Script completed · Wall time 0.1 seconds · Output:
 
@@ -113,6 +173,7 @@ tui/src/app_event.rs:152:        OpenAgentPicker,
 ```
 
 **After** — what the model carries now:
+
 ```text
 [ELPIS CONTEXT UPDATE]
 kept=`/agent` and `/subagents` already open the agent picker
@@ -122,69 +183,99 @@ evidence=rollout://tool-call/call_0nK3lZKWgHXkqYoNy3Sux5Gj
 original_chars=18199
 ```
 
-The finding survives; the noise disappears. `evidence=` resolves to the untouched original in session rollouts.
+The finding survives; the noise disappears. The evidence pointer resolves to the untouched
+original in the session rollout.
 
----
+### Context Ledger and observability
 
-### Context Ledger
+The **Context Ledger** (`Tab`; during an active turn, `Alt+C` always toggles it) lists admitted goals, rules,
+memory, and other portable sources with their byte sizes and token budgets. Toggling a row writes
+`admission.toml`, which controls what the next turn receives.
 
-Context selection is an intentional sovereign decision, not a passive side effect.
+<img src="docs/assets/context-ledger.webp" alt="The Context Ledger listing admitted instruction files with their token counts and included state" width="300">
 
-`Tab` (or `Alt+C` during an active turn) toggles the **Context Ledger** side panel. It lists every candidate instruction, goal, rule, and memory source along with exact byte sizes and token budgets. Toggling a row immediately modifies `admission.toml` to govern what enters the next turn.
+`/context` answers a different question: where the window went. It displays token usage by user
+messages, agent responses, tool calls, system prompt, skills, and free space, alongside available
+backtrack checkpoints.
 
----
+<img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
 
-### Observability
+Every applied Ace pass writes an immutable audit under `~/.elpis/logs/pruning/` before model-
+visible history changes. The audit records the trigger, reviewed material, per-item decisions,
+before/after representations, evidence pointers, and the pruning model's usage.
 
-#### `/context` — Where the window went
-Codex provides no granular visibility into context breakdown. In Elpis, **`/context`** renders an interactive visual grid showing exact token allocations across user inputs, agent outputs, tool results, system prompts, skills, and free space—alongside all available backtrack points (`Esc Esc`).
+![Elpis immutable audit trail](docs/assets/elpis-audit-trail-template.svg)
 
-#### `/dashboard` — Live Session Dashboard
-Running **`/dashboard`** launches a lightweight local server serving a clean, reactive browser dashboard (`http://127.0.0.1:<port>`). It displays live context consumption, admitted files, and measured token distributions polling directly from active sessions.
+### Session continuity and portability
 
-#### Auditable Pruning Records (RQ5)
-Every pruning pass writes an **immutable forensic audit** to `~/.elpis/logs/pruning/` before model-visible history is mutated. It records input prompts, raw decisions, before/after diffs, and exact token billing.
+Goals and checkpoint state survive restarts, compaction, and provider changes:
 
----
+![Elpis session continuity modes](docs/assets/elpis-session-continuity.svg)
 
-### 4. Research Questions & Empirical Results
+- **`GOAL.md`** persists the workspace objective.
+- **`ES.md`** records the latest result, changed files, commands, verification, and exact evidence.
+- **Exact resume** continues a provider-native thread when that is what you want.
+- **Lean continuation** starts a fresh thread from portable Markdown checkpoints rather than replaying an ever-growing transcript.
 
-| Question | Focus | Empirical Status |
-| :--- | :--- | :--- |
-| **RQ1** | **Context Efficiency** | **Answered**: Peak context fell **47–65%**; median context stabilized at **26.6–27.1%** across independent runs. |
-| **RQ2** | **Information Retention** | **Established**: Retained 100% of tested post-prune targets in active context. |
-| **RQ4** | **Overhead & Cache Impact** | **Quantified**: Ace model invocation latency and prompt cache prefix invalidation trade-offs mapped and bounded by frozen epochs. |
-| **RQ5** | **Forensic Auditability** | **Answered**: 100% of mutation decisions and billed tokens reconstructible on disk. |
+### Memory with provenance
 
-#### Community Collaboration: Task Performance (RQ3 & SWE-bench)
-Evaluating full task performance and SWE-bench coding benchmarks across large test suites requires substantial compute budgets and model subscriptions. We invite researchers and community members with available resources to run broader benchmarks against our reproducible harness in [`docs/evals/`](docs/evals/).
+Durable memory is separate from session transcripts. Elpis can admit a curated `MEMORY.md` into
+the working set while keeping raw conversations and terminal events as exact evidence. Memory is
+plain, inspectable local state rather than opaque provider history.
 
----
+### Providers, safety, and ownership
 
-### 5. Session Continuity & Portability
+Elpis keeps provider selection explicit and translates supported native routes into one control
+surface. Use OpenAI, Anthropic, Gemini, OpenRouter, Bedrock, Ollama, or LM Studio according to
+the supported route and its documented limitations; switching providers does not discard Elpis'
+workspace context, checkpoints, or memory.
 
-Goals and checkpoint state survive model switches, compaction, and restarts.
-- **`GOAL.md`**: Persists the overarching objective across turns.
-- **`ES.md`**: An event-derived checkpoint recording changed files, commands, and verification state.
-- **Exact Resume vs. Lean Continuation**: Continue a provider-native thread or fork cleanly into a provider-neutral lean session.
+![Elpis provider-neutral architecture](docs/assets/elpis-provider-architecture.svg)
 
-### 6. Integrations & Ownership
+The inherited Codex permission and sandbox controls remain visible. Read Only, Default, and Full
+Access modes make commands, edits, approvals, failures, and verification inspectable rather than
+hiding consequential actions behind a prompt.
 
-- **MCP Retrieval:** Plug in [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) for local LanceDB/Tantivy document search.
-- **Voice Transcription:** Pair with [WhisperType](https://github.com/MasihMoafi/Voice-commander) for local speech-to-text without heavy CUDA dependencies in Elpis core.
-- **Privacy First:** Telemetry off by default, zero analytics uploaded, and full BYOK (OpenAI, Anthropic, Gemini, OpenRouter, Ollama).
+### MCP integrations you plug in
+
+Elpis does not bundle a retrieval engine, speech engine, or model weights. Optional capabilities
+stay in their own processes through MCP:
+
+- **Workspace retrieval:** [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) provides local LanceDB/Tantivy search over your documents.
+- **Voice transcription:** [WhisperType](https://github.com/MasihMoafi/Voice-commander) provides local speech-to-text without adding its model/runtime dependencies to Elpis core.
+
+### Privacy and ownership
+
+Telemetry is off by default and no analytics are uploaded unless you explicitly configure an
+exporter. Bring your own provider keys. Durable Elpis state is local files and SQLite that you
+can inspect, edit, export, or delete.
+
+## Evaluation status
+
+The published evaluation makes narrower claims than a product demo can:
+
+| Question | Current status |
+| --- | --- |
+| **RQ1 — context efficiency** | Answered for the three-run workload: peak reduction was 47–65%. |
+| **RQ2 — information retention** | Established for six tested post-prune targets (6/6), not a general quality guarantee. |
+| **RQ3 — task performance** | Not established; no coding-quality improvement is claimed. |
+| **RQ4 — overhead and cache** | Added model cost, latency, and possible cache-prefix invalidation are established; current magnitude remains open. |
+| **RQ5 — forensic auditability** | Answered: 7 of 9 reconstruction properties were fully recoverable, 2 partial, and none absent. |
 
 ## Documentation
 
-- [Context and pruning](docs/context.md) — multi-layer context pipeline and Context Ledger
-- [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md` / `ES.md`
-- [Evals & Benchmarks](docs/evals/) — source data, reproducible scorers, and results
-- [Providers](docs/providers.md) — provider adapters and prompt cache lifecycle
-- [Technical guide](docs/GUIDE.md) — product vision and architecture
-- [Research Paper](paper/paper.md) — technical preprint and formal specifications
+- [Context and pruning](docs/context.md) — admission, lifetimes, pressure pruning, and audit records
+- [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md`, and `ES.md`
+- [Providers](docs/providers.md) — provider adapters, BYOK, and protocol limitations
+- [Evals & benchmarks](docs/evals/) — source data, procedures, scorers, and results
+- [Technical guide](docs/GUIDE.md) — product thesis, requirements, and architecture
+- [Research paper](paper/paper.md) — technical preprint and formal specifications
 
 ## License
 
 Apache-2.0.
 
-The execution foundation — terminal UI, patches, permissions, sandboxing, sessions — derives from OpenAI's Apache-2.0 Codex CLI. Elpis extends that foundation with selective context pruning, context admission and inspection, auditable pruning records, portable continuity checkpoints, and its provider-control layer. Codex-derived source retains its upstream notices under `codex-rs/`.
+The execution foundation — terminal UI, patches, permissions, sandboxing, and sessions — derives
+from OpenAI's Apache-2.0 Codex CLI. Elpis extends that foundation with context admission and
+pruning, continuity checkpoints, auditable evidence, and provider control. Codex-derived source
+retains its upstream notices under `codex-rs/`.

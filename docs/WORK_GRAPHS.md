@@ -9,6 +9,8 @@ A work graph puts agents in a position where they only need to do bounded judgme
 Elpis validates the plan, persists it, selects dependency-ready work, enforces
 concurrency and write boundaries, and accepts evidence before releasing dependent work.
 
+![Elpis deterministic work graph](assets/elpis-work-graph.svg)
+
 This is separate from the existing agent lineage graph:
 
 - the **lineage graph** records which agent spawned which subagent;
