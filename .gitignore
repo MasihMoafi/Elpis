@@ -116,3 +116,10 @@ docs/evals/archive/**/frozen-eval-binary/
 docs/evals/final-data/
 docs/evals/analysis/
 docs/evals/ling/
+
+# Local agent config
+.codex/
+.kiro/
+
+# Eval archive: personal session evidence, local only
+docs/evals/archive/
