@@ -200,11 +200,24 @@ jobs:
           cargo test -p codex-core --lib --locked context_cleaner::tests
           cargo test -p codex-core --lib --locked elpis_context::tests
 
-      - name: Verify memory promotion, bounds, and retrieval
+      - name: Verify durable memory admission and filesystem bounds
         run: |
-          cargo test -p codex-state --locked record_stage1_output_usage_updates_usage_metadata
-          cargo test -p codex-config --locked memories_config_preserves_configured_root
-          cargo test -p codex-state --locked init_with_memories_state_root_separates_only_memories_db
+          set -euo pipefail
+          # A cargo test filter that matches nothing still exits 0, which is how the
+          # previous version of this step stayed green while verifying nothing. Treat
+          # "0 passed" as a failure so a renamed or deleted test breaks the build.
+          run_filter() {
+            local out
+            out=$(cargo test "$@" 2>&1) || { printf '%s\n' "$out"; exit 1; }
+            printf '%s\n' "$out"
+            if printf '%s\n' "$out" | grep -qE 'test result: ok\. 0 passed'; then
+              printf '::error::test filter matched zero tests: %s\n' "$*"
+              exit 1
+            fi
+          }
+          run_filter -p codex-app-server --test all --locked durable_memory_reaches_the_model_only_once_the_ledger_admits_it
+          run_filter -p codex-core --lib --locked memory_dir_is_readable_without_creating_or_widening_writes
+          run_filter -p codex-core --lib --locked permission_profile_override_keeps_memories_root_out_of_legacy_projection
 
       - name: Verify provider protocol and authentication boundaries
         run: |
@@ -219,12 +232,11 @@ jobs:
       - name: Run exhaustive continuity regression
         if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.full_regression) }}
         run: |
-          cargo test -p codex-app-server --test all --locked memory_reset_clears_memory_files_and_rows_preserves_threads
+          cargo test -p codex-app-server --test all --locked durable_memory_reaches_the_model_only_once_the_ledger_admits_it
           cargo test -p codex-tui --lib --locked elpis_context::tests
           cargo test -p codex-core --lib --locked elpis_context::tests
           cargo test -p codex-tui --lib --locked --no-run
           cargo test -p codex-tui --lib --locked onboarding::welcome::tests::welcome_renders_animation_on_first_draw -- --exact
-          cargo test -p codex-tui --lib --locked chatwidget::tests::slash_commands::rag_command_routes_
 
       - name: Build Elpis binary and Cargo timing report
         run: cargo build -p codex-tui --bin elpis --locked --timings --release
@@ -353,11 +365,22 @@ jobs:
           cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" context_cleaner::tests
           cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" elpis_context::tests
 
-      - name: Verify memory promotion, bounds, and retrieval
+      - name: Verify durable memory admission and filesystem bounds
         run: |
-          cargo test -p codex-state --locked --target "$MACOS_TARGET" record_stage1_output_usage_updates_usage_metadata
-          cargo test -p codex-config --locked --target "$MACOS_TARGET" memories_config_preserves_configured_root
-          cargo test -p codex-state --locked --target "$MACOS_TARGET" init_with_memories_state_root_separates_only_memories_db
+          set -euo pipefail
+          # See the Linux job: a filter matching zero tests must fail, not pass silently.
+          run_filter() {
+            local out
+            out=$(cargo test "$@" 2>&1) || { printf '%s\n' "$out"; exit 1; }
+            printf '%s\n' "$out"
+            if printf '%s\n' "$out" | grep -qE 'test result: ok\. 0 passed'; then
+              printf '::error::test filter matched zero tests: %s\n' "$*"
+              exit 1
+            fi
+          }
+          run_filter -p codex-app-server --test all --locked --target "$MACOS_TARGET" durable_memory_reaches_the_model_only_once_the_ledger_admits_it
+          run_filter -p codex-core --lib --locked --target "$MACOS_TARGET" memory_dir_is_readable_without_creating_or_widening_writes
+          run_filter -p codex-core --lib --locked --target "$MACOS_TARGET" permission_profile_override_keeps_memories_root_out_of_legacy_projection
 
       - name: Verify provider protocol and authentication boundaries
         run: |
