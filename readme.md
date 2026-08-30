@@ -1,6 +1,6 @@
 <div align="center">
 
-# Never lose the thread.
+# Never lose a thread again.
 
 **You run an agent inside Elpis, and it becomes Elpis.**
 
