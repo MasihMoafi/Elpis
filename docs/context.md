@@ -36,7 +36,7 @@ boundary. See `cache-friendly-pruning.md`.
 The Ace pass runs between model follow-ups as well as at the end of a turn, so one
 long-running tool-driven turn cannot skip the trigger. Each pass records which
 trigger fired (`manual` or `pressure`) in its manifest and report. OpenAI-backed passes use
-Luna at low reasoning effort. Every successful pass immediately recomputes the working
+Luna at maximal reasoning effort (`PRUNE_REASONING_EFFORT = ReasoningEffort::Max`). Every successful pass immediately recomputes the working
 history estimate and writes `prune_report.md` alongside the session logs
 (`codex-rs/core/src/session/context_prune_audit.rs`).
 The pass may run during a current turn, but it only receives and rewrites tool evidence
