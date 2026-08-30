@@ -246,7 +246,7 @@ Across all three independent runs, Elpis prevents context exhaustion by maintain
 
 Codex expanded into the critical danger zone (>90% window) in every run, forcing 3 emergency compactions. Elpis maintained peak window utilization at **32.5–49.5%**, achieving a **47–65% reduction in peak context footprint**:
 
-![Peak Context Window Utilization by Workload (Elpis vs. Codex)](docs/assets/elpis_empirical_evaluation_bars.svg)
+![Peak Context Window Utilization (Elpis vs. Codex)](docs/assets/elpis_empirical_evaluation_bars.svg)
 
 #### Input Token Distribution & Interquartile Stability
 
