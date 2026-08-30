@@ -108,3 +108,6 @@ TASKS.md
 
 # Frozen eval binaries: ~1.2GB build artifacts, never in git
 docs/evals/archive/**/frozen-eval-binary/
+
+# Local MCP wiring: machine-specific absolute paths, not for the repo
+.mcp.json
