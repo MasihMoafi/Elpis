@@ -269,11 +269,11 @@ Across all executed requests, Elpis spent over 95% of its operating lifespan ins
 ### RQ2 & RQ3: Target Retention & Task Quality
 
 - **RQ2 (Information Retention)**: In benchmark audits testing recall of key file paths, schemas, and error signatures after pruning, **100% of tested targets (6/6)** were retained intact in active context.
-- **RQ3 (Task Performance)**: Verified task completion was maintained across all arms. Both Elpis and Codex achieved equivalent task success with 0 functional regression.
+- **RQ3 (Task Performance)**: **Not established.** The executed runs are incomplete and unreplicated, so they do not support a comparative correctness claim in either direction. No per-arm score is reported, and there is no evidence that pruning improves task completion or output quality.
 
 ### RQ4: Pruning Overhead & Token Economics
 
-Pruning adds an auxiliary model call sequenced against the main agent. In the 41-pass benchmark run, 730,810 auxiliary tokens were spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token):
+Pruning adds an auxiliary model call sequenced against the main agent, and rewriting history invalidates the provider's cached prefix. Both costs are real. The figures below come from a high-frequency configuration that the implementation has since replaced with a low-frequency one built to reduce that invalidation, so they bound the penalty rather than describe the shipping design: 730,810 auxiliary tokens spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 
@@ -285,8 +285,8 @@ Every pruning event produces an immutable audit record on disk under `~/.elpis/l
 | --- | --- |
 | **RQ1 — Context Efficiency** | Peak reduction of 47–65%; median context stabilized at 26.6–27.1% of the 258k window. |
 | **RQ2 — Information Retention** | 6/6 tested post-prune targets preserved intact (100% retention). |
-| **RQ3 — Task Performance** | Equivalent verified completion rate maintained with 0 functional regressions. |
-| **RQ4 — Pruning Economics** | Auxiliary model cost measured at ~1.2 tokens spent per context token reclaimed. |
+| **RQ3 — Task Performance** | Not established. The available runs do not support a comparative correctness claim. |
+| **RQ4 — Pruning Economics** | Penalty established, current magnitude open. The measured figures describe a superseded high-frequency configuration. |
 | **RQ5 — Forensic Auditability** | 7/9 properties fully recoverable from local rollout evidence; 0 lost records. |
 
 ## Documentation

@@ -127,7 +127,7 @@ Treat upstream behavior as evidence, not inspiration copied from memory.
 
 ### Codex: Execution and Interface Reference
 
-Primary source is the local sibling clone at `~/Desktop/p/codex`; its origin is [openai/codex](https://github.com/openai/codex). Use the local committed source when it can answer the question.
+Primary source is [openai/codex](https://github.com/openai/codex). Clone it beside this repository and read the committed source when it can answer the question.
 
 Important areas:
 
@@ -141,7 +141,7 @@ The foundation strategy is **fork and subtract**: preserve proven execution/TUI 
 
 ### OpenClaw: Context and Continuity Reference
 
-Primary source is the local sibling clone at `~/Desktop/p/openclaw`; upstream is [openclaw/openclaw](https://github.com/openclaw/openclaw). Read implementation and tests rather than relying on explanatory prose.
+Primary source is [openclaw/openclaw](https://github.com/openclaw/openclaw). Clone it beside this repository and read implementation and tests rather than relying on explanatory prose.
 
 Useful areas include live context pruning, guarded compaction, pre-compaction memory flush, search/retrieval, memory budgets, promotion, and dreaming. Elpis adopts ideas only when they fit its own contracts and pass Elpis acceptance.
 

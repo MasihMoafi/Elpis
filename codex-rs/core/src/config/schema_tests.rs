@@ -33,7 +33,7 @@ fn config_schema_matches_fixture() {
             .to_string();
         panic!(
             "Current schema for `config.toml` doesn't match the fixture. \
-Run `just write-config-schema` to overwrite with your changes.\n\n{diff}"
+Run `cargo run -p codex-core --bin codex-write-config-schema` to overwrite with your changes.\n\n{diff}"
         );
     }
 
