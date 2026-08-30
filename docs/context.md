@@ -110,7 +110,7 @@ source; a project-sibling `skills/dev` is not scanned, so a development checkout
 double-admit the same rules. Machine-specific additions remain opt-in through
 `ELPIS_DEV_SKILLS_DIRS`.
 
-![The Context Ledger listing admitted instruction files with their token counts and included state](assets/context-ledger.png)
+![The Context Ledger listing admitted instruction files with their token counts and included state](assets/context-ledger.webp)
 
 ### `/context` — where the window went
 
@@ -119,7 +119,7 @@ usage as a grid broken down by category — user messages, agent responses, tool
 system prompt, skills, and free space — alongside the backtrack checkpoints available via
 `Esc Esc`. The two are separate surfaces and neither replaces the other.
 
-![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](assets/elpis-context-slash.png)
+![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](assets/elpis-context-slash.webp)
 
 ### Context Accounting Contract
 

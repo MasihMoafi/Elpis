@@ -113,3 +113,6 @@ TASKS.md
 # insta scratch files, rewritten by every test run
 *.snap.new
 *.pending-snap
+
+# Frozen eval binaries: ~1.2GB build artifacts, never in git
+docs/evals/archive/**/frozen-eval-binary/
