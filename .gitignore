@@ -67,19 +67,12 @@ src/fix_cuda.sh
 *.jpg
 *.jpeg
 *.gif
-!docs/assets/demo-linkedin.gif
 !docs/assets/demo.gif
 !docs/assets/evidence.gif
 !docs/assets/showcase-of-how-much-tool-calls.png
 *.webp
-!docs/assets/elpis.webp
-!docs/assets/elpises.webp
 !docs/assets/context-ledger.webp
 !docs/assets/elpis-context-slash.webp
-!docs/demo/starting-elpis.webp
-!docs/demo/starting-codex.webp
-!docs/demo/elpis-end-state.webp
-!docs/demo/codex-end-state.webp
 *.svg
 !docs/assets/*.svg
 *.mp4
@@ -96,7 +89,6 @@ src/fix_cuda.sh
 *.deb
 # Local, unrelated writing drafts.
 docs/blog/*
-!docs/blog/the-one-line-sabotage.md
 
 # Personal feedback notes, not for the repo
 docs/feedback-hosein.md
