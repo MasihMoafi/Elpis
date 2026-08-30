@@ -1220,6 +1220,14 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
     #[cfg(not(windows))]
     let command = r#"sh -c "printf '%s' \"${HTTP_PROXY:-not-set}\"""#.to_string();
 
+    // The property is that the managed proxy does not overwrite the user's own
+    // HTTP_PROXY, not that the variable is absent. Comparing against the ambient
+    // value keeps this hermetic on machines that legitimately set a proxy.
+    let ambient_http_proxy = std::env::var("HTTP_PROXY")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "not-set".to_string());
+
     execute_user_shell_command(
         Arc::clone(&session),
         turn_context,
@@ -1233,7 +1241,7 @@ async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::R
         let event = rx.recv().await.expect("channel open");
         if let EventMsg::ExecCommandEnd(event) = event.msg {
             assert_eq!(event.exit_code, 0);
-            assert_eq!(event.stdout.trim(), "not-set");
+            assert_eq!(event.stdout.trim(), ambient_http_proxy);
             break;
         }
     }

@@ -140,11 +140,13 @@ fn code_mode_host_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn guardian_approval_is_stable_and_enabled_by_default() {
+fn guardian_approval_is_stable_and_opt_in() {
     let spec = Feature::GuardianApproval.info();
 
     assert_eq!(spec.stage, Stage::Stable);
-    assert_eq!(Feature::GuardianApproval.default_enabled(), true);
+    // Stable, but auto-review stays off until asked for. See
+    // `guardian_auto_review_is_opt_in`.
+    assert_eq!(Feature::GuardianApproval.default_enabled(), false);
 }
 
 #[test]

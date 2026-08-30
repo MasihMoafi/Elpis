@@ -621,41 +621,10 @@ async fn dropped_response_stream_traces_cancelled_partial_output() -> anyhow::Re
     Ok(())
 }
 
-#[tokio::test]
-async fn response_stream_records_last_model_feedback_ids() {
-    let tags = Arc::new(Mutex::new(BTreeMap::new()));
-    let _guard = tracing_subscriber::registry()
-        .with(TagCollectorLayer { tags: tags.clone() })
-        .set_default();
-
-    let api_stream = futures::stream::iter([
-        Ok(ResponseEvent::Created),
-        Ok(ResponseEvent::Completed {
-            response_id: "resp-123".to_string(),
-            token_usage: None,
-            end_turn: Some(true),
-        }),
-    ]);
-    let (mut stream, _) = super::map_response_events(
-        Some("req-123".to_string()),
-        api_stream,
-        test_session_telemetry(),
-        InferenceTraceAttempt::disabled(),
-        test_model_provider(),
-    );
-
-    while stream.next().await.is_some() {}
-
-    let tags = tags.lock().unwrap().clone();
-    assert_eq!(
-        tags.get("last_model_request_id").map(String::as_str),
-        Some("\"req-123\"")
-    );
-    assert_eq!(
-        tags.get("last_model_response_id").map(String::as_str),
-        Some("\"resp-123\"")
-    );
-}
+// `response_stream_records_last_model_feedback_ids` was removed here. It asserted
+// the `last_model_request_id` / `last_model_response_id` tracing tags, whose
+// emission was deleted with the feedback crate in d3c4919. Nothing in the tree
+// sets those tags any more, so the test only ever restated a removed surface.
 
 #[tokio::test]
 async fn bedrock_unauthorized_error_uses_provider_mapping() {

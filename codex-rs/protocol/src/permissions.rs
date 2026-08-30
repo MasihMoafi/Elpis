@@ -2097,6 +2097,9 @@ mod tests {
                 ".git".to_string(),
                 ".agents".to_string(),
                 ".codex".to_string(),
+                // Elpis protects its own metadata directory alongside the
+                // inherited ones.
+                ".elpis".to_string(),
             ]
         );
         assert!(!writable_roots[0].is_path_writable(&dot_git_config));

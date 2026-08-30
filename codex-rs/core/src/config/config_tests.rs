@@ -2043,6 +2043,7 @@ async fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::
                 },
                 access: FileSystemAccessMode::Read,
             },
+            memories_read_entry(&config),
         ]),
     );
     assert_eq!(
@@ -3388,6 +3389,19 @@ async fn permissions_profiles_reject_nested_entries_for_non_workspace_roots() ->
     Ok(())
 }
 
+/// Elpis admits `<codex_home>/memories` as a read-only root so the agent can read
+/// its own memory files. See `memory_dir_is_readable_without_creating_or_widening_writes`
+/// for the behavior itself. Inherited Codex tests that assert an exact filesystem
+/// policy have to account for the extra entry.
+fn memories_read_entry(config: &Config) -> FileSystemSandboxEntry {
+    FileSystemSandboxEntry {
+        path: FileSystemPath::Path {
+            path: config.memory_dir.clone(),
+        },
+        access: FileSystemAccessMode::Read,
+    }
+}
+
 async fn load_workspace_permission_profile(
     profile: PermissionProfileToml,
 ) -> std::io::Result<Config> {
@@ -3431,15 +3445,18 @@ async fn permissions_profiles_allow_unknown_special_paths() -> std::io::Result<(
 
     assert_eq!(
         config.permissions.file_system_sandbox_policy(),
-        FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(
-                    ":future_special_path",
-                    /*subpath*/ None
-                ),
+        FileSystemSandboxPolicy::restricted(vec![
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Special {
+                    value: FileSystemSpecialPath::unknown(
+                        ":future_special_path",
+                        /*subpath*/ None
+                    ),
+                },
+                access: FileSystemAccessMode::Read,
             },
-            access: FileSystemAccessMode::Read,
-        }]),
+            memories_read_entry(&config),
+        ]),
     );
     assert_eq!(
         &config.legacy_sandbox_policy(),
@@ -3480,12 +3497,18 @@ async fn permissions_profiles_allow_unknown_special_paths_with_nested_entries()
 
     assert_eq!(
         config.permissions.file_system_sandbox_policy(),
-        FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(":future_special_path", Some("docs".into())),
+        FileSystemSandboxPolicy::restricted(vec![
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Special {
+                    value: FileSystemSpecialPath::unknown(
+                        ":future_special_path",
+                        Some("docs".into())
+                    ),
+                },
+                access: FileSystemAccessMode::Read,
             },
-            access: FileSystemAccessMode::Read,
-        }]),
+            memories_read_entry(&config),
+        ]),
     );
     assert!(
         config.startup_warnings.iter().any(|warning| warning.contains(
@@ -3510,7 +3533,7 @@ async fn permissions_profiles_allow_missing_filesystem_with_warning() -> std::io
 
     assert_eq!(
         config.permissions.file_system_sandbox_policy(),
-        FileSystemSandboxPolicy::restricted(Vec::new())
+        FileSystemSandboxPolicy::restricted(vec![memories_read_entry(&config)])
     );
     assert_eq!(
         &config.legacy_sandbox_policy(),
@@ -3544,7 +3567,7 @@ async fn permissions_profiles_allow_empty_filesystem_with_warning() -> std::io::
 
     assert_eq!(
         config.permissions.file_system_sandbox_policy(),
-        FileSystemSandboxPolicy::restricted(Vec::new())
+        FileSystemSandboxPolicy::restricted(vec![memories_read_entry(&config)])
     );
     assert!(
         config.startup_warnings.iter().any(|warning| warning.contains(
@@ -6087,6 +6110,13 @@ async fn to_mcp_config_preserves_apps_feature_from_config() -> std::io::Result<(
     let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
 
     config.apps_mcp_product_sku = Some("tpp".to_string());
+    // Apps is off by default in Elpis, so the SKU has to survive the disabled
+    // state before the feature is driven on and off again.
+    let mcp_config = config.to_mcp_config(&plugins_manager).await;
+    assert!(!mcp_config.apps_enabled);
+    assert_eq!(mcp_config.apps_mcp_product_sku.as_deref(), Some("tpp"));
+
+    let _ = config.features.enable(Feature::Apps);
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     assert!(mcp_config.apps_enabled);
     assert_eq!(mcp_config.apps_mcp_product_sku.as_deref(), Some("tpp"));
@@ -10375,7 +10405,9 @@ smart_approvals = true
         .build()
         .await?;
 
-    assert!(config.features.enabled(Feature::GuardianApproval));
+    // `smart_approvals` is not a recognized alias, so it grants nothing and
+    // GuardianApproval stays at its opt-in default.
+    assert!(!config.features.enabled(Feature::GuardianApproval));
     assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
 
     let serialized = tokio::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).await?;

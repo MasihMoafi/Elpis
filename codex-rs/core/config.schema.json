@@ -420,6 +420,9 @@
             "auth_elicitation": {
               "type": "boolean"
             },
+            "auto_model_routing": {
+              "type": "boolean"
+            },
             "browser_use": {
               "type": "boolean"
             },
@@ -495,6 +498,9 @@
             "experimental_windows_sandbox": {
               "type": "boolean"
             },
+            "explicit_prompt_cache": {
+              "type": "boolean"
+            },
             "external_migration": {
               "type": "boolean"
             },
@@ -532,12 +538,6 @@
               "type": "boolean"
             },
             "local_thread_store_compression": {
-              "type": "boolean"
-            },
-            "memories": {
-              "type": "boolean"
-            },
-            "memory_tool": {
               "type": "boolean"
             },
             "mentions_v2": {
@@ -1455,89 +1455,6 @@
             }
           ],
           "description": "Approval mode for this tool."
-        }
-      },
-      "type": "object"
-    },
-    "MemoriesToml": {
-      "additionalProperties": false,
-      "description": "Memories settings loaded from config.toml.",
-      "properties": {
-        "consolidation_model": {
-          "description": "Model used for memory consolidation.",
-          "type": "string"
-        },
-        "dedicated_tools": {
-          "description": "When `true`, expose dedicated memory tools through the extension tool surface.",
-          "type": "boolean"
-        },
-        "disable_on_external_context": {
-          "description": "When `true`, external context sources mark the thread `memory_mode` as `\"polluted\"`.",
-          "type": "boolean"
-        },
-        "extract_model": {
-          "description": "Model used for thread summarisation.",
-          "type": "string"
-        },
-        "generate_memories": {
-          "description": "When `false`, newly created threads are stored with `memory_mode = \"disabled\"` in the state DB.",
-          "type": "boolean"
-        },
-        "max_raw_memories_for_consolidation": {
-          "description": "Maximum number of recent raw memories retained for global consolidation.",
-          "format": "uint",
-          "maximum": 4096.0,
-          "minimum": 1.0,
-          "type": "integer"
-        },
-        "max_rollout_age_days": {
-          "description": "Maximum age of the threads used for memories.",
-          "format": "int64",
-          "type": "integer"
-        },
-        "max_rollouts_per_startup": {
-          "description": "Maximum number of rollout candidates processed per pass.",
-          "format": "uint",
-          "maximum": 128.0,
-          "minimum": 1.0,
-          "type": "integer"
-        },
-        "max_unused_days": {
-          "description": "Maximum number of days since a memory was last used before it becomes ineligible for phase 2 selection.",
-          "format": "int64",
-          "type": "integer"
-        },
-        "min_rate_limit_remaining_percent": {
-          "description": "Minimum remaining percentage required in Codex rate-limit windows before memory startup runs.",
-          "format": "int64",
-          "maximum": 100.0,
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "min_rollout_idle_hours": {
-          "description": "Minimum idle time between last thread activity and memory creation (hours). > 12h recommended.",
-          "format": "int64",
-          "type": "integer"
-        },
-        "root": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            }
-          ],
-          "description": "Directory containing durable memory artifacts. When omitted, memory remains under `CODEX_HOME`."
-        },
-        "state_root": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            }
-          ],
-          "description": "Directory containing the durable memory SQLite database. When omitted, the database remains under `CODEX_SQLITE_HOME`."
-        },
-        "use_memories": {
-          "description": "When `false`, skip injecting memory usage instructions into developer prompts.",
-          "type": "boolean"
         }
       },
       "type": "object"
@@ -4629,6 +4546,13 @@
             "gemini_generate_content"
           ],
           "type": "string"
+        },
+        {
+          "description": "Standard OpenAI Chat Completions API at `/v1/chat/completions`.",
+          "enum": [
+            "chat"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -4830,6 +4754,9 @@
         "auth_elicitation": {
           "type": "boolean"
         },
+        "auto_model_routing": {
+          "type": "boolean"
+        },
         "browser_use": {
           "type": "boolean"
         },
@@ -4905,6 +4832,9 @@
         "experimental_windows_sandbox": {
           "type": "boolean"
         },
+        "explicit_prompt_cache": {
+          "type": "boolean"
+        },
         "external_migration": {
           "type": "boolean"
         },
@@ -4942,12 +4872,6 @@
           "type": "boolean"
         },
         "local_thread_store_compression": {
-          "type": "boolean"
-        },
-        "memories": {
-          "type": "boolean"
-        },
-        "memory_tool": {
           "type": "boolean"
         },
         "mentions_v2": {
@@ -5247,17 +5171,13 @@
       "description": "Definition for MCP servers that Codex can reach out to for tool calls.",
       "type": "object"
     },
-    "memories": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/MemoriesToml"
-        }
-      ],
-      "description": "Memories subsystem settings."
-    },
     "model": {
       "description": "Optional override of model selection.",
       "type": "string"
+    },
+    "model_auto_compact_enabled": {
+      "description": "Whether the agent may automatically compact conversation history when the model context window is exhausted. Manual `/compact` remains available.",
+      "type": "boolean"
     },
     "model_auto_compact_token_limit": {
       "description": "Token usage threshold triggering auto-compaction of conversation history.",
