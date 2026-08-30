@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="480" viewBox="0 0 1000 480" style="background-color: #0d1117; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <!-- Header -->
+  <text x="36" y="38" fill="#f8fafc" font-size="18" font-weight="700">Task 1: Absolute Cumulative Token Volume Breakdown</text>
+  <text x="36" y="60" fill="#94a3b8" font-size="13">Total tokens processed across all turns in Task 1, comparing Cached Input, Net Uncached Input, Model Output, and Ace Overhead.</text>
+
+  <!-- Legend -->
+  <g transform="translate(36, 85)">
+    <rect x="0" y="0" width="13" height="13" rx="3" fill="#0284c7"/>
+    <text x="20" y="11" fill="#f8fafc" font-size="11.5" font-weight="600">Prompt Cached Input (90% Discounted)</text>
+
+    <rect x="300" y="0" width="13" height="13" rx="3" fill="#f59e0b"/>
+    <text x="320" y="11" fill="#f8fafc" font-size="11.5" font-weight="600">Net Uncached Input (Full Billed)</text>
+
+    <rect x="560" y="0" width="13" height="13" rx="3" fill="#a855f7"/>
+    <text x="580" y="11" fill="#f8fafc" font-size="11.5" font-weight="600">Model Output &amp; Reasoning</text>
+
+    <rect x="765" y="0" width="13" height="13" rx="3" fill="#f97316"/>
+    <text x="785" y="11" fill="#f8fafc" font-size="11.5" font-weight="600">Ace Pruning Overhead</text>
+  </g>
+
+  <!-- Grid lines (X: 180 to 900) -->
+  <!-- 0M: 180, 2M: 360, 4M: 540, 6M: 720, 8M: 900 -->
+  <line x1="180" y1="120" x2="180" y2="420" stroke="#334155" stroke-width="1"/>
+  <text x="180" y="438" fill="#94a3b8" font-size="11" text-anchor="middle">0M</text>
+
+  <line x1="360" y1="120" x2="360" y2="420" stroke="#334155" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="360" y="438" fill="#94a3b8" font-size="11" text-anchor="middle">2M</text>
+
+  <line x1="540" y1="120" x2="540" y2="420" stroke="#334155" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="540" y="438" fill="#94a3b8" font-size="11" text-anchor="middle">4M</text>
+
+  <line x1="720" y1="120" x2="720" y2="420" stroke="#334155" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="720" y="438" fill="#94a3b8" font-size="11" text-anchor="middle">6M</text>
+
+  <line x1="900" y1="120" x2="900" y2="420" stroke="#334155" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="900" y="438" fill="#94a3b8" font-size="11" text-anchor="middle">8M Tokens</text>
+
+  <!-- Row 1: Elpis Run 1 -->
+  <g transform="translate(36, 130)">
+    <text x="130" y="24" fill="#34d399" font-size="12" font-weight="700" text-anchor="end">Elpis Run 1</text>
+    <!-- cached: 4.32M = 388px -->
+    <rect x="144" y="6" width="388" height="26" rx="2" fill="#0284c7"/>
+    <!-- uncached: 2.56M = 230px -->
+    <rect x="532" y="6" width="230" height="26" rx="2" fill="#f59e0b"/>
+    <!-- output: 0.04M = 4px -->
+    <rect x="762" y="6" width="4" height="26" rx="1" fill="#a855f7"/>
+    <!-- ace: 0.75M = 68px -->
+    <rect x="766" y="6" width="68" height="26" rx="2" fill="#f97316"/>
+    <text x="840" y="24" fill="#cbd5e1" font-size="11">7.67M total</text>
+  </g>
+
+  <!-- Row 2: Codex Run 1 -->
+  <g transform="translate(36, 175)">
+    <text x="130" y="24" fill="#f87171" font-size="12" font-weight="700" text-anchor="end">Codex Run 1</text>
+    <!-- cached: 5.08M = 457px -->
+    <rect x="144" y="6" width="457" height="26" rx="2" fill="#0284c7"/>
+    <!-- uncached: 0.40M = 36px -->
+    <rect x="601" y="6" width="36" height="26" rx="2" fill="#f59e0b"/>
+    <!-- output: 0.03M = 3px -->
+    <rect x="637" y="6" width="3" height="26" rx="1" fill="#a855f7"/>
+    <text x="648" y="24" fill="#cbd5e1" font-size="11">5.51M total</text>
+  </g>
+
+  <!-- Row 3: Elpis Run 2 -->
+  <g transform="translate(36, 225)">
+    <text x="130" y="24" fill="#34d399" font-size="12" font-weight="700" text-anchor="end">Elpis Run 2</text>
+    <!-- cached: 2.86M = 257px -->
+    <rect x="144" y="6" width="257" height="26" rx="2" fill="#0284c7"/>
+    <!-- uncached: 1.27M = 114px -->
+    <rect x="401" y="6" width="114" height="26" rx="2" fill="#f59e0b"/>
+    <!-- output: 0.03M = 3px -->
+    <rect x="515" y="6" width="3" height="26" rx="1" fill="#a855f7"/>
+    <!-- ace: 0.29M = 26px -->
+    <rect x="518" y="6" width="26" height="26" rx="2" fill="#f97316"/>
+    <text x="550" y="24" fill="#cbd5e1" font-size="11">4.45M total</text>
+  </g>
+
+  <!-- Row 4: Codex Run 2 -->
+  <g transform="translate(36, 270)">
+    <text x="130" y="24" fill="#f87171" font-size="12" font-weight="700" text-anchor="end">Codex Run 2</text>
+    <!-- cached: 7.23M = 650px -->
+    <rect x="144" y="6" width="650" height="26" rx="2" fill="#0284c7"/>
+    <!-- uncached: 0.47M = 42px -->
+    <rect x="794" y="6" width="42" height="26" rx="2" fill="#f59e0b"/>
+    <!-- output: 0.04M = 4px -->
+    <rect x="836" y="6" width="4" height="26" rx="1" fill="#a855f7"/>
+    <text x="846" y="24" fill="#cbd5e1" font-size="11">7.74M total</text>
+  </g>
+
+  <!-- Row 5: Elpis Run 3 -->
+  <g transform="translate(36, 320)">
+    <text x="130" y="24" fill="#34d399" font-size="12" font-weight="700" text-anchor="end">Elpis Run 3</text>
+    <!-- cached: 3.21M = 289px -->
+    <rect x="144" y="6" width="289" height="26" rx="2" fill="#0284c7"/>
+    <!-- uncached: 0.98M = 88px -->
+    <rect x="433" y="6" width="88" height="26" rx="2" fill="#f59e0b"/>
+    <!-- output: 0.02M = 2px -->
+    <rect x="521" y="6" width="2" height="26" rx="1" fill="#a855f7"/>
+    <!-- ace: 0.24M = 22px -->
+    <rect x="523" y="6" width="22" height="26" rx="2" fill="#f97316"/>
+    <text x="552" y="24" fill="#cbd5e1" font-size="11">4.45M total</text>
+  </g>
+
+  <!-- Row 6: Codex Run 3 -->
+  <g transform="translate(36, 365)">
+    <text x="130" y="24" fill="#f87171" font-size="12" font-weight="700" text-anchor="end">Codex Run 3</text>
+    <!-- cached: 6.31M = 568px -->
+    <rect x="144" y="6" width="568" height="26" rx="2" fill="#0284c7"/>
+    <!-- uncached: 0.63M = 57px -->
+    <rect x="712" y="6" width="57" height="26" rx="2" fill="#f59e0b"/>
+    <!-- output: 0.03M = 3px -->
+    <rect x="769" y="6" width="3" height="26" rx="1" fill="#a855f7"/>
+    <text x="778" y="24" fill="#cbd5e1" font-size="11">6.97M total</text>
+  </g>
+</svg>

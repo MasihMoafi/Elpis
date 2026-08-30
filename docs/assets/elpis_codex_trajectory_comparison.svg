@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" width="100%" height="100%" style="background-color: #0d1117; border-radius: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <!-- Header -->
+  <text x="32" y="36" fill="#f8fafc" font-size="16" font-weight="700">Context Trajectory &amp; Pressure Dynamics (Codex vs. Elpis)</text>
+  <text x="32" y="58" fill="#94a3b8" font-size="13">Measured context per request across 103 turns · Model: gpt-5.6-luna (258k window) · Byte-identical prompt</text>
+
+  <!-- Background Zones -->
+  <!-- Critical Danger Zone (>70%) -->
+  <rect x="70" y="70" width="850" height="87" fill="#ef4444" fill-opacity="0.08"/>
+  <text x="910" y="85" fill="#ef4444" font-size="10" font-weight="600" text-anchor="end">CRITICAL DANGER ZONE (&gt;70%)</text>
+
+  <!-- Warning / Pressure Zone (30% - 70%) -->
+  <rect x="70" y="157" width="850" height="116" fill="#f59e0b" fill-opacity="0.05"/>
+  <text x="910" y="172" fill="#f59e0b" font-size="10" font-weight="600" text-anchor="end">PRESSURE ZONE (30%–70%)</text>
+
+  <!-- Healthy Operating Green Zone (0% - 30%) -->
+  <rect x="70" y="273" width="850" height="87" fill="#10b981" fill-opacity="0.10"/>
+  <text x="910" y="290" fill="#10b981" font-size="10" font-weight="700" text-anchor="end">HEALTHY TARGET BAND (20%–30%)</text>
+
+  <!-- Grid Lines & Y-Axis -->
+  <line x1="70" y1="360" x2="920" y2="360" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="364" fill="#94a3b8" font-size="11" text-anchor="end">0%</text>
+
+  <line x1="70" y1="302" x2="920" y2="302" stroke="#334155" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="60" y="306" fill="#10b981" font-size="11" font-weight="600" text-anchor="end">20%</text>
+
+  <line x1="70" y1="273" x2="920" y2="273" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <text x="60" y="277" fill="#10b981" font-size="11" font-weight="700" text-anchor="end">30%</text>
+
+  <line x1="70" y1="202" x2="920" y2="202" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="206" fill="#94a3b8" font-size="11" text-anchor="end">50%</text>
+
+  <line x1="70" y1="157" x2="920" y2="157" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="161" fill="#94a3b8" font-size="11" text-anchor="end">70%</text>
+
+  <line x1="70" y1="99" x2="920" y2="99" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="60" y="103" fill="#ef4444" font-size="11" font-weight="700" text-anchor="end">90%</text>
+
+  <line x1="70" y1="70" x2="920" y2="70" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="74" fill="#94a3b8" font-size="11" text-anchor="end">100%</text>
+
+  <!-- Codex Trajectory (Red Line: Climbing to 91% Peak -> Native Compaction Cliff -> Climbing Again) -->
+  <path d="M 70 338 L 110 320 L 150 280 L 190 220 L 230 160 L 270 115 L 285 96 L 290 342 L 340 310 L 400 240 L 460 170 L 510 120 L 525 340 L 580 300 L 640 230 L 700 160 L 730 130" 
+        fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Codex Annotation -->
+  <circle cx="285" cy="96" r="4" fill="#ef4444"/>
+  <text x="285" y="82" fill="#ef4444" font-size="11" font-weight="700" text-anchor="middle">Codex: 91.2% Peak Bloat</text>
+
+  <circle cx="290" cy="342" r="3.5" fill="#ef4444"/>
+  <text x="295" y="356" fill="#f87171" font-size="10">Emergency Compaction</text>
+
+  <!-- Elpis Trajectory (Green Line: Bounded sawtooth stabilized at 26.6% median context) -->
+  <path d="M 70 340 L 95 315 L 120 278 L 140 262 L 148 298 L 175 264 L 185 295 L 215 260 L 225 292 L 255 263 L 265 294 L 295 266 L 305 295 L 335 265 L 345 296 L 380 262 L 390 294 L 420 265 L 430 295 L 470 263 L 480 294 L 520 265 L 530 295 L 570 264 L 580 296 L 620 265 L 630 295 L 670 263 L 680 294 L 720 265 L 730 295 L 770 264 L 780 296 L 820 265 L 830 295 L 870 264 L 880 295 L 910 280" 
+        fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Elpis Median Band Line -->
+  <line x1="70" y1="283" x2="910" y2="283" stroke="#10b981" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="915" y="278" fill="#10b981" font-size="11" font-weight="700">Elpis Median (26.6%)</text>
+
+  <!-- Legend at Bottom -->
+  <g transform="translate(70, 400)">
+    <line x1="0" y1="6" x2="24" y2="6" stroke="#ef4444" stroke-width="3"/>
+    <text x="32" y="10" fill="#f8fafc" font-size="12" font-weight="600">Codex Baseline (Reaches &gt;90% Window Bloat · Repeated Compactions)</text>
+
+    <line x1="460" y1="6" x2="484" y2="6" stroke="#10b981" stroke-width="3"/>
+    <text x="492" y="10" fill="#f8fafc" font-size="12" font-weight="600">Elpis with Ace (Bounded within 20%–30% Safe Band · 0 Native Compactions)</text>
+  </g>
+</svg>

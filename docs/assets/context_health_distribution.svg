@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 380" width="100%" height="100%" style="background-color: #0d1117; border-radius: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <!-- Header -->
+  <text x="32" y="38" fill="#f8fafc" font-size="16" font-weight="700">Context Health Distribution (Elpis vs. Codex)</text>
+  <text x="32" y="60" fill="#94a3b8" font-size="13">Normalized proportion of requests spent in Healthy (&#8804;30%), Pressure (30–70%), and Critical Danger (&gt;70%) context zones.</text>
+
+  <!-- Legend -->
+  <g transform="translate(32, 85)">
+    <rect x="0" y="0" width="14" height="14" rx="3" fill="#10b981"/>
+    <text x="22" y="12" fill="#f8fafc" font-size="12" font-weight="600">Healthy Operating Band (&#8804;30%)</text>
+
+    <rect x="260" y="0" width="14" height="14" rx="3" fill="#f59e0b"/>
+    <text x="282" y="12" fill="#f8fafc" font-size="12" font-weight="600">Pressure Band (30%–70%)</text>
+
+    <rect x="500" y="0" width="14" height="14" rx="3" fill="#ef4444"/>
+    <text x="522" y="12" fill="#f8fafc" font-size="12" font-weight="600">Critical Danger Band (&gt;70%)</text>
+  </g>
+
+  <!-- Bars Container -->
+  <!-- Codex Bar (Top) -->
+  <g transform="translate(140, 150)">
+    <text x="-20" y="32" fill="#60a5fa" font-size="14" font-weight="700" text-anchor="end">Codex (Baseline)</text>
+    
+    <!-- Healthy: 21.7% = 163px -->
+    <rect x="0" y="0" width="163" height="52" rx="4" fill="#10b981"/>
+    <text x="81" y="31" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">21.7%</text>
+
+    <!-- Pressure: 43.5% = 326px -->
+    <rect x="166" y="0" width="326" height="52" rx="4" fill="#f59e0b"/>
+    <text x="329" y="31" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">43.5%</text>
+
+    <!-- Danger: 34.8% = 261px -->
+    <rect x="495" y="0" width="255" height="52" rx="4" fill="#ef4444"/>
+    <text x="622" y="31" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">34.8% (Danger)</text>
+  </g>
+
+  <!-- Elpis Bar (Bottom) -->
+  <g transform="translate(140, 240)">
+    <text x="-20" y="32" fill="#f97316" font-size="14" font-weight="700" text-anchor="end">Elpis (With Ace)</text>
+    
+    <!-- Healthy: 87.4% = 655px -->
+    <rect x="0" y="0" width="655" height="52" rx="4" fill="#10b981"/>
+    <text x="327" y="31" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">87.4% (Healthy &#8804;30% Band)</text>
+
+    <!-- Pressure: 12.6% = 95px -->
+    <rect x="658" y="0" width="92" height="52" rx="4" fill="#f59e0b"/>
+    <text x="704" y="31" fill="#ffffff" font-size="12" font-weight="700" text-anchor="middle">12.6%</text>
+
+    <!-- Danger: 0% -->
+  </g>
+
+  <!-- Footer Annotation -->
+  <text x="32" y="350" fill="#94a3b8" font-size="12">Key Finding: Elpis spends 87.4% of its operational lifetime in the optimal green band with 0% in danger territory, whereas Codex spends 78.3% under severe context pressure and danger.</text>
+</svg>

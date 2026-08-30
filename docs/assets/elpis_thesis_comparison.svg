@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="680" viewBox="0 0 1140 680" style="background-color: #0d1117; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <!-- Title & Subtitle -->
+  <text x="45" y="44" fill="#f8fafc" font-size="20" font-weight="700">The Context Sovereign Thesis: Unmanaged Transcripts vs. Active Working-Set Pruning</text>
+  <text x="45" y="68" fill="#94a3b8" font-size="13">Why unbounded transcript accumulation exhausts model context windows, and how Elpis maintains a lean working set with durable evidence.</text>
+
+  <!-- Left Column: The Problem (Codex Baseline) -->
+  <g transform="translate(40, 95)">
+    <rect width="515" height="545" rx="10" fill="#181214" stroke="#7f1d1d" stroke-width="1.5"/>
+    <text x="24" y="34" fill="#f87171" font-size="16" font-weight="700">1. Unmanaged Transcript Bloat (Codex)</text>
+    <text x="24" y="56" fill="#fca5a5" font-size="12">80%–90% of prompt tokens are dead-end searches and historical tool outputs.</text>
+
+    <!-- Turn 1 -->
+    <g transform="translate(20, 75)">
+      <rect width="475" height="95" rx="6" fill="#241416" stroke="#991b1b" stroke-width="1"/>
+      <text x="16" y="24" fill="#fca5a5" font-size="12.5" font-weight="700">Turn 1: Exhaustive Ripgrep / AST Search</text>
+      <text x="16" y="45" fill="#94a3b8" font-size="11" font-family="monospace">Tool Output: 231 lines of search results (4,800 tokens)</text>
+      <text x="16" y="66" fill="#ef4444" font-size="11" font-weight="600">&#10007; Carried in full across every subsequent prompt</text>
+    </g>
+
+    <!-- Turn 2 -->
+    <g transform="translate(20, 185)">
+      <rect width="475" height="95" rx="6" fill="#241416" stroke="#991b1b" stroke-width="1"/>
+      <text x="16" y="24" fill="#fca5a5" font-size="12.5" font-weight="700">Turn 2: Bulky Cargo Test &amp; Build Logs</text>
+      <text x="16" y="45" fill="#94a3b8" font-size="11" font-family="monospace">Tool Output: 500 lines of compilation &amp; passing tests (6,200 tokens)</text>
+      <text x="16" y="66" fill="#ef4444" font-size="11" font-weight="600">&#10007; Clutters attention; model pays to re-read passed test suites</text>
+    </g>
+
+    <!-- Turn 3 -->
+    <g transform="translate(20, 295)">
+      <rect width="475" height="95" rx="6" fill="#241416" stroke="#991b1b" stroke-width="1"/>
+      <text x="16" y="24" fill="#fca5a5" font-size="12.5" font-weight="700">Turn 3: Multi-File Git Diff</text>
+      <text x="16" y="45" fill="#94a3b8" font-size="11" font-family="monospace">Tool Output: 12 modified files (4,100 tokens)</text>
+      <text x="16" y="66" fill="#ef4444" font-size="11" font-weight="600">&#10007; Agent only edits 1 function; 11 unreferenced diffs pollute window</text>
+    </g>
+
+    <!-- Left Column Result Total -->
+    <g transform="translate(20, 405)">
+      <rect width="475" height="115" rx="6" fill="#2c1417" stroke="#dc2626" stroke-width="1"/>
+      <text x="16" y="28" fill="#f87171" font-size="14" font-weight="700">Outcome: Escalating Context Pressure (&gt;90% Bloat)</text>
+      <text x="16" y="52" fill="#fca5a5" font-size="11.5">&#8226; Context explodes to 216k tokens; attention degrades significantly</text>
+      <text x="16" y="72" fill="#fca5a5" font-size="11.5">&#8226; Triggers 3 emergency native compactions that destroy working state</text>
+      <text x="16" y="92" fill="#fca5a5" font-size="11.5">&#8226; High per-request dollar cost on prompt tokens</text>
+    </g>
+  </g>
+
+  <!-- Right Column: The Solution (Elpis Sovereign Governance) -->
+  <g transform="translate(585, 95)">
+    <rect width="515" height="545" rx="10" fill="#0f1f17" stroke="#14532d" stroke-width="1.5"/>
+    <text x="24" y="34" fill="#34d399" font-size="16" font-weight="700">2. Sovereign Evidence Governance (Elpis)</text>
+    <text x="24" y="56" fill="#86efac" font-size="12">Selective Ace pruning at 30% threshold; raw logs saved to disk.</text>
+
+    <!-- Turn 1 Pruned -->
+    <g transform="translate(20, 75)">
+      <rect width="475" height="95" rx="6" fill="#132a1f" stroke="#16a34a" stroke-width="1"/>
+      <text x="16" y="24" fill="#86efac" font-size="12.5" font-weight="700">Turn 1: Pruned Finding + Evidence Pointer</text>
+      <text x="16" y="45" fill="#a7f3d0" font-size="11" font-family="monospace">Ace Distillation: [Found theme_picker at line 283] (65 tokens)</text>
+      <text x="16" y="66" fill="#22c55e" font-size="11" font-weight="600">&#10003; 98.7% token reduction; raw output preserved in rollout:// evidence</text>
+    </g>
+
+    <!-- Turn 2 Pruned -->
+    <g transform="translate(20, 185)">
+      <rect width="475" height="95" rx="6" fill="#132a1f" stroke="#16a34a" stroke-width="1"/>
+      <text x="16" y="24" fill="#86efac" font-size="12.5" font-weight="700">Turn 2: Distilled Failure Assertion</text>
+      <text x="16" y="45" fill="#a7f3d0" font-size="11" font-family="monospace">Ace Distillation: [AssertionError at test_auth.rs:82] (110 tokens)</text>
+      <text x="16" y="66" fill="#22c55e" font-size="11" font-weight="600">&#10003; 98.2% token reduction; 100% ground-truth error evidence retained</text>
+    </g>
+
+    <!-- Turn 3 Pruned -->
+    <g transform="translate(20, 295)">
+      <rect width="475" height="95" rx="6" fill="#132a1f" stroke="#16a34a" stroke-width="1"/>
+      <text x="16" y="24" fill="#86efac" font-size="12.5" font-weight="700">Turn 3: Distilled Targeted Edit</text>
+      <text x="16" y="45" fill="#a7f3d0" font-size="11" font-family="monospace">Ace Distillation: [Diff summary for auth_token.rs] (95 tokens)</text>
+      <text x="16" y="66" fill="#22c55e" font-size="11" font-weight="600">&#10003; 97.6% token reduction; unreferenced file noise evicted</text>
+    </g>
+
+    <!-- Right Column Result Total -->
+    <g transform="translate(20, 405)">
+      <rect width="475" height="115" rx="6" fill="#133324" stroke="#16a34a" stroke-width="1"/>
+      <text x="16" y="28" fill="#34d399" font-size="14" font-weight="700">Outcome: Bounded in 20%–30% Safe Green Band</text>
+      <text x="16" y="52" fill="#86efac" font-size="11.5">&#8226; Stabilized at 26.6%–27.1% median context across all 3 runs</text>
+      <text x="16" y="72" fill="#86efac" font-size="11.5">&#8226; 0 native compactions; exact evidence recoverable on disk</text>
+      <text x="16" y="92" fill="#86efac" font-size="11.5">&#8226; Preserves active model attention and predictable inference cost</text>
+    </g>
+  </g>
+</svg>
