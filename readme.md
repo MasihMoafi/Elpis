@@ -167,12 +167,12 @@ Keep the working context across model switches, compaction, and restarts:
 ### Memory
 
 Durable memory is one Markdown file, `MEMORY.md`, in the Elpis memory directory (derived
-from `CODEX_HOME`). The Context Ledger discovers it, lists it as a row, admits it by
-default, and lets you switch it off for the next turn.
+from `CODEX_HOME`). The Context Ledger discovers it and lists it as a row, switched **off**
+until you admit it: like every optional row, memory does not reach the model unasked.
 
 - **One visible file.** Plain text. Read it, edit it, commit it to git, or delete it.
 - **Admitted in the open.** Because it is a Ledger row, you can always see whether memory
-  reached the model, and drop it when you do not want it.
+  reached the model, switch it on when you want it, and drop it when you do not.
 - **Retrieval beyond that file is your choice.** Register an MCP server — for example
   [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) — and Elpis will use it.
 

@@ -1,10 +1,12 @@
 //! Memory recall eval.
 //!
 //! Plants a fact that exists nowhere except durable memory, runs a turn, and checks the
-//! request that actually left for the model. The negative case is the point: a recall test
+//! request that actually left for the model. Both negatives are the point: a recall test
 //! that only proves the fact arrives passes just as happily when everything on disk is
 //! admitted unconditionally, which is not memory working — it is memory being ignored in
-//! the user's favour. Switching `MEMORY.md` off in the Context Ledger must remove it.
+//! the user's favour. `MEMORY.md` is an optional Ledger row, so it starts switched off and
+//! must stay out of the request until it is admitted, and switching it back off must
+//! remove it again.
 use anyhow::Result;
 use app_test_support::TestAppServer;
 use app_test_support::to_response;
@@ -27,15 +29,30 @@ const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// durable memory.
 const PLANTED_FACT: &str = "The Elpis staging cluster is named quiet-heron-42.";
 
+/// What the Context Ledger did with the `MEMORY.md` row before the turn ran.
+enum MemoryAdmission {
+    /// Leave the row untouched, exercising the shipped default for optional rows.
+    Untouched,
+    Admitted,
+    Withheld,
+}
+
 #[tokio::test]
-async fn durable_memory_reaches_the_model_and_the_ledger_switch_withholds_it() -> Result<()> {
-    let admitted = developer_context_for_turn(/*admit_memory*/ true).await?;
+async fn durable_memory_reaches_the_model_only_once_the_ledger_admits_it() -> Result<()> {
+    // Optional rows default to off, so memory the user never admitted must not be spent.
+    let untouched = developer_context_for_turn(MemoryAdmission::Untouched).await?;
     assert!(
-        admitted.iter().any(|text| text.contains(PLANTED_FACT)),
-        "durable memory never reached the model; developer context was: {admitted:#?}"
+        !untouched.iter().any(|text| text.contains(PLANTED_FACT)),
+        "durable memory reached the model without being admitted: {untouched:#?}"
     );
 
-    let withheld = developer_context_for_turn(/*admit_memory*/ false).await?;
+    let admitted = developer_context_for_turn(MemoryAdmission::Admitted).await?;
+    assert!(
+        admitted.iter().any(|text| text.contains(PLANTED_FACT)),
+        "durable memory was admitted and never reached the model; developer context was: {admitted:#?}"
+    );
+
+    let withheld = developer_context_for_turn(MemoryAdmission::Withheld).await?;
     assert!(
         !withheld.iter().any(|text| text.contains(PLANTED_FACT)),
         "MEMORY.md was switched off in the ledger and still reached the model: {withheld:#?}"
@@ -46,7 +63,7 @@ async fn durable_memory_reaches_the_model_and_the_ledger_switch_withholds_it() -
 
 /// Runs one full turn against a mock model and returns the developer messages the model
 /// received.
-async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
+async fn developer_context_for_turn(admission: MemoryAdmission) -> Result<Vec<String>> {
     let server = responses::start_mock_server().await;
     let response_mock = responses::mount_sse_once(
         &server,
@@ -70,13 +87,16 @@ async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
     )
     .await?;
 
-    if !admit_memory {
-        codex_core::elpis_context::set_continuity_source_admitted(
-            Some(memory_root.as_path()),
-            workspace.path(),
-            "MEMORY.md",
-            /*admitted*/ false,
-        )?;
+    match admission {
+        MemoryAdmission::Untouched => {}
+        MemoryAdmission::Admitted | MemoryAdmission::Withheld => {
+            codex_core::elpis_context::set_continuity_source_admitted(
+                Some(memory_root.as_path()),
+                workspace.path(),
+                "MEMORY.md",
+                matches!(admission, MemoryAdmission::Admitted),
+            )?;
+        }
     }
 
     let mut app = TestAppServer::builder()
