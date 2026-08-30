@@ -28,6 +28,7 @@
   - [Context Ledger and observability](#context-ledger-and-observability)
   - [Sessions and continuity](#sessions-and-continuity)
   - [Memory](#memory)
+  - [Deterministic work graphs](#deterministic-work-graphs)
   - [Bring your own provider](#bring-your-own-provider)
   - [Integrations and tools](#integrations-and-tools)
   - [Privacy and ownership](#privacy-and-ownership)
@@ -165,16 +166,48 @@ Keep the working context across model switches, compaction, and restarts:
 
 ### Memory
 
-Project memory is local Markdown files under `.elpis/memory/`:
+Durable memory is one Markdown file, `MEMORY.md`, in the Elpis memory directory (derived
+from `CODEX_HOME`). The Context Ledger discovers it, lists it as a row, admits it by
+default, and lets you switch it off for the next turn.
 
-![Memory Management and Fact Promotion Lifecycle](docs/assets/elpis-memory-architecture.svg)
+- **One visible file.** Plain text. Read it, edit it, commit it to git, or delete it.
+- **Admitted in the open.** Because it is a Ledger row, you can always see whether memory
+  reached the model, and drop it when you do not want it.
+- **Retrieval beyond that file is your choice.** Register an MCP server — for example
+  [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) — and Elpis will use it.
 
-- **Rule learning:** `/learn` creates or updates repository-specific guidelines as you correct the
-  agent.
-- **Background extraction:** After long sessions, a background pass extracts durable facts into
-  memory files that are admitted to future runs.
-- **You stay in control:** Memory files are plain text. Edit them, commit them to git, or delete
-  them at any time.
+Elpis previously ran an extraction, consolidation, and promotion pipeline. It was removed
+because it did not work: across two threshold settings it produced zero durable
+promotions, every sweep landing one recall short of the gate. Memory that rewrites itself
+in the background without appearing anywhere is the failure mode the Ledger row exists to
+prevent.
+
+### Deterministic work graphs
+
+A coordinator can fan work out to several agents under an engine that validates the plan
+before anything runs. This is Elpis's own; it is not part of the Codex foundation.
+
+![Elpis deterministic work graph](docs/assets/elpis-work-graph.svg)
+
+The coordinator submits a complete task graph — tasks, dependencies, write scopes,
+acceptance criteria, and environments. Elpis then owns the scheduling:
+
+- **Cycles cannot be scheduled.** Kahn's topological algorithm proves the graph is acyclic
+  and rejects it otherwise, so no worker is created for a plan that could only deadlock.
+- **Write conflicts are caught by construction.** Path-prefix intersection detects
+  overlapping write scopes, and all writable tasks in one environment are serialized even
+  when their declared prefixes do not overlap.
+- **Verification is not optional.** A writable task without a directly dependent `verify`
+  task in the same environment is rejected before dispatch.
+- **Evidence gates progress.** Dependent work is released only after an accepted result;
+  a failed, cancelled, or blocked prerequisite blocks its descendants.
+
+Elpis never creates, merges, rebases, deletes, or pushes branches or worktrees. Preparing
+and integrating them stays coordinator-owned, because those operations change durable user
+state and deserve deliberate review.
+
+Off by default. Enable with `enable_fanout = true` under `[features]`; there is no slash
+command. Full rules and the graph schema are in [docs/WORK_GRAPHS.md](docs/WORK_GRAPHS.md).
 
 ### Bring your own provider
 
@@ -260,6 +293,7 @@ Every pruning event produces an immutable audit record on disk under `~/.elpis/l
 
 - [Context and pruning](docs/context.md) — admission, lifetimes, pressure pruning, and audit records
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md`, and `ES.md`
+- [Deterministic work graphs](docs/WORK_GRAPHS.md) — plan validation, write scopes, concurrency, and evidence gates
 - [Providers](docs/providers.md) — provider adapters, BYOK, and protocol limitations
 - [Evals & benchmarks](docs/evals/) — source data, procedures, scorers, and results
 - [Technical guide](docs/GUIDE.md) — product thesis, requirements, and architecture
