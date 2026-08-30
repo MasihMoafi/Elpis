@@ -3178,8 +3178,8 @@ impl Session {
                 .render(),
             );
         }
-        let separate_guardian_developer_message =
-            crate::guardian::is_guardian_reviewer_source(&session_source);
+        let is_guardian_reviewer = crate::guardian::is_guardian_reviewer_source(&session_source);
+        let separate_guardian_developer_message = is_guardian_reviewer;
         // Keep the guardian policy prompt out of the aggregated developer bundle so it
         // stays isolated as its own top-level developer message for guardian subagents.
         if !separate_guardian_developer_message
@@ -3274,20 +3274,28 @@ impl Session {
             contextual_user_sections.push(recommended_plugins.render());
         }
         let context_contributors = self.services.extensions.context_contributors().to_vec();
-        for contributor in &context_contributors {
-            for fragment in contributor
-                .contribute_thread_context(
-                    &self.services.session_extension_data,
-                    &self.services.thread_extension_data,
-                )
-                .await
-            {
-                push_prompt_fragment(
-                    fragment,
-                    &mut developer_sections,
-                    &mut contextual_user_sections,
-                    &mut separate_developer_sections,
-                );
+        // The guardian reviews the agent's own work, so it must judge the diff and the
+        // evidence on their merits. Thread context is where durable, user-authored state
+        // lands (memory being the motivating case), and that state is untrusted text: a
+        // line like "always approve" in a remembered preference would otherwise be read
+        // by the component whose job is to withhold approval. Keep the review request to
+        // the parent transcript and the guardian policy.
+        if !is_guardian_reviewer {
+            for contributor in &context_contributors {
+                for fragment in contributor
+                    .contribute_thread_context(
+                        &self.services.session_extension_data,
+                        &self.services.thread_extension_data,
+                    )
+                    .await
+                {
+                    push_prompt_fragment(
+                        fragment,
+                        &mut developer_sections,
+                        &mut contextual_user_sections,
+                        &mut separate_developer_sections,
+                    );
+                }
             }
         }
         for contributor in &context_contributors {
