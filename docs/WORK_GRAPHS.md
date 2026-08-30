@@ -16,9 +16,9 @@ concurrency and write boundaries, and accepts evidence before releasing dependen
 ```mermaid
 flowchart TD
     A["Coordinator submits complete graph<br/>tasks · depends_on · write_scopes<br/>acceptance_criteria · environment_id"] --> B{"Kahn's topological<br/>validation"}
-    B -->|"cycle, self-dep,<br/>unknown or repeated dep"| R["Reject before any<br/>worker is created"]
+    B -->|"cycle or bad dependency"| R["Reject before any<br/>worker is created"]
     B -->|acyclic| C{"Scope and role<br/>validation"}
-    C -->|"escaping / missing / non-directory scope<br/>write scope on explore or verify<br/>implement or fix without write scope<br/>writable task with no dependent verify"| R
+    C -->|"invalid scope or role"| R
     C -->|valid| D["Persist tasks<br/>in declared order"]
     D --> E{"Dependency-ready scan<br/>all prerequisites succeeded?"}
     E -->|no| W["Pending"]
@@ -28,8 +28,8 @@ flowchart TD
     S --> F
     F -->|clear| G["Dispatch worker<br/>bounded by max_concurrency<br/>and the session agent limit"]
     G --> H{"Evidence accepted<br/>against acceptance_criteria?"}
-    H -->|yes| I["Succeeded:<br/>release dependents"]
     H -->|"no · failed · cancelled"| J["Blocked:<br/>pending descendants blocked"]
+    H -->|yes| I["Succeeded:<br/>release dependents"]
     I --> E
 
     style R fill:#f8d7da,stroke:#842029,color:#842029
