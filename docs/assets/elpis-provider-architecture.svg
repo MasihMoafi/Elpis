@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" role="img" aria-labelledby="title desc">
+<rect x="0" y="0" width="1200" height="820" fill="#0d1117" rx="12" />
   <title id="title">Elpis provider-neutral architecture</title>
   <desc id="desc">Elpis owns context, memory, continuity, permissions, tools, and the TUI. A provider adapter translates the canonical response event stream to native OpenAI, Anthropic, and Gemini APIs.</desc>
   <defs>

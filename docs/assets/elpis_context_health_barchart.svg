@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520" style="background-color: #0d1117; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+<rect x="0" y="0" width="1000" height="520" fill="#0d1117" rx="12" />
   <!-- Header -->
   <text x="36" y="38" fill="#f8fafc" font-size="18" font-weight="700">Task 1: Context Health Zone Distribution (Elpis vs. Codex)</text>
   <text x="36" y="60" fill="#94a3b8" font-size="13">Proportion of request turns spent in Healthy (&#8804;30%), Pressure (30%–70%), and Critical Danger (&gt;70%) context zones across 3 paired runs.</text>

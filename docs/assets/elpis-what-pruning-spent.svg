@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1320" height="480" viewBox="0 0 1320 480" style="background-color: #0d1117; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+<rect x="0" y="0" width="1320" height="480" fill="#0d1117" rx="12" />
 <!-- Header -->
 <text x="45" y="44" fill="#f8fafc" font-size="20" font-weight="700">What Pruning Spent to Hold That Window (41-Pass Breakdown)</text>
 <text x="45" y="70" fill="#94a3b8" font-size="13">Tokens spent on auxiliary model invocations vs context tokens reclaimed per pass across 41 pruning triggers on gpt-5.6-luna</text>

@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1140" height="680" viewBox="0 0 1140 680" style="background-color: #0d1117; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+<rect x="0" y="0" width="1140" height="680" fill="#0d1117" rx="12" />
   <!-- Title & Subtitle -->
   <text x="45" y="44" fill="#f8fafc" font-size="20" font-weight="700">The Context Sovereign Thesis: Unmanaged Transcripts vs. Active Working-Set Pruning</text>
   <text x="45" y="68" fill="#94a3b8" font-size="13">Why unbounded transcript accumulation exhausts model context windows, and how Elpis maintains a lean working set with durable evidence.</text>

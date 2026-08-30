@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+<rect x="0" y="0" width="1200" height="900" fill="#0d1117" rx="12" />
   <title id="title">Elpis deterministic work graph, refined</title>
   <desc id="desc">A refined work graph showing a coordinator validating and persisting a DAG, a dependency-ready scheduler feeding the task graph, and an evidence gate accepting worker reports before releasing dependents.</desc>
   <defs>

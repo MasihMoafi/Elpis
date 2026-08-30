@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="850" viewBox="0 0 1200 850" role="img" aria-labelledby="title desc">
+<rect x="0" y="0" width="1200" height="850" fill="#0d1117" rx="12" />
   <title id="title">Elpis immutable audit trail</title>
   <desc id="desc">A horizontal audit flow from evidence review to immutable audit writing and selective pruning, with the audit record branching to three evidence artifacts.</desc>
   <defs>

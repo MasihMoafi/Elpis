@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="850" viewBox="0 0 1200 850" role="img" aria-labelledby="title desc">
+<rect x="0" y="0" width="1200" height="850" fill="#0d1117" rx="12" />
   <title id="title">Elpis session continuity modes</title>
   <desc id="desc">After a restart or provider change, Elpis can continue through the provider-native thread or through portable Markdown checkpoints in a fresh thread.</desc>
   <defs>
