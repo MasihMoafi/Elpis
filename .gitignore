@@ -111,3 +111,8 @@ docs/evals/archive/**/frozen-eval-binary/
 
 # Local MCP wiring: machine-specific absolute paths, not for the repo
 .mcp.json
+
+# Eval run data: personal session transcripts, local only
+docs/evals/final-data/
+docs/evals/analysis/
+docs/evals/ling/
