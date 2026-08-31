@@ -52,19 +52,23 @@ fn configure_ledger_sources(
 
     chat.config.memory_dir = memories.clone().abs();
     chat.config.cwd = cwd.clone().abs();
-    // The ledger reads instruction rows from the server-reported list, exactly as
-    // /usage does. Mirror a real session by reporting the same files created above.
+    // The app server reports global/project instructions. Development rules are
+    // discovered from configured roots, because the app server omits them.
+    let config_toml_path = root.join("config.toml").abs();
+    chat.config.config_layer_stack = ConfigLayerStack::default().with_user_config(
+        &config_toml_path,
+        toml::from_str::<TomlValue>(&format!(
+            "[skills]\ndev_rule_roots = [{}]\n",
+            toml::Value::String(dev.display().to_string()).to_string(),
+        ))
+        .expect("development-rule config"),
+    );
     chat.instruction_source_paths = vec![
         codex_utils_path_uri::PathUri::from_abs_path(&global.abs()),
         codex_utils_path_uri::PathUri::from_abs_path(&cwd.join("AGENTS.md").abs()),
-        codex_utils_path_uri::PathUri::from_abs_path(&dev.join("SKILL.md").abs()),
     ];
     chat.last_rendered_width.set(Some(120));
     Ok((memories, cwd))
-}
-
-fn instruction_paths(chat: &ChatWidget) -> Vec<PathBuf> {
-    chat.instruction_source_paths_as_path_bufs()
 }
 
 #[tokio::test]
@@ -93,7 +97,7 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     assert!(rendered.contains("applicable global rules"));
     assert!(
         rendered.contains("dev/SKILL.md"),
-        "server-reported dev rule must render as its own row:\n{rendered}"
+        "configured development rule must render as its own row:\n{rendered}"
     );
 
     let short = render_ledger(&chat, 16);
@@ -122,9 +126,18 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
 
     chat.config.memory_dir = memories.abs();
     chat.config.cwd = cwd.abs();
+    let config_toml_path = root.path().join("config.toml").abs();
+    chat.config.config_layer_stack = ConfigLayerStack::default().with_user_config(
+        &config_toml_path,
+        toml::from_str::<TomlValue>(&format!(
+            "[skills]\ndev_rule_roots = [{}]\n",
+            toml::Value::String(configured.parent().expect("configured root").display().to_string())
+                .to_string(),
+        ))
+        .expect("development-rule config"),
+    );
     chat.instruction_source_paths = vec![
         codex_utils_path_uri::PathUri::from_abs_path(&global.abs()),
-        codex_utils_path_uri::PathUri::from_abs_path(&configured.abs()),
         codex_utils_path_uri::PathUri::from_abs_path(&project.abs()),
     ];
     chat.last_rendered_width.set(Some(120));
@@ -142,7 +155,10 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
     assert!(rendered.contains(
         "Size: 4,739 bytes · Estimate: ≈1,185 tokens (trimmed characters ÷ 4, capped)"
     ));
-    assert!(rendered.contains(&configured.canonicalize()?.display().to_string()));
+    assert!(rendered.contains("› [x]"));
+    assert!(rendered.contains("INCLUDED"));
+    assert!(rendered.contains("Lifetime: every turn"));
+    assert!(rendered.contains(&format!("Source: {}", configured.canonicalize()?.display())));
     Ok(())
 }
 
@@ -168,17 +184,13 @@ async fn ledger_file_rows_emit_real_file_hyperlinks() -> anyhow::Result<()> {
 async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let (_memories, _cwd) = configure_ledger_sources(&mut chat, root.path())?;
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
 
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('e')));
     assert!(
-        crate::legacy_core::elpis_context::continuity_sources(
-            Some(&memories),
-            &cwd,
-            &instruction_paths(&chat),
-        )
+        chat.continuity_sources()
         .iter()
         .filter(|source| source.selectable)
         .all(|source| !source.admitted)
@@ -187,11 +199,7 @@ async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyh
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
     assert!(
-        crate::legacy_core::elpis_context::continuity_sources(
-            Some(&memories),
-            &cwd,
-            &instruction_paths(&chat),
-        )
+        chat.continuity_sources()
         .iter()
         .filter(|source| source.selectable)
         .all(|source| source.admitted)
@@ -208,11 +216,7 @@ async fn ledger_dedupes_manually_added_file_that_is_already_a_rule() -> anyhow::
     let dev_rule = root.path().join("projects/skills/dev/SKILL.md");
     crate::legacy_core::elpis_context::add_continuity_source(Some(&memories), &cwd, &dev_rule)?;
 
-    let sources = crate::legacy_core::elpis_context::continuity_sources(
-        Some(&memories),
-        &cwd,
-        &instruction_paths(&chat),
-    );
+    let sources = chat.continuity_sources();
     let rows = sources
         .iter()
         .filter(|source| {
@@ -235,14 +239,10 @@ async fn ledger_dedupes_manually_added_file_that_is_already_a_rule() -> anyhow::
 async fn ledger_and_status_read_the_same_source_list() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let (_memories, _cwd) = configure_ledger_sources(&mut chat, root.path())?;
 
-    let sources = crate::legacy_core::elpis_context::continuity_sources(
-        Some(&memories),
-        &cwd,
-        &instruction_paths(&chat),
-    );
-    // Every server-reported instruction file must appear as a row; nothing hidden.
+    let sources = chat.continuity_sources();
+    // Every runtime instruction and configured development rule must appear as a row.
     for name in ["Global AGENTS.md", "Project AGENTS.md", "dev/SKILL.md"] {
         assert!(
             sources.iter().any(|source| source.name == name),

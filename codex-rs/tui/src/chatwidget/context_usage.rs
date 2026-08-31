@@ -142,7 +142,7 @@ impl ChatWidget {
     ) -> ContextUsageSnapshot {
         let sources = self.continuity_sources();
         // Only admitted sources are actually in context; non-admitted discovered
-        // files must not inflate the System prompt / Skills buckets.
+        // files must not inflate the System prompt / Development rules buckets.
         let instruction_sources: Vec<_> = sources
             .iter()
             .filter(|source| {
@@ -166,9 +166,9 @@ impl ChatWidget {
 
         let estimate =
             |chars: usize| codex_utils_string::approx_tokens_from_byte_count(chars) as u64;
-        // System prompt and Skills are fixed on-disk costs sent as-is with each
+        // System prompt and Development rules are fixed on-disk costs sent as-is with each
         // request — they must NEVER be scaled up to absorb unexplained usage
-        // (that is what previously inflated Skills to nonsense figures).
+        // (that is what previously inflated Development rules to nonsense figures).
         let fixed_system = estimate(system_prompt_chars);
         let fixed_skills = estimate(skills_chars);
         let conversation_estimates: [u64; 3] = [
@@ -237,7 +237,7 @@ impl ChatWidget {
                 color: Color::Magenta,
             },
             CategoryUsage {
-                label: "Skills",
+                label: "Development rules",
                 tokens: fixed_skills,
                 saved_tokens: 0,
                 color: Color::Cyan,

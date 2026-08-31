@@ -375,10 +375,12 @@ impl ChatWidget {
                 let state_style = if source.admitted { cyan } else { amber };
                 let marker_style = if source.admitted { cat_style } else { muted };
                 let prefix = if selected { "› " } else { "  " };
-                // The unit belongs on the row, not only on the category header: a row
-                // reading "≈52" under a header reading "≈0 tokens admitted" reads as a
-                // contradiction rather than as "this file is 52 tokens, none admitted".
-                let right = format!("≈{} tokens {state}", format_tokens(source.estimated_tokens));
+                // Per-source estimates stay exact so similarly sized files remain
+                // distinguishable; category and context totals remain compact.
+                let right = format!(
+                    "≈{} est. tokens {state}",
+                    format_source_count(source.estimated_tokens),
+                );
                 // "› " + "[x]" + " " ahead of the name; truncate long names from the
                 // left with '…' so the token count and state stay right-aligned.
                 let fixed = prefix.chars().count() + marker.chars().count() + 1;
@@ -417,7 +419,10 @@ impl ChatWidget {
                     ),
                     Span::raw(" ".repeat(pad)),
                     Span::styled(
-                        format!("≈{} tokens ", format_tokens(source.estimated_tokens)),
+                        format!(
+                            "≈{} est. tokens ",
+                            format_source_count(source.estimated_tokens),
+                        ),
                         muted,
                     ),
                     Span::styled(state, state_style),
@@ -435,12 +440,19 @@ impl ChatWidget {
                         format!("{inclusion} because {}.", source.reason).dim(),
                     ));
                     lines.push(Line::from(
+                        format!("Lifetime: {}", source.lifetime).dim(),
+                    ));
+                    lines.push(Line::from(format!("Origin: {}", source.origin).dim()));
+                    lines.push(Line::from(
                         format!(
-                            "Lifetime: {} · Source: {}",
-                            source.lifetime,
-                            source.path.display()
+                            "Size: {} bytes · Estimate: ≈{} tokens (trimmed characters ÷ 4, capped)",
+                            format_source_count(source.bytes),
+                            format_source_count(source.estimated_tokens),
                         )
                         .dim(),
+                    ));
+                    lines.push(Line::from(
+                        format!("Source: {}", source.path.display()).dim(),
                     ));
                     // Only the expanded block needs separating from the next row;
                     // rows sit adjacent so the categories do not dominate the panel.
@@ -762,6 +774,22 @@ fn format_tokens(tokens: u64) -> String {
     } else {
         format!("{:.1}k", tokens as f64 / 1_000.0)
     }
+}
+
+fn format_source_count(value: u64) -> String {
+    let digits = value.to_string();
+    let first = digits.len() % 3;
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    if first != 0 {
+        grouped.push_str(&digits[..first]);
+    }
+    for chunk in digits.as_bytes()[first..].chunks(3) {
+        if !grouped.is_empty() {
+            grouped.push(',');
+        }
+        grouped.push_str(std::str::from_utf8(chunk).expect("digits are UTF-8"));
+    }
+    grouped
 }
 
 fn selected_source_scroll_offset(
