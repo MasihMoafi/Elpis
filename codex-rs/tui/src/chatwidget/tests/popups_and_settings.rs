@@ -3288,6 +3288,153 @@ async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_r
 }
 
 #[tokio::test]
+async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    let mut bootstrap = get_available_model(&chat, "gpt-5.4");
+    bootstrap.id = "non-openai-model".to_string();
+    bootstrap.model = "non-openai-model".to_string();
+    bootstrap.display_name = "non-openai-model".to_string();
+    let mut openai = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    openai.id = "openai-reasoning-model".to_string();
+    openai.model = "openai-reasoning-model".to_string();
+    openai.display_name = "OpenAI reasoning model".to_string();
+    openai.show_in_picker = true;
+    openai.default_reasoning_effort = ReasoningEffortConfig::Low;
+    openai.supported_reasoning_efforts = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::Low,
+            description: "Low reasoning".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::High,
+            description: "High reasoning".to_string(),
+        },
+    ];
+    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]).with_provider_models(
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+        vec![openai],
+        /*make_primary*/ false,
+    ));
+
+    chat.open_model_popup();
+    while rx.try_recv().is_ok() {}
+    for _ in 0..chat.model_popup_model_ids.len() {
+        let selected = chat
+            .bottom_pane
+            .selected_index_for_active_view(
+                crate::chatwidget::model_popups::MODEL_SELECTION_VIEW_ID,
+            )
+            .and_then(|index| chat.model_popup_model_ids.get(index));
+        if selected.is_some_and(|model| model == "openai-reasoning-model") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::OpenReasoningPopup {
+            model,
+            provider_id: Some(provider_id),
+        } if model.model == "openai-reasoning-model"
+            && provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+    )));
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        AppEvent::UpdateModel(_)
+            | AppEvent::UpdateModelForProvider { .. }
+            | AppEvent::UpdateReasoningEffort(_)
+            | AppEvent::ApplyProviderModelSelection { .. }
+            | AppEvent::PersistModelSelection { .. }
+            | AppEvent::PersistProviderModelSelection { .. }
+    )));
+}
+
+#[tokio::test]
+async fn model_reasoning_selection_for_openai_applies_its_only_supported_effort() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let mut openai = get_available_model(&chat, "gpt-5.4");
+    openai.id = "single-effort-openai-model".to_string();
+    openai.model = "single-effort-openai-model".to_string();
+    openai.display_name = "Single-effort OpenAI model".to_string();
+    openai.default_reasoning_effort = ReasoningEffortConfig::High;
+    openai.supported_reasoning_efforts = vec![ReasoningEffortPreset {
+        effort: ReasoningEffortConfig::High,
+        description: "Only supported effort".to_string(),
+    }];
+
+    chat.open_reasoning_popup_for_provider(
+        openai,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+    );
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::ApplyProviderModelSelection {
+            provider_id,
+            model,
+            effort: Some(ReasoningEffortConfig::High),
+        } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+            && model == "single-effort-openai-model"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::PersistProviderModelSelection {
+            provider_id,
+            model,
+            effort: Some(ReasoningEffortConfig::High),
+        } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+            && model == "single-effort-openai-model"
+    )));
+}
+
+#[tokio::test]
+async fn model_reasoning_selection_for_openai_escape_emits_no_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let mut openai = get_available_model(&chat, "gpt-5.4");
+    openai.id = "cancelled-openai-model".to_string();
+    openai.model = "cancelled-openai-model".to_string();
+    openai.display_name = "Cancelled OpenAI model".to_string();
+    openai.supported_reasoning_efforts = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::Low,
+            description: "Low reasoning".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::High,
+            description: "High reasoning".to_string(),
+        },
+    ];
+
+    chat.open_reasoning_popup_for_provider(
+        openai,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+    );
+    while rx.try_recv().is_ok() {}
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        AppEvent::UpdateModel(_)
+            | AppEvent::UpdateModelForProvider { .. }
+            | AppEvent::UpdateReasoningEffort(_)
+            | AppEvent::ApplyProviderModelSelection { .. }
+            | AppEvent::PersistModelSelection { .. }
+            | AppEvent::PersistProviderModelSelection { .. }
+    )));
+}
+
+#[tokio::test]
 async fn model_advanced_reasoning_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::Ultra));
@@ -3370,7 +3517,7 @@ async fn select_ultra_with_multi_agent_thread_limit(max_threads: usize) -> (bool
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     let advanced_preset = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|event| match event {
-        AppEvent::OpenAdvancedReasoningPopup { model } => Some(model),
+        AppEvent::OpenAdvancedReasoningPopup { model, .. } => Some(model),
         _ => None,
     });
     chat.open_advanced_reasoning_popup(advanced_preset.expect("advanced reasoning popup"));

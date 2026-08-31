@@ -107,6 +107,7 @@ impl ChatWidget {
                     tx.send(AppEvent::PersistProviderModelSelection {
                         model: model_for_action.clone(),
                         provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
+                        effort: None,
                     });
                 })],
                 dismiss_on_select: true,
@@ -214,21 +215,20 @@ impl ChatWidget {
         let mut visible_count = 0;
         for preset in presets.into_iter().filter(|preset| preset.show_in_picker) {
             visible_count += 1;
-            let model = preset.model;
+            let model = preset.model.clone();
+            let preset_for_action = preset.clone();
+            let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
             items.push(SelectionItem {
                 name: model.clone(),
                 description: Some(preset.description),
                 actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::UpdateModelForProvider {
-                        model: model.clone(),
-                        provider_id: OPENAI_PROVIDER_ID.to_string(),
-                    });
-                    tx.send(AppEvent::PersistProviderModelSelection {
-                        model: model.clone(),
-                        provider_id: OPENAI_PROVIDER_ID.to_string(),
+                    tx.send(AppEvent::OpenReasoningPopup {
+                        model: preset_for_action.clone(),
+                        provider_id: Some(OPENAI_PROVIDER_ID.to_string()),
                     });
                 })],
-                dismiss_on_select: true,
+                dismiss_on_select: single_supported_effort,
+                dismiss_parent_on_child_accept: !single_supported_effort,
                 ..Default::default()
             });
         }
@@ -398,6 +398,7 @@ impl ChatWidget {
                     vec![Box::new(move |tx| {
                         tx.send(AppEvent::OpenReasoningPopup {
                             model: preset_for_action.clone(),
+                            provider_id: None,
                         });
                     })]
                 } else {
@@ -409,6 +410,7 @@ impl ChatWidget {
                     self.model_selection_actions(
                         model.clone(),
                         Some(preset.default_reasoning_effort.clone()),
+                        None,
                         should_prompt_plan_mode_scope,
                     )
                 };
@@ -518,6 +520,7 @@ impl ChatWidget {
                 let preset_for_event = preset_for_action.clone();
                 tx.send(AppEvent::OpenReasoningPopup {
                     model: preset_for_event,
+                    provider_id: None,
                 });
             })];
             items.push(SelectionItem {
@@ -559,13 +562,25 @@ impl ChatWidget {
         &self,
         model_for_action: String,
         effort_for_action: Option<ReasoningEffortConfig>,
+        provider_id: Option<String>,
         should_prompt_plan_mode_scope: bool,
     ) -> Vec<SelectionAction> {
         let warning = effort_for_action
             .as_ref()
             .and_then(|effort| self.ultra_reasoning_concurrency_warning(effort));
         vec![Box::new(move |tx| {
-            if effort_for_action == Some(ReasoningEffortConfig::Ultra) {
+            if let Some(provider_id) = provider_id.as_ref() {
+                tx.send(AppEvent::ApplyProviderModelSelection {
+                    model: model_for_action.clone(),
+                    provider_id: provider_id.clone(),
+                    effort: effort_for_action.clone(),
+                });
+                tx.send(AppEvent::PersistProviderModelSelection {
+                    model: model_for_action.clone(),
+                    provider_id: provider_id.clone(),
+                    effort: effort_for_action.clone(),
+                });
+            } else if effort_for_action == Some(ReasoningEffortConfig::Ultra) {
                 tx.send(AppEvent::ApplyAdvancedReasoning {
                     model: model_for_action.clone(),
                     effort: ReasoningEffortConfig::Ultra,
@@ -721,6 +736,14 @@ impl ChatWidget {
     /// Max and Ultra require an explicit second step so expensive efforts cannot
     /// be selected accidentally while moving through the normal effort scale.
     pub(crate) fn open_reasoning_popup(&mut self, preset: ModelPreset) {
+        self.open_reasoning_popup_for_provider(preset, None);
+    }
+
+    pub(crate) fn open_reasoning_popup_for_provider(
+        &mut self,
+        preset: ModelPreset,
+        provider_id: Option<String>,
+    ) {
         let default_effort = preset.default_reasoning_effort.clone();
         let supported = &preset.supported_reasoning_efforts;
         let in_plan_mode =
@@ -761,7 +784,9 @@ impl ChatWidget {
         if choices.len() == 1 && advanced_choices.is_empty() {
             let selected_effort = choices.first().cloned();
             let selected_model = preset.model;
-            if self
+            if let Some(provider_id) = provider_id.clone() {
+                self.apply_provider_model_and_effort(selected_model, provider_id, selected_effort);
+            } else if self
                 .should_prompt_plan_mode_reasoning_scope(&selected_model, selected_effort.clone())
             {
                 self.app_event_tx
@@ -831,6 +856,7 @@ impl ChatWidget {
             let actions = self.model_selection_actions(
                 model_slug.clone(),
                 choice_effort,
+                provider_id.clone(),
                 should_prompt_plan_mode_scope,
             );
 
@@ -857,9 +883,11 @@ impl ChatWidget {
                 "consume"
             };
             let preset_for_action = preset;
+            let provider_id_for_action = provider_id;
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
                 tx.send(AppEvent::OpenAdvancedReasoningPopup {
                     model: preset_for_action.clone(),
+                    provider_id: provider_id_for_action.clone(),
                 });
             })];
             items.push(SelectionItem {
@@ -891,6 +919,14 @@ impl ChatWidget {
 
     /// Open the explicit Max/Ultra effort picker for the given model.
     pub(crate) fn open_advanced_reasoning_popup(&mut self, preset: ModelPreset) {
+        self.open_advanced_reasoning_popup_for_provider(preset, None);
+    }
+
+    pub(crate) fn open_advanced_reasoning_popup_for_provider(
+        &mut self,
+        preset: ModelPreset,
+        provider_id: Option<String>,
+    ) {
         let mut choices = preset
             .supported_reasoning_efforts
             .iter()
@@ -928,6 +964,7 @@ impl ChatWidget {
             let actions = self.model_selection_actions(
                 model_slug.clone(),
                 Some(effort.clone()),
+                provider_id.clone(),
                 should_prompt_plan_mode_scope,
             );
 
@@ -1030,6 +1067,26 @@ impl ChatWidget {
         self.apply_model_and_effort_without_persist(model.clone(), effort.clone());
         self.app_event_tx
             .send(AppEvent::PersistModelSelection { model, effort });
+    }
+
+    fn apply_provider_model_and_effort(
+        &self,
+        model: String,
+        provider_id: String,
+        effort: Option<ReasoningEffortConfig>,
+    ) {
+        self.app_event_tx
+            .send(AppEvent::ApplyProviderModelSelection {
+                model: model.clone(),
+                provider_id: provider_id.clone(),
+                effort: effort.clone(),
+            });
+        self.app_event_tx
+            .send(AppEvent::PersistProviderModelSelection {
+                model,
+                provider_id,
+                effort,
+            });
     }
 }
 

@@ -5901,6 +5901,26 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
         "gpt-5.4"
     );
 
+    let provider_params = app
+        .active_thread_provider_model_setting_update_params(
+            "openai-reasoning-model".to_string(),
+            "openai".to_string(),
+            Some(ReasoningEffortConfig::High),
+        )
+        .expect("active thread should produce provider model update params");
+    assert_eq!(
+        (
+            provider_params.model.as_deref(),
+            provider_params.model_provider.as_deref(),
+            provider_params.effort,
+        ),
+        (
+            Some("openai-reasoning-model"),
+            Some("openai"),
+            Some(ReasoningEffortConfig::High),
+        )
+    );
+
     app.chat_widget
         .set_reasoning_effort(Some(ReasoningEffortConfig::Low));
     app.chat_widget

@@ -695,6 +695,14 @@ pub(crate) enum AppEvent {
     PersistProviderModelSelection {
         model: String,
         provider_id: String,
+        effort: Option<ReasoningEffort>,
+    },
+
+    /// Apply provider, model, and reasoning to the active thread in one settings update.
+    ApplyProviderModelSelection {
+        model: String,
+        provider_id: String,
+        effort: Option<ReasoningEffort>,
     },
 
     /// Fetch the latest picker catalog for one configured provider.
@@ -723,11 +731,13 @@ pub(crate) enum AppEvent {
     /// Open the reasoning selection popup after picking a model.
     OpenReasoningPopup {
         model: ModelPreset,
+        provider_id: Option<String>,
     },
 
     /// Open the explicit Max/Ultra reasoning selection popup for a model.
     OpenAdvancedReasoningPopup {
         model: ModelPreset,
+        provider_id: Option<String>,
     },
 
     /// Apply an advanced reasoning effort to the active conversation without changing defaults.

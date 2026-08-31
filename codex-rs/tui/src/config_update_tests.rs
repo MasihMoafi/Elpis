@@ -52,6 +52,39 @@ fn model_selection_turns_auto_routing_off() {
 }
 
 #[test]
+fn provider_model_selection_retains_the_selected_reasoning_effort() {
+    assert_eq!(
+        build_provider_model_selection_edits(
+            "unique-openai-model",
+            "openai",
+            Some(&codex_protocol::openai_models::ReasoningEffort::High),
+            None,
+        ),
+        vec![
+            replace_config_value("model", serde_json::json!("unique-openai-model")),
+            replace_config_value("model_provider", serde_json::json!("openai")),
+            replace_config_value("model_reasoning_effort", serde_json::json!("high")),
+            replace_config_value("features.auto_model_routing", serde_json::json!(false)),
+            clear_config_value("model_context_window"),
+        ]
+    );
+}
+
+#[test]
+fn provider_model_selection_without_an_effort_clears_a_stale_value() {
+    assert_eq!(
+        build_provider_model_selection_edits("local-model", "ollama", None::<&str>, Some(8192)),
+        vec![
+            replace_config_value("model", serde_json::json!("local-model")),
+            replace_config_value("model_provider", serde_json::json!("ollama")),
+            clear_config_value("model_reasoning_effort"),
+            replace_config_value("features.auto_model_routing", serde_json::json!(false)),
+            replace_config_value("model_context_window", serde_json::json!(8192)),
+        ]
+    );
+}
+
+#[test]
 fn auto_model_routing_persists_terra_as_the_safe_default() {
     assert_eq!(
         build_auto_model_routing_edits(),

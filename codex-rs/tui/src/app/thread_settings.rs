@@ -42,6 +42,18 @@ impl App {
         })
     }
 
+    pub(super) fn active_thread_provider_model_setting_update_params(
+        &self,
+        model: String,
+        model_provider: String,
+        effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+    ) -> Option<ThreadSettingsUpdateParams> {
+        let mut params =
+            self.active_thread_model_setting_update_params(model, Some(model_provider))?;
+        params.effort = effort;
+        Some(params)
+    }
+
     pub(super) async fn sync_active_thread_reasoning_setting(
         &mut self,
         app_server: &mut AppServerSession,

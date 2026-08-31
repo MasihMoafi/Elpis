@@ -967,6 +967,24 @@ impl App {
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
             }
+            AppEvent::ApplyProviderModelSelection {
+                model,
+                provider_id,
+                effort,
+            } => {
+                self.chat_widget.set_auto_model_routing_enabled(false);
+                self.chat_widget.set_model(&model);
+                self.on_update_reasoning_effort(effort.clone());
+                if let Some(params) = self.active_thread_provider_model_setting_update_params(
+                    model,
+                    provider_id,
+                    effort,
+                ) {
+                    self.send_thread_settings_update(app_server, params).await;
+                }
+                self.sync_active_thread_service_tier_to_cached_session()
+                    .await;
+            }
             AppEvent::EnableAutoModelRouting => {
                 let model = crate::chatwidget::model_routing::TERRA_MODEL.to_string();
                 let effort = codex_protocol::openai_models::ReasoningEffort::Medium;
@@ -1010,11 +1028,13 @@ impl App {
                     self.chat_widget.maybe_send_next_queued_input();
                 }
             }
-            AppEvent::OpenReasoningPopup { model } => {
-                self.chat_widget.open_reasoning_popup(model);
+            AppEvent::OpenReasoningPopup { model, provider_id } => {
+                self.chat_widget
+                    .open_reasoning_popup_for_provider(model, provider_id);
             }
-            AppEvent::OpenAdvancedReasoningPopup { model } => {
-                self.chat_widget.open_advanced_reasoning_popup(model);
+            AppEvent::OpenAdvancedReasoningPopup { model, provider_id } => {
+                self.chat_widget
+                    .open_advanced_reasoning_popup_for_provider(model, provider_id);
             }
             AppEvent::ApplyAdvancedReasoning { model, effort } => {
                 let default_effort =
@@ -1580,7 +1600,11 @@ impl App {
                     }
                 }
             }
-            AppEvent::PersistProviderModelSelection { model, provider_id } => {
+            AppEvent::PersistProviderModelSelection {
+                model,
+                provider_id,
+                effort,
+            } => {
                 // Ask the provider what window this model actually has. Locally served models
                 // are absent from the bundled catalog, so without this the context meter and
                 // every budget derived from it describe generic fallback metadata instead.
@@ -1604,15 +1628,22 @@ impl App {
                     crate::config_update::build_provider_model_selection_edits(
                         model.as_str(),
                         provider_id.as_str(),
+                        effort.as_ref(),
                         context_window,
                     ),
                 )
                 .await
                 {
                     Ok(_) => {
-                        tracing::info!("Selected model: {model}, Selected provider: {provider_id}");
+                        let effort_label = effort
+                            .as_ref()
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_else(|| "default".to_string());
+                        tracing::info!(
+                            "Selected model: {model}, Selected provider: {provider_id}, Selected effort: {effort_label}"
+                        );
                         self.chat_widget.add_info_message(
-                            format!("Model changed to {model} ({provider_id})"),
+                            format!("Model changed to {model} ({provider_id}) · {effort_label}"),
                             /*hint*/ None,
                         );
                     }

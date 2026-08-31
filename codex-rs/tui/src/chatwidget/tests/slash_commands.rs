@@ -504,7 +504,9 @@ async fn queued_settings_selection_applies_before_next_input() {
         while let Ok(event) = rx.try_recv() {
             match event {
                 AppEvent::OpenAllModelsPopup { models } => chat.open_all_models_popup(models),
-                AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
+                AppEvent::OpenReasoningPopup { model, provider_id } => {
+                    chat.open_reasoning_popup_for_provider(model, provider_id);
+                }
                 AppEvent::UpdateModel(model) => chat.set_model(&model),
                 AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
                 AppEvent::SettingsSelectionClosed => {
