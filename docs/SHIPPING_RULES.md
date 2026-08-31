@@ -98,5 +98,7 @@ evidence. Even a passing `--surface full` run does not replace:
 - an authorized remote-CI run;
 - Masih's manual acceptance.
 
-The selector does not build, install, package, launch, tag, publish, or grant
-acceptance. Keep the release mechanics and clean-machine checks above.
+The selector does not build or prove a shippable release artifact; it does not install,
+package, launch, tag, publish, or grant acceptance. Its Cargo check and test rows may
+still compile code and consume CPU and disk. Keep the release mechanics and
+clean-machine checks above.

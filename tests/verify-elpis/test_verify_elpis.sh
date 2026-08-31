@@ -729,7 +729,8 @@ for clause in (
     "verification on a clean machine or clean container;",
     "an authorized remote-CI run;",
     "Masih's manual acceptance.",
-    "The selector does not build, install, package, launch, tag, publish, or grant acceptance.",
+    "The selector does not build or prove a shippable release artifact; it does not install, package, launch, tag, publish, or grant acceptance.",
+    "Its Cargo check and test rows may still compile code and consume CPU and disk.",
 ):
     require(clause in shipping_contract, f"shipping boundary missing: {clause}")
 PY
