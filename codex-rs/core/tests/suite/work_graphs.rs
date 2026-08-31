@@ -546,6 +546,7 @@ async fn work_graph_worker_cannot_write_outside_declared_scope() -> Result<()> {
             .expect("sqlite feature should enable");
     });
     let test = builder.build(&server).await?;
+    std::fs::create_dir(test.cwd_path().join("allowed"))?;
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
         .respond_with(responder)

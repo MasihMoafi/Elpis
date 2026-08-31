@@ -224,6 +224,8 @@ pub enum Feature {
     Goals,
     /// Add current context-window metadata to model-visible context.
     TokenBudget,
+    /// Run the model-backed Ace pruner automatically under context pressure.
+    AutomaticContextPruning,
     /// Track and report a shared token budget across a session's agent threads.
     RolloutBudget,
     /// Add current-time reminders to model-visible context.
@@ -1256,6 +1258,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::TokenBudget,
         key: "token_budget",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::AutomaticContextPruning,
+        key: "automatic_context_pruning",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

@@ -12,6 +12,7 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::context_pruner;
 use crate::responses_metadata::CodexResponsesRequestKind;
+use codex_features::Feature;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -38,6 +39,13 @@ enum Escalation {
 }
 
 pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    if !turn_context
+        .config
+        .features
+        .enabled(Feature::AutomaticContextPruning)
+    {
+        return;
+    }
     run_context_prune(sess, turn_context, None, None, Escalation::Allowed).await;
 }
 
@@ -47,6 +55,13 @@ pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &
 /// fresh usage. Escalating here would stack a second rollover on top of one the model
 /// just requested through `new_context`.
 pub(super) async fn prune_before_request(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+    if !turn_context
+        .config
+        .features
+        .enabled(Feature::AutomaticContextPruning)
+    {
+        return;
+    }
     run_context_prune(sess, turn_context, None, None, Escalation::Deferred).await;
 }
 

@@ -5742,6 +5742,52 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
 }
 
 #[tokio::test]
+async fn rejected_provider_model_selection_does_not_mutate_or_persist() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let initial_model = app.chat_widget.current_model().to_string();
+    let initial_provider = app
+        .chat_widget
+        .active_model_provider_id()
+        .to_string();
+    let initial_effort = app.chat_widget.current_reasoning_effort();
+    app.active_thread_id = Some(ThreadId::new());
+
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let config_path = app.config.codex_home.join("config.toml");
+    let config_before = std::fs::read(&config_path).ok();
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let control = Box::pin(app.handle_event(
+        &mut tui,
+        &mut app_server,
+        AppEvent::ApplyProviderModelSelection {
+            model: "rejected-model".to_string(),
+            provider_id: codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+            effort: Some(ReasoningEffortConfig::High),
+        },
+    ))
+    .await?;
+
+    assert!(matches!(control, AppRunControl::Continue));
+    assert_eq!(app.chat_widget.current_model(), initial_model);
+    assert_eq!(
+        app.chat_widget.active_model_provider_id(),
+        initial_provider
+    );
+    assert_eq!(app.chat_widget.current_reasoning_effort(), initial_effort);
+    assert_eq!(std::fs::read(&config_path).ok(), config_before);
+    assert!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok()).any(|event| {
+            matches!(event, AppEvent::InsertHistoryCell(cell)
+                if lines_to_single_string(&cell.display_lines(/*width*/ 120))
+                    .contains("Failed to update thread settings"))
+        }),
+        "thread-settings rejection should remain visible"
+    );
+    app_server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn override_turn_context_sends_thread_settings_update() {
     Box::pin(async {
         let mut app = make_test_app().await;
@@ -5901,6 +5947,7 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
         "gpt-5.4"
     );
 
+    app.chat_widget.set_auto_model_routing_enabled(true);
     let provider_params = app
         .active_thread_provider_model_setting_update_params(
             "openai-reasoning-model".to_string(),
@@ -5919,6 +5966,11 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
             Some("openai"),
             Some(ReasoningEffortConfig::High),
         )
+    );
+    assert_eq!(
+        provider_params.automatic_model_routing,
+        Some(false),
+        "an explicit provider/model choice must disable automatic routing"
     );
 
     app.chat_widget
