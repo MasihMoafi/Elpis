@@ -666,4 +666,72 @@ for retained in (
     require(retained in launcher, f"launcher diagnostic behavior disappeared: {retained}")
 PY
 
+python3 - \
+    "$SOURCE_ROOT/docs/LOCAL_BUILD_RULES.md" \
+    "$SOURCE_ROOT/docs/SHIPPING_RULES.md" <<'PY'
+from pathlib import Path
+import re
+import shlex
+import sys
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(f"documentation assertion failed: {message}")
+
+
+def section(document: str, heading: str) -> str:
+    marker = f"{heading}\n"
+    require(document.count(marker) == 1, f"missing section {heading}")
+    body = document.split(marker, 1)[1]
+    return body.split("\n## ", 1)[0].strip()
+
+
+def squash(text: str) -> str:
+    return " ".join(text.split())
+
+
+local = Path(sys.argv[1]).read_text()
+shipping = Path(sys.argv[2]).read_text()
+local_selector = section(local, "## 6. Checked verification selector")
+shipping_boundary = section(shipping, "## 7. Selector evidence is not shipping evidence")
+
+expected_examples = [
+    "scripts/verify-elpis --changed codex-rs/tui/src/dashboard_server.rs",
+    "scripts/verify-elpis --surface full",
+    "ELPIS_CARGO_TARGET_DIR=/absolute/shared/target scripts/verify-elpis --surface tui",
+]
+code_blocks = re.findall(r"```bash\n(.*?)\n```", local_selector, flags=re.DOTALL)
+require(code_blocks == ["\n".join(expected_examples)], "local selector examples must be one exact Bash block")
+require("from the repository root" in local_selector, "selector examples must state their working directory")
+for index, example in enumerate(expected_examples):
+    argv = shlex.split(example)
+    selector_index = 1 if index == 2 else 0
+    require(argv[selector_index] == "scripts/verify-elpis", f"example does not call the selector: {example}")
+
+local_contract = squash(local_selector)
+for clause in (
+    "The selector sets `CODEX_SKIP_BWRAP_BUILD=1` for every Cargo child.",
+    "Without an override, it runs `git rev-parse --path-format=absolute --git-common-dir`, takes the common directory's parent, and uses `<parent>/codex-rs/target`.",
+    "`ELPIS_CARGO_TARGET_DIR` is accepted only when the value is absolute and the target is writable.",
+    "It may create the target directory, but it never deletes targets or caches and never runs `cargo clean`.",
+    "`cargo fmt --all --check` is the one narrow check-only exception to section 5: it checks the whole workspace without rewriting source.",
+    "Plain `cargo fmt --all` remains prohibited.",
+):
+    require(clause in local_contract, f"local selector contract missing: {clause}")
+
+shipping_contract = squash(shipping_boundary)
+for clause in (
+    "`scripts/verify-elpis` is proportional local/Linux verification evidence, not shipping evidence.",
+    "a release artifact build;",
+    "installing or packaging that artifact, or launching the installed result;",
+    "the tag-only workflow and confirmation that the release was published;",
+    "verification on a clean machine or clean container;",
+    "an authorized remote-CI run;",
+    "Masih's manual acceptance.",
+    "The selector does not build, install, package, launch, tag, publish, or grant acceptance.",
+):
+    require(clause in shipping_contract, f"shipping boundary missing: {clause}")
+PY
+
 printf 'PASS: verify-elpis fake-Cargo contract\n'

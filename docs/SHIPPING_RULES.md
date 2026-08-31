@@ -85,3 +85,18 @@ user-facing:
 - Never add a machine-learning dependency to this repository. Retrieval is an MCP server
   the user registers; the engine, its models, and their download size stay outside Elpis
   and outside the release artifact.
+
+## 7. Selector evidence is not shipping evidence
+
+`scripts/verify-elpis` is proportional local/Linux verification evidence, not shipping
+evidence. Even a passing `--surface full` run does not replace:
+
+- a release artifact build;
+- installing or packaging that artifact, or launching the installed result;
+- the tag-only workflow and confirmation that the release was published;
+- verification on a clean machine or clean container;
+- an authorized remote-CI run;
+- Masih's manual acceptance.
+
+The selector does not build, install, package, launch, tag, publish, or grant
+acceptance. Keep the release mechanics and clean-machine checks above.
