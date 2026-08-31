@@ -102,7 +102,7 @@ Every item admitted into Elpis context carries an explicit lifetime:
 
 Elpis provides interactive context admission control in the TUI:
 
-- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing every admitted portable context source with exact byte sizes and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. While a turn is running, `Tab` defers to the composer's queue-the-draft action; `Alt+C` always toggles the ledger.
+- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing portable context sources with their byte sizes, per-source estimates, and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. While a turn is running, `Tab` defers to the composer's queue-the-draft action; `Alt+C` always toggles the ledger.
 - **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)
@@ -110,11 +110,39 @@ Elpis provides interactive context admission control in the TUI:
   - Individual portable development rules installed by Elpis
     (`~/.elpis/skills/dev/*.md`)
 
-Elpis embeds and installs its portable development rules on first launch and refreshes
-the managed files when the binary changes. The installed directory is the single default
-source; a project-sibling `skills/dev` is not scanned, so a development checkout cannot
-double-admit the same rules. Machine-specific additions remain opt-in through
-`ELPIS_DEV_SKILLS_DIRS`.
+### Development rules and curated skills
+
+Development rules and skills have different admission contracts. Development rules are
+ordinary Markdown instruction rows in the Context Ledger; they are not skills. This portable
+configuration chooses development-rule roots and explicitly enables one skill:
+
+```toml
+[skills]
+default_enabled = false
+dev_rule_roots = ["/absolute/path/to/your/dev-rules"]
+
+[skills.bundled]
+enabled = false
+
+[[skills.config]]
+name = "one-selected-skill"
+enabled = true
+```
+
+When `skills.dev_rule_roots` is set, those roots replace the managed development-rule fallback.
+Without configured roots, Elpis uses its managed rule directory and the optional
+`ELPIS_DEV_SKILLS_DIRS` additions. Configured roots are read in configuration order; Markdown
+files within each root are read in sorted order. The first file with a given filename wins.
+
+Fresh development-rule rows start included. An explicit Ledger exclusion is stored in
+`admission.toml` and continues to exclude that row. This default applies to development rules,
+not the skills catalog: Elpis product defaults leave ordinary and bundled skills off. Deliberate
+user configuration can enable them.
+
+Enabled skills expose compact metadata to the model, while skill bodies remain lazy and are read
+only when a selected skill is used. The `/skills` management surface shows enabled skills before
+available candidates and labels their origins. Mentions and the model-visible skills list include
+enabled skills only. The skills catalog itself is not a Context Ledger token row.
 
 ![The Context Ledger listing admitted instruction files with their token counts and included state](assets/context-ledger.webp)
 
@@ -135,6 +163,9 @@ Elpis exposes **one single source of truth** for context measurement:
 - The percentage is computed against the model's own context window — used tokens over context window (`codex-rs/tui/src/chatwidget/context_ledger.rs`) — never against transcript length.
 - It is reported in the Context Ledger. The persistent identity header carries product, model, and location only (`Elpis · model {model} · location {cwd}`); the inherited footer status line is deliberately suppressed so there is exactly one place to read the number.
 - `/usage` enumerates admitted sources, byte sizes, and lifetime reasons.
+- Per-source Ledger counts are capped estimates from trimmed characters divided by four, not
+  tokenizer measurements. They make the admitted-file cost inspectable without assigning a
+  measured token value to the skills catalog.
 
 ---
 

@@ -140,8 +140,15 @@ Findings:
 ### Context Ledger and observability
 
 The **Context Ledger** (`Tab`; during an active turn, `Alt+C` always toggles it) lists admitted goals, rules,
-memory, and other portable sources with their byte sizes and token budgets. Toggling a row writes
-`admission.toml`, which controls what the next turn receives.
+memory, and other portable sources with their byte sizes and capped character-derived estimates. Toggling a row
+writes `admission.toml`, which controls what the next turn receives.
+
+Development rules are ordinary Markdown Ledger rows, not skills: newly discovered rules start included and an
+explicit exclusion persists. Configured development-rule roots replace the managed fallback. Elpis leaves ordinary
+and bundled skills off by product default, while deliberate user configuration can enable a selected skill. Enabled
+skills expose compact metadata and keep their bodies lazy; `/skills` shows available candidates and their origins,
+but mentions and the model-visible list contain enabled skills only. The Ledger has no skills-catalog token row;
+its per-source estimates are not tokenizer measurements.
 
 ![The Context Ledger listing admitted instruction files with their token counts and included state](docs/assets/context-ledger.webp)
 
