@@ -264,7 +264,7 @@ pub fn continuity_sources_with_dev_rule_roots(
     let mut dev_files = Vec::new();
     for dev_dir in &dev_dirs {
         if let Ok(entries) = std::fs::read_dir(dev_dir) {
-            let mut root_files: Vec<PathBuf> = entries
+            let mut root_files: Vec<(PathBuf, PathBuf)> = entries
                 .filter_map(|entry| entry.ok())
                 .map(|entry| entry.path())
                 .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
@@ -274,20 +274,25 @@ pub fn continuity_sources_with_dev_rule_roots(
                         Ok(metadata) if metadata.is_file() && metadata.len() > 0
                     )
                 })
-                .filter(|path| {
-                    if let Ok(canonical) = path.canonicalize() {
-                        already_listed.insert(canonical)
-                    } else {
-                        false
-                    }
-                })
+                .filter_map(|path| path.canonicalize().ok().map(|canonical| (path, canonical)))
                 .collect();
-            root_files.sort();
-            dev_files.extend(root_files.into_iter().filter(|path| {
-                path.file_name()
+            root_files.sort_by(|(left, _), (right, _)| left.cmp(right));
+            for (path, canonical) in root_files {
+                let Some(file_name) = path
+                    .file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| seen_dev_file_names.insert(name.to_string()))
-            }));
+                    .map(ToOwned::to_owned)
+                else {
+                    continue;
+                };
+                if already_listed.contains(&canonical) || seen_dev_file_names.contains(&file_name)
+                {
+                    continue;
+                }
+                already_listed.insert(canonical.clone());
+                seen_dev_file_names.insert(file_name);
+                dev_files.push((path, canonical));
+            }
         }
     }
 
@@ -313,7 +318,7 @@ pub fn continuity_sources_with_dev_rule_roots(
         }
     }
 
-    for path in dev_files {
+    for (path, canonical) in dev_files {
         let file_name = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -328,9 +333,7 @@ pub fn continuity_sources_with_dev_rule_roots(
             dev_origin,
             admitted,
         ) {
-            if let Ok(canonical) = source.path.canonicalize() {
-                canonical_paths.insert(canonical);
-            }
+            canonical_paths.insert(canonical);
             sources.push(source);
         }
     }
@@ -1507,6 +1510,56 @@ mod tests {
             .expect("configured row stays listed after exclusion");
         assert_eq!(source.path, configured_rule);
         assert!(!source.admitted, "the configured row is excluded after persistence");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dev_rule_alias_deduplication_keeps_a_later_unique_filename() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let first_root = home.path().join("first");
+        let duplicate_root = home.path().join("duplicate");
+        let unique_root = home.path().join("unique");
+        let targets = home.path().join("targets");
+        std::fs::create_dir_all(&memories)?;
+        std::fs::create_dir_all(&cwd)?;
+        std::fs::create_dir_all(&first_root)?;
+        std::fs::create_dir_all(&duplicate_root)?;
+        std::fs::create_dir_all(&unique_root)?;
+        std::fs::create_dir_all(&targets)?;
+
+        let primary_target = targets.join("primary.md");
+        let shared_target = targets.join("shared.md");
+        let unsorted_target = targets.join("unsorted.md");
+        std::fs::write(&primary_target, "Primary rule")?;
+        std::fs::write(&shared_target, "Shared rule")?;
+        std::fs::write(&unsorted_target, "Unsorted rule")?;
+        std::os::unix::fs::symlink(&unsorted_target, first_root.join("ZETA.md"))?;
+        std::os::unix::fs::symlink(&primary_target, first_root.join("AGENTS.md"))?;
+        std::os::unix::fs::symlink(&shared_target, duplicate_root.join("AGENTS.md"))?;
+        std::os::unix::fs::symlink(&shared_target, unique_root.join("RULES.md"))?;
+
+        let roots = [
+            AbsolutePathBuf::from_absolute_path(&first_root)?,
+            AbsolutePathBuf::from_absolute_path(&duplicate_root)?,
+            AbsolutePathBuf::from_absolute_path(&unique_root)?,
+        ];
+        let sources = continuity_sources_with_dev_rule_roots(Some(&memories), &cwd, &[], &roots);
+        let dev_sources = sources
+            .iter()
+            .filter(|source| source.name.starts_with(DEV_SOURCE_PREFIX))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            dev_sources
+                .iter()
+                .map(|source| source.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["dev/AGENTS.md", "dev/ZETA.md", "dev/RULES.md"],
+        );
+        assert_eq!(dev_sources[2].path, unique_root.join("RULES.md"));
         Ok(())
     }
 }
