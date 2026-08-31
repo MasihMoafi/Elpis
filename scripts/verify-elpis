@@ -136,8 +136,8 @@ def validate_test_argv(name: str, argv: list[str]) -> None:
         index += 1
     if package_count != 1:
         fail(f"command {name!r} must contain exactly one -p package")
-    if target_count > 1:
-        fail(f"command {name!r} selects more than one test target")
+    if target_count != 1:
+        fail(f"command {name!r} must select exactly one test target")
 
 
 try:
@@ -496,7 +496,7 @@ for command_name in "${selected_commands[@]}"; do
         if ((cargo_status != 0)); then
             die "test command failed: $command_name"
         fi
-        if ! grep -Eq 'test result:[[:space:]]+ok\.[[:space:]]+[1-9][0-9]*[[:space:]]+passed' "$test_output"; then
+        if ! grep -Eq '^test result:[[:space:]]+ok\.[[:space:]]+[1-9][0-9]*[[:space:]]+passed([;[:space:]]|$)' "$test_output"; then
             die "test command $command_name produced no positive test result"
         fi
         rm -f -- "$test_output"

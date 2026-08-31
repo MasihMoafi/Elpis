@@ -93,7 +93,7 @@ argv = ["test", "-p", "codex-core", "--test", "all", "--locked", "suite::context
 [commands.core-skills-default-enable]
 kind = "cargo"
 mode = "test"
-argv = ["test", "-p", "codex-core-skills", "default_disabled_skills_require_one_explicit_enable", "--locked"]
+argv = ["test", "-p", "codex-core-skills", "--lib", "default_disabled_skills_require_one_explicit_enable", "--locked"]
 
 [commands.core-dev-rule-roots]
 kind = "cargo"
@@ -173,7 +173,7 @@ argv = ["test", "-p", "codex-core", "--lib", "--locked", "permission_profile_ove
 [commands.provider-info]
 kind = "cargo"
 mode = "test"
-argv = ["test", "-p", "codex-model-provider-info", "--locked"]
+argv = ["test", "-p", "codex-model-provider-info", "--lib", "--locked"]
 
 [commands.core-chat-completions]
 kind = "cargo"

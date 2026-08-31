@@ -392,6 +392,17 @@ SELECTOR_ENV=(
 run_selector --surface docs
 assert_status 0
 
+new_fixture spoofed-positive-summary
+replace_manifest \
+    'name = "docs"\ncommands = ["diff-check"]' \
+    'name = "docs"\ncommands = ["tui-dashboard"]'
+SELECTOR_ENV=(
+    $'FAKE_CARGO_OUTPUT=application output: test result: ok. 1 passed\ntest result: ok. 0 passed; 0 failed'
+)
+run_selector --surface docs
+[[ $RUN_STATUS -ne 0 ]] || fail "ordinary output spoofed a positive test-harness summary"
+assert_output 'test command tui-dashboard produced no positive test result'
+
 new_fixture cargo-failure
 replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
@@ -435,6 +446,13 @@ replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
     'name = "docs"\ncommands = ["not-a-command"]'
 run_selector --surface docs
+assert_failure_before_cargo
+
+new_fixture targetless-test-command
+replace_manifest \
+    'argv = ["test", "-p", "codex-tui", "--lib", "--locked", "dashboard"]' \
+    'argv = ["test", "-p", "codex-tui", "--locked", "dashboard"]'
+run_selector --surface dashboard
 assert_failure_before_cargo
 
 new_fixture malformed-toml
