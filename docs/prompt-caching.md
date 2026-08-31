@@ -150,9 +150,10 @@ rewritten item diverges. **No breakpoint can prevent that** — removing content
 middle of a prompt changes every prefix after it. Two things are done about it instead, both
 described in `docs/cache-friendly-pruning.md`:
 
-1. **Prune far less often.** Automatic pruning runs as a hysteresis cycle: 30% used → one
-   cycle → ~20% used → no further pass until use regrows to 30%. The backlog-sized "steady"
-   trigger, which fired independently of how full the window was, is gone.
+1. **Keep automatic Ace pruning optional and, when enabled, prune far less often.** It runs
+   as a hysteresis cycle: 30% used → one cycle → ~20% used → no further pass until use
+   regrows to 30%. The backlog-sized "steady" trigger, which fired independently of how full
+   the window was, is gone. The default path uses manual `/prune` plus native compaction.
 2. **Raise the floor each pass falls back to.** Each applied pass seals its region with a
    byte-stable epoch marker and a breakpoint is placed on it, so the *next* pass falls back
    to that boundary instead of to the initial prefix.
@@ -240,4 +241,3 @@ To prevent busting cached prompt prefixes during rapid user interaction or multi
 - **Prefix Preservation:** Enforces append-only invariants on queued inputs, ensuring existing prompt history is not mutated or reordered.
 - **Turn Coalescing:** Batches rapid micro-inputs arriving during active tool runs into a single consolidated turn payload to avoid cache thrashing.
 - **TTL-Aware Urgency:** Evaluates `should_flush_urgently` when queued messages exist and cache state enters `NearExpiry` (e.g. at 270s+ for Anthropic), dispatching immediately before the 5-minute window expires.
-

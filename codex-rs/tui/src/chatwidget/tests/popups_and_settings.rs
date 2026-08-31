@@ -3422,11 +3422,9 @@ async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
     assert!(events.iter().all(|event| !matches!(
         event,
         AppEvent::UpdateModel(_)
-            | AppEvent::UpdateModelForProvider { .. }
             | AppEvent::UpdateReasoningEffort(_)
             | AppEvent::ApplyProviderModelSelection { .. }
             | AppEvent::PersistModelSelection { .. }
-            | AppEvent::PersistProviderModelSelection { .. }
     )));
 }
 
@@ -3458,9 +3456,47 @@ async fn model_reasoning_selection_for_openai_emits_one_atomic_selection() {
         } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
             && model == "single-effort-openai-model"
     )));
+}
+
+#[tokio::test]
+async fn ollama_model_selection_emits_one_atomic_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.on_ollama_models_loaded(vec!["local-test-model".to_string()]);
+    let presets = chat.models_for_active_provider();
+    chat.open_model_popup_with_presets(presets);
+
+    for _ in 0..chat.model_popup_model_ids.len() {
+        let selected = chat
+            .bottom_pane
+            .selected_index_for_active_view(
+                crate::chatwidget::model_popups::MODEL_SELECTION_VIEW_ID,
+            )
+            .and_then(|index| chat.model_popup_model_ids.get(index));
+        if selected.is_some_and(|model| model == "local-test-model") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    let selections = events
+        .iter()
+        .filter(|event| matches!(event, AppEvent::ApplyProviderModelSelection { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(selections.len(), 1);
+    assert!(matches!(
+        selections[0],
+        AppEvent::ApplyProviderModelSelection {
+            model,
+            provider_id,
+            effort: None,
+        } if model == "local-test-model"
+            && provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID
+    ));
     assert!(events.iter().all(|event| !matches!(
         event,
-        AppEvent::PersistProviderModelSelection { .. }
+        AppEvent::UpdateModel(_) | AppEvent::PersistModelSelection { .. }
     )));
 }
 
@@ -3493,11 +3529,9 @@ async fn model_reasoning_selection_for_openai_escape_emits_no_selection() {
     assert!(events.iter().all(|event| !matches!(
         event,
         AppEvent::UpdateModel(_)
-            | AppEvent::UpdateModelForProvider { .. }
             | AppEvent::UpdateReasoningEffort(_)
             | AppEvent::ApplyProviderModelSelection { .. }
             | AppEvent::PersistModelSelection { .. }
-            | AppEvent::PersistProviderModelSelection { .. }
     )));
 }
 

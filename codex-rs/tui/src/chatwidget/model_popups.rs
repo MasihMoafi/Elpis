@@ -100,11 +100,7 @@ impl ChatWidget {
                 name: model,
                 description: Some("Runs on this machine via Ollama".to_string()),
                 actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::UpdateModelForProvider {
-                        model: model_for_action.clone(),
-                        provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
-                    });
-                    tx.send(AppEvent::PersistProviderModelSelection {
+                    tx.send(AppEvent::ApplyProviderModelSelection {
                         model: model_for_action.clone(),
                         provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
                         effort: None,

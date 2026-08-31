@@ -5947,6 +5947,7 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
         "gpt-5.4"
     );
 
+    app.chat_widget.set_auto_model_routing_enabled(true);
     let provider_params = app
         .active_thread_provider_model_setting_update_params(
             "openai-reasoning-model".to_string(),
@@ -5965,6 +5966,11 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
             Some("openai"),
             Some(ReasoningEffortConfig::High),
         )
+    );
+    assert_eq!(
+        provider_params.automatic_model_routing,
+        Some(false),
+        "an explicit provider/model choice must disable automatic routing"
     );
 
     app.chat_widget

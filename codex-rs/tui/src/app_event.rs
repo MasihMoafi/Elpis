@@ -664,16 +664,6 @@ pub(crate) enum AppEvent {
     /// Update the current model slug in the running app and widget.
     UpdateModel(String),
 
-    /// Update the current model slug together with an explicit provider override.
-    ///
-    /// Used when a model is only available under a specific provider (e.g. a locally
-    /// installed Ollama model) and the provider can't be inferred from the model
-    /// slug the way OpenRouter models are in `UpdateModel`.
-    UpdateModelForProvider {
-        model: String,
-        provider_id: String,
-    },
-
     /// Enable the conservative Sol/Terra/Luna routing policy from `/model`.
     EnableAutoModelRouting,
 
@@ -688,13 +678,6 @@ pub(crate) enum AppEvent {
     /// Persist the selected model and reasoning effort to the appropriate config.
     PersistModelSelection {
         model: String,
-        effort: Option<ReasoningEffort>,
-    },
-
-    /// Persist a model selection together with an explicit provider override.
-    PersistProviderModelSelection {
-        model: String,
-        provider_id: String,
         effort: Option<ReasoningEffort>,
     },
 

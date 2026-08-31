@@ -959,14 +959,6 @@ impl App {
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
             }
-            AppEvent::UpdateModelForProvider { model, provider_id } => {
-                self.chat_widget.set_auto_model_routing_enabled(false);
-                self.chat_widget.set_model(&model);
-                self.sync_active_thread_model_setting(app_server, model, Some(provider_id))
-                    .await;
-                self.sync_active_thread_service_tier_to_cached_session()
-                    .await;
-            }
             AppEvent::ApplyProviderModelSelection {
                 model,
                 provider_id,
@@ -1612,19 +1604,6 @@ impl App {
                             .add_error_message(format!("Failed to save default model: {error}"));
                     }
                 }
-            }
-            AppEvent::PersistProviderModelSelection {
-                model,
-                provider_id,
-                effort,
-            } => {
-                self.persist_provider_model_selection(
-                    app_server,
-                    model,
-                    provider_id,
-                    effort,
-                )
-                .await;
             }
             AppEvent::PluginUninstallLoaded {
                 cwd,
