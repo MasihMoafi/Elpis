@@ -111,6 +111,7 @@ struct ElpisContinuityExtension;
 struct ElpisContinuityConfig {
     memories_root: Option<codex_utils_absolute_path::AbsolutePathBuf>,
     cwd: codex_utils_absolute_path::AbsolutePathBuf,
+    dev_rule_roots: Vec<codex_utils_absolute_path::AbsolutePathBuf>,
 }
 
 impl ElpisContinuityConfig {
@@ -118,6 +119,7 @@ impl ElpisContinuityConfig {
         Self {
             memories_root: Some(config.memory_dir.clone()),
             cwd: config.cwd.clone(),
+            dev_rule_roots: config.dev_rule_roots(),
         }
     }
 }
@@ -132,9 +134,10 @@ impl ContextContributor for ElpisContinuityExtension {
             let Some(config) = thread_store.get::<ElpisContinuityConfig>() else {
                 return Vec::new();
             };
-            codex_core::elpis_context::build_continuity_prompt(
+            codex_core::elpis_context::build_continuity_prompt_with_dev_rule_roots(
                 config.memories_root.as_ref().map(|root| root.as_path()),
                 config.cwd.as_path(),
+                &config.dev_rule_roots,
             )
             .await
             .map(PromptFragment::separate_developer)

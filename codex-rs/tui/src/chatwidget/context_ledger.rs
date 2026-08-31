@@ -591,10 +591,11 @@ impl ChatWidget {
     pub(super) fn continuity_sources(
         &self,
     ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
-        crate::legacy_core::elpis_context::continuity_sources(
+        crate::legacy_core::elpis_context::continuity_sources_with_dev_rule_roots(
             Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
             &self.instruction_source_paths_as_path_bufs(),
+            &self.config.dev_rule_roots(),
         )
     }
 

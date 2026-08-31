@@ -1066,6 +1066,7 @@ mod tests {
                 name: "GOAL.md".to_string(),
                 path: std::path::PathBuf::from("/workspace/GOAL.md"),
                 bytes: 1_024,
+                origin: "Elpis workspace state",
                 estimated_tokens: 256,
                 category: ContinuitySourceCategory::Files,
                 lifetime: "until goal completion",

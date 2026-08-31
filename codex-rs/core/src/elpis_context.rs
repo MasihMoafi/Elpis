@@ -1,3 +1,4 @@
+use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::Digest;
@@ -18,12 +19,13 @@ const DEV_SOURCE_PREFIX: &str = "dev/";
 /// Whether an optional ledger row is admitted before the user has said anything about it.
 /// A file existing on disk is not consent to spend the model's context window on it.
 const DEFAULT_OPTIONAL_ADMISSION: bool = false;
+const DEFAULT_DEV_RULE_ADMISSION: bool = true;
 
 /// Which context sources the user has admitted for this workspace.
 ///
-/// Every field defaults to off: an unset row means the user has not asked for that file,
-/// not that Elpis may spend context on it. Rows the user has never touched are absent
-/// from the stored maps and follow [`DEFAULT_OPTIONAL_ADMISSION`].
+/// Every non-development-rule field defaults to off: an unset row means the user has not
+/// asked for that file, not that Elpis may spend context on it. Development rules are
+/// admitted by default; rows the user has never touched are absent from the stored maps.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 struct ContinuityAdmission {
@@ -38,8 +40,8 @@ struct ContinuityAdmission {
 }
 
 impl ContinuityAdmission {
-    /// Whether the named ledger row is admitted. Rows absent from the stored map follow
-    /// the same default as every other optional row.
+    /// Whether the named ledger row is admitted. Development-rule rows are admitted by
+    /// default; all other optional rows require an explicit user choice.
     fn admits_row(&self, name: &str) -> bool {
         match name {
             GLOBAL_RULES => self.global_rules,
@@ -51,7 +53,7 @@ impl ContinuityAdmission {
                 .dev_sources
                 .get(&name[DEV_SOURCE_PREFIX.len()..])
                 .copied()
-                .unwrap_or(DEFAULT_OPTIONAL_ADMISSION),
+                .unwrap_or(DEFAULT_DEV_RULE_ADMISSION),
             name => self
                 .custom_sources
                 .get(name)
@@ -68,6 +70,7 @@ pub struct ContinuitySource {
     pub bytes: u64,
     pub estimated_tokens: u64,
     pub category: ContinuitySourceCategory,
+    pub origin: &'static str,
     pub lifetime: &'static str,
     pub reason: &'static str,
     pub admitted: bool,
@@ -138,6 +141,14 @@ pub fn workspace_context_dir(memories_root: Option<&Path>, cwd: &Path) -> Option
 }
 
 pub async fn build_continuity_prompt(memories_root: Option<&Path>, cwd: &Path) -> Option<String> {
+    build_continuity_prompt_with_dev_rule_roots(memories_root, cwd, &[]).await
+}
+
+pub async fn build_continuity_prompt_with_dev_rule_roots(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+    dev_rule_roots: &[AbsolutePathBuf],
+) -> Option<String> {
     let mut sections = Vec::new();
     // Global/project AGENTS.md are deliberately NOT injected here: the app server
     // already sends them natively as instructions, and re-reading them into this prompt
@@ -149,7 +160,9 @@ pub async fn build_continuity_prompt(memories_root: Option<&Path>, cwd: &Path) -
     // that discovery is the only way they reach the model at all. Every other skill stays
     // out: the skills service advertises compact metadata and loads a selected skill
     // through its native path rather than admitting a whole library as always-on context.
-    for source in continuity_sources(memories_root, cwd, &[]) {
+    for source in
+        continuity_sources_with_dev_rule_roots(memories_root, cwd, &[], dev_rule_roots)
+    {
         if !source.admitted || source.name == GLOBAL_RULES || source.name == PROJECT_RULES {
             continue;
         }
@@ -188,6 +201,15 @@ pub fn continuity_sources(
     cwd: &Path,
     instruction_source_paths: &[PathBuf],
 ) -> Vec<ContinuitySource> {
+    continuity_sources_with_dev_rule_roots(memories_root, cwd, instruction_source_paths, &[])
+}
+
+pub fn continuity_sources_with_dev_rule_roots(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+    instruction_source_paths: &[PathBuf],
+    dev_rule_roots: &[AbsolutePathBuf],
+) -> Vec<ContinuitySource> {
     let Some(memories_root) = memories_root else {
         return Vec::new();
     };
@@ -198,8 +220,9 @@ pub fn continuity_sources(
     let mut sources = Vec::new();
     let mut canonical_paths = std::collections::HashSet::new();
 
+    let runtime_instruction_paths = !instruction_source_paths.is_empty();
     let mut instruction_paths: Vec<PathBuf> = instruction_source_paths.to_vec();
-    if instruction_paths.is_empty() {
+    if !runtime_instruction_paths {
         let proj_agents = cwd.join("AGENTS.md");
         if proj_agents.exists() {
             instruction_paths.push(proj_agents);
@@ -211,15 +234,26 @@ pub fn continuity_sources(
     // additions are opt-in through ELPIS_DEV_SKILLS_DIRS. A project-sibling folder is
     // deliberately not scanned: on a development checkout it is usually the source of
     // the installed rules and listing both copies produced duplicate context.
-    let mut dev_dirs = Vec::new();
-    if let Some(elpis_home) = memories_root.parent() {
-        dev_dirs.push(elpis_home.join("skills/dev"));
-    }
-    dev_dirs.extend(
-        std::env::var_os("ELPIS_DEV_SKILLS_DIRS")
-            .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
-            .unwrap_or_default(),
-    );
+    let (dev_dirs, dev_origin): (Vec<PathBuf>, &'static str) = if dev_rule_roots.is_empty() {
+        let mut dirs = Vec::new();
+        if let Some(elpis_home) = memories_root.parent() {
+            dirs.push(elpis_home.join("skills/dev"));
+        }
+        dirs.extend(
+            std::env::var_os("ELPIS_DEV_SKILLS_DIRS")
+                .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+                .unwrap_or_default(),
+        );
+        (dirs, "managed development rules")
+    } else {
+        (
+            dev_rule_roots
+                .iter()
+                .map(|root| root.as_path().to_path_buf())
+                .collect(),
+            "configured development rules",
+        )
+    };
 
     let mut already_listed: std::collections::HashSet<PathBuf> = instruction_paths
         .iter()
@@ -227,16 +261,18 @@ pub fn continuity_sources(
         .collect();
 
     let mut seen_dev_file_names = std::collections::HashSet::new();
+    let mut dev_files = Vec::new();
     for dev_dir in &dev_dirs {
         if let Ok(entries) = std::fs::read_dir(dev_dir) {
-            let mut dev_files: Vec<PathBuf> = entries
+            let mut root_files: Vec<PathBuf> = entries
                 .filter_map(|entry| entry.ok())
                 .map(|entry| entry.path())
                 .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
                 .filter(|path| {
-                    path.file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| seen_dev_file_names.insert(name.to_string()))
+                    matches!(
+                        std::fs::metadata(path),
+                        Ok(metadata) if metadata.is_file() && metadata.len() > 0
+                    )
                 })
                 .filter(|path| {
                     if let Ok(canonical) = path.canonicalize() {
@@ -246,8 +282,12 @@ pub fn continuity_sources(
                     }
                 })
                 .collect();
-            dev_files.sort();
-            instruction_paths.extend(dev_files);
+            root_files.sort();
+            dev_files.extend(root_files.into_iter().filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| seen_dev_file_names.insert(name.to_string()))
+            }));
         }
     }
 
@@ -258,10 +298,37 @@ pub fn continuity_sources(
             name,
             path.clone(),
             ContinuitySourceCategory::Instructions,
+            if runtime_instruction_paths {
+                "runtime instructions"
+            } else {
+                "workspace discovery"
+            },
             reason,
             admitted,
         ) {
             if let Ok(canonical) = path.canonicalize() {
+                canonical_paths.insert(canonical);
+            }
+            sources.push(source);
+        }
+    }
+
+    for path in dev_files {
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let name = format!("{DEV_SOURCE_PREFIX}{file_name}");
+        let admitted = admission.admits_row(&name);
+        if let Some(source) = existing_file_source(
+            name,
+            path,
+            ContinuitySourceCategory::Instructions,
+            dev_origin,
+            dev_origin,
+            admitted,
+        ) {
+            if let Ok(canonical) = source.path.canonicalize() {
                 canonical_paths.insert(canonical);
             }
             sources.push(source);
@@ -277,6 +344,7 @@ pub fn continuity_sources(
         "GOAL.md".to_string(),
         goal_path.clone(),
         ContinuitySourceCategory::Files,
+        "Elpis workspace state",
         "active workspace goal",
         goal_admitted,
     ) {
@@ -293,6 +361,7 @@ pub fn continuity_sources(
         "ES.md".to_string(),
         checkpoint_path.clone(),
         ContinuitySourceCategory::Files,
+        "Elpis workspace state",
         "lean session checkpoint",
         checkpoint_admitted,
     ) {
@@ -309,6 +378,7 @@ pub fn continuity_sources(
         "MEMORY.md".to_string(),
         memory_path.clone(),
         ContinuitySourceCategory::Memory,
+        "Elpis durable memory",
         "durable memory",
         admission.memory,
     ) {
@@ -351,6 +421,7 @@ pub fn continuity_sources(
                     },
                     path,
                     bytes: metadata.len(),
+                    origin: "manual addition",
                     lifetime: "every turn",
                     reason: "manually added file",
                     admitted: *admitted,
@@ -420,6 +491,7 @@ fn existing_file_source(
     name: String,
     path: PathBuf,
     category: ContinuitySourceCategory,
+    origin: &'static str,
     reason: &'static str,
     admitted: bool,
 ) -> Option<ContinuitySource> {
@@ -430,6 +502,7 @@ fn existing_file_source(
         path,
         bytes: metadata.len(),
         category,
+        origin,
         lifetime: "every turn",
         reason,
         admitted,
@@ -722,8 +795,8 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    /// Admission is off until asked for, so a test that is about what reaches the model
-    /// has to say which rows it turned on. That is the point of the default.
+    /// Optional rows are off until asked for, so a test about what reaches the model
+    /// must explicitly admit those rows.
     fn admit_all(memories_root: Option<&Path>, cwd: &Path, names: &[&str]) -> std::io::Result<()> {
         for name in names {
             set_continuity_source_admitted(memories_root, cwd, name, true)?;
@@ -1142,7 +1215,7 @@ mod tests {
     /// The regression this guards: the app server's `instruction_source_paths` only ever
     /// contains global/project AGENTS.md, never `skills/dev/*.md` — so passing the
     /// server's real (dev-less) list must still surface dev rules, both in the ledger and
-    /// in the injected prompt once the ledger admits them.
+    /// in the injected prompt.
     #[tokio::test]
     async fn dev_rules_are_discovered_even_when_server_omits_them() -> anyhow::Result<()> {
         let home = tempdir()?;
@@ -1160,10 +1233,9 @@ mod tests {
             .iter()
             .find(|source| source.path == dev.join("AGENTS.md"))
             .unwrap_or_else(|| panic!("dev file missing from ledger sources: {sources:?}"));
-        assert!(!dev_source.admitted, "dev rules must default to off");
+        assert!(dev_source.admitted, "dev rules must default to on");
 
         let dev_source_name = dev_source.name.clone();
-        admit_all(Some(&memories), &cwd, &[&dev_source_name])?;
         let prompt = build_continuity_prompt(Some(&memories), &cwd)
             .await
             .expect("dev rule should be injected since the server never sends it");
@@ -1367,15 +1439,17 @@ mod tests {
         std::fs::write(&managed_rule, "Managed fallback rule")?;
         std::fs::write(&configured_rule, "Configured development rule")?;
         std::fs::write(&later_rule, "Later configured development rule")?;
+        let configured_dev_root = AbsolutePathBuf::from_absolute_path(&configured_dev)?;
+        let configured_later_root = AbsolutePathBuf::from_absolute_path(&configured_later)?;
 
         let sources = continuity_sources_with_dev_rule_roots(
             Some(&memories),
             &cwd,
             &[],
             &[
-                configured_dev.clone(),
-                configured_later.clone(),
-                configured_dev.clone(),
+                configured_dev_root.clone(),
+                configured_later_root.clone(),
+                configured_dev_root.clone(),
             ],
         );
         let rows = sources
@@ -1392,9 +1466,9 @@ mod tests {
             Some(&memories),
             &cwd,
             &[
-                configured_dev.clone(),
-                configured_later.clone(),
-                configured_dev.clone(),
+                configured_dev_root.clone(),
+                configured_later_root.clone(),
+                configured_dev_root.clone(),
             ],
         )
         .await
@@ -1408,7 +1482,11 @@ mod tests {
             Some(&memories),
             &cwd,
             &[],
-            &[configured_dev.clone(), configured_later, configured_dev],
+            &[
+                configured_dev_root.clone(),
+                configured_later_root,
+                configured_dev_root,
+            ],
         );
         let source = sources
             .iter()

@@ -4333,6 +4333,11 @@ impl Config {
         crate::skills::service::bundled_skills_enabled_from_stack(&self.config_layer_stack)
     }
 
+    pub fn dev_rule_roots(&self) -> Vec<AbsolutePathBuf> {
+        crate::skills::service::skills_config_from_stack(&self.config_layer_stack)
+            .dev_rule_roots
+    }
+
     /// Returns whether effective requirements allow selecting a concrete profile.
     pub fn is_permission_profile_allowed(
         &self,
