@@ -135,5 +135,5 @@ Elpis exposes **one single source of truth** for context measurement:
 ## 5. Systemic Inter-Dependencies
 
 - **Integration with Sessions:** the admitted `GOAL.md` and `ES.md` sources are exactly what lean continuation carries into a fresh thread; see [Sessions](sessions.md).
-- **Integration with Memory:** durable memory is a separate subsystem. It reads completed rollout transcripts from disk rather than hooking into compaction, so it does not depend on when a thread compacts. A `PreCompact` hook event is available if you want to run your own work at that moment. 
+- **Integration with Memory:** durable memory is user-managed. Elpis can admit the user's `~/.elpis/memories/MEMORY.md` into context, but it does not automatically extract, consolidate, or promote memories from completed rollouts. A `PreCompact` hook event is available if you want to run your own work at that moment.
 - **Integration with Providers:** admitted context is normalized across provider wire formats while evidence pointers are preserved; see [Providers](providers.md).
