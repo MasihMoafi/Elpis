@@ -1,0 +1,505 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+    printf 'verify-elpis: %s\n' "$*" >&2
+    exit 2
+}
+
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+MANIFEST="$REPO_ROOT/tools/verify-elpis/surfaces.toml"
+
+declare -a changed_paths=()
+declare -a path_files=()
+declare -a explicit_surfaces=()
+input_count=0
+
+while (($#)); do
+    case "$1" in
+        --changed)
+            (($# >= 2)) || die "--changed requires a path"
+            [[ -n $2 ]] || die "--changed path must not be empty"
+            changed_paths+=("$2")
+            input_count=$((input_count + 1))
+            shift 2
+            ;;
+        --paths-file)
+            (($# >= 2)) || die "--paths-file requires a file"
+            [[ -n $2 ]] || die "--paths-file must not be empty"
+            path_files+=("$2")
+            input_count=$((input_count + 1))
+            shift 2
+            ;;
+        --surface)
+            (($# >= 2)) || die "--surface requires a name"
+            [[ -n $2 ]] || die "--surface name must not be empty"
+            explicit_surfaces+=("$2")
+            input_count=$((input_count + 1))
+            shift 2
+            ;;
+        *)
+            die "unknown argument: $1"
+            ;;
+    esac
+done
+
+((input_count > 0)) || die "provide --changed, --paths-file, or --surface"
+[[ -f $MANIFEST ]] || die "manifest not found: $MANIFEST"
+
+manifest_records=
+path_records=
+test_output=
+cleanup() {
+    [[ -z $manifest_records ]] || rm -f -- "$manifest_records"
+    [[ -z $path_records ]] || rm -f -- "$path_records"
+    [[ -z $test_output ]] || rm -f -- "$test_output"
+}
+trap cleanup EXIT
+
+manifest_records=$(mktemp "${TMPDIR:-/tmp}/elpis-verify-manifest.XXXXXX") ||
+    die "could not create manifest parser output"
+
+if ! python3 - "$MANIFEST" > "$manifest_records" <<'PY'
+import re
+import sys
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print("verify-elpis: Python 3.11 or newer is required (tomllib missing)", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def fail(message: str) -> None:
+    print(f"verify-elpis: invalid manifest: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def exact_keys(value: object, expected: set[str], where: str) -> dict:
+    if not isinstance(value, dict):
+        fail(f"{where} must be a table")
+    actual = set(value)
+    if actual != expected:
+        fail(f"{where} keys must be {sorted(expected)!r}, got {sorted(actual)!r}")
+    return value
+
+
+def safe_name(value: object, where: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", value):
+        fail(f"{where} must be a lowercase dash-separated name")
+    return value
+
+
+def string_list(value: object, where: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        fail(f"{where} must be a non-empty array")
+    if any(not isinstance(item, str) or not item or "\0" in item for item in value):
+        fail(f"{where} contains an invalid string")
+    return value
+
+
+def validate_test_argv(name: str, argv: list[str]) -> None:
+    package_count = 0
+    target_count = 0
+    filter_count = 0
+    seen_flags: set[str] = set()
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "-p":
+            package_count += 1
+            index += 1
+            if index >= len(argv) or not re.fullmatch(r"[A-Za-z0-9_.-]+", argv[index]):
+                fail(f"command {name!r} has an invalid -p value")
+        elif token in {"--test", "--bin"}:
+            target_count += 1
+            index += 1
+            if index >= len(argv) or not re.fullmatch(r"[A-Za-z0-9_.-]+", argv[index]):
+                fail(f"command {name!r} has an invalid {token} value")
+        elif token == "--lib":
+            target_count += 1
+        elif token in {"--locked", "--no-run"}:
+            if token in seen_flags:
+                fail(f"command {name!r} repeats {token}")
+            seen_flags.add(token)
+        elif token == "--":
+            if argv[index + 1:] != ["--exact"] or filter_count != 1:
+                fail(f"command {name!r} has unsupported test-harness argv")
+            index = len(argv)
+            continue
+        elif token.startswith("-"):
+            fail(f"command {name!r} has unsupported Cargo argv {token!r}")
+        else:
+            filter_count += 1
+            if filter_count > 1 or not re.fullmatch(r"[A-Za-z0-9_:.-]+", token):
+                fail(f"command {name!r} has an invalid test filter")
+        index += 1
+    if package_count != 1:
+        fail(f"command {name!r} must contain exactly one -p package")
+    if target_count > 1:
+        fail(f"command {name!r} selects more than one test target")
+
+
+try:
+    with open(sys.argv[1], "rb") as handle:
+        manifest = tomllib.load(handle)
+except (OSError, tomllib.TOMLDecodeError) as exc:
+    fail(str(exc))
+
+root = exact_keys(manifest, {"schema_version", "commands", "surfaces", "path_rules"}, "root")
+if type(root["schema_version"]) is not int or root["schema_version"] != 1:
+    fail("schema_version must be integer 1")
+
+commands = root["commands"]
+if not isinstance(commands, dict) or not commands:
+    fail("commands must be a non-empty table")
+for name, raw_row in commands.items():
+    safe_name(name, "command name")
+    row = exact_keys(raw_row, {"kind", "mode", "argv"}, f"command {name!r}")
+    kind = row["kind"]
+    mode = row["mode"]
+    argv = string_list(row["argv"], f"command {name!r} argv")
+    if not isinstance(kind, str) or kind not in {"cargo", "shell"}:
+        fail(f"command {name!r} has invalid kind")
+    if not isinstance(mode, str) or mode not in {"check", "test"}:
+        fail(f"command {name!r} has invalid mode")
+    if kind == "shell":
+        if mode != "check" or argv != ["git", "diff", "--check"]:
+            fail(f"command {name!r} is not the allowed shell check")
+        continue
+    forbidden = {"--release", "--profile", "--target-dir"}
+    if any(
+        token in forbidden
+        or token.startswith("--profile=")
+        or token.startswith("--target-dir=")
+        for token in argv
+    ):
+        fail(f"command {name!r} contains a prohibited Cargo flag")
+    if argv[0] == "fmt":
+        if mode != "check" or argv != ["fmt", "--all", "--check"]:
+            fail(f"command {name!r} is not the allowed formatting check")
+    elif argv[0] == "check":
+        if mode != "check" or argv != [
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--exclude",
+            "codex-sandboxing",
+        ]:
+            fail(f"command {name!r} is not the allowed workspace check")
+    elif argv[0] == "test":
+        validate_test_argv(name, argv)
+        expected_mode = "check" if "--no-run" in argv else "test"
+        if mode != expected_mode:
+            fail(f"command {name!r} must use mode {expected_mode!r}")
+    else:
+        fail(f"command {name!r} has unsupported Cargo subcommand {argv[0]!r}")
+
+surfaces = root["surfaces"]
+if not isinstance(surfaces, list) or not surfaces:
+    fail("surfaces must be a non-empty array of tables")
+expected_surface_order = [
+    "docs",
+    "dashboard",
+    "tui",
+    "context-compaction",
+    "app-server",
+    "telemetry",
+    "agents-work-graph",
+    "memory",
+    "full",
+    "nightly-release",
+]
+surface_rows: list[tuple[str, list[str]]] = []
+surface_names: set[str] = set()
+for index, raw_row in enumerate(surfaces):
+    row = exact_keys(raw_row, {"name", "commands"}, f"surface {index}")
+    name = safe_name(row["name"], f"surface {index} name")
+    refs = string_list(row["commands"], f"surface {name!r} commands")
+    if name in surface_names:
+        fail(f"duplicate surface {name!r}")
+    if len(set(refs)) != len(refs):
+        fail(f"surface {name!r} repeats a command")
+    unknown = [ref for ref in refs if ref not in commands]
+    if unknown:
+        fail(f"surface {name!r} references unknown command {unknown[0]!r}")
+    surface_names.add(name)
+    surface_rows.append((name, refs))
+if [name for name, _ in surface_rows] != expected_surface_order:
+    fail(f"surface declaration order must be {expected_surface_order!r}")
+
+path_rules = root["path_rules"]
+if not isinstance(path_rules, list) or not path_rules:
+    fail("path_rules must be a non-empty array of tables")
+rule_rows: list[tuple[str, list[str]]] = []
+for index, raw_row in enumerate(path_rules):
+    row = exact_keys(raw_row, {"glob", "surfaces"}, f"path rule {index}")
+    glob = row["glob"]
+    if not isinstance(glob, str) or not glob or "\0" in glob:
+        fail(f"path rule {index} has an invalid glob")
+    refs = string_list(row["surfaces"], f"path rule {index} surfaces")
+    unknown = [ref for ref in refs if ref not in surface_names]
+    if unknown:
+        fail(f"path rule {index} references unknown surface {unknown[0]!r}")
+    if len(set(refs)) != len(refs):
+        fail(f"path rule {index} repeats a surface")
+    rule_rows.append((glob, refs))
+
+
+def emit(*values: object) -> None:
+    for value in values:
+        sys.stdout.buffer.write(str(value).encode("utf-8") + b"\0")
+
+
+for name, row in commands.items():
+    emit("command", name, row["kind"], row["mode"], len(row["argv"]), *row["argv"])
+for name, refs in surface_rows:
+    emit("surface", name, len(refs), *refs)
+for glob, refs in rule_rows:
+    emit("rule", glob, len(refs), *refs)
+PY
+then
+    exit 2
+fi
+
+declare -a manifest_fields=()
+mapfile -d '' -t manifest_fields < "$manifest_records"
+rm -f -- "$manifest_records"
+manifest_records=
+
+declare -a command_names=()
+declare -A command_kind=()
+declare -A command_mode=()
+declare -A command_arg_start=()
+declare -A command_arg_count=()
+declare -a surface_names=()
+declare -A surface_command_start=()
+declare -A surface_command_count=()
+declare -a rule_globs=()
+declare -a rule_surface_start=()
+declare -a rule_surface_count=()
+
+cursor=0
+while ((cursor < ${#manifest_fields[@]})); do
+    record=${manifest_fields[$cursor]}
+    cursor=$((cursor + 1))
+    case "$record" in
+        command)
+            name=${manifest_fields[$cursor]}
+            kind=${manifest_fields[$((cursor + 1))]}
+            mode=${manifest_fields[$((cursor + 2))]}
+            count=${manifest_fields[$((cursor + 3))]}
+            cursor=$((cursor + 4))
+            command_names+=("$name")
+            command_kind["$name"]=$kind
+            command_mode["$name"]=$mode
+            command_arg_start["$name"]=$cursor
+            command_arg_count["$name"]=$count
+            cursor=$((cursor + count))
+            ;;
+        surface)
+            name=${manifest_fields[$cursor]}
+            count=${manifest_fields[$((cursor + 1))]}
+            cursor=$((cursor + 2))
+            surface_names+=("$name")
+            surface_command_start["$name"]=$cursor
+            surface_command_count["$name"]=$count
+            cursor=$((cursor + count))
+            ;;
+        rule)
+            glob=${manifest_fields[$cursor]}
+            count=${manifest_fields[$((cursor + 1))]}
+            cursor=$((cursor + 2))
+            rule_globs+=("$glob")
+            rule_surface_start+=("$cursor")
+            rule_surface_count+=("$count")
+            cursor=$((cursor + count))
+            ;;
+        *)
+            die "manifest parser emitted an unknown record"
+            ;;
+    esac
+done
+
+for path_file in "${path_files[@]}"; do
+    path_records=$(mktemp "${TMPDIR:-/tmp}/elpis-verify-paths.XXXXXX") ||
+        die "could not create path-list parser output"
+    if ! python3 - "$path_file" > "$path_records" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+try:
+    data = path.read_bytes()
+except OSError as exc:
+    print(f"verify-elpis: cannot read path file {path}: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+if not data:
+    print(f"verify-elpis: path file is empty: {path}", file=sys.stderr)
+    raise SystemExit(2)
+delimiter = b"\0" if b"\0" in data else b"\n"
+records = data.split(delimiter)
+if records and records[-1] == b"":
+    records.pop()
+if not records or any(record == b"" for record in records):
+    print(f"verify-elpis: path file contains an empty record: {path}", file=sys.stderr)
+    raise SystemExit(2)
+for record in records:
+    sys.stdout.buffer.write(record + b"\0")
+PY
+    then
+        exit 2
+    fi
+    declare -a loaded_paths=()
+    mapfile -d '' -t loaded_paths < "$path_records"
+    rm -f -- "$path_records"
+    path_records=
+    changed_paths+=("${loaded_paths[@]}")
+done
+
+declare -A wanted_surfaces=()
+for surface in "${explicit_surfaces[@]}"; do
+    [[ ${surface_command_start[$surface]+present} ]] || die "unknown surface: $surface"
+done
+
+declare -a RESOLVED_SURFACES=()
+resolve_path() {
+    local path=$1
+    local index pattern start count
+    RESOLVED_SURFACES=()
+    for index in "${!rule_globs[@]}"; do
+        pattern=${rule_globs[$index]}
+        # shellcheck disable=SC2053 # The checked manifest deliberately supplies the glob.
+        if [[ $path == $pattern ]]; then
+            start=${rule_surface_start[$index]}
+            count=${rule_surface_count[$index]}
+            RESOLVED_SURFACES=("${manifest_fields[@]:start:count}")
+            return
+        fi
+    done
+    RESOLVED_SURFACES=("full")
+}
+
+if ((${#changed_paths[@]} > 0)); then
+    first_signature=
+    have_signature=false
+    force_full=false
+    declare -a first_path_surfaces=()
+    for path in "${changed_paths[@]}"; do
+        [[ -n $path ]] || die "changed path must not be empty"
+        resolve_path "$path"
+        for surface in "${RESOLVED_SURFACES[@]}"; do
+            if [[ $surface == full ]]; then
+                force_full=true
+            fi
+        done
+        signature=$(IFS=$'\x1f'; printf '%s' "${RESOLVED_SURFACES[*]}")
+        if [[ $have_signature == false ]]; then
+            first_signature=$signature
+            first_path_surfaces=("${RESOLVED_SURFACES[@]}")
+            have_signature=true
+        elif [[ $signature != "$first_signature" ]]; then
+            force_full=true
+        fi
+    done
+    if [[ $force_full == true ]]; then
+        wanted_surfaces[full]=1
+    else
+        for surface in "${first_path_surfaces[@]}"; do
+            wanted_surfaces["$surface"]=1
+        done
+    fi
+fi
+
+for surface in "${explicit_surfaces[@]}"; do
+    wanted_surfaces["$surface"]=1
+done
+
+declare -a selected_surfaces=()
+for surface in "${surface_names[@]}"; do
+    if [[ ${wanted_surfaces[$surface]+selected} ]]; then
+        selected_surfaces+=("$surface")
+    fi
+done
+((${#selected_surfaces[@]} > 0)) || die "no verification surface selected"
+
+declare -A wanted_commands=()
+for surface in "${selected_surfaces[@]}"; do
+    start=${surface_command_start[$surface]}
+    count=${surface_command_count[$surface]}
+    for command_name in "${manifest_fields[@]:start:count}"; do
+        wanted_commands["$command_name"]=1
+    done
+done
+
+declare -a selected_commands=()
+for command_name in "${command_names[@]}"; do
+    if [[ ${wanted_commands[$command_name]+selected} ]]; then
+        selected_commands+=("$command_name")
+    fi
+done
+
+if [[ -n ${ELPIS_CARGO_TARGET_DIR-} ]]; then
+    target_dir=$ELPIS_CARGO_TARGET_DIR
+    [[ $target_dir == /* ]] || die "ELPIS_CARGO_TARGET_DIR must be absolute"
+else
+    git_common_dir=$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+        die "could not resolve the Git common directory"
+    [[ $git_common_dir == /* ]] || die "Git common directory is not absolute"
+    target_dir="$(dirname "$git_common_dir")/codex-rs/target"
+fi
+if [[ -e $target_dir && ! -d $target_dir ]]; then
+    die "Cargo target exists but is not a directory: $target_dir"
+fi
+mkdir -p -- "$target_dir" 2>/dev/null || die "Cargo target is not writable: $target_dir"
+[[ -w $target_dir ]] || die "Cargo target is not writable: $target_dir"
+[[ -d $REPO_ROOT/codex-rs ]] || die "codex-rs directory not found"
+
+join_by_comma() {
+    local IFS=,
+    printf '%s' "$*"
+}
+
+printf 'Elpis verification: surfaces=%s\n' "$(join_by_comma "${selected_surfaces[@]}")"
+if ((${#changed_paths[@]} > 0)); then
+    printf 'Elpis verification: changed=%s\n' "$(join_by_comma "${changed_paths[@]}")"
+else
+    printf 'Elpis verification: changed=(none)\n'
+fi
+printf 'Elpis verification: target=%s\n' "$target_dir"
+printf 'Elpis verification: commands=%s\n' "$(join_by_comma "${selected_commands[@]}")"
+
+for command_name in "${selected_commands[@]}"; do
+    start=${command_arg_start[$command_name]}
+    count=${command_arg_count[$command_name]}
+    argv=("${manifest_fields[@]:start:count}")
+    kind=${command_kind[$command_name]}
+    mode=${command_mode[$command_name]}
+    printf 'Elpis verification: running=%s\n' "$command_name"
+    if [[ $kind == shell ]]; then
+        (cd "$REPO_ROOT" && "${argv[@]}") || die "command failed: $command_name"
+    elif [[ $mode == check ]]; then
+        (
+            cd "$REPO_ROOT/codex-rs"
+            CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR="$target_dir" cargo "${argv[@]}"
+        ) || die "command failed: $command_name"
+    else
+        test_output=$(mktemp "${TMPDIR:-/tmp}/elpis-verify-test-output.XXXXXX") ||
+            die "could not create test output file"
+        set +e
+        (
+            cd "$REPO_ROOT/codex-rs"
+            CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR="$target_dir" cargo "${argv[@]}"
+        ) 2>&1 | tee "$test_output"
+        cargo_status=${PIPESTATUS[0]}
+        set -e
+        if ((cargo_status != 0)); then
+            die "test command failed: $command_name"
+        fi
+        if ! grep -Eq 'test result:[[:space:]]+ok\.[[:space:]]+[1-9][0-9]*[[:space:]]+passed' "$test_output"; then
+            die "test command $command_name produced no positive test result"
+        fi
+        rm -f -- "$test_output"
+        test_output=
+    fi
+done

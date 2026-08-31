@@ -1,0 +1,528 @@
+schema_version = 1
+
+[commands.diff-check]
+kind = "shell"
+mode = "check"
+argv = ["git", "diff", "--check"]
+
+[commands.fmt-check]
+kind = "cargo"
+mode = "check"
+argv = ["fmt", "--all", "--check"]
+
+[commands.workspace-check]
+kind = "cargo"
+mode = "check"
+argv = ["check", "--workspace", "--all-targets", "--exclude", "codex-sandboxing"]
+
+[commands.tui-dashboard]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "dashboard"]
+
+[commands.tui-context-usage]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "context_usage"]
+
+[commands.tui-launcher]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--bin", "elpis", "--locked"]
+
+[commands.tui-branding]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "branding::tests"]
+
+[commands.tui-slash-command]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "slash_command::tests"]
+
+[commands.tui-model-catalog]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "model_catalog_"]
+
+[commands.tui-model-reasoning-openai]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "model_reasoning_selection_for_openai"]
+
+[commands.tui-provider-model-selection]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "provider_model_selection"]
+
+[commands.tui-ollama-atomic-selection]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "ollama_model_selection_emits_one_atomic_selection"]
+
+[commands.tui-thread-setting-model-reasoning]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "thread_setting_update_params_sync_model_and_default_reasoning"]
+
+[commands.tui-enabled-skills]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "enabled_skills_render_before_available_candidates_with_origins", "--locked"]
+
+[commands.features-automatic-pruning]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-features", "--lib", "--locked", "automatic_context_pruning_is_experimental_and_opt_in"]
+
+[commands.core-context-cleaner]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "context_cleaner::tests"]
+
+[commands.core-elpis-context]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "elpis_context::tests"]
+
+[commands.core-context-prune]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--test", "all", "--locked", "suite::context_prune::"]
+
+[commands.core-skills-default-enable]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core-skills", "default_disabled_skills_require_one_explicit_enable", "--locked"]
+
+[commands.core-dev-rule-roots]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "configured_dev_rule_roots_replace_managed_fallback", "--locked"]
+
+[commands.tui-context-ledger]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "context_ledger", "--locked"]
+
+[commands.app-server-list-models]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-app-server", "--test", "all", "--locked", "list_models"]
+
+[commands.backend-turn-usage]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-backend-client", "--test", "turn_usage", "--locked"]
+
+[commands.otel-turn-cost]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-otel", "--test", "tests", "--locked", "turn_cost"]
+
+[commands.otel-turn-profile]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-otel", "--test", "tests", "--locked", "turn_profile"]
+
+[commands.core-turn-timing]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "turn_timing"]
+
+[commands.app-server-turn-cost]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-app-server", "--lib", "--locked", "turn_cost_worker"]
+
+[commands.state-work-graph]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-state", "--lib", "--locked", "work_graph"]
+
+[commands.core-work-graph]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "work_graph"]
+
+[commands.core-work-graph-integration]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--test", "all", "--locked", "suite::work_graphs::"]
+
+[commands.tui-work-graph]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "work_graph"]
+
+[commands.app-server-memory-recall]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-app-server", "--test", "all", "--locked", "durable_memory_reaches_the_model_only_once_the_ledger_admits_it"]
+
+[commands.core-memory-dir-bounds]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "memory_dir_is_readable_without_creating_or_widening_writes"]
+
+[commands.core-memory-permission-profile]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "permission_profile_override_keeps_memories_root_out_of_legacy_projection"]
+
+[commands.provider-info]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-model-provider-info", "--locked"]
+
+[commands.core-chat-completions]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "chat_completions"]
+
+[commands.nightly-tui-elpis-context]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "elpis_context::tests"]
+
+[commands.nightly-tui-compile]
+kind = "cargo"
+mode = "check"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "--no-run"]
+
+[commands.nightly-welcome-animation]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "onboarding::welcome::tests::welcome_renders_animation_on_first_draw", "--", "--exact"]
+
+[[surfaces]]
+name = "docs"
+commands = ["diff-check"]
+
+[[surfaces]]
+name = "dashboard"
+commands = ["fmt-check", "tui-dashboard", "tui-context-usage"]
+
+[[surfaces]]
+name = "tui"
+commands = [
+    "fmt-check",
+    "tui-launcher",
+    "tui-branding",
+    "tui-slash-command",
+    "tui-model-catalog",
+    "tui-model-reasoning-openai",
+    "tui-provider-model-selection",
+    "tui-ollama-atomic-selection",
+    "tui-thread-setting-model-reasoning",
+    "tui-enabled-skills",
+]
+
+[[surfaces]]
+name = "context-compaction"
+commands = [
+    "fmt-check",
+    "features-automatic-pruning",
+    "core-context-cleaner",
+    "core-elpis-context",
+    "core-context-prune",
+    "core-skills-default-enable",
+    "core-dev-rule-roots",
+    "tui-context-ledger",
+]
+
+[[surfaces]]
+name = "app-server"
+commands = ["fmt-check", "app-server-list-models"]
+
+[[surfaces]]
+name = "telemetry"
+commands = [
+    "fmt-check",
+    "backend-turn-usage",
+    "otel-turn-cost",
+    "otel-turn-profile",
+    "core-turn-timing",
+    "app-server-turn-cost",
+]
+
+[[surfaces]]
+name = "agents-work-graph"
+commands = [
+    "fmt-check",
+    "state-work-graph",
+    "core-work-graph",
+    "core-work-graph-integration",
+    "tui-work-graph",
+]
+
+[[surfaces]]
+name = "memory"
+commands = [
+    "fmt-check",
+    "core-elpis-context",
+    "app-server-memory-recall",
+    "core-memory-dir-bounds",
+    "core-memory-permission-profile",
+]
+
+[[surfaces]]
+name = "full"
+commands = [
+    "diff-check",
+    "fmt-check",
+    "workspace-check",
+    "tui-dashboard",
+    "tui-context-usage",
+    "tui-launcher",
+    "tui-branding",
+    "tui-slash-command",
+    "tui-model-catalog",
+    "tui-model-reasoning-openai",
+    "tui-provider-model-selection",
+    "tui-ollama-atomic-selection",
+    "tui-thread-setting-model-reasoning",
+    "tui-enabled-skills",
+    "features-automatic-pruning",
+    "core-context-cleaner",
+    "core-elpis-context",
+    "core-context-prune",
+    "core-skills-default-enable",
+    "core-dev-rule-roots",
+    "tui-context-ledger",
+    "app-server-list-models",
+    "backend-turn-usage",
+    "otel-turn-cost",
+    "otel-turn-profile",
+    "core-turn-timing",
+    "app-server-turn-cost",
+    "state-work-graph",
+    "core-work-graph",
+    "core-work-graph-integration",
+    "tui-work-graph",
+    "app-server-memory-recall",
+    "core-memory-dir-bounds",
+    "core-memory-permission-profile",
+    "provider-info",
+    "core-chat-completions",
+]
+
+[[surfaces]]
+name = "nightly-release"
+commands = [
+    "app-server-memory-recall",
+    "nightly-tui-elpis-context",
+    "core-elpis-context",
+    "nightly-tui-compile",
+    "nightly-welcome-animation",
+]
+
+# First match owns the path. Keep safety and cross-cutting exceptions before
+# broad app-server, TUI, and documentation families.
+[[path_rules]]
+glob = "scripts/verify-elpis"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "tests/verify-elpis/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "tools/verify-elpis/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = ".github/workflows/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "Cargo.toml"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "Cargo.lock"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/**/Cargo.toml"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/Cargo.lock"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = ".cargo/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/.cargo/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "scripts/install-elpis*"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/config/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/protocol/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/app-server-protocol/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/config/**"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/lib.rs"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/client.rs"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/session/mod.rs"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "AGENTS.md"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "docs/LOCAL_BUILD_RULES.md"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "docs/SHIPPING_RULES.md"
+surfaces = ["full"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/dashboard_server.rs"
+surfaces = ["dashboard"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/dashboard_assets/**"
+surfaces = ["dashboard"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/context_usage.rs"
+surfaces = ["dashboard"]
+
+[[path_rules]]
+glob = "codex-rs/features/**"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/core-skills/**"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/*context*"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/*compact*"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/tasks/prune.rs"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/tasks/compact.rs"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/session/context_prune*"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/context_ledger.rs"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/tests/context_ledger.rs"
+surfaces = ["context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/backend-client/**"
+surfaces = ["telemetry"]
+
+[[path_rules]]
+glob = "codex-rs/otel/**"
+surfaces = ["telemetry"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/turn_timing*"
+surfaces = ["telemetry"]
+
+[[path_rules]]
+glob = "codex-rs/app-server/src/turn_cost_worker*"
+surfaces = ["telemetry"]
+
+[[path_rules]]
+glob = "codex-rs/agent-graph-store/**"
+surfaces = ["agents-work-graph"]
+
+[[path_rules]]
+glob = "codex-rs/state/**/*work_graph*"
+surfaces = ["agents-work-graph"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/tools/handlers/*work_graph*"
+surfaces = ["agents-work-graph"]
+
+[[path_rules]]
+glob = "codex-rs/core/tests/suite/work_graphs.rs"
+surfaces = ["agents-work-graph"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/multi_agents.rs"
+surfaces = ["agents-work-graph"]
+
+[[path_rules]]
+glob = "codex-rs/core/**/*memory*"
+surfaces = ["memory"]
+
+[[path_rules]]
+glob = "codex-rs/core/**/*continuity*"
+surfaces = ["memory"]
+
+[[path_rules]]
+glob = "codex-rs/app-server/tests/suite/v2/memory_recall.rs"
+surfaces = ["memory"]
+
+[[path_rules]]
+glob = "codex-rs/app-server/**/*memory*"
+surfaces = ["memory"]
+
+[[path_rules]]
+glob = "codex-rs/app-server/**"
+surfaces = ["app-server"]
+
+[[path_rules]]
+glob = "codex-rs/tui/**"
+surfaces = ["tui"]
+
+[[path_rules]]
+glob = "docs/**"
+surfaces = ["docs"]
+
+[[path_rules]]
+glob = "README.md"
+surfaces = ["docs"]
+
+[[path_rules]]
+glob = "*.md"
+surfaces = ["docs"]
+
+[[path_rules]]
+glob = "*"
+surfaces = ["full"]
