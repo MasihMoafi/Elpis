@@ -1,4 +1,5 @@
 use anyhow::Result;
+use codex_features::Feature;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use core_test_support::responses;
@@ -55,7 +56,10 @@ async fn pressure_harness() -> Result<TestCodexHarness> {
     TestCodexHarness::with_builder(
         test_codex()
             .with_model(MAIN_MODEL)
-            .with_config(|config| config.model_context_window = Some(CONTEXT_WINDOW)),
+            .with_config(|config| {
+                config.model_context_window = Some(CONTEXT_WINDOW);
+                let _ = config.features.enable(Feature::AutomaticContextPruning);
+            }),
     )
     .await
 }
@@ -72,6 +76,43 @@ fn final_response() -> String {
         ev_assistant_message("main-final", "done"),
         ev_completed_with_tokens("main-final", /*total_tokens*/ 5_000),
     ])
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automatic_prune_is_disabled_by_default() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+
+    let harness = TestCodexHarness::with_builder(
+        test_codex()
+            .with_model(MAIN_MODEL)
+            .with_config(|config| config.model_context_window = Some(CONTEXT_WINDOW)),
+    )
+    .await?;
+    let requests = mount_sse_sequence(
+        harness.server(),
+        vec![
+            main_tool_response(
+                OLD_CALL_ID,
+                /*total_tokens*/ 3_000,
+                "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
+            ),
+            final_response(),
+        ],
+    )
+    .await;
+
+    harness.submit("generate a diagnostic output").await?;
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.body_json()["model"] == MAIN_MODEL),
+        "the default path must not make an Ace pruning request"
+    );
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -208,6 +208,7 @@ jobs:
           run_filter -p codex-state --lib --locked work_graph
           run_filter -p codex-core --lib --locked work_graph
           run_filter -p codex-core --test all --locked suite::work_graphs::
+          run_filter -p codex-core --test all --locked suite::context_prune::
           run_filter -p codex-app-server --test all --locked list_models
           run_filter -p codex-tui --lib --locked model_catalog_
           run_filter -p codex-tui --lib --locked model_reasoning_selection_for_openai
