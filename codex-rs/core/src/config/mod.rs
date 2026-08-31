@@ -768,9 +768,6 @@ pub struct Config {
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
-    /// Use Elpis's conservative deletion-first behavior for manual compaction.
-    pub elpis_compact_cleanup: bool,
-
     /// Optional external notifier command. When set, Codex will spawn this
     /// program after each completed *turn* (i.e. when the agent finishes
     /// processing a user submission). The value must be the full command
@@ -4001,7 +3998,6 @@ impl Config {
             personality,
             developer_instructions,
             compact_prompt,
-            elpis_compact_cleanup: false,
             include_permissions_instructions,
             include_apps_instructions,
             include_collaboration_mode_instructions,

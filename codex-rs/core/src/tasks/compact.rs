@@ -38,25 +38,7 @@ impl SessionTask for CompactTask {
             return Ok(None);
         }
 
-        let cleanup_enabled = ctx.config.elpis_compact_cleanup
-            && ctx
-                .config
-                .compact_prompt
-                .as_deref()
-                .is_none_or(|prompt| prompt == crate::compact::CLEANUP_PROMPT);
-        let result = if cleanup_enabled {
-            emit_compact_metric(
-                &session.services.session_telemetry,
-                "local_cleanup",
-                /*manual*/ true,
-            );
-            let input = vec![UserInput::Text {
-                text: crate::compact::CLEANUP_PROMPT.to_string(),
-                // Compaction prompt is synthesized; no UI element ranges to preserve.
-                text_elements: Vec::new(),
-            }];
-            crate::compact::run_compact_task(session.clone(), ctx, input).await
-        } else if crate::compact::should_use_remote_compact_task(ctx.provider.info()) {
+        let result = if crate::compact::should_use_remote_compact_task(ctx.provider.info()) {
             if ctx
                 .config
                 .features
