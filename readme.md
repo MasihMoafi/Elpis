@@ -144,8 +144,9 @@ memory, and other portable sources with their byte sizes and capped character-de
 writes `admission.toml`, which controls what the next turn receives.
 
 Development rules are ordinary Markdown Ledger rows, not skills: newly discovered rules start included and an
-explicit exclusion persists. Configured development-rule roots replace the managed fallback. Elpis leaves ordinary
-and bundled skills off by product default, while deliberate user configuration can enable a selected skill. Enabled
+explicit exclusion persists. A nonempty configured development-rule root list replaces the managed fallback; an
+empty list uses it. Elpis leaves ordinary and bundled skills off by product default, while deliberate user
+configuration can enable a selected skill. Enabled
 skills expose compact metadata and keep their bodies lazy; `/skills` shows available candidates and their origins,
 but mentions and the model-visible list contain enabled skills only. The Ledger has no skills-catalog token row;
 its per-source estimates are not tokenizer measurements.

@@ -129,8 +129,9 @@ name = "one-selected-skill"
 enabled = true
 ```
 
-When `skills.dev_rule_roots` is set, those roots replace the managed development-rule fallback.
-Without configured roots, Elpis uses its managed rule directory and the optional
+When `skills.dev_rule_roots` contains one or more roots, those roots replace the managed
+development-rule fallback. With no configured roots, including an explicitly empty list, Elpis
+uses its managed rule directory and the optional
 `ELPIS_DEV_SKILLS_DIRS` additions. Configured roots are read in configuration order; Markdown
 files within each root are read in sorted order. The first file with a given filename wins.
 
