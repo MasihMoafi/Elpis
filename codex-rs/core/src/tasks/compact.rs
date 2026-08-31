@@ -31,6 +31,7 @@ impl SessionTask for CompactTask {
         _input: Vec<TurnInput>,
         _cancellation_token: CancellationToken,
     ) -> SessionTaskResult {
+        let _profile_guard = ctx.turn_timing_state.begin_compaction();
         let session = session.clone_session();
         if ctx.config.features.enabled(Feature::TokenBudget) {
             crate::compact_token_budget::run_manual_compact_task(session, ctx).await?;

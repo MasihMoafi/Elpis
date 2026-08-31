@@ -28,6 +28,11 @@ pub const TURN_NETWORK_PROXY_METRIC: &str = "codex.turn.network_proxy";
 pub const TURN_TOOL_CALL_METRIC: &str = "codex.turn.tool.call";
 pub const TURN_TOKEN_USAGE_METRIC: &str = "codex.turn.token_usage";
 pub const TURN_COST_MICROUSD_METRIC: &str = "codex.turn.cost_microusd";
+pub const TURN_PROFILE_DURATION_METRIC: &str = "codex.turn.profile.duration_ms";
+pub const TURN_PROFILE_SAMPLING_REQUEST_COUNT_METRIC: &str =
+    "codex.turn.profile.sampling_request_count";
+pub const TURN_PROFILE_SAMPLING_RETRY_COUNT_METRIC: &str =
+    "codex.turn.profile.sampling_retry_count";
 pub const GUARDIAN_REVIEW_COUNT_METRIC: &str = "codex.guardian.review";
 pub const GUARDIAN_REVIEW_DURATION_METRIC: &str = "codex.guardian.review.duration_ms";
 pub const GUARDIAN_REVIEW_TTFT_DURATION_METRIC: &str = "codex.guardian.review.ttft.duration_ms";

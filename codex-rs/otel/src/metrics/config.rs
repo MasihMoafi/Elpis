@@ -1,13 +1,21 @@
 use crate::config::OtelExporter;
 use crate::metrics::Result;
 use crate::metrics::names::TURN_COST_MICROUSD_METRIC;
+use crate::metrics::names::TURN_PROFILE_DURATION_METRIC;
+use crate::metrics::names::TURN_PROFILE_SAMPLING_REQUEST_COUNT_METRIC;
+use crate::metrics::names::TURN_PROFILE_SAMPLING_RETRY_COUNT_METRIC;
 use crate::metrics::validation::validate_tag_key;
 use crate::metrics::validation::validate_tag_value;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-const STATSIG_DISABLED_METRICS: &[&str] = &[TURN_COST_MICROUSD_METRIC];
+const STATSIG_DISABLED_METRICS: &[&str] = &[
+    TURN_COST_MICROUSD_METRIC,
+    TURN_PROFILE_DURATION_METRIC,
+    TURN_PROFILE_SAMPLING_REQUEST_COUNT_METRIC,
+    TURN_PROFILE_SAMPLING_RETRY_COUNT_METRIC,
+];
 
 #[derive(Clone, Debug)]
 pub enum MetricsExporter {

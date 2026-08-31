@@ -25,6 +25,9 @@ use crate::metrics::SessionMetricTagValues;
 use crate::metrics::TOOL_CALL_COUNT_METRIC;
 use crate::metrics::TOOL_CALL_DURATION_METRIC;
 use crate::metrics::TURN_COST_MICROUSD_METRIC;
+use crate::metrics::TURN_PROFILE_DURATION_METRIC;
+use crate::metrics::TURN_PROFILE_SAMPLING_REQUEST_COUNT_METRIC;
+use crate::metrics::TURN_PROFILE_SAMPLING_RETRY_COUNT_METRIC;
 use crate::metrics::TURN_TTFT_DURATION_METRIC;
 use crate::metrics::WEBSOCKET_EVENT_COUNT_METRIC;
 use crate::metrics::WEBSOCKET_EVENT_DURATION_METRIC;
@@ -316,6 +319,62 @@ impl SessionTelemetry {
             turn.interrupted = interrupted,
             speed = speed,
             reasoning_effort = reasoning_effort,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_turn_profile(
+        &self,
+        turn_id: &str,
+        before_first_sampling_ms: u64,
+        sampling_ms: u64,
+        compaction_ms: u64,
+        between_sampling_overhead_ms: u64,
+        tool_blocking_ms: u64,
+        after_last_sampling_ms: u64,
+        sampling_request_count: u32,
+        sampling_retry_count: u32,
+    ) {
+        for (phase, duration_ms) in [
+            ("before_first_sampling", before_first_sampling_ms),
+            ("sampling", sampling_ms),
+            ("compaction", compaction_ms),
+            ("between_sampling_overhead", between_sampling_overhead_ms),
+            ("tool_blocking", tool_blocking_ms),
+            ("after_last_sampling", after_last_sampling_ms),
+        ] {
+            self.record_duration(
+                TURN_PROFILE_DURATION_METRIC,
+                Duration::from_millis(duration_ms),
+                &[("phase", phase)],
+            );
+        }
+        self.histogram(
+            TURN_PROFILE_SAMPLING_REQUEST_COUNT_METRIC,
+            i64::from(sampling_request_count),
+            &[],
+        );
+        self.histogram(
+            TURN_PROFILE_SAMPLING_RETRY_COUNT_METRIC,
+            i64::from(sampling_retry_count),
+            &[],
+        );
+        log_and_trace_event!(
+            self,
+            common: {
+                event.name = "codex.turn_profile",
+                turn.id = turn_id,
+                before_first_sampling_ms = before_first_sampling_ms,
+                sampling_ms = sampling_ms,
+                compaction_ms = compaction_ms,
+                between_sampling_overhead_ms = between_sampling_overhead_ms,
+                tool_blocking_ms = tool_blocking_ms,
+                after_last_sampling_ms = after_last_sampling_ms,
+                sampling_request_count = sampling_request_count,
+                sampling_retry_count = sampling_retry_count,
+            },
+            log: {},
+            trace: {},
         );
     }
 

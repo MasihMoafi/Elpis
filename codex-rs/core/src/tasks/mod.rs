@@ -690,10 +690,21 @@ impl Session {
             );
         }
         let started_at = turn_context.turn_timing_state.started_at_unix_secs().await;
-        let (completed_at, duration_ms) = turn_context
+        let (completed_at, duration_ms, profile) = turn_context
             .turn_timing_state
-            .completed_at_and_duration_ms()
+            .complete_profile_and_duration_ms()
             .await;
+        self.services.session_telemetry.record_turn_profile(
+            &turn_context.sub_id,
+            profile.before_first_sampling_ms,
+            profile.sampling_ms,
+            profile.compaction_ms,
+            profile.between_sampling_overhead_ms,
+            profile.tool_blocking_ms,
+            profile.after_last_sampling_ms,
+            profile.sampling_request_count,
+            profile.sampling_retry_count,
+        );
         let event = if let Some(reason) = abort_reason {
             self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref())
                 .await;
@@ -830,11 +841,22 @@ impl Session {
             .turn_timing_state
             .started_at_unix_secs()
             .await;
-        let (completed_at, duration_ms) = task
+        let (completed_at, duration_ms, profile) = task
             .turn_context
             .turn_timing_state
-            .completed_at_and_duration_ms()
+            .complete_profile_and_duration_ms()
             .await;
+        self.services.session_telemetry.record_turn_profile(
+            &task.turn_context.sub_id,
+            profile.before_first_sampling_ms,
+            profile.sampling_ms,
+            profile.compaction_ms,
+            profile.between_sampling_overhead_ms,
+            profile.tool_blocking_ms,
+            profile.after_last_sampling_ms,
+            profile.sampling_request_count,
+            profile.sampling_retry_count,
+        );
         let event = EventMsg::TurnAborted(TurnAbortedEvent {
             turn_id: Some(task.turn_context.sub_id.clone()),
             reason,

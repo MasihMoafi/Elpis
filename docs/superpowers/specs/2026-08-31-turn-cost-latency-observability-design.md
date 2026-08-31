@@ -181,11 +181,13 @@ export remains governed by the existing optional log exporter.
 - `codex-rs/core/src/tasks/compact.rs`
 - `codex-rs/core/src/tasks/mod.rs`
 - `codex-rs/core/src/session/turn.rs`
+- `codex-rs/core/tests/suite/otel.rs`
 - `codex-rs/otel/src/events/session_telemetry.rs`
 - `codex-rs/otel/src/metrics/client.rs`
 - `codex-rs/otel/src/metrics/config.rs`
 - `codex-rs/otel/src/metrics/names.rs`
 - `codex-rs/otel/src/provider.rs`
+- `codex-rs/otel/tests/suite/otel_export_routing_policy.rs`
 - `codex-rs/otel/tests/suite/snapshot.rs`
 - focused test/support files only when compilation proves they are required.
 

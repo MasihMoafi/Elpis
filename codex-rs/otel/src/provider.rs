@@ -529,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn statsig_turn_cost_metric_is_not_exported() -> Result<(), Box<dyn Error>> {
+    fn statsig_private_turn_observability_metrics_are_not_exported() -> Result<(), Box<dyn Error>> {
         let exporter = InMemoryMetricExporter::default();
         let mut config = MetricsConfig::otlp(
             "test",
@@ -541,6 +541,17 @@ mod tests {
         let metrics = MetricsClient::new(config)?;
 
         metrics.counter(TURN_COST_MICROUSD_METRIC, /*inc*/ 1, &[])?;
+        metrics.histogram("codex.turn.profile.duration_ms", /*value*/ 1, &[])?;
+        metrics.histogram(
+            "codex.turn.profile.sampling_request_count",
+            /*value*/ 1,
+            &[],
+        )?;
+        metrics.histogram(
+            "codex.turn.profile.sampling_retry_count",
+            /*value*/ 1,
+            &[],
+        )?;
         metrics.counter("codex.turns", /*inc*/ 1, &[])?;
         metrics.shutdown()?;
 

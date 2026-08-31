@@ -113,6 +113,119 @@ fn extract_log_field_does_not_confuse_similar_keys() {
 
 #[tokio::test]
 #[traced_test]
+async fn completed_real_turn_emits_sampling_profile_without_content() {
+    let server = start_mock_server().await;
+    mount_sse_once(&server, sse(vec![ev_completed("done")])).await;
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "profile sentinel that must not be logged".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    logs_assert(|lines: &[&str]| {
+        let line = lines
+            .iter()
+            .find(|line| line.contains("codex.turn_profile"))
+            .ok_or_else(|| "expected codex.turn_profile event".to_string())?;
+        if !line.contains("sampling_request_count=1") {
+            return Err(format!("expected one real sampling request: {line}"));
+        }
+        if line.contains("profile sentinel")
+            || line.contains("prompt=")
+            || line.contains("response=")
+            || line.contains("output=")
+        {
+            return Err(format!("turn profile leaked content: {line}"));
+        }
+        Ok(())
+    });
+}
+
+#[tokio::test]
+#[traced_test]
+async fn interrupted_real_turn_emits_one_sampling_profile_without_content() {
+    let server = start_mock_server().await;
+    let args = serde_json::json!({
+        "command": "sleep 60",
+        "timeout_ms": 60_000,
+    })
+    .to_string();
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_function_call("profile-sleep", "shell_command", &args),
+            ev_completed("done"),
+        ]),
+    )
+    .await;
+    let TestCodex { codex, .. } = test_codex()
+        .with_model("gpt-5.4")
+        .with_config(|config| {
+            config.permissions.approval_policy = Constrained::allow_any(AskForApproval::Never);
+        })
+        .build(&server)
+        .await
+        .unwrap();
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "interrupted profile sentinel that must not be logged".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecCommandBegin(_))).await;
+    codex.submit(Op::Interrupt).await.unwrap();
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnAborted(_))).await;
+
+    logs_assert(|lines: &[&str]| {
+        let profile_logs = lines
+            .iter()
+            .filter(|line| {
+                line.contains("codex_otel.log_only") && line.contains("codex.turn_profile")
+            })
+            .collect::<Vec<_>>();
+        if profile_logs.len() != 1 {
+            return Err(format!(
+                "expected exactly one interrupted turn profile, got {}",
+                profile_logs.len()
+            ));
+        }
+        let line = profile_logs[0];
+        if !line.contains("sampling_request_count=1") {
+            return Err(format!("expected one real sampling request: {line}"));
+        }
+        if line.contains("interrupted profile sentinel")
+            || line.contains("prompt=")
+            || line.contains("response=")
+            || line.contains("output=")
+        {
+            return Err(format!("interrupted turn profile leaked content: {line}"));
+        }
+        Ok(())
+    });
+}
+
+#[tokio::test]
+#[traced_test]
 async fn responses_api_emits_api_request_event() {
     let server = start_mock_server().await;
 

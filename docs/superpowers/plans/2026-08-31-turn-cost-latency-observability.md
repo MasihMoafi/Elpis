@@ -152,8 +152,12 @@ Stage only the Task 2 files and commit `feat(telemetry): emit bounded turn cost 
 - Modify: `codex-rs/core/src/tasks/compact.rs`
 - Modify: `codex-rs/core/src/tasks/mod.rs`
 - Modify: `codex-rs/core/src/session/turn.rs`
+- Modify: `codex-rs/core/tests/suite/otel.rs`
 - Modify: `codex-rs/otel/src/events/session_telemetry.rs`
+- Modify: `codex-rs/otel/src/metrics/config.rs`
 - Modify: `codex-rs/otel/src/metrics/names.rs`
+- Modify: `codex-rs/otel/src/provider.rs`
+- Modify: `codex-rs/otel/tests/suite/otel_export_routing_policy.rs`
 - Modify: `codex-rs/otel/tests/suite/snapshot.rs`
 
 **Interfaces:**
