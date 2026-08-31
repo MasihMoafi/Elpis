@@ -192,6 +192,30 @@ jobs:
             elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
             elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-
 
+      - name: Verify salvage regressions
+        run: |
+          set -euo pipefail
+          run_filter() {
+            local out
+            out=$(cargo test "$@" 2>&1) || { printf '%s\n' "$out"; exit 1; }
+            printf '%s\n' "$out"
+            if printf '%s\n' "$out" | grep -qE 'test result: ok\. 0 passed'; then
+              printf '::error::test filter matched zero tests: %s\n' "$*"
+              exit 1
+            fi
+          }
+          run_filter -p codex-features --lib --locked automatic_context_pruning_is_experimental_and_opt_in
+          run_filter -p codex-state --lib --locked work_graph
+          run_filter -p codex-core --lib --locked work_graph
+          run_filter -p codex-core --test all --locked suite::work_graphs::
+          run_filter -p codex-core --test all --locked suite::context_prune::
+          run_filter -p codex-app-server --test all --locked list_models
+          run_filter -p codex-tui --lib --locked model_catalog_
+          run_filter -p codex-tui --lib --locked model_reasoning_selection_for_openai
+          run_filter -p codex-tui --lib --locked provider_model_selection
+          run_filter -p codex-tui --lib --locked ollama_model_selection_emits_one_atomic_selection
+          run_filter -p codex-tui --lib --locked thread_setting_update_params_sync_model_and_default_reasoning
+
       - name: Verify Elpis launcher and provider entrypoints
         run: cargo test -p codex-tui --bin elpis --locked
 

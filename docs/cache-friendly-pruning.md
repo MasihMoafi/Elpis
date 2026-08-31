@@ -4,6 +4,9 @@ Why Elpis's context pruning is organised into **cycles** and **epochs**, and wha
 the prompt cache. Companion to `docs/context.md` (what pruning does) and
 `docs/prompt-caching.md` (how the cache is addressed).
 
+> Automatic Ace pruning is disabled by default. The cycle described here applies only when
+> `features.automatic_context_pruning = true`; manual `/prune` remains available.
+
 ## The old behaviour
 
 Two triggers could start an automatic Ace pass:
@@ -42,9 +45,9 @@ Two things made the cliff worse than it had to be:
 Point 2 is the important one: the region *before* the divergence was already large and
 already stable. It just was not a cache entry.
 
-## New behaviour: cycles with hysteresis
+## Optional automatic behaviour: cycles with hysteresis
 
-Automatic pruning now runs as a gated cycle (`PruneCycle` in `core/src/context_pruner.rs`):
+When enabled, automatic pruning runs as a gated cycle (`PruneCycle` in `core/src/context_pruner.rs`):
 
 ```
 Armed  --(use >= 30%, pass applied)-->  Open{passes}
@@ -130,11 +133,12 @@ request now falls back to instead of the initial prefix.
 ## What is unchanged
 
 - 30% trigger, ~20% target.
-- Native Codex-style automatic compaction is enabled by default in Elpis; the pruning layer
-  is still what holds context down, and the hand-off to compaction fires when a cycle stalls
-  in pressure. `model_auto_compact_token_limit_scope` selects total context or the body after
-  the carried prefix, and `model_auto_compact_enabled = false` keeps the documented
-  context-window error path instead.
+- Native Codex-style automatic compaction remains enabled by default in Elpis and is the
+  default context-window backstop. When optional automatic Ace pruning is enabled, its
+  hand-off to compaction fires when a cycle stalls in pressure.
+  `model_auto_compact_token_limit_scope` selects total context or the body after the carried
+  prefix, and `model_auto_compact_enabled = false` keeps the documented context-window error
+  path instead.
 - Every applied pass still writes a full audit record (`~/.elpis/logs/pruning/`) and a
   rollout checkpoint. Raw evidence remains intact in the rollout.
 - `/prune` is unaffected: it passes an explicit trigger, so it never consults the cycle gate.

@@ -27,14 +27,14 @@ impl ChatWidget {
             return;
         }
 
+        let active_provider_id = self.active_model_provider_id().to_string();
         let presets = self.models_for_active_provider();
         self.refresh_ollama_models();
-        self.open_model_popup_with_presets(presets);
-        let active_provider_id = self.active_model_provider_id().to_string();
         self.request_model_catalog(Some(active_provider_id.clone()));
         if active_provider_id != OPENAI_PROVIDER_ID {
             self.request_model_catalog(Some(OPENAI_PROVIDER_ID.to_string()));
         }
+        self.open_model_popup_with_presets(presets);
     }
 
     /// Kicks off a background refresh of the locally installed Ollama models shown in the
@@ -100,11 +100,7 @@ impl ChatWidget {
                 name: model,
                 description: Some("Runs on this machine via Ollama".to_string()),
                 actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::UpdateModelForProvider {
-                        model: model_for_action.clone(),
-                        provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
-                    });
-                    tx.send(AppEvent::PersistProviderModelSelection {
+                    tx.send(AppEvent::ApplyProviderModelSelection {
                         model: model_for_action.clone(),
                         provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
                         effort: None,
@@ -204,12 +200,21 @@ impl ChatWidget {
             ..Default::default()
         });
         let Some(presets) = self.model_catalog.models_for_provider(OPENAI_PROVIDER_ID) else {
-            items.push(SelectionItem {
-                name: "Loading available OpenAI models…".to_string(),
-                description: Some("Uses the connected ChatGPT subscription".to_string()),
-                is_disabled: true,
-                ..Default::default()
-            });
+            let item = if self.model_popup_request_is_pending(OPENAI_PROVIDER_ID) {
+                SelectionItem {
+                    name: "Loading available OpenAI models…".to_string(),
+                    description: Some("Uses the connected ChatGPT subscription".to_string()),
+                    is_disabled: true,
+                    ..Default::default()
+                }
+            } else {
+                SelectionItem {
+                    name: "OpenAI unavailable - retry with /model".to_string(),
+                    is_disabled: true,
+                    ..Default::default()
+                }
+            };
+            items.push(item);
             return;
         };
         let mut visible_count = 0;
@@ -571,11 +576,6 @@ impl ChatWidget {
         vec![Box::new(move |tx| {
             if let Some(provider_id) = provider_id.as_ref() {
                 tx.send(AppEvent::ApplyProviderModelSelection {
-                    model: model_for_action.clone(),
-                    provider_id: provider_id.clone(),
-                    effort: effort_for_action.clone(),
-                });
-                tx.send(AppEvent::PersistProviderModelSelection {
                     model: model_for_action.clone(),
                     provider_id: provider_id.clone(),
                     effort: effort_for_action.clone(),
@@ -1077,12 +1077,6 @@ impl ChatWidget {
     ) {
         self.app_event_tx
             .send(AppEvent::ApplyProviderModelSelection {
-                model: model.clone(),
-                provider_id: provider_id.clone(),
-                effort: effort.clone(),
-            });
-        self.app_event_tx
-            .send(AppEvent::PersistProviderModelSelection {
                 model,
                 provider_id,
                 effort,

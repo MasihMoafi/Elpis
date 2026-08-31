@@ -15,13 +15,19 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
-Layer 3 is a single trigger, run as a gated cycle rather than continuously. An earlier
-"steady" trigger also fired on backlog size alone, independently of how full the window was;
-it was removed because it produced runs of tiny passes inside the healthy 20-30% band, and
-every pass discards the reusable prompt-cache prefix past its first rewritten item. The case
-it was meant to cover -- a single turn that balloons past the boundary without ever ending --
-is already handled here, because the eligible region is cut by recency rather than at a turn
-boundary. See `cache-friendly-pruning.md`.
+When enabled, Layer 3's automatic mode uses one pressure trigger and a gated cycle rather
+than running continuously. An earlier "steady" trigger also fired on backlog size alone,
+independently of how full the window was; it was removed because it produced runs of tiny
+passes inside the healthy 20-30% band, and every pass discards the reusable prompt-cache
+prefix past its first rewritten item. The case it was meant to cover -- a single turn that
+balloons past the boundary without ever ending -- is already handled here, because the
+eligible region is cut by recency rather than at a turn boundary. See
+`cache-friendly-pruning.md`.
+
+The model-backed Ace pass is **manual by default** because the current evaluation does not
+show a task-success or cost-per-success benefit. `/prune` and `/compact` remain available.
+The pressure cycle can be enabled explicitly with
+`features.automatic_context_pruning = true` for continued experiments.
 
 ### Pipeline Layer Comparison
 
@@ -29,19 +35,19 @@ boundary. See `cache-friendly-pruning.md`.
 | :--- | :--- | :--- | :--- | :--- |
 | **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
-| **3. Ace Pressure Cycle** | Exact model-window use reaches 30% (70% remaining), and a previous cycle has since been seen below 30% | Oldest eligible tool exploration, including the turn still running, but never a sealed epoch | Selects only enough old tool evidence to target roughly 20% use (80% remaining); the newest 10% of the window stays verbatim. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely. It reaches into the current turn, because a single tool-driven turn can cross the boundary without ever ending. One cycle gets at most 2 Ace passes, spent back to back; the cycle then closes and cannot reopen until use has been measured below 30% and has climbed back to it. Each applied pass seals its region with an epoch marker that later passes may not touch. | A failed pass changes nothing. Once the cycle's 2-pass budget is spent, or when nothing reclaimable remains at this boundary, Elpis requests native compaction rather than let the window drift toward the model's hard limit. |
+| **3. Ace Pruning** | Explicit `/prune` or `/compact`; optionally, exact model-window use reaches 30% when `features.automatic_context_pruning = true` | Oldest eligible tool exploration, including the turn still running in automatic mode, but never a sealed epoch | Manual pruning sweeps eligible stale tool evidence on request. Optional automatic mode targets roughly 20% use, protects the newest 10% of the window, allows at most 2 back-to-back passes per pressure cycle, and seals rewritten regions with epoch markers. | A failed pass changes nothing. In optional automatic mode, an exhausted pressure cycle hands off to native compaction. |
 
-**All three layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
+**All three layers ship with Elpis, but Ace is opt-in for automatic use.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
-The Ace pass runs between model follow-ups as well as at the end of a turn, so one
-long-running tool-driven turn cannot skip the trigger. Each pass records which
-trigger fired (`manual` or `pressure`) in its manifest and report. OpenAI-backed passes use
-Luna at maximal reasoning effort (`PRUNE_REASONING_EFFORT = ReasoningEffort::Max`). Every successful pass immediately recomputes the working
-history estimate and writes `prune_report.md` alongside the session logs
+When automatic Ace pruning is enabled, the pass runs between model follow-ups as well as at
+the end of a turn, so one long-running tool-driven turn cannot skip the trigger. Each pass
+records which trigger fired (`manual` or `pressure`) in its manifest and report.
+OpenAI-backed passes use Luna at maximal reasoning effort
+(`PRUNE_REASONING_EFFORT = ReasoningEffort::Max`). Every successful pass immediately
+recomputes the working history estimate and writes `prune_report.md` alongside the session logs
 (`codex-rs/core/src/session/context_prune_audit.rs`).
-The pass may run during a current turn, but it only receives and rewrites tool evidence
-from earlier completed turns; current-turn observations remain intact for the next
-follow-up.
+The automatic pass may reach older tool evidence from the current turn, but its newest 10%
+recency budget remains verbatim for the next follow-up.
 
 `/prune` runs the Ace pass on demand across eligible tool evidence from completed turns.
 It keeps user and assistant messages, the current turn, and durable rollout evidence.
@@ -135,5 +141,5 @@ Elpis exposes **one single source of truth** for context measurement:
 ## 5. Systemic Inter-Dependencies
 
 - **Integration with Sessions:** the admitted `GOAL.md` and `ES.md` sources are exactly what lean continuation carries into a fresh thread; see [Sessions](sessions.md).
-- **Integration with Memory:** durable memory is a separate subsystem. It reads completed rollout transcripts from disk rather than hooking into compaction, so it does not depend on when a thread compacts. A `PreCompact` hook event is available if you want to run your own work at that moment. 
+- **Integration with Memory:** durable memory is user-managed. Elpis can admit the user's `~/.elpis/memories/MEMORY.md` into context, but it does not automatically extract, consolidate, or promote memories from completed rollouts. A `PreCompact` hook event is available if you want to run your own work at that moment.
 - **Integration with Providers:** admitted context is normalized across provider wire formats while evidence pointers are preserved; see [Providers](providers.md).
