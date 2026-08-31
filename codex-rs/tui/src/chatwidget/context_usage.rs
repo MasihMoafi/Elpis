@@ -88,6 +88,26 @@ impl ContextUsageHistoryCell {
     }
 }
 
+fn instruction_bucket_bytes(
+    sources: &[crate::legacy_core::elpis_context::ContinuitySource],
+) -> (usize, usize) {
+    sources
+        .iter()
+        .filter(|source| {
+            source.category == ContinuitySourceCategory::Instructions && source.admitted
+        })
+        .fold((0, 0), |(system_prompt, development_rules), source| {
+            if matches!(
+                source.origin,
+                "managed development rules" | "configured development rules"
+            ) {
+                (system_prompt, development_rules + source.bytes as usize)
+            } else {
+                (system_prompt + source.bytes as usize, development_rules)
+            }
+        })
+}
+
 impl HistoryCell for ContextUsageHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         self.rendered_lines(width)
@@ -141,28 +161,9 @@ impl ChatWidget {
         totals: &ContextUsageTranscriptTotals,
     ) -> ContextUsageSnapshot {
         let sources = self.continuity_sources();
-        // Only admitted sources are actually in context; non-admitted discovered
-        // files must not inflate the System prompt / Development rules buckets.
-        let instruction_sources: Vec<_> = sources
-            .iter()
-            .filter(|source| {
-                source.category == ContinuitySourceCategory::Instructions && source.admitted
-            })
-            .collect();
-        let is_skill_path = |path: &std::path::Path| {
-            path.components()
-                .any(|component| component.as_os_str() == "skills")
-        };
-        let system_prompt_chars: usize = instruction_sources
-            .iter()
-            .filter(|source| !is_skill_path(&source.path))
-            .map(|source| source.bytes as usize)
-            .sum();
-        let skills_chars: usize = instruction_sources
-            .iter()
-            .filter(|source| is_skill_path(&source.path))
-            .map(|source| source.bytes as usize)
-            .sum();
+        // Only admitted instruction sources count. Their stable provenance, not a
+        // directory-name guess, determines which attribution bucket receives them.
+        let (system_prompt_chars, development_rule_chars) = instruction_bucket_bytes(&sources);
 
         let estimate =
             |chars: usize| codex_utils_string::approx_tokens_from_byte_count(chars) as u64;
@@ -170,7 +171,7 @@ impl ChatWidget {
         // request — they must NEVER be scaled up to absorb unexplained usage
         // (that is what previously inflated Development rules to nonsense figures).
         let fixed_system = estimate(system_prompt_chars);
-        let fixed_skills = estimate(skills_chars);
+        let fixed_development_rules = estimate(development_rule_chars);
         let conversation_estimates: [u64; 3] = [
             estimate(totals.user_message_chars),
             estimate(totals.agent_response_chars),
@@ -202,12 +203,12 @@ impl ChatWidget {
             conversation_estimates[1],
             conversation_estimates[2],
             fixed_system,
-            fixed_skills,
+            fixed_development_rules,
         ];
         let category_tokens = scale_token_counts(&raw_categories, used);
         let conversation = [category_tokens[0], category_tokens[1], category_tokens[2]];
         let fixed_system = category_tokens[3];
-        let fixed_skills = category_tokens[4];
+        let fixed_development_rules = category_tokens[4];
         let other = used.saturating_sub(category_tokens.iter().sum());
         let saved_tokens = self.last_prune_saved_tokens.unwrap_or(0);
 
@@ -238,7 +239,7 @@ impl ChatWidget {
             },
             CategoryUsage {
                 label: "Development rules",
-                tokens: fixed_skills,
+                tokens: fixed_development_rules,
                 saved_tokens: 0,
                 color: Color::Cyan,
             },
@@ -971,6 +972,38 @@ mod tests {
         assert_eq!(fmt_tokens(39_700), "39.7k");
         assert_eq!(fmt_tokens(1_000_000), "1m");
         assert_eq!(fmt_percent(305, 1_000), "30.5%");
+    }
+
+    #[test]
+    fn instruction_attribution_uses_origin_not_path_components() {
+        let sources = [
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: "dev/AGENTS.md".to_string(),
+                path: std::path::PathBuf::from("/tmp/dev-rules/AGENTS.md"),
+                bytes: 480,
+                estimated_tokens: 120,
+                category: ContinuitySourceCategory::Instructions,
+                origin: "configured development rules",
+                lifetime: "every turn",
+                reason: "configured development rules",
+                admitted: true,
+                selectable: true,
+            },
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: "Project AGENTS.md".to_string(),
+                path: std::path::PathBuf::from("/tmp/project/skills/AGENTS.md"),
+                bytes: 320,
+                estimated_tokens: 80,
+                category: ContinuitySourceCategory::Instructions,
+                origin: "runtime instructions",
+                lifetime: "every turn",
+                reason: "applicable project rules",
+                admitted: true,
+                selectable: true,
+            },
+        ];
+
+        assert_eq!(instruction_bucket_bytes(&sources), (320, 480));
     }
 
     #[test]
