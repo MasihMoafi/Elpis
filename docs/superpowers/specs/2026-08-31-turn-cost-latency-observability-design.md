@@ -166,6 +166,9 @@ export remains governed by the existing optional log exporter.
 - `codex-rs/backend-client/src/client.rs`
 - `codex-rs/backend-client/src/client/turn_usage.rs`
 - `codex-rs/backend-client/src/lib.rs`
+- `codex-rs/backend-client/Cargo.toml`
+- `codex-rs/backend-client/tests/turn_usage.rs`
+- `codex-rs/Cargo.lock`
 - `codex-rs/app-server/src/lib.rs`
 - `codex-rs/app-server/src/message_processor.rs`
 - `codex-rs/app-server/src/request_processors/thread_lifecycle.rs`
