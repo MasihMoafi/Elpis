@@ -1,19 +1,25 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
 use crate::SkillMetadata;
+use crate::build_available_skills;
 use crate::config_rules::resolve_disabled_skill_paths;
 use crate::config_rules::skill_config_rules_from_stack;
+use crate::injection::collect_explicit_skill_mentions;
+use crate::render::SkillMetadataBudget;
+use crate::render::SkillRenderSideEffects;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStack;
 use codex_config::ConfigRequirementsToml;
 use codex_exec_server::LOCAL_FS;
+use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
 use codex_utils_absolute_path::test_support::PathExt;
 use codex_utils_plugins::PluginSkillRoot;
 use pretty_assertions::assert_eq;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -235,6 +241,16 @@ async fn default_disabled_skills_require_one_explicit_enable() {
     let cwd = tempfile::tempdir().expect("tempdir");
     write_user_skill(&codex_home, "selected", "selected-skill", "selected");
     write_user_skill(&codex_home, "unselected", "unselected-skill", "unselected");
+    fs::write(
+        codex_home.path().join("skills/selected/SKILL.md"),
+        "---\nname: selected-skill\ndescription: selected catalog metadata\n---\n\nSELECTED_SKILL_BODY_SENTINEL\n",
+    )
+    .expect("write selected skill body sentinel");
+    fs::write(
+        codex_home.path().join("skills/unselected/SKILL.md"),
+        "---\nname: unselected-skill\ndescription: unselected catalog metadata\n---\n\nDISABLED_SKILL_BODY_SENTINEL\n",
+    )
+    .expect("write disabled skill body sentinel");
     let selected_config = r#"
 [skills]
 default_enabled = false
@@ -267,6 +283,41 @@ enabled = true
     assert_eq!(
         outcome
             .allowed_skills_for_implicit_invocation()
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["selected-skill"],
+    );
+    let catalog = build_available_skills(
+        &outcome,
+        SkillMetadataBudget::Characters(usize::MAX),
+        SkillRenderSideEffects::None,
+    )
+    .expect("the selected skill should render in the model-visible catalog");
+    let catalog = crate::render_available_skills_body(&catalog.skill_root_lines, &catalog.skill_lines);
+    assert!(catalog.contains("selected-skill"));
+    assert!(catalog.contains("selected catalog metadata"));
+    assert!(!catalog.contains("unselected-skill"));
+    assert!(!catalog.contains("DISABLED_SKILL_BODY_SENTINEL"));
+    assert!(!catalog.contains("SELECTED_SKILL_BODY_SENTINEL"));
+
+    let mentioned = collect_explicit_skill_mentions(
+        &[
+            UserInput::Skill {
+                name: unselected.name.clone(),
+                path: unselected.path_to_skills_md.to_path_buf(),
+            },
+            UserInput::Text {
+                text: "Use $selected-skill and $unselected-skill".to_string(),
+                text_elements: Vec::new(),
+            },
+        ],
+        &outcome.skills,
+        &outcome.disabled_paths,
+        &HashMap::new(),
+    );
+    assert_eq!(
+        mentioned
             .iter()
             .map(|skill| skill.name.as_str())
             .collect::<Vec<_>>(),

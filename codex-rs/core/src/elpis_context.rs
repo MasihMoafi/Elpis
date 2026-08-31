@@ -1355,20 +1355,28 @@ mod tests {
         let cwd = home.path().join("project");
         let managed_dev = home.path().join(".elpis/skills/dev");
         let configured_dev = home.path().join("configured/dev");
+        let configured_later = home.path().join("configured-later/dev");
         let managed_rule = managed_dev.join("AGENTS.md");
         let configured_rule = configured_dev.join("AGENTS.md");
+        let later_rule = configured_later.join("AGENTS.md");
         std::fs::create_dir_all(&memories)?;
         std::fs::create_dir_all(&cwd)?;
         std::fs::create_dir_all(&managed_dev)?;
         std::fs::create_dir_all(&configured_dev)?;
+        std::fs::create_dir_all(&configured_later)?;
         std::fs::write(&managed_rule, "Managed fallback rule")?;
         std::fs::write(&configured_rule, "Configured development rule")?;
+        std::fs::write(&later_rule, "Later configured development rule")?;
 
         let sources = continuity_sources_with_dev_rule_roots(
             Some(&memories),
             &cwd,
             &[],
-            &[configured_dev.clone()],
+            &[
+                configured_dev.clone(),
+                configured_later.clone(),
+                configured_dev.clone(),
+            ],
         );
         let rows = sources
             .iter()
@@ -1383,11 +1391,16 @@ mod tests {
         let prompt = build_continuity_prompt_with_dev_rule_roots(
             Some(&memories),
             &cwd,
-            &[configured_dev.clone()],
+            &[
+                configured_dev.clone(),
+                configured_later.clone(),
+                configured_dev.clone(),
+            ],
         )
         .await
         .expect("configured development rule should reach the prompt");
         assert!(prompt.contains("Configured development rule"));
+        assert!(!prompt.contains("Later configured development rule"));
         assert!(!prompt.contains("Managed fallback rule"));
 
         set_continuity_source_admitted(Some(&memories), &cwd, "dev/AGENTS.md", false)?;
@@ -1395,7 +1408,7 @@ mod tests {
             Some(&memories),
             &cwd,
             &[],
-            &[configured_dev],
+            &[configured_dev.clone(), configured_later, configured_dev],
         );
         let source = sources
             .iter()
