@@ -40,7 +40,7 @@ new_fixture() {
         '    printf "END\\0"' \
         '} >> "$FAKE_CARGO_LOG"' \
         'if [[ ${1-} == test ]]; then' \
-        '    printf "%s\\n" "${FAKE_CARGO_OUTPUT-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out}"' \
+        '    printf "%s\\n" "${FAKE_CARGO_OUTPUT-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s}"' \
         'fi' \
         'if [[ -z ${FAKE_CARGO_FAIL_SUBCOMMAND-} || ${FAKE_CARGO_FAIL_SUBCOMMAND} == "${1-}" ]]; then' \
         '    exit "${FAKE_CARGO_STATUS-0}"' \
@@ -375,7 +375,7 @@ for command_name in "${test_commands[@]}"; do
         'name = "docs"\ncommands = ["diff-check"]' \
         "name = \"docs\"\ncommands = [\"$command_name\"]"
     SELECTOR_ENV=(
-        'FAKE_CARGO_OUTPUT=test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out'
+        'FAKE_CARGO_OUTPUT=test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
     )
     run_selector --surface docs
     [[ $RUN_STATUS -ne 0 ]] || fail "$command_name accepted a zero-pass summary"
@@ -387,7 +387,7 @@ replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
     'name = "docs"\ncommands = ["tui-dashboard"]'
 SELECTOR_ENV=(
-    $'FAKE_CARGO_OUTPUT=test result: ok. 0 passed; 0 failed\ntest result: ok. 2 passed; 0 failed'
+    $'FAKE_CARGO_OUTPUT=test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s'
 )
 run_selector --surface docs
 assert_status 0
@@ -397,10 +397,21 @@ replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
     'name = "docs"\ncommands = ["tui-dashboard"]'
 SELECTOR_ENV=(
-    $'FAKE_CARGO_OUTPUT=application output: test result: ok. 1 passed\ntest result: ok. 0 passed; 0 failed'
+    $'FAKE_CARGO_OUTPUT=application output: test result: ok. 1 passed\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
 )
 run_selector --surface docs
 [[ $RUN_STATUS -ne 0 ]] || fail "ordinary output spoofed a positive test-harness summary"
+assert_output 'test command tui-dashboard produced no positive test result'
+
+new_fixture suffix-spoofed-positive-summary
+replace_manifest \
+    'name = "docs"\ncommands = ["diff-check"]' \
+    'name = "docs"\ncommands = ["tui-dashboard"]'
+SELECTOR_ENV=(
+    $'FAKE_CARGO_OUTPUT=test result: ok. 1 passed (application text, not a harness summary)\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
+)
+run_selector --surface docs
+[[ $RUN_STATUS -ne 0 ]] || fail "line-start application output spoofed a positive test-harness summary"
 assert_output 'test command tui-dashboard produced no positive test result'
 
 new_fixture cargo-failure
@@ -417,7 +428,7 @@ replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
     'name = "docs"\ncommands = ["nightly-tui-compile"]'
 SELECTOR_ENV=(
-    'FAKE_CARGO_OUTPUT=test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out'
+    'FAKE_CARGO_OUTPUT=test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
 )
 run_selector --surface docs
 assert_status 0

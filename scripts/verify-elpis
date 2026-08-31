@@ -496,7 +496,7 @@ for command_name in "${selected_commands[@]}"; do
         if ((cargo_status != 0)); then
             die "test command failed: $command_name"
         fi
-        if ! grep -Eq '^test result:[[:space:]]+ok\.[[:space:]]+[1-9][0-9]*[[:space:]]+passed([;[:space:]]|$)' "$test_output"; then
+        if ! grep -Eq '^test result:[[:space:]]+ok\.[[:space:]]+[1-9][0-9]*[[:space:]]+passed;[[:space:]]+[0-9]+[[:space:]]+failed;[[:space:]]+[0-9]+[[:space:]]+ignored;[[:space:]]+[0-9]+[[:space:]]+measured;[[:space:]]+[0-9]+[[:space:]]+filtered out;[[:space:]]+finished in[[:space:]]+[0-9]+([.][0-9]+)?s$' "$test_output"; then
             die "test command $command_name produced no positive test result"
         fi
         rm -f -- "$test_output"
