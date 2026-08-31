@@ -697,6 +697,19 @@ pub(crate) enum AppEvent {
         provider_id: String,
     },
 
+    /// Fetch the latest picker catalog for one configured provider.
+    FetchModels {
+        request_id: uuid::Uuid,
+        provider_id: Option<String>,
+    },
+
+    /// Result of a provider-scoped picker catalog refresh.
+    ModelsLoaded {
+        request_id: uuid::Uuid,
+        provider_id: Option<String>,
+        result: Result<Vec<ModelPreset>, String>,
+    },
+
     /// Persist the selected personality to the appropriate config.
     PersistPersonalitySelection {
         personality: Personality,

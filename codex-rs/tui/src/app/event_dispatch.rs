@@ -157,8 +157,9 @@ impl App {
                         );
                     }
                     None => {
-                        self.chat_widget
-                            .add_error_message("Could not start the local dashboard server".to_string());
+                        self.chat_widget.add_error_message(
+                            "Could not start the local dashboard server".to_string(),
+                        );
                     }
                 }
                 tui.frame_requester().schedule_frame();
@@ -911,6 +912,35 @@ impl App {
             AppEvent::OllamaModelsLoaded { models } => {
                 self.chat_widget.on_ollama_models_loaded(models);
             }
+            AppEvent::FetchModels {
+                request_id,
+                provider_id,
+            } => {
+                if self
+                    .chat_widget
+                    .model_popup_request_is_current(request_id, provider_id.as_deref())
+                {
+                    app_server.fetch_models(request_id, provider_id, self.app_event_tx.clone());
+                }
+            }
+            AppEvent::ModelsLoaded {
+                request_id,
+                provider_id,
+                result,
+            } => {
+                let updates_primary =
+                    provider_id.as_deref() == Some(self.chat_widget.active_model_provider_id());
+                if self
+                    .chat_widget
+                    .on_models_loaded(request_id, provider_id, result)
+                    && updates_primary
+                {
+                    self.model_catalog = self.chat_widget.model_catalog();
+                    app_server.set_available_models(self.model_catalog.try_list_models()?);
+                    self.sync_active_thread_service_tier_to_cached_session()
+                        .await;
+                }
+            }
             AppEvent::UpdateReasoningEffort(effort) => {
                 self.on_update_reasoning_effort(effort.clone());
                 self.sync_active_thread_reasoning_setting(app_server, effort)
@@ -1558,7 +1588,9 @@ impl App {
                     .chat_widget
                     .model_provider_base_url(provider_id.as_str())
                 {
-                    Some(base_url) if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
+                    Some(base_url)
+                        if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID =>
+                    {
                         crate::chatwidget::model_popups::fetch_ollama_context_window(
                             base_url,
                             model.clone(),

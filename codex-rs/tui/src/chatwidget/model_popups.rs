@@ -12,6 +12,8 @@ use ratatui::text::Span;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 const OLLAMA_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
+pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
+pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
 
 impl ChatWidget {
     /// Open a popup to choose a quick auto model. Selecting "All models"
@@ -25,18 +27,14 @@ impl ChatWidget {
             return;
         }
 
-        let presets: Vec<ModelPreset> = match self.model_catalog.try_list_models() {
-            Ok(models) => models,
-            Err(_) => {
-                self.add_info_message(
-                    "Models are being updated; please try /model again in a moment.".to_string(),
-                    /*hint*/ None,
-                );
-                return;
-            }
-        };
+        let presets = self.models_for_active_provider();
         self.refresh_ollama_models();
         self.open_model_popup_with_presets(presets);
+        let active_provider_id = self.active_model_provider_id().to_string();
+        self.request_model_catalog(Some(active_provider_id.clone()));
+        if active_provider_id != OPENAI_PROVIDER_ID {
+            self.request_model_catalog(Some(OPENAI_PROVIDER_ID.to_string()));
+        }
     }
 
     /// Kicks off a background refresh of the locally installed Ollama models shown in the
@@ -192,12 +190,9 @@ impl ChatWidget {
         }
     }
 
-    /// Appends an "OPENAI" group below the active provider's models, mirroring
-    /// `push_ollama_model_group`. The picker's main list comes from the `model/list`
-    /// answered at startup, which is scoped to whichever provider was active then, so
-    /// once a thread moves to OpenRouter or Ollama the hosted models vanish from the
-    /// picker and there is no route back. Selecting one switches both the model and the
-    /// provider for the active thread and persists both to config.toml.
+    /// Appends the account-scoped OpenAI catalog below a different active provider.
+    /// The list is fetched through the app server with the existing ChatGPT authentication;
+    /// until it arrives the picker renders an explicit loading row instead of invented models.
     fn push_openai_model_group(&self, items: &mut Vec<SelectionItem>) {
         if self.active_model_provider_id() == OPENAI_PROVIDER_ID {
             return;
@@ -207,34 +202,40 @@ impl ChatWidget {
             is_disabled: true,
             ..Default::default()
         });
-        for (model, description) in [
-            (
-                crate::chatwidget::model_routing::SOL_MODEL,
-                "Top-tier reasoning for hard or important work",
-            ),
-            (
-                crate::chatwidget::model_routing::TERRA_MODEL,
-                "Balanced default for ordinary work",
-            ),
-            (
-                crate::chatwidget::model_routing::LUNA_MODEL,
-                "Fastest, for trivial mechanical work",
-            ),
-        ] {
+        let Some(presets) = self.model_catalog.models_for_provider(OPENAI_PROVIDER_ID) else {
             items.push(SelectionItem {
-                name: model.to_string(),
-                description: Some(description.to_string()),
+                name: "Loading available OpenAI models…".to_string(),
+                description: Some("Uses the connected ChatGPT subscription".to_string()),
+                is_disabled: true,
+                ..Default::default()
+            });
+            return;
+        };
+        let mut visible_count = 0;
+        for preset in presets.into_iter().filter(|preset| preset.show_in_picker) {
+            visible_count += 1;
+            let model = preset.model;
+            items.push(SelectionItem {
+                name: model.clone(),
+                description: Some(preset.description),
                 actions: vec![Box::new(move |tx| {
                     tx.send(AppEvent::UpdateModelForProvider {
-                        model: model.to_string(),
+                        model: model.clone(),
                         provider_id: OPENAI_PROVIDER_ID.to_string(),
                     });
                     tx.send(AppEvent::PersistProviderModelSelection {
-                        model: model.to_string(),
+                        model: model.clone(),
                         provider_id: OPENAI_PROVIDER_ID.to_string(),
                     });
                 })],
                 dismiss_on_select: true,
+                ..Default::default()
+            });
+        }
+        if visible_count == 0 {
+            items.push(SelectionItem {
+                name: "No selectable OpenAI models are available".to_string(),
+                is_disabled: true,
                 ..Default::default()
             });
         }
@@ -457,7 +458,8 @@ impl ChatWidget {
             "Choose a mind",
             "Provider, protocol, route, and credential source remain visible while choosing.",
         );
-        self.bottom_pane.show_selection_view(SelectionViewParams {
+        self.show_model_selection_view(SelectionViewParams {
+            view_id: Some(MODEL_SELECTION_VIEW_ID),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             header,
@@ -492,7 +494,7 @@ impl ChatWidget {
         }
     }
 
-    fn is_auto_model(model: &str) -> bool {
+    pub(super) fn is_auto_model(model: &str) -> bool {
         model.starts_with("codex-auto-")
     }
 
@@ -544,7 +546,8 @@ impl ChatWidget {
             "Choose a mind and effort",
             "Models are grouped under the active provider and routing mode.",
         );
-        self.bottom_pane.show_selection_view(SelectionViewParams {
+        self.show_model_selection_view(SelectionViewParams {
+            view_id: Some(ALL_MODELS_SELECTION_VIEW_ID),
             footer_hint: Some(self.bottom_pane.standard_popup_hint_line()),
             items,
             header,

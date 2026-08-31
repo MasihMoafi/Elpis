@@ -3019,9 +3019,16 @@ async fn model_picker_shows_auto_without_upstream_auto_presets() {
     // context pane, so where it wraps depends on how wide the widest model name happens
     // to be. The claim under test is which words appear, not where they break.
     assert!(
-        ["Elpis", "automatically", "chooses", "right", "model", "task"]
-            .iter()
-            .all(|word| popup.contains(word)),
+        [
+            "Elpis",
+            "automatically",
+            "chooses",
+            "right",
+            "model",
+            "task"
+        ]
+        .iter()
+        .all(|word| popup.contains(word)),
         "expected opaque Auto description:\n{popup}"
     );
     assert!(
@@ -3149,6 +3156,135 @@ async fn model_reasoning_selection_popup_snapshot() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert_chatwidget_snapshot!("model_reasoning_selection_popup", popup);
+}
+
+#[tokio::test]
+async fn model_catalog_uses_live_openai_models_without_fabricated_fallbacks() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    let mut bootstrap = get_available_model(&chat, "gpt-5.4");
+    bootstrap.id = "non-openai-model".to_string();
+    bootstrap.model = "non-openai-model".to_string();
+    bootstrap.display_name = "non-openai-model".to_string();
+    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]));
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    chat.open_model_popup();
+    let openai_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("OpenAI catalog refresh request");
+
+    let mut visible = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    visible.id = "unique-openai-model".to_string();
+    visible.model = "unique-openai-model".to_string();
+    visible.display_name = "Unique OpenAI Model".to_string();
+    visible.description = "Live account catalog metadata".to_string();
+    visible.show_in_picker = true;
+    let mut hidden = visible.clone();
+    hidden.id = "hidden-openai-model".to_string();
+    hidden.model = "hidden-openai-model".to_string();
+    hidden.display_name = "Hidden OpenAI Model".to_string();
+    hidden.show_in_picker = false;
+
+    assert!(chat.on_models_loaded(
+        openai_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![visible, hidden]),
+    ));
+
+    let picker = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(picker.contains("OPENAI"));
+    assert!(picker.contains("unique-openai-model"));
+    assert!(picker.contains("Live account catalog metadata"));
+    assert!(!picker.contains("hidden-openai-model"));
+    assert!(!picker.contains("gpt-5.6-sol"));
+}
+
+#[tokio::test]
+async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_reply() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    let mut visible = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    visible.id = "last-usable-openai-model".to_string();
+    visible.model = "last-usable-openai-model".to_string();
+    visible.display_name = "Last usable OpenAI model".to_string();
+    visible.show_in_picker = true;
+
+    chat.open_model_popup();
+    let first_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("first OpenAI catalog refresh request");
+    assert!(chat.on_models_loaded(
+        first_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![visible]),
+    ));
+
+    chat.open_model_popup();
+    let current_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("current OpenAI catalog refresh request");
+
+    let mut stale = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    stale.id = "stale-openai-model".to_string();
+    stale.model = "stale-openai-model".to_string();
+    stale.display_name = "Stale OpenAI model".to_string();
+    assert!(!chat.on_models_loaded(
+        first_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![stale]),
+    ));
+    assert!(!chat.on_models_loaded(
+        current_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(Vec::new()),
+    ));
+
+    chat.open_model_popup();
+    let error_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("error OpenAI catalog refresh request");
+    assert!(!chat.on_models_loaded(
+        error_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Err("catalog unavailable".to_string()),
+    ));
+
+    let picker = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(picker.contains("last-usable-openai-model"));
+    assert!(!picker.contains("stale-openai-model"));
 }
 
 #[tokio::test]

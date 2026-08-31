@@ -5,6 +5,7 @@
 //! request/response plumbing out of `App` and `ChatWidget`.
 
 mod fs;
+mod models;
 
 use crate::legacy_core::config::Config;
 use crate::permission_compat::legacy_compatible_permission_profile;

@@ -111,6 +111,8 @@ impl ChatWidget {
             has_chatgpt_account,
             has_codex_backend_auth,
             model_catalog,
+            model_popup_request_ids: HashMap::new(),
+            model_popup_model_ids: Vec::new(),
             ollama_local_models: Vec::new(),
             session_telemetry,
             session_header: SessionHeader::new(header_model),
