@@ -592,4 +592,56 @@ mod tests {
         assert!(!rendered.contains("enter"));
         assert!(!rendered.contains("esc"));
     }
+
+    #[test]
+    fn enabled_skills_render_before_available_candidates_with_origins() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let view = SkillsToggleView::new(
+            vec![
+                SkillsToggleItem {
+                    name: "Bundled candidate".to_string(),
+                    skill_name: "bundled-candidate".to_string(),
+                    description: "Bundled description".to_string(),
+                    origin: "bundled".to_string(),
+                    enabled: false,
+                    path: test_path_buf("/tmp/skills/bundled/SKILL.md").abs(),
+                },
+                SkillsToggleItem {
+                    name: "Personal candidate".to_string(),
+                    skill_name: "personal-candidate".to_string(),
+                    description: "Personal description".to_string(),
+                    origin: "yours".to_string(),
+                    enabled: false,
+                    path: test_path_buf("/tmp/skills/personal/SKILL.md").abs(),
+                },
+                SkillsToggleItem {
+                    name: "Enabled personal skill".to_string(),
+                    skill_name: "enabled-personal".to_string(),
+                    description: "Enabled description".to_string(),
+                    origin: "repo".to_string(),
+                    enabled: true,
+                    path: test_path_buf("/tmp/skills/enabled/SKILL.md").abs(),
+                },
+            ],
+            tx,
+            crate::keymap::RuntimeKeymap::defaults().list,
+        );
+
+        let rows = view.build_rows();
+        assert!(rows[0].name.contains("Enabled personal skill"));
+        assert_eq!(
+            rows.iter()
+                .filter_map(|row| row.description.as_deref())
+                .collect::<Vec<_>>(),
+            vec![
+                "Enabled description\nSource: repo",
+                "Bundled description\nSource: bundled",
+                "Personal description\nSource: yours",
+            ],
+        );
+        assert!(render_lines(&view, 96).contains(
+            "Only enabled skills are shown to the model. Available skills stay off until you select them."
+        ));
+    }
 }

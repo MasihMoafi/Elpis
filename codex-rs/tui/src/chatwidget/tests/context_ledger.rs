@@ -104,6 +104,49 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
 }
 
 #[tokio::test]
+async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let memories = root.path().join(".elpis/memories");
+    let cwd = root.path().join("project");
+    let global = root.path().join("global/AGENTS.md");
+    let configured = root.path().join("configured/dev/AGENTS.md");
+    let project = cwd.join("AGENTS.md");
+    std::fs::create_dir_all(global.parent().expect("global parent"))?;
+    std::fs::create_dir_all(configured.parent().expect("configured parent"))?;
+    std::fs::create_dir_all(&cwd)?;
+    std::fs::create_dir_all(&memories)?;
+    std::fs::write(&global, "g".repeat(4_976))?;
+    std::fs::write(&configured, "d".repeat(4_739))?;
+    std::fs::write(&project, "p".repeat(4_200))?;
+
+    chat.config.memory_dir = memories.abs();
+    chat.config.cwd = cwd.abs();
+    chat.instruction_source_paths = vec![
+        codex_utils_path_uri::PathUri::from_abs_path(&global.abs()),
+        codex_utils_path_uri::PathUri::from_abs_path(&configured.abs()),
+        codex_utils_path_uri::PathUri::from_abs_path(&project.abs()),
+    ];
+    chat.last_rendered_width.set(Some(120));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down)));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
+    let rendered = render_ledger(&chat, 100);
+
+    assert!(rendered.contains("≈"), "token estimates must stay labeled");
+    for estimate in ["≈1,244 est. tokens", "≈1,185 est. tokens", "≈1,050 est. tokens"] {
+        assert!(rendered.contains(estimate), "missing {estimate}:\n{rendered}");
+    }
+    assert!(rendered.contains("Origin: configured development rules"));
+    assert!(rendered.contains(
+        "Size: 4,739 bytes · Estimate: ≈1,185 tokens (trimmed characters ÷ 4, capped)"
+    ));
+    assert!(rendered.contains(&configured.canonicalize()?.display().to_string()));
+    Ok(())
+}
+
+#[tokio::test]
 async fn ledger_file_rows_emit_real_file_hyperlinks() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;

@@ -230,6 +230,66 @@ async fn skills_for_config_reuses_cache_for_same_effective_config() {
 }
 
 #[tokio::test]
+async fn default_disabled_skills_require_one_explicit_enable() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let cwd = tempfile::tempdir().expect("tempdir");
+    write_user_skill(&codex_home, "selected", "selected-skill", "selected");
+    write_user_skill(&codex_home, "unselected", "unselected-skill", "unselected");
+    let selected_config = r#"
+[skills]
+default_enabled = false
+
+[[skills.config]]
+name = "selected-skill"
+enabled = true
+"#;
+    let selected_stack = config_stack(&codex_home, selected_config);
+    let skills_service = SkillsService::new(
+        codex_home.path().abs(),
+        /*bundled_skills_enabled*/ true,
+    );
+
+    let outcome =
+        skills_for_config_with_stack(&skills_service, &cwd, &selected_stack, &[]).await;
+    let selected = outcome
+        .skills
+        .iter()
+        .find(|skill| skill.name == "selected-skill")
+        .expect("selected skill should load");
+    let unselected = outcome
+        .skills
+        .iter()
+        .find(|skill| skill.name == "unselected-skill")
+        .expect("unselected skill should load");
+
+    assert!(outcome.is_skill_enabled(selected));
+    assert!(!outcome.is_skill_enabled(unselected));
+    assert_eq!(
+        outcome
+            .allowed_skills_for_implicit_invocation()
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["selected-skill"],
+    );
+
+    let default_stack = config_stack(&codex_home, "[skills]");
+    let default_outcome =
+        skills_for_config_with_stack(&skills_service, &cwd, &default_stack, &[]).await;
+    for name in ["selected-skill", "unselected-skill"] {
+        let skill = default_outcome
+            .skills
+            .iter()
+            .find(|skill| skill.name == name)
+            .unwrap_or_else(|| panic!("{name} should load when default_enabled is omitted"));
+        assert!(
+            default_outcome.is_skill_enabled(skill),
+            "{name} must preserve upstream Codex's enabled-by-default behavior"
+        );
+    }
+}
+
+#[tokio::test]
 async fn set_extra_roots_replaces_runtime_roots_and_clears_cache() {
     let codex_home = tempfile::tempdir().expect("tempdir");
     let cwd = tempfile::tempdir().expect("tempdir");

@@ -1347,4 +1347,62 @@ mod tests {
         );
         Ok(())
     }
+
+    #[tokio::test]
+    async fn configured_dev_rule_roots_replace_managed_fallback() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let managed_dev = home.path().join(".elpis/skills/dev");
+        let configured_dev = home.path().join("configured/dev");
+        let managed_rule = managed_dev.join("AGENTS.md");
+        let configured_rule = configured_dev.join("AGENTS.md");
+        std::fs::create_dir_all(&memories)?;
+        std::fs::create_dir_all(&cwd)?;
+        std::fs::create_dir_all(&managed_dev)?;
+        std::fs::create_dir_all(&configured_dev)?;
+        std::fs::write(&managed_rule, "Managed fallback rule")?;
+        std::fs::write(&configured_rule, "Configured development rule")?;
+
+        let sources = continuity_sources_with_dev_rule_roots(
+            Some(&memories),
+            &cwd,
+            &[],
+            &[configured_dev.clone()],
+        );
+        let rows = sources
+            .iter()
+            .filter(|source| source.name == "dev/AGENTS.md")
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 1, "configured roots replace the managed fallback");
+        let source = rows[0];
+        assert_eq!(source.path, configured_rule);
+        assert_eq!(source.origin, "configured development rules");
+        assert!(source.admitted, "configured rules are admitted on a fresh workspace");
+
+        let prompt = build_continuity_prompt_with_dev_rule_roots(
+            Some(&memories),
+            &cwd,
+            &[configured_dev.clone()],
+        )
+        .await
+        .expect("configured development rule should reach the prompt");
+        assert!(prompt.contains("Configured development rule"));
+        assert!(!prompt.contains("Managed fallback rule"));
+
+        set_continuity_source_admitted(Some(&memories), &cwd, "dev/AGENTS.md", false)?;
+        let sources = continuity_sources_with_dev_rule_roots(
+            Some(&memories),
+            &cwd,
+            &[],
+            &[configured_dev],
+        );
+        let source = sources
+            .iter()
+            .find(|source| source.name == "dev/AGENTS.md")
+            .expect("configured row stays listed after exclusion");
+        assert_eq!(source.path, configured_rule);
+        assert!(!source.admitted, "the configured row is excluded after persistence");
+        Ok(())
+    }
 }
