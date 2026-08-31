@@ -527,4 +527,143 @@ assert_status 0
 assert_argv_occurrences 1 fmt --all --check
 assert_safe_cargo_log
 
+python3 - \
+    "$SOURCE_ROOT/.github/workflows/embedded-elpis-linux.yml" \
+    "$SOURCE_ROOT/.github/workflows/launcher-diagnostics.yml" <<'PY'
+from pathlib import Path
+import sys
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(f"workflow assertion failed: {message}")
+
+
+main = Path(sys.argv[1]).read_text()
+launcher = Path(sys.argv[2]).read_text()
+linux, separator, macos_and_later = main.partition("\n  build-macos:")
+require(bool(separator), "main workflow must retain the macOS job boundary")
+
+for trigger_path in (
+    ".github/workflows/launcher-diagnostics.yml",
+    "scripts/verify-elpis",
+    "tools/verify-elpis/surfaces.toml",
+    "tests/verify-elpis/test_verify_elpis.sh",
+    "docs/**",
+):
+    require(main.count(f"      - {trigger_path}\n") == 2, f"missing PR/push path {trigger_path}")
+
+require(linux.count("fetch-depth: 0") >= 2, "both Linux checkouts must fetch exact diff endpoints")
+require("bash tests/verify-elpis/test_verify_elpis.sh" in linux, "Linux must run the fake-Cargo harness")
+require(
+    'git diff --name-only -z "$base" "$head" > "$RUNNER_TEMP/elpis-changed-paths"' in linux,
+    "Linux must write a NUL-delimited changed-path list",
+)
+for exact_endpoint in (
+    'base="${{ github.event.pull_request.base.sha }}"',
+    'head="${{ github.event.pull_request.head.sha }}"',
+    'base="${{ github.event.before }}"',
+    'head="${{ github.sha }}"',
+):
+    require(exact_endpoint in linux, f"missing exact diff endpoint {exact_endpoint}")
+
+changed_call = 'scripts/verify-elpis --paths-file "$RUNNER_TEMP/elpis-changed-paths"'
+require(linux.count(changed_call) == 1, "Linux must call the changed-path selector exactly once")
+require(linux.count("scripts/verify-elpis --surface full") == 1, "Linux must call full exactly once")
+require(
+    linux.count("scripts/verify-elpis --surface nightly-release") == 1,
+    "Linux must call nightly-release only in the exhaustive branch",
+)
+change_condition = (
+    "        if: ${{ github.event_name == 'pull_request' || "
+    "(github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}\n"
+)
+require(linux.count(change_condition) == 2, "changed-path steps must share the PR/push condition")
+require(
+    "      - name: Verify conservative full Linux surface\n"
+    "        if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}\n"
+    "        run: scripts/verify-elpis --surface full\n"
+    in linux,
+    "schedule/tag/manual must select the full surface",
+)
+require(
+    "      - name: Run exhaustive continuity regression\n"
+    "        if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.full_regression) }}\n"
+    "        run: scripts/verify-elpis --surface nightly-release\n"
+    in linux,
+    "nightly-release must retain the existing exhaustive condition",
+)
+require(
+    linux.index("bash tests/verify-elpis/test_verify_elpis.sh") < linux.index("scripts/verify-elpis --"),
+    "fake-Cargo harness must run before selector use",
+)
+require("run_filter()" not in linux, "Linux must not retain a run_filter helper")
+require("cargo test -p" not in linux, "Linux must not retain a copied focused Cargo list")
+require(
+    "    defaults:\n      run:\n        working-directory: codex-rs\n" not in linux,
+    "Linux selector steps must be root-scoped",
+)
+require(
+    linux.count('      CODEX_SKIP_BWRAP_BUILD: "1"\n') == 1,
+    "Linux build job must export CODEX_SKIP_BWRAP_BUILD=1",
+)
+for root_step in (
+    "Verify selector harness",
+    "Verify changed Linux surfaces",
+    "Verify conservative full Linux surface",
+    "Run exhaustive continuity regression",
+):
+    require(
+        f"      - name: {root_step}\n        working-directory:" not in linux,
+        f"{root_step} must remain root-scoped",
+    )
+
+for retained in (
+    "cargo build -p codex-tui --bin elpis --locked --timings --release",
+    "target/release/elpis --help",
+    "cargo install cargo-deb --locked",
+    "cargo deb --no-build -p codex-tui",
+    "name: elpis-linux-x86_64",
+    "name: elpis-deb",
+    "name: elpis-cargo-timings",
+):
+    require(retained in linux, f"Linux release behavior disappeared: {retained}")
+require(
+    "      - name: Build Elpis binary and Cargo timing report\n        working-directory: codex-rs\n" in linux,
+    "release build must retain codex-rs working directory",
+)
+require(
+    "      - name: Verify executable identity\n        working-directory: codex-rs\n" in linux,
+    "identity check must retain codex-rs working directory",
+)
+require(
+    "      - name: Reduce artifact size\n        working-directory: codex-rs\n" in linux,
+    "strip step must retain codex-rs working directory",
+)
+require(
+    "      - name: Package .deb\n        if: startsWith(github.ref, 'refs/tags/v')\n        working-directory: codex-rs\n" in linux,
+    "package step must retain codex-rs working directory",
+)
+require("cargo test -p codex-tui --bin elpis --locked --target" in macos_and_later, "macOS checks changed")
+
+require("scripts/verify-elpis --surface tui" in launcher, "launcher must reuse the TUI surface")
+require("cargo test -p codex-tui --bin elpis" not in launcher, "launcher must not retain a Cargo list")
+require("run_filter()" not in launcher, "launcher must not add a second test helper")
+require(
+    not any(line.strip() == "cargo fmt --all" for line in launcher.splitlines()),
+    "launcher must not run write-mode formatting",
+)
+require(
+    launcher.index("Materialize reviewed integration source") < launcher.index("scripts/verify-elpis --surface tui"),
+    "launcher selector must run after materialization",
+)
+for retained in (
+    "continue-on-error: true",
+    "path: /tmp/elpis-launcher.log",
+    "name: elpis-launcher-diagnostics",
+    "if: steps.launcher.outcome == 'failure'",
+):
+    require(retained in launcher, f"launcher diagnostic behavior disappeared: {retained}")
+PY
+
 printf 'PASS: verify-elpis fake-Cargo contract\n'

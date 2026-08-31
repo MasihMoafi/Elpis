@@ -11,9 +11,14 @@ on:
   pull_request:
     paths:
       - .github/workflows/embedded-elpis-linux.yml
+      - .github/workflows/launcher-diagnostics.yml
       - codex-rs/**
+      - docs/**
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
+      - scripts/verify-elpis
+      - tests/verify-elpis/test_verify_elpis.sh
+      - tools/verify-elpis/surfaces.toml
   push:
     branches:
       - main
@@ -21,9 +26,14 @@ on:
       - "v*"
     paths:
       - .github/workflows/embedded-elpis-linux.yml
+      - .github/workflows/launcher-diagnostics.yml
       - codex-rs/**
+      - docs/**
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
+      - scripts/verify-elpis
+      - tests/verify-elpis/test_verify_elpis.sh
+      - tools/verify-elpis/surfaces.toml
   schedule:
     - cron: "17 3 * * 1"
 
@@ -39,14 +49,12 @@ jobs:
     name: Build and verify Elpis
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: codex-rs
     env:
       CARGO_INCREMENTAL: "1"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
+      CODEX_SKIP_BWRAP_BUILD: "1"
 
     steps:
       - name: Checkout integration head
@@ -59,8 +67,11 @@ jobs:
       - name: Checkout source
         if: github.event_name != 'pull_request' || github.head_ref != 'agent/product-integration'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
 
       - name: Install Linux build dependencies
+        working-directory: codex-rs
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -70,6 +81,7 @@ jobs:
             pkg-config
 
       - name: Install pinned Rust toolchain
+        working-directory: codex-rs
         run: |
           rustup set profile minimal
           rustup toolchain install 1.95.0 --component rustfmt --no-self-update
@@ -167,10 +179,8 @@ jobs:
           )
           PY
 
-      - name: Check Rust formatting
-        run: |
-          cargo fmt --all
-          cargo fmt --all --check
+      - name: Verify selector harness
+        run: bash tests/verify-elpis/test_verify_elpis.sh
 
       - name: Restore Cargo downloads
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -192,80 +202,38 @@ jobs:
             elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
             elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-
 
-      - name: Verify salvage regressions
+      - name: Collect changed paths
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
+        shell: bash
         run: |
           set -euo pipefail
-          run_filter() {
-            local out
-            out=$(cargo test "$@" 2>&1) || { printf '%s\n' "$out"; exit 1; }
-            printf '%s\n' "$out"
-            if printf '%s\n' "$out" | grep -qE 'test result: ok\. 0 passed'; then
-              printf '::error::test filter matched zero tests: %s\n' "$*"
-              exit 1
-            fi
-          }
-          run_filter -p codex-features --lib --locked automatic_context_pruning_is_experimental_and_opt_in
-          run_filter -p codex-state --lib --locked work_graph
-          run_filter -p codex-core --lib --locked work_graph
-          run_filter -p codex-core --test all --locked suite::work_graphs::
-          run_filter -p codex-core --test all --locked suite::context_prune::
-          run_filter -p codex-app-server --test all --locked list_models
-          run_filter -p codex-tui --lib --locked model_catalog_
-          run_filter -p codex-tui --lib --locked model_reasoning_selection_for_openai
-          run_filter -p codex-tui --lib --locked provider_model_selection
-          run_filter -p codex-tui --lib --locked ollama_model_selection_emits_one_atomic_selection
-          run_filter -p codex-tui --lib --locked thread_setting_update_params_sync_model_and_default_reasoning
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+          git diff --name-only -z "$base" "$head" > "$RUNNER_TEMP/elpis-changed-paths"
 
-      - name: Verify Elpis launcher and provider entrypoints
-        run: cargo test -p codex-tui --bin elpis --locked
+      - name: Verify changed Linux surfaces
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
+        run: scripts/verify-elpis --paths-file "$RUNNER_TEMP/elpis-changed-paths"
 
-      - name: Verify context lifecycle and archive failure safety
-        run: |
-          cargo test -p codex-core --lib --locked context_cleaner::tests
-          cargo test -p codex-core --lib --locked elpis_context::tests
-
-      - name: Verify durable memory admission and filesystem bounds
-        run: |
-          set -euo pipefail
-          # A cargo test filter that matches nothing still exits 0, which is how the
-          # previous version of this step stayed green while verifying nothing. Treat
-          # "0 passed" as a failure so a renamed or deleted test breaks the build.
-          run_filter() {
-            local out
-            out=$(cargo test "$@" 2>&1) || { printf '%s\n' "$out"; exit 1; }
-            printf '%s\n' "$out"
-            if printf '%s\n' "$out" | grep -qE 'test result: ok\. 0 passed'; then
-              printf '::error::test filter matched zero tests: %s\n' "$*"
-              exit 1
-            fi
-          }
-          run_filter -p codex-app-server --test all --locked durable_memory_reaches_the_model_only_once_the_ledger_admits_it
-          run_filter -p codex-core --lib --locked memory_dir_is_readable_without_creating_or_widening_writes
-          run_filter -p codex-core --lib --locked permission_profile_override_keeps_memories_root_out_of_legacy_projection
-
-      - name: Verify provider protocol and authentication boundaries
-        run: |
-          cargo test -p codex-model-provider-info --locked
-          cargo test -p codex-core --lib --locked chat_completions
-
-      - name: Verify runtime identity surfaces
-        run: |
-          cargo test -p codex-tui --lib --locked branding::tests
-          cargo test -p codex-tui --lib --locked slash_command::tests
+      - name: Verify conservative full Linux surface
+        if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+        run: scripts/verify-elpis --surface full
 
       - name: Run exhaustive continuity regression
         if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.full_regression) }}
-        run: |
-          cargo test -p codex-app-server --test all --locked durable_memory_reaches_the_model_only_once_the_ledger_admits_it
-          cargo test -p codex-tui --lib --locked elpis_context::tests
-          cargo test -p codex-core --lib --locked elpis_context::tests
-          cargo test -p codex-tui --lib --locked --no-run
-          cargo test -p codex-tui --lib --locked onboarding::welcome::tests::welcome_renders_animation_on_first_draw -- --exact
+        run: scripts/verify-elpis --surface nightly-release
 
       - name: Build Elpis binary and Cargo timing report
+        working-directory: codex-rs
         run: cargo build -p codex-tui --bin elpis --locked --timings --release
 
       - name: Verify executable identity
+        working-directory: codex-rs
         run: |
           target/release/elpis --help
           # Read the expected version from the manifest instead of pinning a literal:
@@ -296,6 +264,7 @@ jobs:
           git push origin HEAD:agent/product-integration
 
       - name: Reduce artifact size
+        working-directory: codex-rs
         run: strip target/release/elpis
 
       - name: Upload Elpis binary
@@ -309,6 +278,7 @@ jobs:
 
       - name: Package .deb
         if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: codex-rs
         run: |
           cargo install cargo-deb --locked
           cargo deb --no-build -p codex-tui
