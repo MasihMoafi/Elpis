@@ -198,13 +198,20 @@ fn skills_toggle_items(mut core_skills: Vec<(bool, SkillMetadata)>) -> Vec<Skill
 
     core_skills
         .into_iter()
-        .map(|(enabled, core_skill)| SkillsToggleItem {
-            name: skill_display_name(&core_skill, &colliding_names),
-            skill_name: core_skill.name,
-            description: skill_description(&core_skill).to_string(),
-            origin: skill_scope_label(core_skill.scope).to_string(),
-            enabled,
-            path: core_skill.path_to_skills_md,
+        .map(|(enabled, core_skill)| {
+            let display_name = skill_display_name(&core_skill, &colliding_names);
+            let description = skill_description(&core_skill).to_string();
+            let origin = skill_scope_label(core_skill.scope).to_string();
+            let skill_name = core_skill.name;
+            let path = core_skill.path_to_skills_md;
+            SkillsToggleItem {
+                name: display_name,
+                skill_name,
+                description,
+                origin,
+                enabled,
+                path,
+            }
         })
         .collect()
 }
