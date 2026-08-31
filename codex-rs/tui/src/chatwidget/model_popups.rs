@@ -200,23 +200,22 @@ impl ChatWidget {
             ..Default::default()
         });
         let Some(presets) = self.model_catalog.models_for_provider(OPENAI_PROVIDER_ID) else {
-            let (name, description) = if self.model_popup_request_is_pending(OPENAI_PROVIDER_ID) {
-                (
-                    "Loading available OpenAI models…",
-                    "Uses the connected ChatGPT subscription",
-                )
+            let item = if self.model_popup_request_is_pending(OPENAI_PROVIDER_ID) {
+                SelectionItem {
+                    name: "Loading available OpenAI models…".to_string(),
+                    description: Some("Uses the connected ChatGPT subscription".to_string()),
+                    is_disabled: true,
+                    ..Default::default()
+                }
             } else {
-                (
-                    "OpenAI models are unavailable",
-                    "Open /model again to retry",
-                )
+                SelectionItem {
+                    name: "OpenAI models are unavailable. Open /model again to retry."
+                        .to_string(),
+                    is_disabled: true,
+                    ..Default::default()
+                }
             };
-            items.push(SelectionItem {
-                name: name.to_string(),
-                description: Some(description.to_string()),
-                is_disabled: true,
-                ..Default::default()
-            });
+            items.push(item);
             return;
         };
         let mut visible_count = 0;
