@@ -107,12 +107,10 @@ fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, el
     config_overrides.raw_overrides.splice(
         0..0,
         [
-            // Pruning is the first line of context control, but a stalled pruning cycle
-            // needs something underneath it. Automatic compaction is the backstop; see
-            // `ELPIS_COMPACT_REMAINING_PERCENT` for where it fires. Prepended, so a user
-            // config file can still turn it off deliberately.
+            // Native automatic compaction is the context-window backstop. Prepended, so a
+            // user config file can still turn it off deliberately.
             "model_auto_compact_enabled=true".to_string(),
-            // The Elpis threshold is expressed against the whole active context.
+            // The native threshold is measured against the whole active context.
             "model_auto_compact_token_limit_scope=total".to_string(),
             // Elpis starts from an explicitly curated skill set; user config can re-enable
             // skills through later overrides.
