@@ -39,6 +39,7 @@ pub(crate) struct SkillsToggleItem {
     pub name: String,
     pub skill_name: String,
     pub description: String,
+    pub origin: String,
     pub enabled: bool,
     pub path: AbsolutePathBuf,
 }
@@ -64,7 +65,8 @@ impl SkillsToggleView {
         let mut header = ColumnRenderable::new();
         header.push(Line::from("Enable/Disable Skills".bold()));
         header.push(Line::from(
-            "Turn skills on or off. Your changes are saved automatically.".dim(),
+            "Only enabled skills are shown to the model. Available skills stay off until you select them."
+                .dim(),
         ));
 
         let mut view = Self {
@@ -148,7 +150,7 @@ impl SkillsToggleView {
                     let name = format!("{prefix} [{marker}] {item_name}");
                     GenericDisplayRow {
                         name,
-                        description: Some(item.description.clone()),
+                        description: Some(format!("{} · Source: {}", item.description, item.origin)),
                         ..Default::default()
                     }
                 })
@@ -459,6 +461,7 @@ mod tests {
                 name: "superpowers-systematic-debugging (polish)".to_string(),
                 skill_name: "polish:superpowers-systematic-debugging".to_string(),
                 description: "Find root causes before fixing bugs".to_string(),
+                origin: "bundled".to_string(),
                 enabled: true,
                 path: test_path_buf("/tmp/skills/systematic-debugging/SKILL.md").abs(),
             },
@@ -466,6 +469,7 @@ mod tests {
                 name: "superpowers-verification-before-completion (polish)".to_string(),
                 skill_name: "polish:superpowers-verification-before-completion".to_string(),
                 description: "Verify completion before claiming success".to_string(),
+                origin: "bundled".to_string(),
                 enabled: false,
                 path: test_path_buf("/tmp/skills/verification-before-completion/SKILL.md").abs(),
             },
@@ -481,6 +485,7 @@ mod tests {
                 name: "Repo Scout".to_string(),
                 skill_name: "repo_scout".to_string(),
                 description: "Summarize the repo layout".to_string(),
+                origin: "repo".to_string(),
                 enabled: true,
                 path: test_path_buf("/tmp/skills/repo_scout.toml").abs(),
             },
@@ -488,6 +493,7 @@ mod tests {
                 name: "Changelog Writer".to_string(),
                 skill_name: "changelog_writer".to_string(),
                 description: "Draft release notes".to_string(),
+                origin: "yours".to_string(),
                 enabled: false,
                 path: test_path_buf("/tmp/skills/changelog_writer.toml").abs(),
             },
@@ -635,9 +641,9 @@ mod tests {
                 .filter_map(|row| row.description.as_deref())
                 .collect::<Vec<_>>(),
             vec![
-                "Enabled description\nSource: repo",
-                "Bundled description\nSource: bundled",
-                "Personal description\nSource: yours",
+                "Enabled description · Source: repo",
+                "Bundled description · Source: bundled",
+                "Personal description · Source: yours",
             ],
         );
         assert!(render_lines(&view, 96).contains(
