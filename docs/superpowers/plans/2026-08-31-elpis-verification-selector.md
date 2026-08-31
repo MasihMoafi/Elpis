@@ -18,8 +18,8 @@
 - Every Cargo child gets CODEX_SKIP_BWRAP_BUILD=1 and CARGO_TARGET_DIR=<selected>; execute Cargo from codex-rs.
 - Formatting is exactly cargo fmt --all --check; it must never write.
 - Path records preserve spaces. A --paths-file containing NUL is NUL-delimited; otherwise it is newline-delimited. Preserve all non-delimiter bytes, reject empty records, and never word-split, eval, or interpolate a path/manifest argv.
-- Union/dedupe uses manifest declaration order. Any unmatched, mixed, shared-foundation, selector/workflow, Cargo manifest/lock, .cargo/**, or installer change selects full.
-- Each test row makes one Cargo call, retains/prints its output, fails on Cargo failure, then requires at least one matching test result: ok. <positive integer> passed line. Scan all summaries, not only the last; no positive passed harness is a failure.
+- Union/dedupe uses manifest declaration order. For changed paths, the first matching path rule owns each path. Two or more changed paths are "mixed" only when their resolved non-full surface lists differ; that condition selects full. Repeated paths resolving to the same list stay focused. Explicit --surface values are a deliberate union applied after path classification and do not trigger the mixed-path fallback. Any unmatched, shared-foundation, selector/workflow, Cargo manifest/lock, .cargo/**, or installer change selects full.
+- Each `mode = "test"` row makes one Cargo call, retains/prints its output, fails on Cargo failure, then requires at least one matching test result: ok. <positive integer> passed line. Scan all summaries, not only the last; no positive passed harness is a failure. A checked `cargo test --no-run` row is `mode = "check"` and is exempt from the harness-summary rule.
 - Workers do not edit coordinator-owned `docs/GUIDE.md` or ignored `TASKS.md`; preserve every unrelated working-tree change and untracked audit file.
 - Do not promise a speedup. Fake-Cargo, local Rust, and remote CI are separate evidence.
 
@@ -46,19 +46,21 @@ commands = ["fmt-check", "tui-dashboard", "tui-context-usage"]
 
 [[path_rules]]
 glob = "codex-rs/tui/src/dashboard_server.rs"
-surfaces = ["dashboard", "tui"]
+surfaces = ["dashboard"]
 ~~~
 
-The closed schema is commands (ordered table: literal argv, kind = cargo|shell, mode = check|test), surfaces, and path_rules. Reject duplicate names, invalid kind/mode/schema version, empty argv, unknown command references, and unknown path-rule surfaces. Its parser emits NUL-delimited fields to Bash; Bash loads arrays and uses array expansion, never shell-evaluates TOML.
+The closed schema is commands (ordered table: literal argv, kind = cargo|shell, mode = check|test), surfaces, and path_rules. Reject duplicate names, invalid kind/mode/schema version, empty argv, unknown command references, and unknown path-rule surfaces. Command execution is also closed: a shell row is accepted only as `mode = "check"` with argv exactly `["git", "diff", "--check"]`; Cargo argv must begin with `fmt`, `check`, or `test`; `fmt` must be exactly `["fmt", "--all", "--check"]`; `check` must use `mode = "check"`; `test` uses `mode = "test"` unless it contains `--no-run`, in which case it must use `mode = "check"`. Reject `--release`, `--profile`, `--target-dir`, and every Cargo subcommand outside that allowlist before executing anything. Its parser emits NUL-delimited fields to Bash; Bash loads arrays and uses array expansion, never shell-evaluates TOML.
 
 Declare surfaces in this order: docs, dashboard, tui, context-compaction, app-server, telemetry, agents-work-graph, memory, full, nightly-release. Retain the existing Linux assertions named in the build-cycle audit: format/diff/workspace check; automatic-pruning; state/core/integration work-graph; context prune; app-server list-models; five TUI model filters; launcher; context-cleaner/context-ledger; durable-memory/core memory; provider/auth; branding/slash-command. Add dashboard, telemetry, and agents/work-graph rows only where the audit names an existing exact test; any candidate without a real current test maps to full, never an invented filter.
 
-full lists diff/format/workspace check and every ordinary focused row once. It excludes release build, package/install/identity execution, macOS, and nightly-release. nightly-release holds current inherited exhaustive app-server/TUI checks separately. Path rules implement the audit table: docs (runnable-command docs -> full), exact dashboard -> dashboard+tui, remaining TUI -> tui, explicit context/prune/compact/features/ledger -> context-compaction, app-server -> app-server, timing/backend-client/otel -> telemetry, state/work-graph/TUI multi-agent -> agents-work-graph, memory/continuity -> memory, and shared foundations -> full.
+full lists diff/format/workspace check and every ordinary focused row once. It excludes release build, package/install/identity execution, macOS, and nightly-release. nightly-release holds current inherited app-server/TUI checks separately; its compile-only `cargo test --no-run` row is `mode = "check"`.
+
+Declare path rules in this exact precedence family so first-match ownership is conservative: selector/workflow/Cargo-manifest/.cargo/installer/shared-foundation and command-bearing documentation exceptions -> full; exact dashboard/context-usage rendering -> dashboard; explicit context/prune/compact/features/ledger paths -> context-compaction; timing/backend-client/otel/app-server turn-cost paths -> telemetry; state/work-graph/TUI multi-agent paths -> agents-work-graph; continuity/memory/app-server recall paths -> memory; remaining app-server -> app-server; remaining TUI -> tui; ordinary non-command documentation -> docs; unmatched -> full. A broad TUI, app-server, or docs rule must never precede one of its listed exceptions.
 
 The CLI prints stable output:
 
 ~~~text
-Elpis verification: surfaces=dashboard,tui
+Elpis verification: surfaces=dashboard
 Elpis verification: changed=codex-rs/tui/src/dashboard_server.rs
 Elpis verification: target=<absolute target>
 Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage
@@ -86,7 +88,7 @@ Start RED with:
 ~~~bash
 run_selector --changed codex-rs/tui/src/dashboard_server.rs
 assert_status 0
-assert_output 'Elpis verification: surfaces=dashboard,tui'
+assert_output 'Elpis verification: surfaces=dashboard'
 assert_output 'Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage'
 assert_cargo_env 'CODEX_SKIP_BWRAP_BUILD=1'
 assert_cargo_argv 'fmt' '--all' '--check'
@@ -95,7 +97,7 @@ assert_cargo_argv 'test' '-p' 'codex-tui' '--lib' '--locked' 'dashboard'
 
 - [ ] **Step 2: Add the complete manifest, then confirm the test remains red because selector code is absent.**
 
-Populate all rows/rules in the contract, with stable order and explicit overlapping dashboard/TUI and full rules. Run:
+Populate all rows/rules in the contract, with stable order and intentional command overlap between the dashboard, TUI, and full surfaces. Run:
 
 ~~~bash
 bash tests/verify-elpis/test_verify_elpis.sh
@@ -105,21 +107,22 @@ Expected: non-zero because scripts/verify-elpis cannot meet the first contract c
 
 - [ ] **Step 3: Implement the selector minimally.**
 
-Use embedded python3 only to import tomllib, parse/validate the TOML closed schema, and emit NUL-delimited values. This adds no package: both relevant workflows already invoke python3, local Python is 3.13, and Ubuntu 24.04 has Python 3.12. If tomllib is unavailable, fail before Cargo with a Python-3.11 requirement; do not add pip, a vendored parser, or a Cargo/Rust parser.
+Use embedded python3 only to import tomllib, parse/validate the TOML closed schema and command allowlist above, and emit NUL-delimited values. This adds no package: both relevant workflows already invoke python3, local Python is 3.13, and Ubuntu 24.04 has Python 3.12. If tomllib is unavailable, fail before Cargo with a Python-3.11 requirement; do not add pip, a vendored parser, or a Cargo/Rust parser.
 
-Collect --changed literally; for --paths-file, read NUL records when a NUL exists and otherwise newline records; reject empty/missing input. Apply safe shell glob matching without eval; union surfaces/commands with associative-array membership but emit manifest order. Print the four header lines before execution. For Cargo rows, run cargo with the array argv in codex-rs. For diff-check, use a literal shell argv only for git diff --check at root. Capture each test row to a temporary file, tee normal output, require a positive successful harness summary, then remove only that temporary file.
+Collect --changed literally; for --paths-file, read NUL records when a NUL exists and otherwise newline records; reject empty/missing input. Apply safe shell glob matching without eval and use the first matching path rule. If changed paths resolve to different non-full surface lists, replace their union with full; then add explicit surfaces normally. Union commands with associative-array membership but emit manifest order. Print the four header lines before execution. For Cargo rows, run cargo with the array argv in codex-rs. For diff-check, use the one allowed literal shell argv only at the repository root. Capture each `mode = "test"` row to a temporary file, tee normal output, require a positive successful harness summary, then remove only that temporary file.
 
 - [ ] **Step 4: Make all harness cases green.**
 
 Add and run these exact cases:
 
-1. Dashboard path selects dashboard,tui, exports both variables, and runs only declared rows in manifest order.
+1. Dashboard path selects dashboard, exports both variables, and runs only declared rows in manifest order.
 2. Repeated/explicit surfaces and path-plus-surface are a stable deduplicated union.
-3. Unknown, shared-foundation, mixed, and unclassified paths select full.
-4. Newline files preserve spaces; NUL files preserve an embedded newline; empty/missing list fails before fake Cargo.
-5. Only zero-pass summaries fail; multiple summaries pass only when one has a positive passed count; fake Cargo non-zero fails.
-6. Unknown surface/reference, malformed TOML, non-absolute override, and unwritable override fail before fake Cargo.
-7. Every format call contains --check; logs contain no clean, rm, write-mode fmt, install, release build, or executable launch.
+3. Unknown, shared-foundation, and unclassified paths select full. Two changed paths resolving to different focused surface lists select full; repeated paths resolving to the same list remain focused; explicit multiple surfaces and path-plus-surface remain a stable union rather than triggering the mixed-path fallback.
+4. First-match precedence is proven in both directions for every broad-family exception: dashboard and context/ledger before remaining TUI; TUI work-graph before remaining TUI; app-server turn-cost before remaining app-server; app-server memory recall before remaining app-server; and command-bearing docs before ordinary docs.
+5. Newline files preserve spaces; NUL files preserve an embedded newline; empty/missing list fails before fake Cargo.
+6. Only zero-pass summaries fail; multiple summaries pass only when one has a positive passed count; fake Cargo non-zero fails.
+7. Unknown surface/reference, malformed TOML, non-absolute override, unwritable override, arbitrary shell argv, `cargo clean`, unsupported Cargo subcommands, release/profile/target-dir flags, and a `test --no-run` row mislabeled as `mode = "test"` fail before fake Cargo or shell execution.
+8. Every format call contains --check; logs contain no clean, rm, write-mode fmt, install, release build, or executable launch.
 
 Run:
 
