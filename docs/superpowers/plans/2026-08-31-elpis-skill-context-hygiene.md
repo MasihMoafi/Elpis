@@ -487,9 +487,9 @@ git commit -m "fix(tui): separate enabled and available skills"
 
 **Files:**
 - Modify: `docs/context.md`
-- Modify: `docs/GUIDE.md`
 - Modify: `readme.md`
-- Modify: `.github/workflows/embedded-elpis-linux.yml` only if the current focused jobs do not execute the named tests.
+- Coordinator-only after worker review: `docs/GUIDE.md`
+- Coordinator-owned verification mapping after this slice: `tools/verify-elpis/surfaces.toml` through the separate verification-selector plan.
 
 **Interfaces:**
 - Consumes: Tasks 2–5 production behavior and Task 1 test names.
@@ -514,11 +514,11 @@ enabled = true
 
 State that dev rules are ordinary Markdown instruction rows in the Context Ledger, not skills; configured roots replace the managed fallback; fresh dev rules default on; explicit exclusions persist; skills contribute metadata only after enablement and bodies remain lazy.
 
-- [ ] **Step 2: Update guide/readme claims**
+- [ ] **Step 2: Update readme claims**
 
 Add only implemented behavior. Do not describe Masih's source path as a product default, and do not claim that hidden skill metadata has a measured ledger token value. Preserve the manual-memory and pruning boundaries.
 
-- [ ] **Step 3: Ensure the shared Linux verification path selects the focused tests**
+- [ ] **Step 3: Record focused tests for the shared verification manifest**
 
 The required focused commands are:
 
@@ -529,12 +529,12 @@ CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib context_ledger --locked
 CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib enabled_skills_render_before_available_candidates_with_origins --locked
 ```
 
-If `.github/workflows/embedded-elpis-linux.yml` already runs broader suites containing all four, leave it unchanged. If not, add these through its existing zero-match-guarded `run_filter`; do not duplicate runner logic.
+Do not edit the workflow or upload the branch in this task. The separate verification-selector plan makes `tools/verify-elpis/surfaces.toml` the single command list and then migrates Linux CI to it. Record these four filters as required rows for that plan; do not add a second workflow list here.
 
-- [ ] **Step 4: Commit documentation/CI selection**
+- [ ] **Step 4: Commit documentation**
 
 ```bash
-git add docs/context.md docs/GUIDE.md readme.md .github/workflows/embedded-elpis-linux.yml
+git add docs/context.md readme.md
 git commit -m "docs: define curated skill and dev rule behavior"
 ```
 
@@ -546,4 +546,4 @@ Record the exact commit SHA and the four pending commands in the SDD ledger. Do 
 
 - [ ] **Step 6: Reconcile the spec and task ledger**
 
-The coordinator updates ignored `TASKS.md` with the exact commit, GitHub run, remaining risks, and manual acceptance status. Do not mark the slice verified; Masih remains the sole arbiter.
+The coordinator updates `docs/GUIDE.md` and ignored `TASKS.md` with the exact commit, deferred local verification status, remaining risks, and manual acceptance status. There is no GitHub run because pushing is forbidden. Do not mark the slice verified; Masih remains the sole arbiter.
