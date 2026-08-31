@@ -110,13 +110,13 @@ let models_manager = match params.model_provider.as_deref() {
         )
         .models_manager(
             self.config.codex_home.to_path_buf(),
-            self.config.model_catalog.clone(),
+            None,
         )
     }
 };
 ```
 
-Change `supported_models` to consume a `SharedModelsManager`, then list with `RefreshStrategy::OnlineIfUncached`. Keep pagination and hidden-model filtering unchanged.
+Change `supported_models` to consume a `SharedModelsManager`, then list with `RefreshStrategy::OnlineIfUncached`. The explicit provider manager receives no startup-provider catalog override, preventing a static OpenRouter catalog from contaminating OpenAI discovery. Keep pagination and hidden-model filtering unchanged.
 
 - [ ] **Step 6: Run focused protocol and app-server tests and verify GREEN**
 

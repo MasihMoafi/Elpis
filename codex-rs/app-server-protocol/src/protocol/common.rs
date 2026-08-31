@@ -3033,7 +3033,33 @@ mod tests {
                 "params": {
                     "limit": null,
                     "cursor": null,
-                    "includeHidden": null
+                    "includeHidden": null,
+                    "modelProvider": null
+                }
+            }),
+            serde_json::to_value(&request)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_list_models_for_provider() -> Result<()> {
+        let request = ClientRequest::ModelList {
+            request_id: RequestId::Integer(7),
+            params: v2::ModelListParams {
+                model_provider: Some("openai".to_string()),
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            json!({
+                "method": "model/list",
+                "id": 7,
+                "params": {
+                    "limit": null,
+                    "cursor": null,
+                    "includeHidden": null,
+                    "modelProvider": "openai"
                 }
             }),
             serde_json::to_value(&request)?,

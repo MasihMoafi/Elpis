@@ -12689,6 +12689,13 @@
               "integer",
               "null"
             ]
+          },
+          "modelProvider": {
+            "description": "Optional model provider whose catalog should be listed.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "title": "ModelListParams",
