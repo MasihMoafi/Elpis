@@ -114,6 +114,10 @@ fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, el
             "model_auto_compact_enabled=true".to_string(),
             // The Elpis threshold is expressed against the whole active context.
             "model_auto_compact_token_limit_scope=total".to_string(),
+            // Elpis starts from an explicitly curated skill set; user config can re-enable
+            // skills through later overrides.
+            "skills.default_enabled=false".to_string(),
+            "skills.bundled.enabled=false".to_string(),
             format!("memories.root={memories_value}"),
             format!("memories.state_root={state_value}"),
         ],
@@ -202,9 +206,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn elpis_memories_defaults_precede_user_config() {
+    fn elpis_product_defaults_precede_user_config() {
         let mut overrides = CliConfigOverrides {
             raw_overrides: vec![
+                "skills.default_enabled=true".to_string(),
+                "skills.bundled.enabled=true".to_string(),
                 "memories.root=\"/tmp/custom-memories\"".to_string(),
                 "memories.state_root=\"/tmp/custom-state\"".to_string(),
             ],
@@ -217,8 +223,12 @@ mod tests {
             vec![
                 "model_auto_compact_enabled=true",
                 "model_auto_compact_token_limit_scope=total",
+                "skills.default_enabled=false",
+                "skills.bundled.enabled=false",
                 "memories.root=\"/tmp/home/.elpis/memories\"",
                 "memories.state_root=\"/tmp/home/.elpis/state\"",
+                "skills.default_enabled=true",
+                "skills.bundled.enabled=true",
                 "memories.root=\"/tmp/custom-memories\"",
                 "memories.state_root=\"/tmp/custom-state\"",
             ]

@@ -236,6 +236,37 @@ async fn skills_for_config_reuses_cache_for_same_effective_config() {
 }
 
 #[tokio::test]
+async fn skills_for_config_cache_distinguishes_default_skill_admission() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let cwd = tempfile::tempdir().expect("tempdir");
+    write_user_skill(&codex_home, "demo", "demo-skill", "demo");
+    let skills_service = SkillsService::new(
+        codex_home.path().abs(),
+        /*bundled_skills_enabled*/ true,
+    );
+
+    let enabled_stack = config_stack(&codex_home, "[skills]");
+    let enabled_outcome =
+        skills_for_config_with_stack(&skills_service, &cwd, &enabled_stack, &[]).await;
+    let enabled_skill = enabled_outcome
+        .skills
+        .iter()
+        .find(|skill| skill.name == "demo-skill")
+        .expect("demo skill should load");
+    assert!(enabled_outcome.is_skill_enabled(enabled_skill));
+
+    let disabled_stack = config_stack(&codex_home, "[skills]\ndefault_enabled = false");
+    let disabled_outcome =
+        skills_for_config_with_stack(&skills_service, &cwd, &disabled_stack, &[]).await;
+    let disabled_skill = disabled_outcome
+        .skills
+        .iter()
+        .find(|skill| skill.name == "demo-skill")
+        .expect("demo skill should load");
+    assert!(!disabled_outcome.is_skill_enabled(disabled_skill));
+}
+
+#[tokio::test]
 async fn default_disabled_skills_require_one_explicit_enable() {
     let codex_home = tempfile::tempdir().expect("tempdir");
     let cwd = tempfile::tempdir().expect("tempdir");

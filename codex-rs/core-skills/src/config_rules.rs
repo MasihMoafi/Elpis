@@ -23,12 +23,36 @@ pub struct SkillConfigRule {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SkillConfigRules {
+    pub default_enabled: bool,
     pub entries: Vec<SkillConfigRule>,
 }
 
+impl Default for SkillConfigRules {
+    fn default() -> Self {
+        Self {
+            default_enabled: true,
+            entries: Vec::new(),
+        }
+    }
+}
+
 pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> SkillConfigRules {
+    let default_enabled = match config_layer_stack
+        .effective_config()
+        .as_table()
+        .and_then(|config| config.get("skills"))
+    {
+        Some(skills_value) => match skills_value.clone().try_into() {
+            Ok(skills) => skills.default_enabled.unwrap_or(true),
+            Err(err) => {
+                warn!("invalid effective skills config: {err}");
+                true
+            }
+        },
+        None => true,
+    };
     let mut entries = Vec::new();
     for layer in config_layer_stack.get_layers(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
@@ -66,14 +90,24 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
         }
     }
 
-    SkillConfigRules { entries }
+    SkillConfigRules {
+        default_enabled,
+        entries,
+    }
 }
 
 pub fn resolve_disabled_skill_paths(
     skills: &[SkillMetadata],
     rules: &SkillConfigRules,
 ) -> HashSet<AbsolutePathBuf> {
-    let mut disabled_paths = HashSet::new();
+    let mut disabled_paths = if rules.default_enabled {
+        HashSet::new()
+    } else {
+        skills
+            .iter()
+            .map(|skill| skill.path_to_skills_md.clone())
+            .collect()
+    };
 
     for entry in &rules.entries {
         match &entry.selector {
