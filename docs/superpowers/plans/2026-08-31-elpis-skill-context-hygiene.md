@@ -6,14 +6,14 @@
 
 **Architecture:** Keep Codex's existing multi-root skill discovery and lazy body loading, but add an Elpis default-disabled admission policy above it. Add ordered `dev_rule_roots` to the existing `[skills]` configuration and thread those roots into Elpis continuity assembly; configured roots replace the managed fallback. Keep aggregate token displays compact while rendering exact estimated counts and provenance for individual ledger sources.
 
-**Tech Stack:** Rust, serde/TOML configuration, Codex core-skills service, Elpis continuity context, Ratatui TUI, insta snapshots, GitHub Actions Linux CI.
+**Tech Stack:** Rust, serde/TOML configuration, Codex core-skills service, Elpis continuity context, Ratatui TUI, insta snapshots, Linux verification automation.
 
 **Spec:** `docs/superpowers/specs/2026-08-31-elpis-daily-driver-readiness-design.md`
 
 ## Global Constraints
 
 - Do not hard-code `/home/masih` or any personal absolute path in shipped source; Masih's source path belongs only in the final local candidate configuration.
-- During implementation, do not run local `cargo`, Rust tests, builds, the Elpis binary, or tmux; focused failures and passes run in GitHub Linux CI.
+- During implementation, do not run local `cargo`, Rust tests, builds, the Elpis binary, or tmux. The latest handoff also forbids pushing, so execution is deferred until the full functional issue set is closed.
 - Preserve Codex's default behavior when `skills.default_enabled` is absent; only the Elpis executable prepends `false` as its product default, and a later explicit user override may replace it.
 - Bundled Codex skills are off by default in Elpis, but the product must retain the configuration path that deliberately enables them.
 - Skill discovery remains path-based and duplicate names remain legal; do not deduplicate skills by name.
@@ -140,7 +140,7 @@ git add codex-rs/config/src/skills_config.rs codex-rs/core/src/config/config_tes
 git commit -m "test(context): define curated skill and rule admission"
 ```
 
-Coordinator action after review: send this exact commit to GitHub Linux CI and record the expected failure. A compile failure caused only by the planned missing fields/functions is acceptable red evidence; no unrelated failure is.
+Coordinator action after review: record independent source review as the red-harness evidence. The exact compile failure cannot be observed without violating the no-local-Rust/no-push constraints; all planned fields/functions must be resolved before the deferred final checks.
 
 ---
 
@@ -483,7 +483,7 @@ git commit -m "fix(tui): separate enabled and available skills"
 
 ---
 
-### Task 6: Document and remotely verify the complete slice
+### Task 6: Document and prepare verification for the complete slice
 
 **Files:**
 - Modify: `docs/context.md`
@@ -493,7 +493,7 @@ git commit -m "fix(tui): separate enabled and available skills"
 
 **Interfaces:**
 - Consumes: Tasks 2–5 production behavior and Task 1 test names.
-- Produces: one documented config example and exact GitHub evidence for the slice.
+- Produces: one documented config example and exact focused commands for the deferred final Linux verification.
 
 - [ ] **Step 1: Update the context contract**
 
@@ -518,7 +518,7 @@ State that dev rules are ordinary Markdown instruction rows in the Context Ledge
 
 Add only implemented behavior. Do not describe Masih's source path as a product default, and do not claim that hidden skill metadata has a measured ledger token value. Preserve the manual-memory and pruning boundaries.
 
-- [ ] **Step 3: Ensure existing Linux CI selects the focused tests**
+- [ ] **Step 3: Ensure the shared Linux verification path selects the focused tests**
 
 The required focused commands are:
 
@@ -540,9 +540,9 @@ git commit -m "docs: define curated skill and dev rule behavior"
 
 Stage only files that changed.
 
-- [ ] **Step 5: Coordinator runs GitHub Linux evidence**
+- [ ] **Step 5: Coordinator records deferred execution status**
 
-Use `gh`, never raw `git push`. Record exact commit SHA and run URL in the SDD ledger. Required result: all four named filters execute at least one test and pass, the ordinary Linux build passes, and no macOS result gates this plan. A pass on a different SHA is not evidence.
+Record the exact commit SHA and the four pending commands in the SDD ledger. Do not run them yet and do not upload the branch. They join the final focused Linux batch after all functional issues are closed; a later pass on a different SHA is not evidence for this slice.
 
 - [ ] **Step 6: Reconcile the spec and task ledger**
 

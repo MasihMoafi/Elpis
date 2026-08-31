@@ -22,7 +22,7 @@ Masih subsequently added two requirements on the same date:
   dashboard must have a distinctive Elpis identity rather than a Codex
   recolour.
 
-Automated checks and GitHub builds are evidence. Only Masih can accept the
+Automated checks and builds are evidence. Only Masih can accept the
 installed behavior. A later 2026-08-31 handoff explicitly authorizes this
 effort to integrate reviewed compatible work into local `main` and atomically
 replace the current debug `~/.local/bin/elpis` with the final optimized local
@@ -79,10 +79,12 @@ installation. Prove the installed file and built artifact have the same hash.
 Masih then manually verifies the important workflows; installation is not
 functional acceptance.
 
-During implementation, do not run local Rust builds, checks, or tests; use
-GitHub CI. Only after candidate-scoped issues are closed and required Linux CI
-is green, follow `docs/LOCAL_BUILD_RULES.md`, check disk usage, and perform one
-optimized local build/install. Do not launch it in tmux.
+During implementation, do not run local Rust builds, checks, or tests. The
+latest handoff also forbids pushing, so GitHub cannot execute the new local
+commits. After candidate-scoped implementation issues are closed, follow
+`docs/LOCAL_BUILD_RULES.md`, check disk usage, run the focused Linux checks and
+the conservative combined check locally, then perform one optimized local
+build/install. Do not launch it in tmux.
 
 ## Design Principles
 
@@ -242,12 +244,14 @@ The mapping lives in one checked manifest consumed by both developers and CI.
 Representative surfaces include documentation-only, dashboard/TUI, context
 and compaction, app-server, telemetry, agents/work graph, memory, and full.
 
-### 2.2 CI behavior
+### 2.2 Verification automation
 
-GitHub CI calls the same verification entrypoint instead of maintaining a
-second hand-written test list. Formatting is check-only in CI and never edits
-source. Linux is the required platform for this candidate; no new macOS work is
-in scope and macOS does not gate Masih's acceptance.
+The repository's GitHub workflow calls the same verification entrypoint instead
+of maintaining a second hand-written test list, so it is ready for later remote
+use without drift. This local-only run does not push merely to trigger it.
+Formatting is check-only and never edits source. Linux is the required platform
+for this effort; no new macOS work is in scope and macOS does not gate Masih's
+acceptance.
 
 Cache changes must be justified by recorded restore/save size and timing. This
 effort does not begin with a crate split or dependency-graph rewrite. Existing
@@ -437,7 +441,8 @@ The dashboard has no reverse control path.
 4. Port compaction parity with failing-first tests.
 5. Port nonblocking interrupt behavior and cancellation tests.
 6. Add automatic-pruning visibility while keeping its default off.
-7. Add the shared verification entrypoint/manifest and make Linux CI consume it.
+7. Add the shared verification entrypoint/manifest and make the Linux workflow
+   consume it, while retaining a directly runnable local path.
 8. Confirm the already-reviewed model/login/salvage candidates represented by
    the baseline; import any missing owner-approved commits in dependency order
    without rewriting them.
@@ -454,7 +459,8 @@ The dashboard has no reverse control path.
     implement the useful dashboard views against frozen fixtures.
 13. After the functional gate, implement only the separately approved Elpis TUI
     and dashboard identity, then obtain manual visual acceptance.
-14. Run final GitHub Linux verification, advance local `main` to the reviewed
+14. After all functional issues are closed, run the focused and conservative
+    combined Linux verification locally, advance local `main` to the reviewed
     integrated commit, build one optimized artifact, atomically install it as
     `elpis`, prove the installed hash, and hand Masih the side-by-side manual
     acceptance checklist.
@@ -513,11 +519,12 @@ foundation stage also reverts its dependent stages.
 - Verification-manifest consistency tests reject unknown omissions and
   zero-match filters.
 
-### GitHub evidence
+### Automated evidence
 
-- Focused checks run for each stage through the shared manifest.
-- The final combined candidate passes the required Linux matrix and produces a
-  reviewable optimized artifact.
+- Test-first source changes and independent code review precede implementation;
+  execution is deferred until the candidate's functional issues are closed.
+- The final combined tree passes the focused and conservative Linux checks
+  through the shared manifest and produces a reviewable optimized artifact.
 - Cache timing/size evidence is recorded before any cache-policy claim.
 - No push, tag, hosted release, published package, or public version change
   occurs.
@@ -561,7 +568,7 @@ acceptance.
 ## Completion Boundary
 
 The engineering result is ready for Masih only when the combined branch has the
-required GitHub evidence, local `main` names that exact reviewed commit, the
+required local Linux evidence, local `main` names that exact reviewed commit, the
 optimized normal command is installed atomically with a matching artifact hash,
 the prior debug binary remains recoverable, and the comparison checklist is
 prepared. The work is not released or accepted until Masih manually verifies
