@@ -924,11 +924,11 @@ mod tests {
         Ok(())
     }
 
-    /// A file on disk is not consent. Nothing optional may reach the model until the
-    /// Context Ledger admits it, so a fresh workspace starts with every row switched off
-    /// while still listing every row so it can be switched on.
+    /// A file on disk is not consent. Optional rows may not reach the model until the
+    /// Context Ledger admits them, while development rules start admitted on a fresh
+    /// workspace and remain switchable.
     #[tokio::test]
-    async fn optional_sources_are_listed_but_not_admitted_on_a_fresh_workspace()
+    async fn optional_sources_start_excluded_while_dev_rules_start_admitted()
     -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
@@ -954,7 +954,6 @@ mod tests {
         for name in [
             GLOBAL_RULES,
             PROJECT_RULES,
-            "dev/SKILL.md",
             "GOAL.md",
             "ES.md",
             "MEMORY.md",
@@ -966,10 +965,24 @@ mod tests {
             assert!(!source.admitted, "{name} must default to off");
             assert!(source.selectable, "{name} must stay switchable");
         }
+        let dev_source = sources
+            .iter()
+            .find(|source| source.name == "dev/SKILL.md")
+            .expect("dev rule must stay listed so it can be switched off");
+        assert!(dev_source.admitted, "dev/SKILL.md must default to on");
+        assert!(dev_source.selectable, "dev/SKILL.md must stay switchable");
+        assert!(
+            build_continuity_prompt(Some(&memories), &cwd)
+                .await
+                .is_some_and(|prompt| prompt.contains("Dev rule")),
+            "a fresh development rule must reach the prompt"
+        );
+
+        set_continuity_source_admitted(Some(&memories), &cwd, "dev/SKILL.md", false)?;
         assert_eq!(
             build_continuity_prompt(Some(&memories), &cwd).await,
             None,
-            "nothing may be injected before the ledger admits it"
+            "an explicit development-rule exclusion must remain authoritative"
         );
         Ok(())
     }
