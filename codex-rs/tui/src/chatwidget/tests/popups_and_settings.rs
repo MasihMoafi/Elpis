@@ -3359,7 +3359,7 @@ async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
 }
 
 #[tokio::test]
-async fn model_reasoning_selection_for_openai_applies_its_only_supported_effort() {
+async fn model_reasoning_selection_for_openai_emits_one_atomic_selection() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     let mut openai = get_available_model(&chat, "gpt-5.4");
     openai.id = "single-effort-openai-model".to_string();
@@ -3386,14 +3386,9 @@ async fn model_reasoning_selection_for_openai_applies_its_only_supported_effort(
         } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
             && model == "single-effort-openai-model"
     )));
-    assert!(events.iter().any(|event| matches!(
+    assert!(events.iter().all(|event| !matches!(
         event,
-        AppEvent::PersistProviderModelSelection {
-            provider_id,
-            model,
-            effort: Some(ReasoningEffortConfig::High),
-        } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
-            && model == "single-effort-openai-model"
+        AppEvent::PersistProviderModelSelection { .. }
     )));
 }
 

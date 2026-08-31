@@ -175,14 +175,18 @@ impl App {
         &mut self,
         app_server: &mut AppServerSession,
         params: ThreadSettingsUpdateParams,
-    ) {
+    ) -> bool {
         if !thread_settings_update_has_changes(&params) {
-            return;
+            return true;
         }
-        if let Err(err) = app_server.thread_settings_update(params).await {
-            tracing::warn!("failed to update app-server thread settings from TUI: {err}");
-            self.chat_widget
-                .add_error_message(format!("Failed to update thread settings: {err}"));
+        match app_server.thread_settings_update(params).await {
+            Ok(()) => true,
+            Err(err) => {
+                tracing::warn!("failed to update app-server thread settings from TUI: {err}");
+                self.chat_widget
+                    .add_error_message(format!("Failed to update thread settings: {err}"));
+                false
+            }
         }
     }
 }

@@ -575,11 +575,6 @@ impl ChatWidget {
                     provider_id: provider_id.clone(),
                     effort: effort_for_action.clone(),
                 });
-                tx.send(AppEvent::PersistProviderModelSelection {
-                    model: model_for_action.clone(),
-                    provider_id: provider_id.clone(),
-                    effort: effort_for_action.clone(),
-                });
             } else if effort_for_action == Some(ReasoningEffortConfig::Ultra) {
                 tx.send(AppEvent::ApplyAdvancedReasoning {
                     model: model_for_action.clone(),
@@ -1077,12 +1072,6 @@ impl ChatWidget {
     ) {
         self.app_event_tx
             .send(AppEvent::ApplyProviderModelSelection {
-                model: model.clone(),
-                provider_id: provider_id.clone(),
-                effort: effort.clone(),
-            });
-        self.app_event_tx
-            .send(AppEvent::PersistProviderModelSelection {
                 model,
                 provider_id,
                 effort,

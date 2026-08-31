@@ -698,7 +698,7 @@ pub(crate) enum AppEvent {
         effort: Option<ReasoningEffort>,
     },
 
-    /// Apply provider, model, and reasoning to the active thread in one settings update.
+    /// Apply provider, model, and reasoning to the active thread, then persist the accepted choice.
     ApplyProviderModelSelection {
         model: String,
         provider_id: String,

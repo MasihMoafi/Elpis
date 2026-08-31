@@ -972,18 +972,31 @@ impl App {
                 provider_id,
                 effort,
             } => {
+                let Some(params) = self.active_thread_provider_model_setting_update_params(
+                    model.clone(),
+                    provider_id.clone(),
+                    effort.clone(),
+                ) else {
+                    self.chat_widget.add_error_message(
+                        "A conversation must be active before changing its provider.".to_string(),
+                    );
+                    return Ok(AppRunControl::Continue);
+                };
+                if !self.send_thread_settings_update(app_server, params).await {
+                    return Ok(AppRunControl::Continue);
+                }
                 self.chat_widget.set_auto_model_routing_enabled(false);
                 self.chat_widget.set_model(&model);
                 self.on_update_reasoning_effort(effort.clone());
-                if let Some(params) = self.active_thread_provider_model_setting_update_params(
+                self.sync_active_thread_service_tier_to_cached_session()
+                    .await;
+                self.persist_provider_model_selection(
+                    app_server,
                     model,
                     provider_id,
                     effort,
-                ) {
-                    self.send_thread_settings_update(app_server, params).await;
-                }
-                self.sync_active_thread_service_tier_to_cached_session()
-                    .await;
+                )
+                .await;
             }
             AppEvent::EnableAutoModelRouting => {
                 let model = crate::chatwidget::model_routing::TERRA_MODEL.to_string();
@@ -1605,58 +1618,13 @@ impl App {
                 provider_id,
                 effort,
             } => {
-                // Ask the provider what window this model actually has. Locally served models
-                // are absent from the bundled catalog, so without this the context meter and
-                // every budget derived from it describe generic fallback metadata instead.
-                let context_window = match self
-                    .chat_widget
-                    .model_provider_base_url(provider_id.as_str())
-                {
-                    Some(base_url)
-                        if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID =>
-                    {
-                        crate::chatwidget::model_popups::fetch_ollama_context_window(
-                            base_url,
-                            model.clone(),
-                        )
-                        .await
-                    }
-                    _ => None,
-                };
-                match crate::config_update::write_config_batch(
-                    app_server.request_handle(),
-                    crate::config_update::build_provider_model_selection_edits(
-                        model.as_str(),
-                        provider_id.as_str(),
-                        effort.as_ref(),
-                        context_window,
-                    ),
+                self.persist_provider_model_selection(
+                    app_server,
+                    model,
+                    provider_id,
+                    effort,
                 )
-                .await
-                {
-                    Ok(_) => {
-                        let effort_label = effort
-                            .as_ref()
-                            .map(std::string::ToString::to_string)
-                            .unwrap_or_else(|| "default".to_string());
-                        tracing::info!(
-                            "Selected model: {model}, Selected provider: {provider_id}, Selected effort: {effort_label}"
-                        );
-                        self.chat_widget.add_info_message(
-                            format!("Model changed to {model} ({provider_id}) · {effort_label}"),
-                            /*hint*/ None,
-                        );
-                    }
-                    Err(err) => {
-                        let error = format_config_error(&err);
-                        tracing::error!(
-                            error = %error,
-                            "failed to persist model selection"
-                        );
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save default model: {error}"));
-                    }
-                }
+                .await;
             }
             AppEvent::PluginUninstallLoaded {
                 cwd,
@@ -2303,6 +2271,67 @@ impl App {
             }
         }
         Ok(AppRunControl::Continue)
+    }
+
+    async fn persist_provider_model_selection(
+        &mut self,
+        app_server: &AppServerSession,
+        model: String,
+        provider_id: String,
+        effort: Option<ReasoningEffortConfig>,
+    ) {
+        // Ask the provider what window this model actually has. Locally served models
+        // are absent from the bundled catalog, so without this the context meter and
+        // every budget derived from it describe generic fallback metadata instead.
+        let context_window = match self
+            .chat_widget
+            .model_provider_base_url(provider_id.as_str())
+        {
+            Some(base_url)
+                if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID =>
+            {
+                crate::chatwidget::model_popups::fetch_ollama_context_window(
+                    base_url,
+                    model.clone(),
+                )
+                .await
+            }
+            _ => None,
+        };
+        match crate::config_update::write_config_batch(
+            app_server.request_handle(),
+            crate::config_update::build_provider_model_selection_edits(
+                model.as_str(),
+                provider_id.as_str(),
+                effort.as_ref(),
+                context_window,
+            ),
+        )
+        .await
+        {
+            Ok(_) => {
+                let effort_label = effort
+                    .as_ref()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| "default".to_string());
+                tracing::info!(
+                    "Selected model: {model}, Selected provider: {provider_id}, Selected effort: {effort_label}"
+                );
+                self.chat_widget.add_info_message(
+                    format!("Model changed to {model} ({provider_id}) · {effort_label}"),
+                    /*hint*/ None,
+                );
+            }
+            Err(err) => {
+                let error = format_config_error(&err);
+                tracing::error!(
+                    error = %error,
+                    "failed to persist model selection"
+                );
+                self.chat_widget
+                    .add_error_message(format!("Failed to save default model: {error}"));
+            }
+        }
     }
 
     async fn apply_keymap_capture(
