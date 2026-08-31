@@ -3238,8 +3238,9 @@ async fn model_catalog_reports_openai_unavailable_after_initial_failure() {
     ));
 
     let picker = render_bottom_popup(&chat, /*width*/ 100);
+    let normalized_picker = picker.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(picker.contains("OpenAI models are unavailable"));
-    assert!(picker.contains("Open /model again to retry"));
+    assert!(normalized_picker.contains("Open /model again to retry"));
     assert!(!picker.contains("Loading available OpenAI models"));
 }
 
