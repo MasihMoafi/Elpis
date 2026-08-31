@@ -151,7 +151,7 @@ enabled skills only. The skills catalog itself is not a Context Ledger token row
 
 The ledger answers *what is admitted*. `/context` answers *what filled the window*: token
 usage as a grid broken down by category — user messages, agent responses, tool calls,
-system prompt, skills, and free space — alongside the backtrack checkpoints available via
+system prompt, Development rules, and free space — alongside the backtrack checkpoints available via
 `Esc Esc`. The two are separate surfaces and neither replaces the other.
 
 ![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](assets/elpis-context-slash.webp)

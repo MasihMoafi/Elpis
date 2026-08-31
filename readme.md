@@ -154,7 +154,7 @@ its per-source estimates are not tokenizer measurements.
 ![The Context Ledger listing admitted instruction files with their token counts and included state](docs/assets/context-ledger.webp)
 
 `/context` answers a different question: where the window went. It displays token usage by user
-messages, agent responses, tool calls, system prompt, skills, and free space, alongside available
+messages, agent responses, tool calls, system prompt, Development rules, and free space, alongside available
 backtrack checkpoints.
 
 <img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
