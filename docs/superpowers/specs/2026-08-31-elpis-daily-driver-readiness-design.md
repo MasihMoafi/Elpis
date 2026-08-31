@@ -13,11 +13,21 @@ Approved in chat by Masih on 2026-08-31, with two explicit amendments:
 - automatic pruning must be visibly marked experimental, while `/dashboard`
   must become a useful, intentionally designed product surface.
 
+Masih subsequently added two requirements on the same date:
+
+- Elpis must stop silently inheriting Codex's bundled and ambient skill set;
+  the user's configured development rules and deliberately enabled skills are
+  the only default model-visible sources; and
+- functional readiness remains ahead of visual work, after which the TUI and
+  dashboard must have a distinctive Elpis identity rather than a Codex
+  recolour.
+
 Automated checks and GitHub builds are evidence. Only Masih can accept the
-installed behavior or authorize promotion to the normal `elpis` command.
-Acceptance of the candidate does not authorize replacing `elpis`, merging to
-`main`, versioning, or releasing. Each requires a separate later instruction
-from Masih.
+installed behavior. A later 2026-08-31 handoff explicitly authorizes this
+effort to integrate reviewed compatible work into local `main` and atomically
+replace the current debug `~/.local/bin/elpis` with the final optimized local
+artifact. It does not authorize a push, tag, GitHub release, published package,
+or public version change.
 
 ## Intent
 
@@ -36,30 +46,43 @@ Read-only source audits found an Elpis-only 40%-remaining compaction rule, a
 blocking interrupt request in the TUI event path, an invisible automatic-prune
 flag, a context-only dashboard that can serve stale data, partial agent/work-
 graph views, and manual memory with positive and negative request-level tests.
+
+The skill/context audit found two separate defects. Elpis currently discovers
+bundled skills, `$HOME/.agents/skills`, `$ELPIS_HOME/skills`, repository skill
+roots, plugin roots, and every skill below configured broad `extra_roots`.
+Unmentioned skills default to enabled, so roughly twenty skill descriptions can
+reach each turn even though full `SKILL.md` bodies remain lazily loaded. The
+Context Ledger separately reads startup-installed copies under
+`$ELPIS_HOME/skills/dev`, not Masih's current source directory. In the reported
+screen the project `AGENTS.md` and bundled dev `AGENTS.md` are different files;
+their independent estimates merely both round to `1.2k`.
+
 These findings justify the work; they do not prove the future candidate works.
 
-## Non-Release Boundary
+## Local-Integration, Non-Release Boundary
 
 This effort must not:
 
-- merge to `main`;
 - create a tag, version bump, GitHub release, public announcement, or published
   package;
-- replace the currently installed `elpis` executable before Masih accepts the
-  candidate;
 - restart or disturb another running Elpis/Codex process or the separate
   `feat/turn-observability` worktree; or
 - call the candidate complete on the strength of compilation or automated
   tests alone.
 
-The final local artifact is installed alongside the current executable as an
-explicit candidate, such as `elpis-candidate`. Masih manually verifies the
-important workflows before any later promotion is considered.
+The current installed `elpis` remains untouched during implementation. After
+all selected work is integrated, required Linux CI is green, and one optimized
+local artifact is built, local `main` is advanced to the exact reviewed commit
+and the artifact is installed atomically as the normal `elpis` command. Preserve
+a recoverable copy of the replaced debug binary until Masih accepts the new
+installation. Prove the installed file and built artifact have the same hash.
+Masih then manually verifies the important workflows; installation is not
+functional acceptance.
 
 During implementation, do not run local Rust builds, checks, or tests; use
 GitHub CI. Only after candidate-scoped issues are closed and required Linux CI
 is green, follow `docs/LOCAL_BUILD_RULES.md`, check disk usage, and perform one
-local `elpis-candidate` build/install. Do not launch it in tmux.
+optimized local build/install. Do not launch it in tmux.
 
 ## Design Principles
 
@@ -74,6 +97,65 @@ local `elpis-candidate` build/install. Do not launch it in tmux.
    the agent is healthy, what context it carries, and what needs attention.
 5. **Verification is proportional.** Small changes have a fast focused path;
    unknown or shared changes fall back to the conservative full Linux surface.
+6. **Rules and skills are different products.** Development-rule Markdown is
+   visible in the Context Ledger. A skill is an on-demand workflow and becomes
+   model-visible only after deliberate enablement.
+
+## Stage 0: Skill and Instruction Hygiene
+
+### 0.1 Canonical development-rule source
+
+Add a portable configuration field for ordered development-rule roots. No
+personal absolute path is compiled into Elpis. When configured roots are
+present they replace, rather than append to, the managed fallback so a stale
+same-named installed file cannot shadow the user's source. Canonical paths and
+file names are deduplicated deterministically.
+
+For Masih's candidate configuration, the sole root is
+`/home/masih/Desktop/p/skills/dev`. The exact two files currently in that root,
+`AGENTS.md` and `CODING_GUIDELINES.md`, are the development-rule rows. They are
+instructions, not `SKILL.md` skills, and their source files remain owner-managed
+outside the repository.
+
+Fresh workspaces admit configured development rules by default. A previously
+stored explicit exclusion remains authoritative; upgrading must not silently
+reverse a user's deliberate toggle. The portable managed rules remain a
+fallback for installations with no configured root, but they cannot override a
+configured source.
+
+### 0.2 Explicit skill curation
+
+Elpis defaults ordinary skills to disabled and bundled Codex skills to off.
+Ambient user, repository, plugin, and configured-root skills may be discovered
+for the management surface, but they do not enter the model-visible skill
+catalog, mentions picker, implicit invocation path, or turn prompt until the
+user explicitly enables them. Enabling one skill persists by its canonical
+path or unambiguous name through the existing skills configuration path.
+
+Preserve Codex's progressive-loading behavior: an enabled skill contributes
+only compact metadata until it is selected, mentioned, or otherwise validly
+invoked; Elpis never loads every enabled `SKILL.md` body at startup. `/skills`
+must clearly separate enabled skills from available candidates and show each
+candidate's origin.
+
+No additional personal skill is enabled in this candidate until Masih approves
+the shortlist. The initial candidates are `agent-grep` for economical code
+navigation, `dumb-down` for an explicit plain-language mode, and
+`experiment-workflow` for evidence-heavy evaluations. `context-budgeting` is
+not a candidate because it encodes the older Ace/pruning workflow this effort
+is correcting; `first-principles`, `req-engineering`, `harness-eng`, and
+`multi-agent` substantially overlap the admitted development rules and should
+not duplicate them by default.
+
+### 0.3 Honest Context Ledger accounting
+
+Keep the estimate marker because the ledger uses a character heuristic rather
+than tokenizer output. Per-source rows show enough precision to distinguish
+nearby values instead of rounding both to the same one-decimal `k` label, and
+the expanded row shows the exact source path, byte count, estimate method, and
+configured-versus-managed origin. Category and aggregate totals may remain
+compact. Ledger listing, admission, `/status`, and the actual model request must
+continue to use the same canonical source set.
 
 ## Stage 1: Codex-Equivalent Foundation
 
@@ -211,6 +293,15 @@ offline system humanist sans stack for navigation and prose, and the system
 monospace stack for identifiers, durations, token counts, and paths. No remote
 font, script, analytics, image, or other network dependency is added.
 
+This dashboard palette remains provisional until the later whole-product visual
+approval. The source-backed TUI audit recommends **Ember + Evidence**: terminal-
+default black on Masih's dark profile, a restrained rose/ember brand accent,
+the earlier Context Ledger sky/amber/slate treatment for admission state, and
+the existing category colours for evidence. That direction is not implemented
+until the functional gate passes and Masih approves it; if selected, the
+dashboard derives from the same semantic tokens rather than becoming a separate
+theme.
+
 ### 3.2 Dashboard information architecture
 
 The responsive page contains:
@@ -340,22 +431,33 @@ The dashboard has no reverse control path.
 1. Update the coordinator-owned ignored `TASKS.md` Current Action and keep the
    worktree integration ledger as a table there, not as a second status source.
 2. Record branch/worktree provenance and freeze the candidate baseline.
-3. Port compaction parity with failing-first tests.
-4. Port nonblocking interrupt behavior and cancellation tests.
-5. Add automatic-pruning visibility while keeping its default off.
-6. Add the shared verification entrypoint/manifest and make Linux CI consume it.
-7. Confirm the already-reviewed model/login/salvage candidates represented by
+3. Repair configured development-rule precedence, default admission, explicit
+   skill curation, and per-source ledger provenance/precision with failing-first
+   tests.
+4. Port compaction parity with failing-first tests.
+5. Port nonblocking interrupt behavior and cancellation tests.
+6. Add automatic-pruning visibility while keeping its default off.
+7. Add the shared verification entrypoint/manifest and make Linux CI consume it.
+8. Confirm the already-reviewed model/login/salvage candidates represented by
    the baseline; import any missing owner-approved commits in dependency order
    without rewriting them.
-8. Integrate the observability branch only after its owner finishes and its
-   focused checks are accepted; preserve its untracked `ES.md`.
-9. Add the typed agent-control authority layer, then split and extend the TUI
+9. The observability owner has now handed off `feat/turn-observability` at
+   `fef746e`. Import its six unique commits in original order into the
+   coordinator branch before editing their overlapping foundation files;
+   preserve its untracked `ES.md`. Keep backend-reported subscription cost
+   unavailable while carrying its measured timing data into the later TUI and
+   dashboard surfaces.
+10. Add the typed agent-control authority layer, then split and extend the TUI
    agent/work-graph surface.
-10. Add the honest manual-memory status type and create/edit/admission UX.
-11. Introduce the typed dashboard state, wire the approved runtime facts, and
+11. Add the honest manual-memory status type and create/edit/admission UX.
+12. Introduce the typed dashboard state, wire the approved runtime facts, and
     implement the useful dashboard views against frozen fixtures.
-12. Run GitHub verification, build a candidate artifact, then perform the final
-    local candidate build and side-by-side acceptance.
+13. After the functional gate, implement only the separately approved Elpis TUI
+    and dashboard identity, then obtain manual visual acceptance.
+14. Run final GitHub Linux verification, advance local `main` to the reviewed
+    integrated commit, build one optimized artifact, atomically install it as
+    `elpis`, prove the installed hash, and hand Masih the side-by-side manual
+    acceptance checklist.
 
 Each stage is committed separately with dependencies recorded. Reverting a
 foundation stage also reverts its dependent stages.
@@ -377,6 +479,16 @@ foundation stage also reverts its dependent stages.
 
 ### Automated source/unit checks
 
+- With no explicit skill enablement, no bundled or ambient skill appears in the
+  model-visible skill catalog, mentions picker, or implicit invocation index.
+  Explicitly enabling one candidate admits exactly that skill and persists.
+- A configured development-rule root replaces the managed fallback, so a stale
+  same-named bundled copy is neither listed nor injected. A fresh workspace
+  admits configured rules; an explicit stored exclusion remains excluded.
+- Ledger and request-level tests prove that two similarly sized rule files keep
+  distinct paths and distinct estimates, and that expanded provenance reports
+  the actual configured file. The equal-`1.2k` misleading case is a regression
+  fixture.
 - Codex and Elpis context-window fixtures resolve the same automatic-compaction
   threshold and usable ceiling for default, model-specific, explicit-override,
   unknown-window, and scoped-accounting cases.
@@ -405,13 +517,14 @@ foundation stage also reverts its dependent stages.
 
 - Focused checks run for each stage through the shared manifest.
 - The final combined candidate passes the required Linux matrix and produces a
-  separately named candidate artifact.
+  reviewable optimized artifact.
 - Cache timing/size evidence is recorded before any cache-policy claim.
-- No release, tag, `main` merge, or normal-install step occurs.
+- No push, tag, hosted release, published package, or public version change
+  occurs.
 
 ### Side-by-side candidate evaluation
 
-Compare current Codex and `elpis-candidate` using two identical disposable
+Compare current Codex and the integrated Elpis artifact using two identical disposable
 Linux workspace copies from one pinned fixture. Restore the fixture before
 every run, alternate arm order, use clean separate state directories, pin both
 commit identifiers, match model/reasoning/permissions and prompts, and
@@ -447,8 +560,9 @@ acceptance.
 
 ## Completion Boundary
 
-The engineering candidate is ready for Masih only when the combined branch has
-the required GitHub evidence, the separately named local binary is built after
-all known implementation issues are closed, and the comparison checklist is
+The engineering result is ready for Masih only when the combined branch has the
+required GitHub evidence, local `main` names that exact reviewed commit, the
+optimized normal command is installed atomically with a matching artifact hash,
+the prior debug binary remains recoverable, and the comparison checklist is
 prepared. The work is not released or accepted until Masih manually verifies
 the important features and explicitly says so.
