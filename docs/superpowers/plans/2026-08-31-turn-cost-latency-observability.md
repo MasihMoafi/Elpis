@@ -75,7 +75,10 @@ Stage only the six Task 1 files and commit `feat(telemetry): query backend turn 
 
 **Files:**
 - Modify: `codex-rs/otel/src/events/session_telemetry.rs`
+- Modify: `codex-rs/otel/src/metrics/client.rs`
+- Modify: `codex-rs/otel/src/metrics/config.rs`
 - Modify: `codex-rs/otel/src/metrics/names.rs`
+- Modify: `codex-rs/otel/src/provider.rs`
 - Modify: `codex-rs/otel/tests/suite/snapshot.rs`
 - Create: `codex-rs/app-server/src/turn_cost_worker.rs`
 - Create: `codex-rs/app-server/src/turn_cost_worker_tests.rs`

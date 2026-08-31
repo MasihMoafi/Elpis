@@ -1,10 +1,13 @@
 use crate::config::OtelExporter;
 use crate::metrics::Result;
+use crate::metrics::names::TURN_COST_MICROUSD_METRIC;
 use crate::metrics::validation::validate_tag_key;
 use crate::metrics::validation::validate_tag_value;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use std::collections::BTreeMap;
 use std::time::Duration;
+
+const STATSIG_DISABLED_METRICS: &[&str] = &[TURN_COST_MICROUSD_METRIC];
 
 #[derive(Clone, Debug)]
 pub enum MetricsExporter {
@@ -20,6 +23,7 @@ pub struct MetricsConfig {
     pub(crate) exporter: MetricsExporter,
     pub(crate) export_interval: Option<Duration>,
     pub(crate) runtime_reader: bool,
+    pub(crate) statsig_disabled_metrics: &'static [&'static str],
     pub(crate) default_tags: BTreeMap<String, String>,
 }
 
@@ -30,6 +34,11 @@ impl MetricsConfig {
         service_version: impl Into<String>,
         exporter: OtelExporter,
     ) -> Self {
+        let statsig_disabled_metrics = if matches!(&exporter, OtelExporter::Statsig) {
+            STATSIG_DISABLED_METRICS
+        } else {
+            &[]
+        };
         Self {
             environment: environment.into(),
             service_name: service_name.into(),
@@ -37,6 +46,7 @@ impl MetricsConfig {
             exporter: MetricsExporter::Otlp(exporter),
             export_interval: None,
             runtime_reader: false,
+            statsig_disabled_metrics,
             default_tags: BTreeMap::new(),
         }
     }
@@ -55,6 +65,7 @@ impl MetricsConfig {
             exporter: MetricsExporter::InMemory(exporter),
             export_interval: None,
             runtime_reader: false,
+            statsig_disabled_metrics: &[],
             default_tags: BTreeMap::new(),
         }
     }

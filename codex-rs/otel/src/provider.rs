@@ -459,6 +459,9 @@ fn build_tracer_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::metrics::MetricsExporter;
+    use crate::metrics::TURN_COST_MICROUSD_METRIC;
+    use opentelemetry_sdk::metrics::InMemoryMetricExporter;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
@@ -523,6 +526,36 @@ mod tests {
         assert!(is_trace_safe_target("codex_otel.trace_safe.summary"));
         assert!(!is_trace_safe_target("codex_otel.log_only"));
         assert!(!is_trace_safe_target("codex_otel.network_proxy"));
+    }
+
+    #[test]
+    fn statsig_turn_cost_metric_is_not_exported() -> Result<(), Box<dyn Error>> {
+        let exporter = InMemoryMetricExporter::default();
+        let mut config = MetricsConfig::otlp(
+            "test",
+            "codex-cli",
+            env!("CARGO_PKG_VERSION"),
+            OtelExporter::Statsig,
+        );
+        config.exporter = MetricsExporter::InMemory(exporter.clone());
+        let metrics = MetricsClient::new(config)?;
+
+        metrics.counter(TURN_COST_MICROUSD_METRIC, /*inc*/ 1, &[])?;
+        metrics.counter("codex.turns", /*inc*/ 1, &[])?;
+        metrics.shutdown()?;
+
+        let exported_metrics = exporter.get_finished_metrics()?;
+        let mut names: Vec<_> = exported_metrics
+            .iter()
+            .flat_map(opentelemetry_sdk::metrics::data::ResourceMetrics::scope_metrics)
+            .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+            .map(opentelemetry_sdk::metrics::data::Metric::name)
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names, vec!["codex.turns"]);
+
+        Ok(())
     }
 
     fn test_otel_settings() -> OtelSettings {

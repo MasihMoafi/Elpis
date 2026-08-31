@@ -27,6 +27,7 @@ pub const TURN_TTFM_DURATION_METRIC: &str = "codex.turn.ttfm.duration_ms";
 pub const TURN_NETWORK_PROXY_METRIC: &str = "codex.turn.network_proxy";
 pub const TURN_TOOL_CALL_METRIC: &str = "codex.turn.tool.call";
 pub const TURN_TOKEN_USAGE_METRIC: &str = "codex.turn.token_usage";
+pub const TURN_COST_MICROUSD_METRIC: &str = "codex.turn.cost_microusd";
 pub const GUARDIAN_REVIEW_COUNT_METRIC: &str = "codex.guardian.review";
 pub const GUARDIAN_REVIEW_DURATION_METRIC: &str = "codex.guardian.review.duration_ms";
 pub const GUARDIAN_REVIEW_TTFT_DURATION_METRIC: &str = "codex.guardian.review.ttft.duration_ms";
