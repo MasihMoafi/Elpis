@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Elpis's native compaction and Ctrl-C behavior match the pinned Codex donor, make pruning cancellation-safe and explicitly opt-in, and expose the automatic-pruning state without redesigning the dashboard.
+**Goal:** Match the pinned Codex donor's native compaction threshold/headroom behavior on Elpis's shared regular-turn path, make Ctrl-C nonblocking and retryable after failure, make pruning cancellation-safe and explicitly opt-in, and expose the automatic-pruning state without redesigning the dashboard.
 
 **Architecture:** Port Codex's model-window and nonblocking-interrupt seams rather than recreating their policy. Keep native compaction, manual Ace pruning, and opt-in automatic Ace pruning as distinct flows: the compaction task always takes the native summarization lifecycle; the prune task alone owns Ace history mutation; and feature metadata owns the setting's name, warning, default, and discovery. Publish one additive boolean in the existing dashboard snapshot as the handoff contract for the later typed-dashboard plan; do not alter the current HTML/dashboard layout in this plan.
 
@@ -13,10 +13,10 @@
 ## Goal-specific evidence and decisions
 
 - Implement against Codex donor commit `a9519cbcdd2d664530edb2469224ee03c1056799`; port the nonblocking-interrupt precedent from ancestor commit `62ba648136c7e60b9380c40b60cb553a7d8eb1ab`.
-- Port donor compaction semantics exactly, including the configured-limit behavior: in `Total` scope the model metadata's `auto_compact_token_limit()` owns the limit, while the configured limit remains the donor's `BodyAfterPrefix` behavior. Do not retain Elpis's 60%/40%-remaining backstop.
+- Port the donor's shared regular-turn compaction semantics exactly, including its centralized config/model helper and configured-limit behavior: in `Total` scope the model metadata's `auto_compact_token_limit()` owns the limit, while the configured limit remains the donor's `BodyAfterPrefix` behavior. Do not retain Elpis's 60%/40%-remaining backstop. The pinned donor's model-specific helper is called only by a guardian review path that this Elpis checkout does not contain; record that source difference rather than claiming parity for an absent donor-only subsystem.
 - Remove `Config::elpis_compact_cleanup` and its compact route. Ordinary `/compact` remains native summarization; it must never invoke manual pruning as a hidden compaction phase.
 - Treat the user's Headroom reference as the donor's built-in usable-window headroom. No separate Headroom integration exists in this checkout, so none is planned.
-- First Ctrl-C cancels an active turn without awaiting app-server I/O on the UI loop. Repeated Ctrl-C for that same turn coalesces. Retain one stale-turn retry, visible warning delivery, and pending-state clearing. Do not change top-level shutdown unless a later failing test or the measured parity comparison proves a residual divergence.
+- First Ctrl-C cancels an active turn without awaiting app-server I/O on the UI loop. Repeated Ctrl-C for that same turn coalesces. Retain one stale-turn retry and visible warning delivery. Clear pending state on matching lifecycle events and, unlike the donor's stuck-failure edge, clear only the matching reservation after final RPC failure so a later Ctrl-C can retry. Do not change top-level shutdown unless a later failing test or the measured parity comparison proves a residual divergence.
 - Automatic Ace pruning is `Experimental` and disabled by default. `/prune` and `/force-prune <1-100>` remain independent manual operations.
 
 ## Global constraints
@@ -51,12 +51,13 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
 - Modify: `codex-rs/core/src/session/context_window.rs`
 - Modify: `codex-rs/protocol/src/openai_models.rs` only if it lacks the donor-compatible `ModelInfo::{resolved_context_window,usable_context_window,auto_compact_token_limit}` behavior already present at the pinned donor revision
+- Modify: `codex-rs/tui/src/main.rs` only to remove/update the stale comment that names the deleted Elpis 40%-remaining constant
 - Modify: colocated `#[cfg(test)]` modules in the two files above
 
 **Interfaces:**
 
 - Consumes: `ModelInfo::resolved_context_window() -> Option<i64>`, `ModelInfo::auto_compact_token_limit() -> Option<i64>`, `ModelInfo::effective_context_window_percent`, `Config::model_auto_compact_token_limit_scope`, and `AutoCompactTokenLimitScope::{Total,BodyAfterPrefix}`.
-- Produces: `context_window_token_status(...) -> ContextWindowTokenStatus` whose `auto_compact_scope_limit` and `full_context_window_limit` follow donor semantics. `full_context_window_limit` is the usable window, not the raw window.
+- Produces: the donor-shaped `context_window_token_status_with_config(...)` seam and `context_window_token_status(...) -> ContextWindowTokenStatus` whose `auto_compact_scope_limit` and `full_context_window_limit` follow shared regular-turn donor semantics. `full_context_window_limit` is the usable window, not the raw window.
 - Invariant: for resolved window `272_000`, 95% usable headroom is `258_400` and the automatic-compaction threshold is `244_800`; a configured model limit is clamped by the donor's 90%-of-resolved-window rule.
 
 - [ ] **Step 1: Write failing parity tests before changing runtime code.**
@@ -92,7 +93,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
 - [ ] **Step 3: Port the donor calculation exactly.**
 
-  In `context_window.rs`, replace the Elpis helper and all 60% fallback precedence with the donor structure:
+  In `context_window.rs`, replace the Elpis helper and all 60% fallback precedence with the donor's centralized `context_window_token_status_with_config(sess, config, model_info)` structure. This Elpis revision exposes `model_info` as a field, so the public-in-module regular-turn wrapper passes `turn_context.config.as_ref()` and `&turn_context.model_info`:
 
   ```rust
   // Total scope: model metadata owns the threshold.
@@ -102,16 +103,16 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   let full_context_window_limit = model_info.usable_context_window();
   ```
 
-  Preserve the existing fallback-buffer behavior, token accounting fields, and `BodyAfterPrefix` explicit-config behavior. Remove `ELPIS_COMPACT_REMAINING_PERCENT`, `elpis_auto_compact_token_limit`, their Elpis-specific tests, and comments that call 60% a safety backstop. If the contained protocol model methods differ from donor `a9519…`, port only those model methods and their donor tests; do not create a second Elpis resolver.
+  Preserve the existing fallback-buffer behavior, token accounting fields, and `BodyAfterPrefix` explicit-config behavior. Remove `ELPIS_COMPACT_REMAINING_PERCENT`, `elpis_auto_compact_token_limit`, their Elpis-specific tests, and comments that call 60% a safety backstop, including the stale default-injection comment in `tui/src/main.rs`. If the contained protocol model methods differ from donor `a9519…`, port only those model methods and their donor tests; do not create a second Elpis resolver. Do not add the donor's `context_window_token_status_for_model` as unused code: its only donor caller is in a guardian review subsystem absent from Elpis.
 
 - [ ] **Step 4: Perform source-only parity review.**
 
   ```bash
-  rg -n 'ELPIS_COMPACT_REMAINING_PERCENT|elpis_auto_compact_token_limit|155_040|103_360' codex-rs/core/src/session/context_window.rs codex-rs/protocol/src/openai_models.rs
+  rg -n 'ELPIS_COMPACT_REMAINING_PERCENT|elpis_auto_compact_token_limit|155_040|103_360|40%-remaining' codex-rs --glob '!target/**'
   git diff --check
   ```
 
-  Expected: no old helper/constant/test value remains; no second Total-scope precedence is introduced.
+  Expected: no old helper/constant/test value/comment remains; no second Total-scope precedence is introduced. The preflight's pinned-donor source evidence records the donor-only guardian caller as an explicit source difference, rather than silently copying a helper without its subsystem.
 
 - [ ] **Step 5: Run the focused tests after implementation.**
 
@@ -120,7 +121,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 - [ ] **Step 6: Commit.**
 
   ```bash
-  git add codex-rs/core/src/session/context_window.rs codex-rs/protocol/src/openai_models.rs
+  git add codex-rs/core/src/session/context_window.rs codex-rs/protocol/src/openai_models.rs codex-rs/tui/src/main.rs
   git commit -m "fix(context): port donor compaction window semantics"
   ```
 
@@ -145,7 +146,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
 - [ ] **Step 1: Replace cleanup-route tests with a failing native-route regression.**
 
-  First retain the fixture's explicit `config.elpis_compact_cleanup = true`, but invert its expectation: submitting `Op::Compact` must still use `SUMMARIZATION_PROMPT`, must not contain `CLEANUP_PROMPT`, and must not issue an Ace-prune request. This is intentionally red against the hidden alternate route. After removing the field and branch, delete only the now-impossible field assignment while keeping the native-route assertions. Keep a separate normal compact lifecycle test; do not delete unrelated snapshot coverage.
+  Refactor `run_compact_preservation_scenario` into a generic native-route scenario that can run with or without `Op::Compact`. Keep `compact_preservation_control_without_compaction_keeps_all_markers` wired to its no-compact branch unchanged. Replace only the two cleanup-manifest cases (`compact_preserves_critical_markers_and_removes_redundant_noise` and `malformed_cleanup_manifest_preserves_everything`) plus their manifest fixtures with one explicitly named compact branch, `native_compact_uses_summarization_without_elpis_cleanup_route`. In its red form, retain `config.elpis_compact_cleanup = true` but invert the expectation: submitting `Op::Compact` must use `SUMMARIZATION_PROMPT`, must not contain `CLEANUP_PROMPT`, and must not issue an Ace-prune request. This is intentionally red against the hidden alternate route. After removing the field and branch, delete only the now-impossible field assignment and cleanup-manifest fixtures while keeping the native-route/control assertions. Keep the separate normal compact lifecycle, history-shape, custom-prompt, and manual-prune tests; do not delete unrelated snapshot coverage.
 
   Required assertion shape:
 
@@ -160,7 +161,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   Deferred execution command:
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_compact --test suite
+  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite
   ```
 
   Expected before implementation: the explicit hidden flag selects `CLEANUP_PROMPT`, so the inverted native-route assertion fails. After implementation the flag assignment is removed because the field no longer exists, while the same native-route assertions pass.
@@ -190,7 +191,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 - [ ] **Step 5: Run focused regression checks.**
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_compact --test suite
+  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite
   CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core compact --test suite
   ```
 
@@ -217,7 +218,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
 - Consumes: `AppCommand::Interrupt`, `App::active_turn_id_for_thread`, `AppServerSession::request_handle`, `AppServerSession::next_request_id`, `active_turn_interrupt_race`, and `ServerNotification` lifecycle events.
 - Produces: `ThreadEventStore::pending_interrupt_turn_id: Option<String>` and a nonblocking `try_submit_active_thread_op_via_app_server(...) -> Result<bool>` interrupt path.
-- Contract: reserve the active turn ID before spawning; coalesce when `pending_interrupt_turn_id == active_turn_id`; retry exactly once when the app server reports a different active turn; deliver final failure as `Failed to interrupt turn: {error}` warning; clear pending state on matching `TurnCompleted` and `ThreadClosed`.
+- Contract: reserve the active turn ID before spawning; coalesce when `pending_interrupt_turn_id == active_turn_id`; retry exactly once when the app server reports a different active turn; deliver final failure as `Failed to interrupt turn: {error}` warning; clear pending state on matching `TurnCompleted` and `ThreadClosed`; after final RPC failure clear only the reservation that still matches the failed turn ID so a later Ctrl-C can retry.
 
 - [ ] **Step 1: Port the donor's gated-RPC regression test first.**
 
@@ -232,7 +233,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   assert_eq!(pending_interrupt_turn_id, None);
   ```
 
-  Add the donor no-active-turn/backtrack-reset assertion to `tui/src/app/tests.rs`.
+  Add the donor no-active-turn/backtrack-reset assertion to `tui/src/app/tests.rs`. Add `failed_active_turn_interrupt_clears_pending_and_allows_retry`: force the final RPC attempt to fail, assert the exact warning is delivered and pending state is cleared, press Ctrl-C again while the same turn remains active, and assert a fresh request ID is consumed.
 
 - [ ] **Step 2: Run the focused test to show that the current inline await blocks it.**
 
@@ -254,7 +255,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   tokio::spawn(async move { /* donor typed turn/interrupt request and one stale-ID retry */ });
   ```
 
-  Use `TurnInterruptParams`, `TurnInterruptResponse`, `ClientRequest::TurnInterrupt`, and `WarningNotification` from the donor patch. Reset backtrack state before return. The spawned task owns failures; it must enqueue the visible warning and must not return an RPC error through the event loop.
+  Use `TurnInterruptParams`, `TurnInterruptResponse`, `ClientRequest::TurnInterrupt`, and `WarningNotification` from the donor patch. Reset backtrack state before return. The spawned task owns failures; it must enqueue the visible warning and must not return an RPC error through the event loop. On final failure, while holding the thread store lock, clear `pending_interrupt_turn_id` only when it still equals the final attempted turn ID, then record/deliver the warning. Do not clear a newer reservation.
 
 - [ ] **Step 4: Source-review the liveness and cleanup invariants.**
 
@@ -263,12 +264,13 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   git diff --check
   ```
 
-  Expected: no await of `turn_interrupt` remains in the `AppCommand::Interrupt` UI routing path; there is exactly one pending field and exactly one retry loop.
+  Expected: no await of `turn_interrupt` remains in the `AppCommand::Interrupt` UI routing path; there is exactly one pending field and exactly one retry loop; both lifecycle completion and final failure have matching-ID cleanup.
 
 - [ ] **Step 5: Run focused TUI tests.**
 
   ```bash
   CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib
+  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui failed_active_turn_interrupt_clears_pending_and_allows_retry --lib
   CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui interrupt_without_active_turn_is_treated_as_handled --lib
   ```
 
@@ -374,12 +376,13 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 - Modify: `codex-rs/tui/src/slash_command.rs`
 - Modify: `codex-rs/tui/src/dashboard_server.rs`
 - Modify: `codex-rs/tui/src/chatwidget/context_usage.rs`
+- Modify: `codex-rs/tui/src/app/tests.rs`
 - Modify: tests colocated with `dashboard_server.rs` and `context_usage.rs` as needed
 
 **Interfaces:**
 
 - Consumes: `Feature::stage()`, `Feature::default_enabled()`, `Feature::key()`, `FEATURES`, `AppEvent::UpdateFeatureFlags`, `App::update_feature_flags`, and `DashboardSnapshot` serialization.
-- Produces: `AutomaticContextPruning` metadata at `Stage::Experimental { name, menu_description, announcement }`, a metadata-derived settings row, and additive `DashboardSnapshot { automatic_pruning_enabled: bool, .. }` JSON.
+- Produces: `AutomaticContextPruning` metadata at `Stage::Experimental { name, menu_description, announcement }`, one metadata-derived automatic-pruning settings row appended to the existing `Keep computer awake` row, and additive `DashboardSnapshot { automatic_pruning_enabled: bool, .. }` JSON. It does not expose unrelated Experimental registry entries such as Network proxy.
 - Dashboard handoff contract: the later typed-dashboard plan consumes the boolean and renders `Automatic pruning: Off` when false and `Automatic pruning: On · Experimental` when true. This task does not render those strings in current `index.html`.
 - Persistence contract: opening `/settings` merely reads current state; accepting a toggle sends the existing `UpdateFeatureFlags` route, persists `[features] automatic_context_pruning = true|false`, and leaves manual `/prune` enabled regardless of the flag.
 
@@ -392,14 +395,14 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   assert!(matches!(Feature::AutomaticContextPruning.stage(), Stage::Experimental { .. }));
   ```
 
-  Render `/settings` through `ChatWidget::open_experimental_popup()` and assert it contains both exact strings:
+  Render `/settings` through `ChatWidget::open_experimental_popup()` and assert it retains `Keep computer awake`, contains both exact automatic-pruning strings below, and does not expose `Network proxy`:
 
   ```text
   Automatic pruning — Experimental
   Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.
   ```
 
-  Assert `/settings` is included in `built_in_slash_commands()` rather than only parseable/hidden. Toggle the row, accept it, run the existing config-persistence path in a temp `codex_home`, and assert the written TOML contains `automatic_context_pruning = true`; reopen/read config and assert false remains the default without user action. Serialize `DashboardSnapshot` and assert its new boolean is present for both false and true.
+  Assert `/settings` is included in `built_in_slash_commands()` rather than only parseable/hidden. In `tui/src/app/tests.rs`, toggle the automatic-pruning row, accept it, run the real existing `App::update_feature_flags` persistence path in a temp `codex_home`, and assert the written TOML contains `automatic_context_pruning = true`; then disable it and assert `false` persists. Reopen/read config and assert false remains the default without user action. Add the explicitly named `dashboard_snapshot_serializes_automatic_pruning_state` test: serialize `DashboardSnapshot` and assert its new boolean is present with exact false and true values.
 
 - [ ] **Step 2: Run focused tests and show current gaps.**
 
@@ -411,7 +414,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui settings --lib
   ```
 
-  Expected before implementation: the stage is `UnderDevelopment`; settings hard-codes only `PreventIdleSleep`; `/settings` is excluded from discovered slash commands; JSON has no automatic-pruning field.
+  Expected before implementation: the stage is `UnderDevelopment`; settings has only `PreventIdleSleep`; `/settings` is excluded from discovered slash commands; JSON has no automatic-pruning field.
 
 - [ ] **Step 3: Make registry metadata the single user-facing source.**
 
@@ -426,7 +429,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   default_enabled: false,
   ```
 
-  In `open_experimental_popup`, derive rows by iterating `FEATURES`, filtering `Stage::Experimental`, and taking `stage.experimental_menu_name()` / `experimental_menu_description()` plus `self.config.features.enabled(spec.id)`. Do not add another hard-coded automatic-pruning list. Preserve stable-feature exclusion.
+  In `open_experimental_popup`, retain the existing explicit `Feature::PreventIdleSleep` / `Keep computer awake` row. Then look up only `Feature::AutomaticContextPruning` in `FEATURES` and derive that row's name/description through `stage.experimental_menu_name()` / `experimental_menu_description()` plus `self.config.features.enabled(spec.id)`. Do not iterate every Experimental registry entry: Network proxy and other unrelated features remain hidden. Do not add hard-coded automatic-pruning copy outside its metadata.
 
 - [ ] **Step 4: Restore `/settings` discovery and use existing persistence.**
 
@@ -451,7 +454,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   git diff --check
   ```
 
-  Expected: exact copy appears only through metadata and docs; settings derives experimental rows from registry data; the dashboard asset remains untouched; no current snapshot UI claims an automatic completion.
+  Expected: exact automatic-pruning copy appears only through metadata and docs; settings retains Keep computer awake, derives only the automatic-pruning addition from registry data, and excludes Network proxy; the dashboard asset remains untouched; no current snapshot UI claims an automatic completion.
 
 - [ ] **Step 7: Run focused feature/TUI checks.**
 
@@ -467,7 +470,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 - [ ] **Step 8: Commit.**
 
   ```bash
-  git add codex-rs/features/src/lib.rs codex-rs/features/src/tests.rs codex-rs/tui/src/chatwidget/settings_popups.rs codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs codex-rs/tui/src/slash_command.rs codex-rs/tui/src/dashboard_server.rs codex-rs/tui/src/chatwidget/context_usage.rs
+  git add codex-rs/features/src/lib.rs codex-rs/features/src/tests.rs codex-rs/tui/src/chatwidget/settings_popups.rs codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs codex-rs/tui/src/slash_command.rs codex-rs/tui/src/dashboard_server.rs codex-rs/tui/src/chatwidget/context_usage.rs codex-rs/tui/src/app/tests.rs
   git commit -m "feat(prune): expose experimental automatic pruning setting"
   ```
 
@@ -560,15 +563,28 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
 Run these only after Tasks 1–6 are individually committed, after reading `docs/LOCAL_BUILD_RULES.md`, checking target disk size, and capturing known pre-existing failures. These commands are intentionally not part of this planning task.
 
+This final batch is the accumulated union of every deferred task command; no per-task Rust command is run earlier.
+
 ```bash
 du -sh codex-rs/target
 CODEX_SKIP_BWRAP_BUILD=1 cargo check --workspace --all-targets --exclude codex-sandboxing
 CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core context_window --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-protocol model_context_window_limits_preserve_their_distinct_meanings --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core compact --test suite
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint --test suite
 CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_prune --test suite
 CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core automatic_prune_is_disabled_by_default --test suite
 CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui failed_active_turn_interrupt_clears_pending_and_allows_retry --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui interrupt_without_active_turn_is_treated_as_handled --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-features automatic_context_pruning_is_experimental_and_opt_in --lib
 CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui experimental_popup --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui update_feature_flags --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui dashboard_snapshot_serializes_automatic_pruning_state --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui renamed_commands_use_elpis_names --lib
 CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_prune --lib
+CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_force_prune --lib
 ```
 
 Then perform the Stage 1 manual acceptance on a disposable state directory: default automatic pruning must cause no automatic pass; `/settings` must show the exact Experimental row and persist explicit enablement; `/prune` and `/force-prune` must still work with it off; ordinary `/compact` must follow normal native summarization; Ctrl-C during a delayed active turn must keep the UI responsive and repeated Ctrl-C must coalesce. The future typed-dashboard task must consume `automatic_pruning_enabled` and render the two exact dashboard strings before dashboard acceptance is claimed.
