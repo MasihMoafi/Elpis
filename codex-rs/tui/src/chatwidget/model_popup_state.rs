@@ -25,6 +25,11 @@ impl ChatWidget {
             == Some(&request_id)
     }
 
+    pub(crate) fn model_popup_request_is_pending(&self, provider_id: &str) -> bool {
+        self.model_popup_request_ids
+            .contains_key(&Some(provider_id.to_string()))
+    }
+
     pub(crate) fn on_models_loaded(
         &mut self,
         request_id: uuid::Uuid,
@@ -35,12 +40,13 @@ impl ChatWidget {
             return false;
         }
         self.model_popup_request_ids.remove(&provider_id);
-        let Ok(presets) = result else {
-            return false;
+        let presets = match result {
+            Ok(presets) if !presets.is_empty() => presets,
+            Ok(_) | Err(_) => {
+                self.refresh_open_model_popup();
+                return false;
+            }
         };
-        if presets.is_empty() {
-            return false;
-        }
 
         let Some(provider_id) = provider_id else {
             return false;

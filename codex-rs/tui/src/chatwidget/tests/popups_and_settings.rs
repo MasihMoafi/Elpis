@@ -3210,6 +3210,40 @@ async fn model_catalog_uses_live_openai_models_without_fabricated_fallbacks() {
 }
 
 #[tokio::test]
+async fn model_catalog_reports_openai_unavailable_after_initial_failure() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    chat.open_model_popup();
+    let openai_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("OpenAI catalog refresh request");
+    let loading_picker = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(loading_picker.contains("Loading available OpenAI models"));
+
+    assert!(!chat.on_models_loaded(
+        openai_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Err("catalog unavailable".to_string()),
+    ));
+
+    let picker = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(picker.contains("OpenAI models are unavailable"));
+    assert!(picker.contains("Open /model again to retry"));
+    assert!(!picker.contains("Loading available OpenAI models"));
+}
+
+#[tokio::test]
 async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_reply() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
