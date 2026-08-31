@@ -15,6 +15,9 @@ Approved in chat by Masih on 2026-08-31, with two explicit amendments:
 
 Automated checks and GitHub builds are evidence. Only Masih can accept the
 installed behavior or authorize promotion to the normal `elpis` command.
+Acceptance of the candidate does not authorize replacing `elpis`, merging to
+`main`, versioning, or releasing. Each requires a separate later instruction
+from Masih.
 
 ## Intent
 
@@ -53,6 +56,11 @@ The final local artifact is installed alongside the current executable as an
 explicit candidate, such as `elpis-candidate`. Masih manually verifies the
 important workflows before any later promotion is considered.
 
+During implementation, do not run local Rust builds, checks, or tests; use
+GitHub CI. Only after candidate-scoped issues are closed and required Linux CI
+is green, follow `docs/LOCAL_BUILD_RULES.md`, check disk usage, and perform one
+local `elpis-candidate` build/install. Do not launch it in tmux.
+
 ## Design Principles
 
 1. **Codex behavior is the default.** Elpis-specific behavior is additive,
@@ -85,6 +93,11 @@ Ordinary `/compact` and automatic native compaction use Codex's normal
 summarizer and lifecycle. No Elpis pruning pass may masquerade as compaction.
 Remove the separate `elpis_compact_cleanup` path rather than leaving a second
 behavior behind the same `/compact` command.
+
+Update `docs/context.md`, `docs/cache-friendly-pruning.md`, and `readme.md` so
+they distinguish native Codex compaction, manual `/prune`, and opt-in
+experimental automatic pruning. They must not advertise the removed cleanup
+path or describe the experimental pressure cycle as default behavior.
 
 ### 1.2 Manual and automatic pruning
 
@@ -252,11 +265,13 @@ The server binds only to loopback on an ephemeral port, exposes no mutation
 endpoint, rejects foreign `Host` values, disables CORS, escapes all dynamic
 content through DOM text APIs, sends `no-store`, CSP, `nosniff`, and frame-deny
 headers, and performs no external requests. It never exposes credentials,
-prompt/message bodies, command output, or account data. A stale-data badge
-appears when snapshots stop advancing. Dashboard serialization/render failure
-must never block or fail a turn. Browser-only controls are limited to pause/
-resume polling, refresh, filter/sort/search, expand details, and copy safe IDs,
-relative paths, or TUI command hints.
+prompt/message bodies, command output, or account data. Data revision changes
+only when facts change; a separate response heartbeat proves the process is
+reachable. Idle unchanged state remains fresh, while stale means the heartbeat
+expired or the served process/session identity no longer matches. Dashboard
+serialization/render failure must never block or fail a turn. Browser-only
+controls are limited to pause/resume polling, refresh, filter/sort/search,
+expand details, and copy safe IDs, relative paths, or TUI command hints.
 
 ### 3.4 Agent handling in the TUI
 
@@ -276,6 +291,13 @@ target thread and never silently act on the coordinator or a different selected
 agent. Requests run asynchronously, coalesce duplicate actions, update visible
 state only after confirmation, and report server failures without freezing the
 TUI.
+
+Resume is available only for ordinary closed lineage agents. A graph-owned
+worker cannot be resumed into a terminal graph task. Interrupting or closing a
+graph-owned worker must atomically mark its task failed/cancelled and block
+descendants under the existing graph rules; otherwise the server rejects the
+action visibly. Continuing that work requires a deliberately constructed next
+graph.
 
 Work graphs remain explicitly experimental until their functional acceptance
 checks pass. The UI may inspect and control an existing graph; a graphical graph
@@ -315,26 +337,28 @@ The dashboard has no reverse control path.
 
 ## Integration Order
 
-1. Record branch/worktree provenance and freeze the candidate baseline.
-2. Port compaction parity with failing-first tests.
-3. Port nonblocking interrupt behavior and cancellation tests.
-4. Add automatic-pruning visibility while keeping its default off.
-5. Add the shared verification entrypoint/manifest and make Linux CI consume it.
-6. Confirm the already-reviewed model/login/salvage candidates represented by
+1. Update the coordinator-owned ignored `TASKS.md` Current Action and keep the
+   worktree integration ledger as a table there, not as a second status source.
+2. Record branch/worktree provenance and freeze the candidate baseline.
+3. Port compaction parity with failing-first tests.
+4. Port nonblocking interrupt behavior and cancellation tests.
+5. Add automatic-pruning visibility while keeping its default off.
+6. Add the shared verification entrypoint/manifest and make Linux CI consume it.
+7. Confirm the already-reviewed model/login/salvage candidates represented by
    the baseline; import any missing owner-approved commits in dependency order
    without rewriting them.
-7. Integrate the observability branch only after its owner finishes and its
+8. Integrate the observability branch only after its owner finishes and its
    focused checks are accepted; preserve its untracked `ES.md`.
-8. Add the typed agent-control authority layer, then split and extend the TUI
+9. Add the typed agent-control authority layer, then split and extend the TUI
    agent/work-graph surface.
-9. Add the honest manual-memory status type and create/edit/admission UX.
-10. Introduce the typed dashboard state, wire the approved runtime facts, and
+10. Add the honest manual-memory status type and create/edit/admission UX.
+11. Introduce the typed dashboard state, wire the approved runtime facts, and
     implement the useful dashboard views against frozen fixtures.
-11. Run GitHub verification, build a candidate artifact, then perform the final
+12. Run GitHub verification, build a candidate artifact, then perform the final
     local candidate build and side-by-side acceptance.
 
-Each stage is committed separately and may be reverted without discarding the
-others.
+Each stage is committed separately with dependencies recorded. Reverting a
+foundation stage also reverts its dependent stages.
 
 ## Failure Behavior
 
@@ -366,6 +390,10 @@ others.
   stale/empty/unavailable states, measured-versus-estimated labels, escaped
   dynamic strings, rejected foreign hosts, loopback-only serving, security
   headers, responsive layout hooks, keyboard focus, and reduced motion.
+- Masih reviews light, dark, wide, and narrow rendered dashboard views and
+  confirms that the first screen clearly answers what is running, whether it is
+  healthy, what needs attention, and how much context remains. DOM and snapshot
+  tests cannot accept visual quality.
 - Agent controls target the selected child, require confirmation where stated,
   remain nonblocking, and surface failures.
 - Memory reaches a model request only when admitted; create does not imply
@@ -383,10 +411,11 @@ others.
 
 ### Side-by-side candidate evaluation
 
-Compare current Codex and `elpis-candidate` using the same Linux workspace and
-equivalent supported model/authentication. Use clean, separate state
-directories, pin both commit identifiers, match model/reasoning/permissions and
-prompts, and normalize only expected product-name and Elpis-feature additions:
+Compare current Codex and `elpis-candidate` using two identical disposable
+Linux workspace copies from one pinned fixture. Restore the fixture before
+every run, alternate arm order, use clean separate state directories, pin both
+commit identifiers, match model/reasoning/permissions and prompts, and
+normalize only expected product-name and Elpis-feature additions:
 
 - startup and clean exit;
 - login status and model/reasoning selection;
@@ -405,9 +434,16 @@ status. It does not infer superior coding quality from one model response.
 Direct non-tmux PTY comparison runs each interrupt/exit state five times; a
 healthy Elpis median must remain within 250 ms of Codex and no healthy exit may
 exceed three seconds. Any unexplained behavioral difference remains a failure
-until reviewed.
-Credential-dependent and visual/interaction checks remain unaccepted until
-Masih performs them directly in a normal terminal.
+until reviewed. Timing starts when the PTY writes Ctrl-C and ends when the
+process exits after restoring the terminal. A healthy exit has no deliberately
+stalled test server, returns success or the same intentional interrupt status
+as Codex, restores the terminal, and leaves no child process alive.
+
+Every important workflow listed above remains unaccepted until Masih performs
+it directly. Automated comparison is preflight evidence only. Visual,
+interaction, authentication, compaction, pruning, interrupt, agent, graph,
+memory, and ordinary Codex-parity behavior all require Masih's manual
+acceptance.
 
 ## Completion Boundary
 
