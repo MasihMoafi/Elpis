@@ -53,7 +53,11 @@ impl ChatWidget {
         };
         let make_primary = provider_id == self.active_model_provider_id();
         let existing = self.model_catalog.models_for_provider(&provider_id);
-        if existing.as_ref() == Some(&presets) {
+        let primary_already_matches = self
+            .model_catalog
+            .try_list_models()
+            .is_ok_and(|models| models == presets);
+        if existing.as_ref() == Some(&presets) && (!make_primary || primary_already_matches) {
             return false;
         }
         self.model_catalog = Arc::new(self.model_catalog.with_provider_models(

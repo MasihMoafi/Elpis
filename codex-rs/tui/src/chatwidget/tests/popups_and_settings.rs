@@ -3322,6 +3322,44 @@ async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_r
 }
 
 #[tokio::test]
+async fn model_catalog_promotes_cached_models_after_provider_switch() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let mut bootstrap = get_available_model(&chat, "gpt-5.4");
+    bootstrap.id = "bootstrap-model".to_string();
+    bootstrap.model = "bootstrap-model".to_string();
+    let mut openai = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    openai.id = "cached-openai-model".to_string();
+    openai.model = "cached-openai-model".to_string();
+    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]).with_provider_models(
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+        vec![openai.clone()],
+        /*make_primary*/ false,
+    ));
+    chat.config.model_provider_id = codex_model_provider_info::OPENAI_PROVIDER_ID.to_string();
+
+    chat.request_model_catalog(Some(
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    ));
+    let request_id = match rx.try_recv().expect("model catalog request") {
+        AppEvent::FetchModels { request_id, .. } => request_id,
+        event => panic!("expected FetchModels, got {event:?}"),
+    };
+
+    assert!(chat.on_models_loaded(
+        request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![openai]),
+    ));
+    assert_eq!(
+        chat.model_catalog
+            .try_list_models()
+            .expect("primary model catalog")[0]
+            .model,
+        "cached-openai-model"
+    );
+}
+
+#[tokio::test]
 async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
