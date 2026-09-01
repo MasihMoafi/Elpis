@@ -1379,3 +1379,55 @@ async fn stream_recovery_restores_previous_status_header() {
     assert_eq!(status.details(), None);
     assert!(chat.status_state.retry_status_header.is_none());
 }
+
+#[tokio::test]
+async fn resume_and_thread_snapshot_replay_leave_activity_empty() {
+    for replay_kind in [
+        ReplayKind::ResumeInitialMessages,
+        ReplayKind::ThreadSnapshot,
+    ] {
+        let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.handle_server_notification(
+            ServerNotification::TurnStarted(TurnStartedNotification {
+                thread_id: "thread-secret".to_string(),
+                turn: AppServerTurn {
+                    id: "turn-secret".to_string(),
+                    items_view: codex_app_server_protocol::TurnItemsView::Full,
+                    items: Vec::new(),
+                    status: AppServerTurnStatus::InProgress,
+                    error: None,
+                    started_at: Some(10),
+                    completed_at: None,
+                    duration_ms: None,
+                },
+            }),
+            Some(replay_kind),
+        );
+        chat.handle_server_notification(
+            ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+                thread_id: "thread-secret".to_string(),
+                turn_id: "turn-secret".to_string(),
+                status: TurnActivityStatus::Completed,
+                started_at: Some(10),
+                duration_ms: Some(20),
+                time_to_first_token_ms: Some(3),
+                profile: None,
+            }),
+            Some(replay_kind),
+        );
+        chat.handle_server_notification(
+            ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+                thread_id: "thread-secret".to_string(),
+                turn_id: "turn-secret".to_string(),
+                cost: TurnCostState::Priced {
+                    backend_total_usd: "1.250000".to_string(),
+                },
+            }),
+            Some(replay_kind),
+        );
+
+        let activity = chat.dashboard_activity_state(None);
+        assert_eq!(activity.current, None);
+        assert!(activity.recent.is_empty());
+    }
+}

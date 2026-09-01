@@ -77,7 +77,12 @@ use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
 use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnActivityStatus;
+use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnCostAvailability;
+use codex_app_server_protocol::TurnCostState;
+use codex_app_server_protocol::TurnCostUpdatedNotification;
 use codex_app_server_protocol::TurnError as AppServerTurnError;
 use codex_app_server_protocol::TurnStartedNotification;
 use codex_app_server_protocol::TurnStatus;
@@ -4756,6 +4761,162 @@ fn turn_completed_notification(
             ..test_turn(turn_id, status, Vec::new())
         },
     })
+}
+
+fn seed_live_activity(chat_widget: &mut ChatWidget, thread_id: ThreadId, turn_id: &str) {
+    chat_widget.handle_server_notification(
+        turn_started_notification(thread_id, turn_id),
+        /*replay_kind*/ None,
+    );
+    chat_widget.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: Some(0),
+            duration_ms: Some(1),
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+}
+
+#[tokio::test]
+async fn new_primary_session_attachment_resets_activity_and_requests_publication() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let previous_thread_id = ThreadId::new();
+    seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
+    assert_eq!(app.chat_widget.dashboard_activity_state(None).recent.len(), 1);
+    while app_event_rx.try_recv().is_ok() {}
+
+    let next_thread_id = ThreadId::new();
+    app.enqueue_primary_thread_session(
+        test_thread_session(next_thread_id, test_path_buf("/tmp/next")),
+        Vec::new(),
+    )
+    .await?;
+
+    let activity = app.chat_widget.dashboard_activity_state(None);
+    assert_eq!(activity.current, None);
+    assert!(activity.recent.is_empty());
+    assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
+        .any(|event| matches!(event, AppEvent::RefreshContextDashboard)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn resumed_primary_session_attachment_resets_activity_before_history_replay() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let previous_thread_id = ThreadId::new();
+    seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
+    while app_event_rx.try_recv().is_ok() {}
+
+    let resumed_thread_id = ThreadId::new();
+    app.enqueue_primary_thread_session(
+        test_thread_session(resumed_thread_id, test_path_buf("/tmp/resumed")),
+        vec![test_turn(
+            "replayed-turn",
+            TurnStatus::Completed,
+            Vec::new(),
+        )],
+    )
+    .await?;
+
+    let activity = app.chat_widget.dashboard_activity_state(None);
+    assert_eq!(activity.current, None);
+    assert!(activity.recent.is_empty());
+    assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
+        .any(|event| matches!(event, AppEvent::RefreshContextDashboard)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn visible_thread_snapshot_switch_resets_activity_before_replay() {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let previous_thread_id = ThreadId::new();
+    seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
+    while app_event_rx.try_recv().is_ok() {}
+
+    app.replay_thread_snapshot(
+        ThreadEventSnapshot {
+            session: Some(test_thread_session(
+                ThreadId::new(),
+                test_path_buf("/tmp/next"),
+            )),
+            turns: vec![test_turn(
+                "replayed-turn",
+                TurnStatus::Completed,
+                Vec::new(),
+            )],
+            events: Vec::new(),
+            input_state: None,
+        },
+        /*resume_restored_queue*/ false,
+    );
+
+    let activity = app.chat_widget.dashboard_activity_state(None);
+    assert_eq!(activity.current, None);
+    assert!(activity.recent.is_empty());
+    assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
+        .any(|event| matches!(event, AppEvent::RefreshContextDashboard)));
+}
+
+#[tokio::test]
+async fn ephemeral_activity_notifications_are_live_delivered_but_not_buffered() -> Result<()> {
+    let mut app = make_test_app().await;
+    let thread_id = ThreadId::new();
+    app.thread_event_channels
+        .insert(thread_id, ThreadEventChannel::new(/*capacity*/ 8));
+    app.set_thread_active(thread_id, /*active*/ true).await;
+    let notifications = [
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::BackendUnavailable,
+            },
+        }),
+    ];
+
+    for notification in notifications {
+        app.enqueue_thread_notification(thread_id, notification)
+            .await?;
+    }
+
+    let channel = app
+        .thread_event_channels
+        .get_mut(&thread_id)
+        .expect("thread channel should exist");
+    assert!(channel.store.lock().await.snapshot().events.is_empty());
+    let receiver = channel
+        .receiver
+        .as_mut()
+        .expect("active test channel receiver");
+    let received_activity = receiver
+        .try_recv()
+        .expect("live activity notification should be delivered");
+    let received_cost = receiver
+        .try_recv()
+        .expect("live cost notification should be delivered");
+    assert!(matches!(
+        received_activity,
+        ThreadBufferedEvent::Notification(ServerNotification::TurnActivityUpdated(_))
+    ));
+    assert!(matches!(
+        received_cost,
+        ThreadBufferedEvent::Notification(ServerNotification::TurnCostUpdated(_))
+    ));
+    Ok(())
 }
 
 fn thread_closed_notification(thread_id: ThreadId) -> ServerNotification {
