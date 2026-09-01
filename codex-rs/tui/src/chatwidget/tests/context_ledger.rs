@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::app_event::ManualMemoryUnavailableReason;
 use crate::render::renderable::Renderable;
 
 fn render_ledger(chat: &ChatWidget, height: u16) -> String {
@@ -25,6 +26,87 @@ fn render_ledger_buffer(chat: &ChatWidget, height: u16) -> ratatui::buffer::Buff
     let mut buf = ratatui::buffer::Buffer::empty(area);
     chat.render_context_ledger(area, &mut buf);
     buf
+}
+
+fn manual_memory_target(chat: &ChatWidget) -> ManualMemoryRequestTarget {
+    let memory_path = chat.config.memory_dir.as_path().join("MEMORY.md");
+    let thread_id = chat.thread_id.unwrap_or_else(ThreadId::new);
+    ManualMemoryRequestTarget {
+        view: ManualMemoryViewKey {
+            epoch: 1,
+            primary_root_thread_id: thread_id,
+            displayed_thread_id: thread_id,
+            cwd: chat.config.cwd.to_path_buf(),
+            memory_path: memory_path.clone(),
+        },
+        storage: ManualMemoryStorageTarget {
+            admission_path: memory_path.with_file_name("admission.toml"),
+            memory_path,
+        },
+    }
+}
+
+fn manual_memory_status(
+    state: crate::legacy_core::elpis_context::ManualMemoryAdmissionState,
+    request_chars_if_admitted: usize,
+    eligible_chars_now: usize,
+    truncated: bool,
+) -> crate::legacy_core::elpis_context::ManualMemoryStatus {
+    crate::legacy_core::elpis_context::ManualMemoryStatus {
+        state,
+        bytes: request_chars_if_admitted as u64,
+        request_chars_if_admitted,
+        eligible_chars_now,
+        limit_chars: 8_000,
+        truncated,
+    }
+}
+
+fn continuity_source(
+    name: &str,
+    path: PathBuf,
+    category: crate::legacy_core::elpis_context::ContinuitySourceCategory,
+    estimated_tokens: u64,
+    admitted: bool,
+) -> crate::legacy_core::elpis_context::ContinuitySource {
+    crate::legacy_core::elpis_context::ContinuitySource {
+        name: name.to_string(),
+        path,
+        bytes: estimated_tokens.saturating_mul(4),
+        estimated_tokens,
+        category,
+        origin: "test cache",
+        lifetime: "every turn",
+        reason: "test cache",
+        admitted,
+        selectable: true,
+    }
+}
+
+fn inject_manual_memory_cache(
+    chat: &mut ChatWidget,
+    phase: ManualMemoryPhase,
+    status: Option<crate::legacy_core::elpis_context::ManualMemoryStatus>,
+    sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
+    unavailable_reason: Option<ManualMemoryUnavailableReason>,
+    pending_mutation: Option<ManualMemoryMutation>,
+) -> ManualMemoryRequestTarget {
+    let target = manual_memory_target(chat);
+    chat.manual_memory_cache = ManualMemoryCache {
+        bound_target: Some(target.clone()),
+        phase,
+        status,
+        sources,
+        unavailable_reason,
+        pending_mutation,
+        refresh_requested: false,
+        pending_context_report: false,
+    };
+    target
+}
+
+fn normalized_rendered_text(rendered: &str) -> String {
+    rendered.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn configure_ledger_sources(
@@ -293,6 +375,408 @@ async fn manual_memory_ledger_render_stays_on_cached_sources_after_disk_changes(
 
     assert_eq!(render_ledger(&chat, 80), before);
     Ok(())
+}
+
+#[tokio::test]
+async fn manual_memory_ledger_synthesizes_truthful_cached_rows_and_safe_links() {
+    use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let cases = [
+        (
+            ManualMemoryPhase::Ready,
+            Some(manual_memory_status(State::Missing, 0, 0, false)),
+            None,
+            None,
+            "MEMORY.md Missing next request 0/8000 chars",
+            false,
+        ),
+        (
+            ManualMemoryPhase::Ready,
+            Some(manual_memory_status(
+                State::AvailableNotAdmitted,
+                14,
+                0,
+                false,
+            )),
+            None,
+            None,
+            "MEMORY.md Available — not admitted next request 0/8000 · 14/8000 if admitted",
+            true,
+        ),
+        (
+            ManualMemoryPhase::Ready,
+            Some(manual_memory_status(State::Admitted, 8_000, 8_000, true)),
+            None,
+            None,
+            "MEMORY.md Admitted next request 8000/8000 — truncated",
+            true,
+        ),
+        (
+            ManualMemoryPhase::Loading,
+            None,
+            None,
+            Some(ManualMemoryMutation::Admission { admitted: true }),
+            "MEMORY.md Loading",
+            false,
+        ),
+        (
+            ManualMemoryPhase::Creating,
+            Some(manual_memory_status(State::Missing, 0, 0, false)),
+            None,
+            Some(ManualMemoryMutation::Create),
+            "MEMORY.md Creating",
+            false,
+        ),
+        (
+            ManualMemoryPhase::Unavailable,
+            None,
+            Some(ManualMemoryUnavailableReason::MemoryUnreadable),
+            None,
+            "MEMORY.md Unavailable",
+            false,
+        ),
+    ];
+
+    for (phase, status, unavailable_reason, pending, expected, should_link) in cases {
+        inject_manual_memory_cache(
+            &mut chat,
+            phase,
+            status,
+            Vec::new(),
+            unavailable_reason,
+            pending,
+        );
+        let rendered = render_ledger(&chat, 80);
+        assert!(
+            normalized_rendered_text(&rendered).contains(expected),
+            "missing cached semantic row {expected:?}:\n{rendered}"
+        );
+        let destination = url::Url::from_file_path(
+            chat.config.memory_dir.as_path().join("MEMORY.md"),
+        )
+        .expect("memory URL")
+        .to_string();
+        let linked = render_ledger_buffer(&chat, 80)
+            .content()
+            .iter()
+            .any(|cell| cell.symbol().contains(&destination));
+        assert_eq!(
+            linked, should_link,
+            "only cached Ready + present memory may expose an open-file link for {phase:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn missing_manual_memory_stays_navigable_but_key_and_mouse_cannot_admit_it() {
+    use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let memory_path = chat.config.memory_dir.as_path().join("MEMORY.md");
+    inject_manual_memory_cache(
+        &mut chat,
+        ManualMemoryPhase::Ready,
+        Some(manual_memory_status(State::Missing, 0, 0, false)),
+        Vec::new(),
+        None,
+        None,
+    );
+    chat.context_ledger.focused = true;
+    chat.context_ledger.selected = chat
+        .context_ledger_sources()
+        .iter()
+        .position(|source| source.path == memory_path)
+        .expect("missing memory row stays selectable");
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char(' '))));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Enter)));
+    render_ledger_buffer(&chat, 80);
+    let memory_range = chat
+        .context_ledger
+        .last_source_ranges
+        .borrow()
+        .iter()
+        .find(|(index, _)| *index == chat.context_ledger.selected)
+        .map(|(_, range)| range.clone())
+        .expect("rendered memory range");
+    assert!(chat.handle_context_ledger_mouse_click(
+        memory_range.start as u16 + 1,
+        /*col*/ 2,
+    ));
+
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Ready);
+    assert_eq!(
+        chat.manual_memory_status().map(|status| status.state),
+        Some(State::Missing)
+    );
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::ManualMemoryAdmissionRequested(_, true)),
+            "missing memory must never emit an admission request"
+        );
+    }
+}
+
+#[tokio::test]
+async fn manual_memory_ledger_replaces_only_exact_canonical_path_and_counts_custom_memory() {
+    use crate::legacy_core::elpis_context::ContinuitySourceCategory as Category;
+    use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let memory_path = chat.config.memory_dir.as_path().join("MEMORY.md");
+    let custom_path = chat.config.memory_dir.as_path().join("custom.md");
+    let ordinary_path = chat.config.cwd.as_path().join("GOAL.md");
+    inject_manual_memory_cache(
+        &mut chat,
+        ManualMemoryPhase::Ready,
+        Some(manual_memory_status(State::Admitted, 400, 400, false)),
+        vec![
+            continuity_source("MEMORY.md", memory_path.clone(), Category::Memory, 9_999, true),
+            continuity_source("custom.md", custom_path.clone(), Category::Memory, 20, true),
+            continuity_source("GOAL.md", ordinary_path, Category::Files, 30, true),
+        ],
+        None,
+        None,
+    );
+
+    let sources = chat.context_ledger_sources();
+    assert_eq!(
+        sources
+            .iter()
+            .filter(|source| source.path == memory_path)
+            .count(),
+        1,
+        "the synthetic canonical row must replace, not duplicate, the cached generic row"
+    );
+    assert!(
+        sources.iter().any(|source| source.path == custom_path),
+        "a custom source in the Memory category must survive exact-path replacement"
+    );
+    let rendered = normalized_rendered_text(&render_ledger(&chat, 80));
+    assert!(rendered.contains("Total ≈150 tokens admitted"), "{rendered}");
+    assert!(
+        rendered.contains("DURABLE MEMORY ≈120 tokens admitted"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("custom.md"), "{rendered}");
+    assert_eq!(rendered.matches("MEMORY.md").count(), 1, "{rendered}");
+}
+
+#[tokio::test]
+async fn manual_memory_refresh_reselects_canonical_row_by_exact_path_before_pending_clears() {
+    use crate::legacy_core::elpis_context::ContinuitySourceCategory as Category;
+    use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let memory_path = chat.config.memory_dir.as_path().join("MEMORY.md");
+    let goal_path = chat.config.cwd.as_path().join("GOAL.md");
+    let target = inject_manual_memory_cache(
+        &mut chat,
+        ManualMemoryPhase::Ready,
+        Some(manual_memory_status(
+            State::AvailableNotAdmitted,
+            14,
+            0,
+            false,
+        )),
+        vec![
+            continuity_source(
+                "GOAL.md",
+                goal_path,
+                Category::Files,
+                3,
+                true,
+            ),
+            continuity_source("MEMORY.md", memory_path.clone(), Category::Memory, 4, false),
+        ],
+        None,
+        None,
+    );
+    chat.context_ledger.focused = true;
+    chat.context_ledger.selected = chat
+        .context_ledger_sources()
+        .iter()
+        .position(|source| source.path == memory_path)
+        .expect("canonical row");
+
+    assert!(chat.begin_manual_memory_admission(true));
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryAdmissionRequested(_, true))
+    );
+    assert_eq!(
+        chat.context_ledger_sources()[chat.context_ledger.selected].path,
+        memory_path
+    );
+
+    let completed_sources = vec![
+        continuity_source(
+            "custom.md",
+            chat.config.memory_dir.as_path().join("custom.md"),
+            Category::Memory,
+            2,
+            true,
+        ),
+        continuity_source("MEMORY.md", memory_path.clone(), Category::Memory, 4, true),
+    ];
+    assert!(chat.apply_manual_memory_status_completion(
+        &target,
+        ManualMemoryStatusCompletion::Ready {
+            status: manual_memory_status(State::Admitted, 14, 14, false),
+            sources: completed_sources,
+        },
+    ));
+    assert!(chat.manual_memory_pending_mutation().is_some());
+    assert_eq!(
+        chat.context_ledger_sources()[chat.context_ledger.selected].path,
+        memory_path
+    );
+    chat.clear_manual_memory_pending_mutation();
+    assert_eq!(
+        chat.context_ledger_sources()[chat.context_ledger.selected].path,
+        memory_path
+    );
+
+    let create_goal_path = chat.config.cwd.as_path().join("GOAL.md");
+    let create_target = inject_manual_memory_cache(
+        &mut chat,
+        ManualMemoryPhase::Ready,
+        Some(manual_memory_status(State::Missing, 0, 0, false)),
+        vec![
+            continuity_source(
+                "GOAL.md",
+                create_goal_path,
+                Category::Files,
+                3,
+                true,
+            ),
+            continuity_source("MEMORY.md", memory_path.clone(), Category::Memory, 0, false),
+        ],
+        None,
+        None,
+    );
+    chat.context_ledger.selected = chat
+        .context_ledger_sources()
+        .iter()
+        .position(|source| source.path == memory_path)
+        .expect("canonical create row");
+    assert!(chat.begin_manual_memory_create());
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryCreateRequested(_))
+    );
+    assert!(chat.apply_manual_memory_status_completion(
+        &create_target,
+        ManualMemoryStatusCompletion::Ready {
+            status: manual_memory_status(State::AvailableNotAdmitted, 14, 0, false),
+            sources: vec![continuity_source(
+                "MEMORY.md",
+                memory_path.clone(),
+                Category::Memory,
+                4,
+                false,
+            )],
+        },
+    ));
+    assert_eq!(
+        chat.context_ledger_sources()[chat.context_ledger.selected].path,
+        memory_path
+    );
+}
+
+#[tokio::test]
+async fn manual_memory_copy_path_uses_literal_path_and_preserves_lease_on_failure() {
+    use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let configured_path = chat.config.memory_dir.as_path().join("MEMORY.md");
+    let configured_path_text = configured_path.to_string_lossy().into_owned();
+    inject_manual_memory_cache(
+        &mut chat,
+        ManualMemoryPhase::Ready,
+        Some(manual_memory_status(State::Missing, 0, 0, false)),
+        Vec::new(),
+        None,
+        None,
+    );
+    chat.context_ledger.focused = true;
+
+    for phase in [
+        ManualMemoryPhase::Loading,
+        ManualMemoryPhase::Ready,
+        ManualMemoryPhase::Creating,
+        ManualMemoryPhase::Unavailable,
+    ] {
+        chat.manual_memory_cache.phase = phase;
+        let mut copied = None;
+        assert!(chat.handle_context_ledger_key_event_with_copy(
+            KeyEvent::from(KeyCode::Char('p')),
+            |text| {
+                copied = Some(text.to_string());
+                Ok(Some(crate::clipboard_copy::ClipboardLease::test()))
+            },
+        ));
+        assert_eq!(copied.as_deref(), Some(configured_path_text.as_str()));
+        assert!(chat.clipboard_lease.is_some());
+    }
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::InsertHistoryCell(_)),
+            "successful copy feedback must stay transient"
+        );
+    }
+    assert!(chat.handle_context_ledger_key_event_with_copy(
+        KeyEvent::from(KeyCode::Char('p')),
+        |_| Ok(None),
+    ));
+    assert!(
+        chat.clipboard_lease.is_none(),
+        "a successful backend without a lease must replace the previous lease"
+    );
+
+    assert!(!chat.handle_context_ledger_key_event_with_copy(
+        KeyEvent::from(KeyCode::Char('P')),
+        |_| panic!("uppercase P must not copy"),
+    ));
+    chat.context_ledger.focused = true;
+    assert!(!chat.handle_context_ledger_key_event_with_copy(
+        KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+        |_| panic!("modified p must not copy"),
+    ));
+    chat.context_ledger.focused = true;
+    assert!(!chat.handle_context_ledger_key_event_with_copy(
+        KeyEvent::from(KeyCode::Char('C')),
+        |_| panic!("uppercase C must not reach copy"),
+    ));
+    chat.context_ledger.focused = true;
+    assert!(!chat.handle_context_ledger_key_event_with_copy(
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::SHIFT),
+        |_| panic!("modified c must not reach copy"),
+    ));
+
+    chat.context_ledger.focused = true;
+    chat.clipboard_lease = Some(crate::clipboard_copy::ClipboardLease::test());
+    assert!(chat.handle_context_ledger_key_event_with_copy(
+        KeyEvent::from(KeyCode::Char('p')),
+        |_| Err("PLANTED_RAW_CLIPBOARD_ERROR".to_string()),
+    ));
+    assert!(chat.clipboard_lease.is_some());
+    let feedback = render_bottom_popup(&chat, 120);
+    assert!(
+        feedback.contains(&format!(
+            "Could not copy memory path: {}",
+            configured_path.display()
+        )),
+        "missing fixed transient copy failure: {feedback}"
+    );
+    assert!(!feedback.contains("PLANTED_RAW_CLIPBOARD_ERROR"));
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::InsertHistoryCell(_)),
+            "copy feedback must stay transient"
+        );
+    }
 }
 
 #[tokio::test]

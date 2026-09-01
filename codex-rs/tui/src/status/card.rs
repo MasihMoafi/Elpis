@@ -54,6 +54,143 @@ use crate::wrapping::word_wrap_lines;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ManualMemoryDisplay {
+    phase: crate::chatwidget::ManualMemoryPhase,
+    status: Option<crate::legacy_core::elpis_context::ManualMemoryStatus>,
+    unavailable_reason: Option<crate::app_event::ManualMemoryUnavailableReason>,
+    pending: bool,
+}
+
+impl ManualMemoryDisplay {
+    pub(crate) fn new(
+        phase: crate::chatwidget::ManualMemoryPhase,
+        status: Option<crate::legacy_core::elpis_context::ManualMemoryStatus>,
+        unavailable_reason: Option<crate::app_event::ManualMemoryUnavailableReason>,
+        pending: bool,
+    ) -> Self {
+        Self {
+            phase,
+            status,
+            unavailable_reason,
+            pending,
+        }
+    }
+
+    pub(crate) fn summary(&self) -> String {
+        use crate::chatwidget::ManualMemoryPhase as Phase;
+        use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+        match self.phase {
+            Phase::Loading => {
+                if self.pending {
+                    "Loading — change pending".to_string()
+                } else {
+                    "Loading".to_string()
+                }
+            }
+            Phase::Creating => "Creating".to_string(),
+            Phase::Unavailable => "Unavailable".to_string(),
+            Phase::Ready => match self.status.as_ref() {
+                Some(status) if status.state == State::Missing => {
+                    format!("Missing  next request 0/{} chars", status.limit_chars)
+                }
+                Some(status) if status.state == State::AvailableNotAdmitted => {
+                    format!(
+                        "Available — not admitted  next request 0/{} · {}/{} if admitted",
+                        status.limit_chars,
+                        status.request_chars_if_admitted,
+                        status.limit_chars,
+                    )
+                }
+                Some(status) if status.state == State::Admitted => {
+                    let truncated = if status.truncated {
+                        " — truncated"
+                    } else {
+                        ""
+                    };
+                    format!(
+                        "Admitted  next request {}/{}{}",
+                        status.eligible_chars_now, status.limit_chars, truncated,
+                    )
+                }
+                _ => "Unavailable".to_string(),
+            },
+        }
+    }
+
+    pub(crate) fn token_contribution(&self) -> u64 {
+        use crate::chatwidget::ManualMemoryPhase as Phase;
+        use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+        if self.phase != Phase::Ready {
+            return 0;
+        }
+        self.status
+            .as_ref()
+            .filter(|status| status.state == State::Admitted)
+            .map_or(0, |status| status.eligible_chars_now.div_ceil(4) as u64)
+    }
+
+    pub(crate) fn is_admitted(&self) -> bool {
+        use crate::chatwidget::ManualMemoryPhase as Phase;
+        use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+        self.phase == Phase::Ready
+            && self
+                .status
+                .as_ref()
+                .is_some_and(|status| status.state == State::Admitted)
+    }
+
+    pub(crate) fn is_toggleable(&self) -> bool {
+        use crate::chatwidget::ManualMemoryPhase as Phase;
+        use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+        self.phase == Phase::Ready
+            && !self.pending
+            && self
+                .status
+                .as_ref()
+                .is_some_and(|status| status.state != State::Missing)
+    }
+
+    pub(crate) fn file_is_present(&self) -> bool {
+        use crate::chatwidget::ManualMemoryPhase as Phase;
+        use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+        self.phase == Phase::Ready
+            && self
+                .status
+                .as_ref()
+                .is_some_and(|status| status.state != State::Missing)
+    }
+
+    pub(crate) fn status(
+        &self,
+    ) -> Option<&crate::legacy_core::elpis_context::ManualMemoryStatus> {
+        self.status.as_ref()
+    }
+
+    pub(crate) fn unavailable_detail(&self) -> Option<&'static str> {
+        use crate::app_event::ManualMemoryUnavailableReason as Reason;
+        use crate::chatwidget::ManualMemoryPhase as Phase;
+
+        if self.phase != Phase::Unavailable {
+            return None;
+        }
+        Some(match self.unavailable_reason {
+            Some(Reason::AdmissionUnavailable) => "admission state unavailable",
+            Some(Reason::MemoryUnreadable) => "memory file unreadable",
+            Some(Reason::InvalidUtf8) => "memory file is not valid UTF-8",
+            Some(Reason::MemoryPathNotFile) => "memory path is not a file",
+            Some(Reason::SourcesUnavailable) => "context sources unavailable",
+            Some(Reason::WorkerFailed) => "memory status worker failed",
+            None => "status unavailable",
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 struct StatusContextWindowData {
     percent_remaining: i64,
@@ -108,7 +245,8 @@ struct StatusHistoryCell {
     model_details: Vec<String>,
     directory: PathBuf,
     permissions: String,
-    continuity_sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
+    manual_memory: Option<ManualMemoryDisplay>,
+    portable_context_tokens: u64,
     collaboration_mode: Option<String>,
     model_provider: Option<String>,
     remote_connection: Option<RemoteConnectionStatus>,
@@ -196,6 +334,7 @@ pub(crate) fn new_status_output_with_rate_limits(
         collaboration_mode,
         reasoning_effort_override,
         /*continuity_sources*/ &[],
+        /*manual_memory*/ None,
         refreshing_rate_limits,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
@@ -221,6 +360,7 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
     continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
+    manual_memory: Option<&ManualMemoryDisplay>,
     refreshing_rate_limits: bool,
     context_pruner_passes: usize,
     context_pruner_saved_chars: usize,
@@ -243,6 +383,7 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         collaboration_mode,
         reasoning_effort_override,
         continuity_sources,
+        manual_memory,
         refreshing_rate_limits,
         context_pruner_passes,
         context_pruner_saved_chars,
@@ -273,6 +414,7 @@ impl StatusHistoryCell {
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
         continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
+        manual_memory: Option<&ManualMemoryDisplay>,
         refreshing_rate_limits: bool,
         context_pruner_passes: usize,
         context_pruner_saved_chars: usize,
@@ -361,6 +503,16 @@ impl StatusHistoryCell {
             rate_limits,
             refreshing_rate_limits,
         }));
+        let manual_memory_path = config.memory_dir.as_path().join("MEMORY.md");
+        let portable_context_tokens = continuity_sources
+            .iter()
+            .filter(|source| {
+                source.admitted
+                    && (manual_memory.is_none() || source.path != manual_memory_path)
+            })
+            .map(|source| source.estimated_tokens)
+            .sum::<u64>()
+            .saturating_add(manual_memory.map_or(0, ManualMemoryDisplay::token_contribution));
         (
             Self {
                 model_name,
@@ -375,7 +527,8 @@ impl StatusHistoryCell {
                 session_id,
                 forked_from,
                 token_usage,
-                continuity_sources: continuity_sources.to_vec(),
+                manual_memory: manual_memory.cloned(),
+                portable_context_tokens,
                 rate_limit_state: rate_limit_state.clone(),
                 context_pruner_passes,
                 context_pruner_saved_chars,
@@ -817,6 +970,13 @@ impl HistoryCell for StatusHistoryCell {
         if self.collaboration_mode.is_some() {
             push_label(&mut labels, &mut seen, "Collaboration mode");
         }
+        if let Some(memory) = self.manual_memory.as_ref() {
+            push_label(&mut labels, &mut seen, "MEMORY.md");
+            if memory.unavailable_detail().is_some() {
+                push_label(&mut labels, &mut seen, "Memory issue");
+            }
+            push_label(&mut labels, &mut seen, "Portable context");
+        }
         // Always registered: the pruning row always renders (transparency into what
         // was deleted, via its archive link), and an unregistered label misaligns it.
         push_label(&mut labels, &mut seen, "Context pruning");
@@ -880,6 +1040,22 @@ impl HistoryCell for StatusHistoryCell {
             && let Some(forked_from) = self.forked_from.as_ref()
         {
             lines.push(formatter.line("Forked from", vec![Span::from(forked_from.clone())]));
+        }
+
+        if let Some(memory) = self.manual_memory.as_ref() {
+            lines.push(formatter.line("MEMORY.md", vec![Span::from(memory.summary())]));
+            if let Some(detail) = memory.unavailable_detail() {
+                lines.push(formatter.line("Memory issue", vec![Span::from(detail)]));
+            }
+            let portable_context_tokens =
+                i64::try_from(self.portable_context_tokens).unwrap_or(i64::MAX);
+            lines.push(formatter.line(
+                "Portable context",
+                vec![Span::from(format!(
+                    "≈{} tokens admitted",
+                    format_tokens_compact(portable_context_tokens),
+                ))],
+            ));
         }
 
         // Hide token usage only for ChatGPT subscribers

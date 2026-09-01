@@ -92,6 +92,19 @@ impl ChatWidget {
     }
 
     pub(super) fn handle_context_ledger_key_event(&mut self, key_event: KeyEvent) -> bool {
+        self.handle_context_ledger_key_event_with_copy(
+            key_event,
+            crate::clipboard_copy::copy_to_clipboard,
+        )
+    }
+
+    pub(super) fn handle_context_ledger_key_event_with_copy(
+        &mut self,
+        key_event: KeyEvent,
+        copy_fn: impl FnOnce(
+            &str,
+        ) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    ) -> bool {
         if key_event.kind != KeyEventKind::Press {
             return false;
         }
@@ -129,7 +142,7 @@ impl ChatWidget {
             return false;
         }
 
-        let sources = self.continuity_sources();
+        let sources = self.context_ledger_sources();
         let selectable = sources
             .iter()
             .enumerate()
@@ -151,14 +164,10 @@ impl ChatWidget {
             self.context_ledger.pending_g = false;
             match key_event.code {
                 KeyCode::Char('i') => {
-                    let manual_memory_path = self
-                        .manual_memory_cache
-                        .bound_target
-                        .as_ref()
-                        .map(|target| target.view.memory_path.clone());
+                    let manual_memory_path = self.canonical_manual_memory_path();
                     let all_admitted = all_bulk_context_sources_admitted(
                         &sources,
-                        manual_memory_path.as_deref(),
+                        Some(manual_memory_path.as_path()),
                         self.manual_memory_can_toggle(),
                     );
                     self.set_all_context_sources_admitted(&sources, !all_admitted);
@@ -179,14 +188,10 @@ impl ChatWidget {
                 self.context_ledger.focused = false;
             }
             KeyCode::Char('i') => {
-                let manual_memory_path = self
-                    .manual_memory_cache
-                    .bound_target
-                    .as_ref()
-                    .map(|target| target.view.memory_path.clone());
+                let manual_memory_path = self.canonical_manual_memory_path();
                 let all_admitted = all_bulk_context_sources_admitted(
                     &sources,
-                    manual_memory_path.as_deref(),
+                    Some(manual_memory_path.as_path()),
                     self.manual_memory_can_toggle(),
                 );
                 self.set_all_context_sources_admitted(&sources, !all_admitted);
@@ -211,13 +216,20 @@ impl ChatWidget {
                 let source = &sources[self.context_ledger.selected];
                 let is_manual_memory = is_manual_memory_source(
                     source,
-                    self.manual_memory_cache
-                        .bound_target
-                        .as_ref()
-                        .map(|target| target.view.memory_path.as_path()),
+                    Some(self.canonical_manual_memory_path().as_path()),
                 );
                 if is_manual_memory {
                     self.begin_manual_memory_create();
+                } else {
+                    self.context_ledger.focused = false;
+                    return false;
+                }
+            }
+            KeyCode::Char('p') => {
+                let source = &sources[self.context_ledger.selected];
+                let is_manual_memory = source.path == self.canonical_manual_memory_path();
+                if is_manual_memory {
+                    self.copy_manual_memory_path_with(copy_fn);
                 } else {
                     self.context_ledger.focused = false;
                     return false;
@@ -247,14 +259,12 @@ impl ChatWidget {
     /// row's tokens/state against the same edge instead of stacking them on their own line.
     fn ledger_lines(&self, content_width: usize) -> LedgerLines {
         let mut source_links: Vec<(usize, String)> = Vec::new();
-        let sources = self.continuity_sources();
+        let sources = self.context_ledger_sources();
+        let manual_memory_path = self.canonical_manual_memory_path();
+        let manual_memory_display = self.manual_memory_display();
         let total_tokens = sources
             .iter()
-            .filter(|source| {
-                source.admitted
-                    && source.category
-                        != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
-            })
+            .filter(|source| source.admitted)
             .map(|source| source.estimated_tokens)
             .sum::<u64>();
         // Plain ANSI cyan so the ledger matches the teal used by the identity line,
@@ -285,9 +295,6 @@ impl ChatWidget {
         let used_percent = self.status_line_context_used_percent().unwrap_or(0);
         let admitted_segments = crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL
             .into_iter()
-            .filter(|category| {
-                *category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
-            })
             .map(|category| {
                 let admitted = sources
                     .iter()
@@ -314,7 +321,25 @@ impl ChatWidget {
                 format_tokens(total_tokens)
             )
         };
-        let interaction_hint = if self.context_ledger.focused {
+        let selected_is_manual_memory = sources
+            .get(self.context_ledger.selected)
+            .is_some_and(|source| {
+                is_manual_memory_source(source, Some(manual_memory_path.as_path()))
+            });
+        let manual_memory_missing = self.manual_memory_cache.phase == ManualMemoryPhase::Ready
+            && self.manual_memory_cache.status.as_ref().is_some_and(|status| {
+                status.state
+                    == crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+            });
+        let interaction_hint = if self.context_ledger.focused && selected_is_manual_memory {
+            if manual_memory_missing {
+                "Up/Down move · c create · p copy path · w why · Esc exit"
+            } else if manual_memory_display.is_toggleable() {
+                "Up/Down move · Space/Enter toggle · p copy path · w why · Esc exit"
+            } else {
+                "Up/Down move · p copy path · w why · Esc exit"
+            }
+        } else if self.context_ledger.focused {
             "Up/Down move · Space/Enter toggle · i all · w why · Backspace remove · Esc exit"
         } else {
             "Tab focus · Alt+C focus/hide · Ctrl+click open file"
@@ -390,6 +415,80 @@ impl ChatWidget {
             for (index, source) in category_sources {
                 let source_line_start = lines.len();
                 let selected = self.context_ledger.focused && index == self.context_ledger.selected;
+                let is_manual_memory =
+                    is_manual_memory_source(source, Some(manual_memory_path.as_path()));
+                if is_manual_memory {
+                    let marker = if manual_memory_display.is_toggleable() {
+                        if manual_memory_display.is_admitted() {
+                            "[x]"
+                        } else {
+                            "[ ]"
+                        }
+                    } else {
+                        "[-]"
+                    };
+                    let file_is_present = manual_memory_display.file_is_present();
+                    if file_is_present
+                        && let Ok(destination) = url::Url::from_file_path(&source.path)
+                    {
+                        source_links.push((lines.len(), destination.to_string()));
+                    }
+                    let mut name_style = if selected {
+                        cyan.bold()
+                    } else {
+                        Style::default()
+                    };
+                    if file_is_present {
+                        name_style = name_style.underlined();
+                    }
+                    let state_style = if manual_memory_display.is_admitted() {
+                        cyan
+                    } else if self.manual_memory_cache.phase == ManualMemoryPhase::Unavailable {
+                        amber
+                    } else {
+                        muted
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(if selected { "› " } else { "  " }, cyan),
+                        Span::styled(marker, cat_style),
+                        Span::raw(" "),
+                        Span::styled(source.name.clone(), name_style),
+                        Span::raw("  "),
+                        Span::styled(manual_memory_display.summary(), state_style),
+                    ]));
+
+                    if selected && self.context_ledger.why_visible {
+                        lines.push(Line::from(Span::styled("WHY INCLUDED", cyan.bold())));
+                        lines.push(Line::from(Span::styled("MEMORY.md", cyan)));
+                        lines.push(Line::from(
+                            format!("Cached status: {}.", manual_memory_display.summary()).dim(),
+                        ));
+                        lines.push(Line::from("Lifetime: every turn".dim()));
+                        lines.push(Line::from("Origin: Elpis durable memory".dim()));
+                        if self.manual_memory_cache.phase == ManualMemoryPhase::Ready
+                            && let Some(status) = manual_memory_display.status()
+                        {
+                            lines.push(Line::from(
+                                format!(
+                                    "Size: {} bytes · Request cap: {}/{} chars",
+                                    format_source_count(status.bytes),
+                                    status.request_chars_if_admitted,
+                                    status.limit_chars,
+                                )
+                                .dim(),
+                            ));
+                        }
+                        if let Some(detail) = manual_memory_display.unavailable_detail() {
+                            lines.push(Line::from(format!("Reason: {detail}").dim()));
+                        }
+                        lines.push(Line::from(
+                            format!("Source: {}", source.path.display()).dim(),
+                        ));
+                        lines.push(Line::from(""));
+                    }
+                    source_line_ranges[index] = source_line_start..lines.len();
+                    continue;
+                }
                 let marker = if source.selectable {
                     if source.admitted { "[x]" } else { "[ ]" }
                 } else {
@@ -613,7 +712,7 @@ impl ChatWidget {
         };
 
         if let Some(index) = target_index {
-            let sources = self.continuity_sources();
+            let sources = self.context_ledger_sources();
             if let Some(source) = sources.get(index) {
                 if source.selectable {
                     self.context_ledger.focused = true;
@@ -632,6 +731,99 @@ impl ChatWidget {
         &self,
     ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
         self.manual_memory_cache.sources.clone()
+    }
+
+    pub(super) fn manual_memory_display(&self) -> crate::status::ManualMemoryDisplay {
+        crate::status::ManualMemoryDisplay::new(
+            self.manual_memory_cache.phase,
+            self.manual_memory_cache.status.clone(),
+            self.manual_memory_cache.unavailable_reason,
+            self.manual_memory_cache.pending_mutation.is_some(),
+        )
+    }
+
+    fn configured_manual_memory_path(&self) -> std::path::PathBuf {
+        self.config.memory_dir.as_path().join("MEMORY.md")
+    }
+
+    fn canonical_manual_memory_path(&self) -> std::path::PathBuf {
+        self.manual_memory_cache
+            .bound_target
+            .as_ref()
+            .map_or_else(|| self.configured_manual_memory_path(), |target| {
+                target.view.memory_path.clone()
+            })
+    }
+
+    fn synthetic_manual_memory_source(
+        &self,
+    ) -> crate::legacy_core::elpis_context::ContinuitySource {
+        let display = self.manual_memory_display();
+        crate::legacy_core::elpis_context::ContinuitySource {
+            name: "MEMORY.md".to_string(),
+            path: self.canonical_manual_memory_path(),
+            bytes: display.status().map_or(0, |status| status.bytes),
+            estimated_tokens: display.token_contribution(),
+            category: crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory,
+            origin: "Elpis durable memory",
+            lifetime: "every turn",
+            reason: "durable memory",
+            admitted: display.is_admitted(),
+            selectable: true,
+        }
+    }
+
+    pub(super) fn context_ledger_sources(
+        &self,
+    ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
+        let canonical = self.synthetic_manual_memory_source();
+        let mut replaced = false;
+        let mut sources = self
+            .manual_memory_cache
+            .sources
+            .iter()
+            .filter_map(|source| {
+                if source.path != canonical.path {
+                    return Some(source.clone());
+                }
+                if std::mem::replace(&mut replaced, true) {
+                    None
+                } else {
+                    Some(canonical.clone())
+                }
+            })
+            .collect::<Vec<_>>();
+        if !replaced {
+            sources.push(canonical);
+        }
+        sources
+    }
+
+    fn copy_manual_memory_path_with(
+        &mut self,
+        copy_fn: impl FnOnce(
+            &str,
+        ) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    ) {
+        let path = self.configured_manual_memory_path();
+        let path_text = path.to_string_lossy().into_owned();
+        let (message, color) = match copy_fn(&path_text) {
+            Ok(lease) => {
+                self.clipboard_lease = lease;
+                (
+                    format!("Copied memory path: {path_text}"),
+                    Color::Rgb(52, 168, 83),
+                )
+            }
+            Err(_) => (
+                format!("Could not copy memory path: {path_text}"),
+                Color::Rgb(215, 119, 87),
+            ),
+        };
+        self.bottom_pane.show_saved_context_flash(Line::from(Span::styled(
+            message,
+            Style::default().fg(color),
+        )));
     }
 
     pub(crate) fn manual_memory_bound_target(&self) -> Option<&ManualMemoryRequestTarget> {
@@ -677,6 +869,7 @@ impl ChatWidget {
         &mut self,
         pending_mutation: Option<ManualMemoryMutation>,
     ) {
+        let reselect_manual_memory = self.context_ledger_manual_memory_selected();
         self.manual_memory_cache.pending_mutation = pending_mutation;
         match pending_mutation {
             Some(ManualMemoryMutation::Create) => {
@@ -696,6 +889,9 @@ impl ChatWidget {
             }
             None => {}
         }
+        if reselect_manual_memory {
+            self.reselect_context_ledger_manual_memory();
+        }
         self.request_redraw();
     }
 
@@ -705,6 +901,7 @@ impl ChatWidget {
         pending_context_report: bool,
         pending_mutation: Option<ManualMemoryMutation>,
     ) {
+        let reselect_manual_memory = self.context_ledger_manual_memory_selected();
         self.manual_memory_cache = ManualMemoryCache {
             bound_target: Some(target),
             phase: if pending_mutation == Some(ManualMemoryMutation::Create) {
@@ -716,11 +913,15 @@ impl ChatWidget {
             pending_context_report,
             ..ManualMemoryCache::default()
         };
+        if reselect_manual_memory {
+            self.reselect_context_ledger_manual_memory();
+        }
         self.request_redraw();
     }
 
     fn mark_manual_memory_loading(&mut self) -> Option<ManualMemoryRequestTarget> {
         let target = self.manual_memory_cache.bound_target.clone()?;
+        let reselect_manual_memory = self.context_ledger_manual_memory_selected();
         self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
         self.manual_memory_cache.status = None;
         self.manual_memory_cache.sources.clear();
@@ -729,12 +930,16 @@ impl ChatWidget {
         if self.manual_memory_cache.pending_mutation == Some(ManualMemoryMutation::Create) {
             self.manual_memory_cache.phase = ManualMemoryPhase::Creating;
         }
+        if reselect_manual_memory {
+            self.reselect_context_ledger_manual_memory();
+        }
         self.request_redraw();
         Some(target)
     }
 
     pub(crate) fn begin_manual_memory_create(&mut self) -> bool {
-        if self.manual_memory_cache.pending_mutation.is_some()
+        if self.manual_memory_cache.phase != ManualMemoryPhase::Ready
+            || self.manual_memory_cache.pending_mutation.is_some()
             || self.manual_memory_cache.status.as_ref().is_none_or(|status| {
                 status.state
                     != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
@@ -773,12 +978,16 @@ impl ChatWidget {
         let Some(target) = self.manual_memory_cache.bound_target.clone() else {
             return false;
         };
+        let reselect_manual_memory = self.context_ledger_manual_memory_selected();
         self.manual_memory_cache.pending_mutation =
             Some(ManualMemoryMutation::Admission { admitted });
         self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
         self.manual_memory_cache.status = None;
         self.manual_memory_cache.sources.clear();
         self.manual_memory_cache.unavailable_reason = None;
+        if reselect_manual_memory {
+            self.reselect_context_ledger_manual_memory();
+        }
         self.request_redraw();
         self.app_event_tx
             .send(AppEvent::ManualMemoryAdmissionRequested(target, admitted));
@@ -826,6 +1035,7 @@ impl ChatWidget {
         {
             return false;
         }
+        let reselect_manual_memory = self.context_ledger_manual_memory_selected();
         match completion {
             ManualMemoryStatusCompletion::Ready { status, sources } => {
                 self.manual_memory_cache.phase = ManualMemoryPhase::Ready;
@@ -839,6 +1049,9 @@ impl ChatWidget {
                 self.manual_memory_cache.sources.clear();
                 self.manual_memory_cache.unavailable_reason = Some(reason);
             }
+        }
+        if reselect_manual_memory {
+            self.reselect_context_ledger_manual_memory();
         }
         self.request_redraw();
         true
@@ -867,6 +1080,23 @@ impl ChatWidget {
         self.context_ledger.selected = selectable[next];
     }
 
+    fn context_ledger_manual_memory_selected(&self) -> bool {
+        self.context_ledger_sources()
+            .get(self.context_ledger.selected)
+            .is_some_and(|source| source.path == self.canonical_manual_memory_path())
+    }
+
+    fn reselect_context_ledger_manual_memory(&mut self) {
+        let memory_path = self.canonical_manual_memory_path();
+        if let Some(index) = self
+            .context_ledger_sources()
+            .iter()
+            .position(|source| source.path == memory_path)
+        {
+            self.context_ledger.selected = index;
+        }
+    }
+
     fn set_all_context_sources_admitted(
         &mut self,
         sources: &[crate::legacy_core::elpis_context::ContinuitySource],
@@ -875,15 +1105,11 @@ impl ChatWidget {
         if self.reject_manual_memory_writer_conflict() {
             return;
         }
-        let manual_memory_path = self
-            .manual_memory_cache
-            .bound_target
-            .as_ref()
-            .map(|target| target.view.memory_path.clone());
+        let manual_memory_path = self.canonical_manual_memory_path();
         let mut ordinary_write_attempted = false;
         for source in sources.iter().filter(|source| {
             source.selectable
-                && !is_manual_memory_source(source, manual_memory_path.as_deref())
+                && !is_manual_memory_source(source, Some(manual_memory_path.as_path()))
                 && source.admitted != admitted
         }) {
             ordinary_write_attempted = true;
@@ -900,7 +1126,7 @@ impl ChatWidget {
         }
         let memory_enqueued = self.manual_memory_can_toggle()
             && sources.iter().any(|source| {
-                is_manual_memory_source(source, manual_memory_path.as_deref())
+                is_manual_memory_source(source, Some(manual_memory_path.as_path()))
                     && source.admitted != admitted
             })
             && self.begin_manual_memory_admission(admitted);
@@ -922,10 +1148,7 @@ impl ChatWidget {
         }
         let is_manual_memory = is_manual_memory_source(
             source,
-            self.manual_memory_cache
-                .bound_target
-                .as_ref()
-                .map(|target| target.view.memory_path.as_path()),
+            Some(self.canonical_manual_memory_path().as_path()),
         );
         if is_manual_memory {
             self.add_info_message(
@@ -972,17 +1195,22 @@ impl ChatWidget {
         }
         let is_manual_memory = is_manual_memory_source(
             source,
-            self.manual_memory_cache
-                .bound_target
-                .as_ref()
-                .map(|target| target.view.memory_path.as_path()),
+            Some(self.canonical_manual_memory_path().as_path()),
         );
         if is_manual_memory {
             if self.manual_memory_can_toggle() {
                 return self.begin_manual_memory_admission(admitted);
             }
+            let message = match self.manual_memory_cache.phase {
+                ManualMemoryPhase::Ready => {
+                    "Manual Memory does not exist yet; press c to create it."
+                }
+                ManualMemoryPhase::Loading => "Manual Memory status is still loading.",
+                ManualMemoryPhase::Creating => "Manual Memory is being created.",
+                ManualMemoryPhase::Unavailable => "Manual Memory status is unavailable.",
+            };
             self.add_info_message(
-                "Manual Memory does not exist yet; press c to create it.".to_string(),
+                message.to_string(),
                 /*hint*/ None,
             );
             return false;
@@ -1004,10 +1232,12 @@ impl ChatWidget {
     }
 
     fn manual_memory_can_toggle(&self) -> bool {
-        self.manual_memory_cache.status.as_ref().is_some_and(|status| {
-            status.state
-                != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
-        })
+        self.manual_memory_cache.phase == ManualMemoryPhase::Ready
+            && self.manual_memory_cache.pending_mutation.is_none()
+            && self.manual_memory_cache.status.as_ref().is_some_and(|status| {
+                status.state
+                    != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+            })
     }
 
     pub(super) fn reject_manual_memory_writer_conflict(&mut self) -> bool {

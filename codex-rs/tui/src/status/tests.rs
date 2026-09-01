@@ -53,6 +53,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
 use ratatui::prelude::*;
+use std::path::PathBuf;
 use tempfile::TempDir;
 use unicode_width::UnicodeWidthStr;
 
@@ -748,6 +749,7 @@ async fn status_model_provider_uses_bedrock_runtime_base_url_and_stays_provider_
         /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
         /*continuity_sources*/ &[],
+        /*manual_memory*/ None,
         /*refreshing_rate_limits*/ false,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
@@ -791,6 +793,7 @@ async fn status_model_provider_uses_bedrock_runtime_base_url_and_stays_provider_
         /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
         /*continuity_sources*/ &[],
+        /*manual_memory*/ None,
         /*refreshing_rate_limits*/ false,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
@@ -1613,6 +1616,7 @@ async fn status_snapshot_uses_default_reasoning_when_config_empty() {
         /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ Some(Some(ReasoningEffort::Medium)),
         /*continuity_sources*/ &[],
+        /*manual_memory*/ None,
         /*refreshing_rate_limits*/ false,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
@@ -2098,4 +2102,181 @@ async fn status_context_window_uses_last_usage() {
         !context_line.contains("102K"),
         "context line should not use total aggregated tokens, got: {context_line}"
     );
+}
+
+fn cached_manual_memory_status(
+    state: crate::legacy_core::elpis_context::ManualMemoryAdmissionState,
+    request_chars_if_admitted: usize,
+    eligible_chars_now: usize,
+    truncated: bool,
+) -> crate::legacy_core::elpis_context::ManualMemoryStatus {
+    crate::legacy_core::elpis_context::ManualMemoryStatus {
+        state,
+        bytes: request_chars_if_admitted as u64,
+        request_chars_if_admitted,
+        eligible_chars_now,
+        limit_chars: 8_000,
+        truncated,
+    }
+}
+
+fn cached_status_source(
+    name: &str,
+    path: PathBuf,
+    estimated_tokens: u64,
+    admitted: bool,
+) -> crate::legacy_core::elpis_context::ContinuitySource {
+    crate::legacy_core::elpis_context::ContinuitySource {
+        name: name.to_string(),
+        path,
+        bytes: estimated_tokens.saturating_mul(4),
+        estimated_tokens,
+        category: crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory,
+        origin: "test cache",
+        lifetime: "every turn",
+        reason: "test cache",
+        admitted,
+        selectable: true,
+    }
+}
+
+#[test]
+fn manual_memory_contribution_is_only_ready_admitted_eligible_chars() {
+    use crate::chatwidget::ManualMemoryPhase as Phase;
+    use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+    let cases = [
+        (Phase::Ready, State::Admitted, 14, 4),
+        (Phase::Ready, State::AvailableNotAdmitted, 0, 0),
+        (Phase::Ready, State::Missing, 0, 0),
+        (Phase::Loading, State::Admitted, 14, 0),
+        (Phase::Creating, State::Admitted, 14, 0),
+        (Phase::Unavailable, State::Admitted, 14, 0),
+    ];
+
+    for (phase, state, eligible_chars_now, expected_tokens) in cases {
+        let memory = super::ManualMemoryDisplay::new(
+            phase,
+            Some(cached_manual_memory_status(
+                state,
+                14,
+                eligible_chars_now,
+                false,
+            )),
+            None,
+            /*pending*/ false,
+        );
+        assert_eq!(
+            memory.token_contribution(),
+            expected_tokens,
+            "wrong contribution for {phase:?} / {state:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn status_memory_row_uses_cached_semantics_and_exact_path_total() {
+    use crate::app_event::ManualMemoryUnavailableReason;
+    use crate::chatwidget::ManualMemoryPhase as Phase;
+    use crate::legacy_core::elpis_context::ManualMemoryAdmissionState as State;
+
+    let temp_home = TempDir::new().expect("temp home");
+    let config = test_config(&temp_home).await;
+    let usage = TokenUsage::default();
+    let captured_at = chrono::Local
+        .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
+        .single()
+        .expect("timestamp");
+    let model_slug = get_model_offline_for_tests(config.model.as_deref());
+    let canonical_path = config.memory_dir.as_path().join("MEMORY.md");
+    let custom_path = config.memory_dir.as_path().join("custom.md");
+    let sources = vec![
+        cached_status_source("MEMORY.md", canonical_path, 2_000, true),
+        cached_status_source("custom.md", custom_path, 20, true),
+    ];
+
+    let ready = super::ManualMemoryDisplay::new(
+        Phase::Ready,
+        Some(cached_manual_memory_status(
+            State::Admitted,
+            8_000,
+            8_000,
+            true,
+        )),
+        None,
+        /*pending*/ false,
+    );
+    let (composite, _) = new_status_output_with_rate_limits_handle(
+        &config,
+        /*runtime_model_provider_base_url*/ None,
+        /*remote_connection*/ None,
+        /*account_display*/ None,
+        /*token_info*/ None,
+        &usage,
+        &None,
+        /*thread_name*/ None,
+        /*forked_from*/ None,
+        /*rate_limits*/ &[],
+        None,
+        captured_at,
+        &model_slug,
+        /*collaboration_mode*/ None,
+        /*reasoning_effort_override*/ None,
+        &sources,
+        Some(&ready),
+        /*refreshing_rate_limits*/ false,
+        /*context_pruner_passes*/ 0,
+        /*context_pruner_saved_chars*/ 0,
+    );
+    let rendered = render_lines(&composite.display_lines(/*width*/ 120)).join("\n");
+    let normalized = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized.contains("MEMORY.md Admitted next request 8000/8000 — truncated"),
+        "{rendered}"
+    );
+    assert!(
+        normalized.contains("Portable context ≈2.02K tokens admitted"),
+        "canonical Memory must be replaced once while custom Memory still contributes: {rendered}"
+    );
+
+    let unavailable = super::ManualMemoryDisplay::new(
+        Phase::Unavailable,
+        None,
+        Some(ManualMemoryUnavailableReason::MemoryUnreadable),
+        /*pending*/ false,
+    );
+    let (composite, _) = new_status_output_with_rate_limits_handle(
+        &config,
+        /*runtime_model_provider_base_url*/ None,
+        /*remote_connection*/ None,
+        /*account_display*/ None,
+        /*token_info*/ None,
+        &usage,
+        &None,
+        /*thread_name*/ None,
+        /*forked_from*/ None,
+        /*rate_limits*/ &[],
+        None,
+        captured_at,
+        &model_slug,
+        /*collaboration_mode*/ None,
+        /*reasoning_effort_override*/ None,
+        &sources[1..],
+        Some(&unavailable),
+        /*refreshing_rate_limits*/ false,
+        /*context_pruner_passes*/ 0,
+        /*context_pruner_saved_chars*/ 0,
+    );
+    let rendered = render_lines(&composite.display_lines(/*width*/ 120)).join("\n");
+    let normalized = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(normalized.contains("MEMORY.md Unavailable"), "{rendered}");
+    assert!(
+        normalized.contains("Memory issue memory file unreadable"),
+        "{rendered}"
+    );
+    assert!(
+        normalized.contains("Portable context ≈20 tokens admitted"),
+        "Unavailable canonical memory contributes zero without suppressing custom Memory: {rendered}"
+    );
+    assert!(!rendered.contains("8000/8000"), "{rendered}");
 }

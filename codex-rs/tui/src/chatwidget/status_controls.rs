@@ -228,6 +228,7 @@ impl ChatWidget {
             .cloned()
             .collect();
         let continuity_sources = self.continuity_sources();
+        let manual_memory = self.manual_memory_display();
         let (cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
             self.runtime_model_provider_base_url.as_deref(),
@@ -245,6 +246,7 @@ impl ChatWidget {
             collaboration_mode,
             reasoning_effort_override,
             &continuity_sources,
+            Some(&manual_memory),
             refreshing_rate_limits,
             crate::legacy_core::context_pruner::pass_count(),
             crate::legacy_core::context_pruner::saved_chars(),
