@@ -23,6 +23,13 @@ pub(super) enum ThreadBufferedEvent {
     HistoryEntryResponse(HistoryLookupResponse),
 }
 
+pub(super) fn notification_is_ephemeral(notification: &ServerNotification) -> bool {
+    matches!(
+        notification,
+        ServerNotification::TurnActivityUpdated(_) | ServerNotification::TurnCostUpdated(_)
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ThreadEventAttachment {
     Live,
@@ -98,10 +105,7 @@ impl ThreadEventStore {
     }
 
     pub(super) fn push_notification(&mut self, notification: ServerNotification) {
-        if matches!(
-            &notification,
-            ServerNotification::TurnActivityUpdated(_) | ServerNotification::TurnCostUpdated(_)
-        ) {
+        if notification_is_ephemeral(&notification) {
             return;
         }
         self.pending_interactive_replay

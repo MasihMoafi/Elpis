@@ -4919,6 +4919,76 @@ async fn ephemeral_activity_notifications_are_live_delivered_but_not_buffered() 
     Ok(())
 }
 
+#[tokio::test]
+async fn full_thread_channel_drops_ephemeral_activity_without_pending_send() -> Result<()> {
+    let mut app = make_test_app().await;
+    let thread_id = ThreadId::new();
+    app.thread_event_channels
+        .insert(thread_id, ThreadEventChannel::new(/*capacity*/ 1));
+    app.set_thread_active(thread_id, /*active*/ true).await;
+
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+    )
+    .await?;
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::ObservationDropped,
+            },
+        }),
+    )
+    .await?;
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-2".to_string(),
+            status: TurnActivityStatus::Interrupted,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+    )
+    .await?;
+
+    let channel = app
+        .thread_event_channels
+        .get_mut(&thread_id)
+        .expect("thread channel should exist");
+    assert!(channel.store.lock().await.snapshot().events.is_empty());
+    let receiver = channel
+        .receiver
+        .as_mut()
+        .expect("active test channel receiver");
+    assert!(matches!(
+        receiver.try_recv(),
+        Ok(ThreadBufferedEvent::Notification(
+            ServerNotification::TurnActivityUpdated(_)
+        ))
+    ));
+    assert!(
+        time::timeout(Duration::from_millis(50), receiver.recv())
+            .await
+            .is_err(),
+        "full-channel ephemeral update must not leave a pending send task",
+    );
+    Ok(())
+}
+
 fn thread_closed_notification(thread_id: ThreadId) -> ServerNotification {
     ServerNotification::ThreadClosed(ThreadClosedNotification {
         thread_id: thread_id.to_string(),

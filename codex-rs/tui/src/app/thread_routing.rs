@@ -907,6 +907,7 @@ impl App {
         thread_id: ThreadId,
         notification: ServerNotification,
     ) -> Result<()> {
+        let best_effort_ephemeral = notification_is_ephemeral(&notification);
         if matches!(notification, ServerNotification::ThreadSettingsUpdated(_))
             && self.primary_thread_id.is_some()
             && self.primary_thread_id != Some(thread_id)
@@ -941,6 +942,7 @@ impl App {
         if should_send {
             match sender.try_send(ThreadBufferedEvent::Notification(notification)) {
                 Ok(()) => {}
+                Err(TrySendError::Full(_)) if best_effort_ephemeral => {}
                 Err(TrySendError::Full(event)) => {
                     tokio::spawn(async move {
                         if let Err(err) = sender.send(event).await {
