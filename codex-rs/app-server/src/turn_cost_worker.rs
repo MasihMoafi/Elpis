@@ -45,6 +45,8 @@ struct DroppedTurnState {
     dropped: HashSet<String>,
     order: VecDeque<String>,
     active: HashSet<String>,
+    // One per successfully queued or tracked start, bounded by the channel and turn-map limits.
+    unretired_starts: HashSet<String>,
 }
 
 type DroppedTurns = Arc<StdMutex<DroppedTurnState>>;
@@ -198,6 +200,7 @@ fn evict_dropped_history(dropped_turns: &mut DroppedTurnState) {
     }
 }
 
+#[cfg(test)]
 fn register_active_turn(dropped_turns: &DroppedTurns, turn_id: &str) -> bool {
     let mut dropped_turns = dropped_turns
         .lock()
@@ -209,6 +212,21 @@ fn register_active_turn(dropped_turns: &DroppedTurns, turn_id: &str) -> bool {
     inserted
 }
 
+fn register_start_for_worker(dropped_turns: &DroppedTurns, turn_id: &str) -> bool {
+    let mut dropped_turns = dropped_turns
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if dropped_turns.active.contains(turn_id)
+        || dropped_turns.dropped.contains(turn_id)
+        || dropped_turns.unretired_starts.contains(turn_id)
+    {
+        return false;
+    }
+    dropped_turns.active.insert(turn_id.to_string());
+    dropped_turns.unretired_starts.insert(turn_id.to_string());
+    true
+}
+
 fn mark_turn_dropped(dropped_turns: &DroppedTurns, turn_id: &str) -> bool {
     let mut dropped_turns = dropped_turns
         .lock()
@@ -216,7 +234,9 @@ fn mark_turn_dropped(dropped_turns: &DroppedTurns, turn_id: &str) -> bool {
     if !dropped_turns.dropped.insert(turn_id.to_string()) {
         return false;
     }
-    if !dropped_turns.active.contains(turn_id) {
+    if !dropped_turns.active.contains(turn_id)
+        && !dropped_turns.unretired_starts.contains(turn_id)
+    {
         dropped_turns.order.push_back(turn_id.to_string());
     }
     // ponytail: live invalidations stay pinned; only completed history is evictable.
@@ -224,12 +244,57 @@ fn mark_turn_dropped(dropped_turns: &DroppedTurns, turn_id: &str) -> bool {
     true
 }
 
+fn mark_observation_send_failed(
+    dropped_turns: &DroppedTurns,
+    observation: &TurnCostObservation,
+    channel_closed: bool,
+) -> bool {
+    let mut dropped_turns = dropped_turns
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let turn_id = observation.turn_id.as_str();
+    let was_evictable = dropped_turns.dropped.contains(turn_id)
+        && !dropped_turns.active.contains(turn_id)
+        && !dropped_turns.unretired_starts.contains(turn_id);
+    if channel_closed
+        || matches!(&observation.kind, TurnCostObservationKind::Started { .. })
+    {
+        dropped_turns.unretired_starts.remove(turn_id);
+    }
+    if matches!(&observation.kind, TurnCostObservationKind::Finished { .. }) {
+        dropped_turns.active.remove(turn_id);
+    }
+    let newly_dropped = dropped_turns.dropped.insert(turn_id.to_string());
+    let is_evictable = !dropped_turns.active.contains(turn_id)
+        && !dropped_turns.unretired_starts.contains(turn_id);
+    if is_evictable && !was_evictable {
+        dropped_turns.order.push_back(turn_id.to_string());
+    }
+    evict_dropped_history(&mut dropped_turns);
+    newly_dropped
+}
+
+fn retire_started_observation(dropped_turns: &DroppedTurns, turn_id: &str) {
+    let mut dropped_turns = dropped_turns
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if dropped_turns.unretired_starts.remove(turn_id)
+        && dropped_turns.dropped.contains(turn_id)
+        && !dropped_turns.active.contains(turn_id)
+    {
+        dropped_turns.order.push_back(turn_id.to_string());
+    }
+    evict_dropped_history(&mut dropped_turns);
+}
+
 fn clear_dropped_turn(dropped_turns: &DroppedTurns, turn_id: &str) {
     let mut dropped_turns = dropped_turns
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let was_active = dropped_turns.active.remove(turn_id);
-    if dropped_turns.dropped.remove(turn_id) && !was_active {
+    dropped_turns.active.remove(turn_id);
+    if !dropped_turns.unretired_starts.contains(turn_id)
+        && dropped_turns.dropped.remove(turn_id)
+    {
         dropped_turns.order.retain(|queued| queued != turn_id);
     }
     evict_dropped_history(&mut dropped_turns);
@@ -410,8 +475,10 @@ impl TurnCostWorkerHandle {
             EventMsg::TurnAborted(_) => TurnCostObservationKind::Finished { interrupted: true },
             _ => return None,
         };
-        if matches!(&kind, TurnCostObservationKind::Started { .. }) {
-            register_active_turn(&self.dropped_turns, &event.id);
+        if matches!(&kind, TurnCostObservationKind::Started { .. })
+            && !register_start_for_worker(&self.dropped_turns, &event.id)
+        {
+            return None;
         }
         match self.sender.try_send(TurnCostObservation {
             thread_id,
@@ -420,9 +487,16 @@ impl TurnCostWorkerHandle {
             kind,
         }) {
             Ok(()) => None,
-            Err(error) => {
-                let observation = error.into_inner();
-                let newly_dropped = mark_turn_dropped(&self.dropped_turns, &observation.turn_id);
+            Err(mpsc::error::TrySendError::Full(observation)) => {
+                let newly_dropped =
+                    mark_observation_send_failed(&self.dropped_turns, &observation, false);
+                newly_dropped.then_some(TurnCostState::Unavailable {
+                    reason: TurnCostAvailability::ObservationDropped,
+                })
+            }
+            Err(mpsc::error::TrySendError::Closed(observation)) => {
+                let newly_dropped =
+                    mark_observation_send_failed(&self.dropped_turns, &observation, true);
                 newly_dropped.then_some(TurnCostState::Unavailable {
                     reason: TurnCostAvailability::ObservationDropped,
                 })
@@ -489,15 +563,29 @@ impl WorkerRuntime {
                         &observation.kind,
                         TurnCostObservationKind::Finished { .. }
                     );
+                    let started = matches!(
+                        &observation.kind,
+                        TurnCostObservationKind::Started { .. }
+                    );
                     if self.discard_if_invalidated(&observation.turn_id) {
+                        if started {
+                            retire_started_observation(
+                                &self.dropped_turns,
+                                &observation.turn_id,
+                            );
+                        }
                         if finished {
                             clear_dropped_turn(&self.dropped_turns, &observation.turn_id);
                         }
                         continue;
                     }
                     if observation.auth_revision != current_auth_revision {
-                        if matches!(&observation.kind, TurnCostObservationKind::Started { .. }) {
+                        if started {
                             let reason = self.current_unavailable_auth_reason();
+                            retire_started_observation(
+                                &self.dropped_turns,
+                                &observation.turn_id,
+                            );
                             self.late_notifier
                                 .notify(
                                     observation.thread_id,
@@ -515,8 +603,12 @@ impl WorkerRuntime {
                         backend_availability,
                         BackendAvailability::Ready | BackendAvailability::RetryProbe
                     ) {
-                        if matches!(&observation.kind, TurnCostObservationKind::Started { .. }) {
+                        if started {
                             let reason = self.current_unavailable_auth_reason();
+                            retire_started_observation(
+                                &self.dropped_turns,
+                                &observation.turn_id,
+                            );
                             self.late_notifier
                                 .notify(
                                     observation.thread_id,
@@ -634,7 +726,14 @@ impl WorkerRuntime {
             &observation.kind,
             TurnCostObservationKind::Finished { .. }
         );
+        let started = matches!(
+            &observation.kind,
+            TurnCostObservationKind::Started { .. }
+        );
         if self.discard_if_invalidated(&observation.turn_id) {
+            if started {
+                retire_started_observation(&self.dropped_turns, &observation.turn_id);
+            }
             if finished {
                 clear_dropped_turn(&self.dropped_turns, &observation.turn_id);
             }
@@ -646,7 +745,10 @@ impl WorkerRuntime {
                     return;
                 }
                 if self.turns.len() >= MAX_TRACKED_TURNS {
-                    if mark_turn_dropped(&self.dropped_turns, &observation.turn_id) {
+                    let newly_dropped =
+                        mark_turn_dropped(&self.dropped_turns, &observation.turn_id);
+                    retire_started_observation(&self.dropped_turns, &observation.turn_id);
+                    if newly_dropped {
                         self.late_notifier
                             .notify(
                                 observation.thread_id,
@@ -978,11 +1080,11 @@ impl WorkerRuntime {
     }
 
     fn remove_turn(&mut self, turn_id: &str) {
-        let finished = self
-            .turns
-            .remove(turn_id)
-            .is_some_and(|entry| entry.status != TurnCostStatus::Running);
-        if finished {
+        let status = self.turns.remove(turn_id).map(|entry| entry.status);
+        if status.is_some() {
+            retire_started_observation(&self.dropped_turns, turn_id);
+        }
+        if status.is_some_and(|status| status != TurnCostStatus::Running) {
             clear_dropped_turn(&self.dropped_turns, turn_id);
         }
     }
