@@ -27,6 +27,12 @@ impl ChatWidget {
             self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
             self.smart_prune = ThreadSmartPruneSnapshot::default();
             self.smart_prune_synced = false;
+            let prune_savings_changed = self.last_prune_saved_tokens.take().is_some();
+            let tokens_changed = self.set_token_info(/*info*/ None);
+            if prune_savings_changed && !tokens_changed {
+                self.app_event_tx
+                    .send(AppEvent::RefreshContextDashboard);
+            }
         }
         self.refresh_elpis_tip();
         self.turn_lifecycle.reset_thread();

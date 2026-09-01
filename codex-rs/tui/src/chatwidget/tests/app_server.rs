@@ -188,6 +188,36 @@ fn configured_thread_session(thread_id: ThreadId) -> crate::session_state::Threa
     }
 }
 
+#[tokio::test]
+async fn thread_switch_clears_thread_scoped_dashboard_usage() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let first_thread_id = ThreadId::new();
+    chat.handle_thread_session(configured_thread_session(first_thread_id));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.set_token_info(Some(make_token_info(120, 1_000)));
+    assert!(chat.update_context_prune_savings(40, /*from_replay*/ true));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.handle_thread_session(configured_thread_session(first_thread_id));
+    assert!(chat.token_info.is_some());
+    assert_eq!(chat.last_prune_saved_tokens, Some(40));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.handle_thread_session(configured_thread_session(ThreadId::new()));
+
+    assert!(chat.token_info.is_none());
+    assert_eq!(chat.bottom_pane.context_window_used_tokens(), None);
+    assert_eq!(chat.last_prune_saved_tokens, None);
+    assert_eq!(chat.last_prune_saved_tokens.unwrap_or(0), 0);
+    assert_eq!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
+}
+
 fn start_safety_buffering_test_turn(
     chat: &mut ChatWidget,
     op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>,
