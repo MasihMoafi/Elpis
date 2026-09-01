@@ -42,6 +42,8 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::activity_state::ActivityState;
+use crate::activity_state::DashboardActivityState;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
@@ -116,7 +118,9 @@ use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnCostUpdatedNotification;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
@@ -616,6 +620,7 @@ pub(crate) struct ChatWidget {
     last_unified_wait: Option<UnifiedExecWaitState>,
     unified_exec_wait_streak: Option<UnifiedExecWaitStreak>,
     turn_lifecycle: TurnLifecycleState,
+    activity_state: ActivityState,
     safety_buffering: SafetyBufferingState,
     task_complete_pending: bool,
     unified_exec_processes: Vec<UnifiedExecProcessSummary>,
@@ -923,6 +928,55 @@ fn token_usage_info_from_app_server(token_usage: ThreadTokenUsage) -> TokenUsage
 }
 
 impl ChatWidget {
+    pub(crate) fn on_turn_started_activity(&mut self, turn_id: String, started_at: Option<i64>) {
+        if self.activity_state.start(turn_id, started_at) {
+            self.app_event_tx
+                .send(AppEvent::PublishDashboardSnapshot);
+        }
+    }
+
+    pub(crate) fn on_turn_completed_activity(
+        &mut self,
+        notification: TurnActivityUpdatedNotification,
+    ) {
+        if self.activity_state.finish(
+            &notification.turn_id,
+            notification.status,
+            notification.duration_ms,
+            notification.time_to_first_token_ms,
+            notification.profile,
+        ) {
+            self.app_event_tx
+                .send(AppEvent::PublishDashboardSnapshot);
+        }
+    }
+
+    pub(crate) fn on_turn_cost_updated_activity(
+        &mut self,
+        notification: TurnCostUpdatedNotification,
+    ) {
+        if self
+            .activity_state
+            .update_cost(&notification.turn_id, notification.cost)
+        {
+            self.app_event_tx
+                .send(AppEvent::PublishDashboardSnapshot);
+        }
+    }
+
+    pub(crate) fn reset_activity(&mut self) {
+        self.activity_state.reset();
+        self.app_event_tx
+            .send(AppEvent::PublishDashboardSnapshot);
+    }
+
+    pub(crate) fn dashboard_activity_state(
+        &self,
+        automatic_pruning_enabled: Option<bool>,
+    ) -> DashboardActivityState {
+        self.activity_state.project(automatic_pruning_enabled)
+    }
+
     /// Width available to wrapped transcript history. The terminal-pet feature used to
     /// reserve columns on the right; with pets removed the full width is available.
     pub(crate) fn history_wrap_width(&self, width: u16) -> u16 {

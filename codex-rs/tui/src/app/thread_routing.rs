@@ -1153,6 +1153,7 @@ impl App {
         turns: Vec<Turn>,
         presentation: ThreadAttachPresentation,
     ) -> Result<()> {
+        self.chat_widget.reset_activity();
         let thread_id = session.thread_id;
         self.primary_thread_id = Some(thread_id);
         self.primary_session_configured = Some(session.clone());
@@ -1367,6 +1368,7 @@ impl App {
         snapshot: ThreadEventSnapshot,
         resume_restored_queue: bool,
     ) {
+        self.chat_widget.reset_activity();
         self.refresh_mcp_startup_expected_servers_from_config();
         let should_buffer_replay = !snapshot.turns.is_empty() || !snapshot.events.is_empty();
         if should_buffer_replay {

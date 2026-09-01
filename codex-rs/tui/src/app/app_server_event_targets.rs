@@ -71,6 +71,10 @@ pub(super) fn server_notification_thread_target(
             Some(notification.thread_id.as_str())
         }
         ServerNotification::TurnStarted(notification) => Some(notification.thread_id.as_str()),
+        ServerNotification::TurnActivityUpdated(notification) => {
+            Some(notification.thread_id.as_str())
+        }
+        ServerNotification::TurnCostUpdated(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::HookStarted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::TurnCompleted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::HookCompleted(notification) => Some(notification.thread_id.as_str()),
@@ -208,6 +212,11 @@ mod tests {
     use codex_app_server_protocol::ServerNotification;
     use codex_app_server_protocol::ThreadSettings;
     use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
+    use codex_app_server_protocol::TurnActivityStatus;
+    use codex_app_server_protocol::TurnActivityUpdatedNotification;
+    use codex_app_server_protocol::TurnCostAvailability;
+    use codex_app_server_protocol::TurnCostState;
+    use codex_app_server_protocol::TurnCostUpdatedNotification;
     use codex_app_server_protocol::WarningNotification;
     use codex_protocol::ThreadId;
     use codex_protocol::config_types::CollaborationMode;
@@ -326,5 +335,35 @@ mod tests {
         let target = server_notification_thread_target(&notification);
 
         assert_eq!(target, ServerNotificationThreadTarget::Thread(thread_id));
+    }
+
+    #[test]
+    fn activity_and_cost_notifications_route_only_to_their_explicit_thread() {
+        let thread_id = ThreadId::new();
+        let notifications = [
+            ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: "turn-1".to_string(),
+                status: TurnActivityStatus::Completed,
+                started_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+                profile: None,
+            }),
+            ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: "turn-1".to_string(),
+                cost: TurnCostState::Unavailable {
+                    reason: TurnCostAvailability::BackendUnavailable,
+                },
+            }),
+        ];
+
+        for notification in notifications {
+            assert_eq!(
+                server_notification_thread_target(&notification),
+                ServerNotificationThreadTarget::Thread(thread_id)
+            );
+        }
     }
 }

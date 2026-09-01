@@ -131,6 +131,12 @@ impl ChatWidget {
                 }
             }
             ServerNotification::TurnStarted(notification) => {
+                if replay_kind.is_none() {
+                    self.on_turn_started_activity(
+                        notification.turn.id.clone(),
+                        notification.turn.started_at,
+                    );
+                }
                 self.turn_lifecycle.last_turn_id = Some(notification.turn.id);
                 self.last_non_retry_error = None;
                 if !matches!(replay_kind, Some(ReplayKind::ResumeInitialMessages)) {
@@ -139,6 +145,16 @@ impl ChatWidget {
             }
             ServerNotification::TurnCompleted(notification) => {
                 self.handle_turn_completed_notification(notification, replay_kind);
+            }
+            ServerNotification::TurnActivityUpdated(notification) => {
+                if replay_kind.is_none() {
+                    self.on_turn_completed_activity(notification);
+                }
+            }
+            ServerNotification::TurnCostUpdated(notification) => {
+                if replay_kind.is_none() {
+                    self.on_turn_cost_updated_activity(notification);
+                }
             }
             ServerNotification::ItemStarted(notification) => {
                 self.handle_item_started_notification(notification, replay_kind.is_some());

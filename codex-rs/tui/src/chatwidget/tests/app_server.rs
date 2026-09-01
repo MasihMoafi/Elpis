@@ -1319,3 +1319,245 @@ async fn live_app_server_thread_closed_requests_immediate_exit() {
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::Immediate)));
 }
+
+#[tokio::test]
+async fn live_activity_notifications_project_only_safe_scalars_and_typed_cost() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id =
+        "prompt-secret-agent-response-secret-command-output-secret-account-provider-path-secret";
+    let turn_id = "turn-secret-id";
+
+    chat.handle_server_notification(
+        ServerNotification::TurnStarted(TurnStartedNotification {
+            thread_id: thread_id.to_string(),
+            turn: AppServerTurn {
+                id: turn_id.to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::InProgress,
+                error: None,
+                started_at: Some(42),
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::Error(ErrorNotification {
+            error: AppServerTurnError {
+                message: "raw-error-secret".to_string(),
+                codex_error_info: None,
+                additional_details: Some("trace-secret".to_string()),
+            },
+            will_retry: true,
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::SubscriptionAuthentication,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+
+    let unavailable = chat.dashboard_activity_state(Some(false));
+    let unavailable_debug = format!("{unavailable:?}");
+    for private_value in [
+        "prompt-secret",
+        "agent-response-secret",
+        "command-output-secret",
+        "account-provider-path-secret",
+        turn_id,
+        "raw-error-secret",
+        "trace-secret",
+    ] {
+        assert!(!unavailable_debug.contains(private_value));
+    }
+    let crate::activity_state::DashboardActivityState {
+        current,
+        recent,
+        automatic_pruning_enabled,
+    } = unavailable;
+    let current = current
+        .expect("live turn should project as current");
+    let crate::activity_state::DashboardActivityRow {
+        status,
+        started_at,
+        duration_ms,
+        time_to_first_token_ms,
+        profile,
+        cost,
+    } = current;
+    assert_eq!(
+        status,
+        crate::activity_state::DashboardActivityStatus::Running
+    );
+    assert_eq!(
+        cost,
+        Some(TurnCostState::Unavailable {
+            reason: TurnCostAvailability::SubscriptionAuthentication,
+        })
+    );
+    assert_eq!(started_at, Some(42));
+    assert_eq!(duration_ms, None);
+    assert_eq!(time_to_first_token_ms, None);
+    assert_eq!(profile, None);
+    assert_eq!(automatic_pruning_enabled, Some(false));
+    assert!(recent.is_empty());
+
+    chat.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: Some(42),
+            duration_ms: Some(100),
+            time_to_first_token_ms: Some(25),
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnStarted(TurnStartedNotification {
+            thread_id: thread_id.to_string(),
+            turn: AppServerTurn {
+                id: "turn-priced".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::InProgress,
+                error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-priced".to_string(),
+            cost: TurnCostState::Priced {
+                backend_total_usd: "1.250000".to_string(),
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-priced".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+
+    let priced = chat.dashboard_activity_state(None);
+    assert_eq!(
+        priced.recent[0].cost,
+        Some(TurnCostState::Unavailable {
+            reason: TurnCostAvailability::SubscriptionAuthentication,
+        })
+    );
+    assert_eq!(
+        priced.recent[1].cost,
+        Some(TurnCostState::Priced {
+            backend_total_usd: "1.250000".to_string(),
+        })
+    );
+}
+
+#[tokio::test]
+async fn dropped_dashboard_publication_receiver_does_not_block_turn_completion() {
+    let (mut chat, rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    drop(rx);
+
+    chat.handle_server_notification(
+        ServerNotification::TurnStarted(TurnStartedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: AppServerTurn {
+                id: "turn-1".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::InProgress,
+                error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnCompleted(TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: AppServerTurn {
+                id: "turn-1".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::Completed,
+                error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+
+    assert!(!chat.bottom_pane.is_task_running());
+    assert_eq!(chat.dashboard_activity_state(None).recent.len(), 1);
+}
+
+#[tokio::test]
+async fn empty_activity_reset_still_requests_dashboard_publication() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.reset_activity();
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    assert_eq!(chat.dashboard_activity_state(None).current, None);
+    assert!(chat.dashboard_activity_state(None).recent.is_empty());
+}
+
+#[tokio::test]
+async fn unknown_activity_cost_does_not_request_dashboard_publication() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.handle_server_notification(
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "unknown-turn".to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::BackendUnavailable,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+    assert!(chat.dashboard_activity_state(None).recent.is_empty());
+}

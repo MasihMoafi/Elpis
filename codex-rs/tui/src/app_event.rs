@@ -328,6 +328,9 @@ pub(crate) enum AppEvent {
     /// Open a read-only dashboard of the current context window and its provenance.
     OpenContextDashboard,
 
+    /// Publish the current safe dashboard snapshot after a payload-free state change signal.
+    PublishDashboardSnapshot,
+
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
 
