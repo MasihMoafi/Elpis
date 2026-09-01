@@ -1162,11 +1162,7 @@ impl Session {
                 time_to_first_token_ms,
             })
         };
-        let profile_event = build_turn_profile_event(
-            turn_context.sub_id.clone(),
-            &event,
-            profile,
-        );
+        let profile_event = build_turn_profile_event(turn_context.sub_id.clone(), &event, profile);
         emit_terminal_event_sequence(self, turn_context.as_ref(), profile_event, event).await;
         self.services
             .guardian_rejection_circuit_breaker
@@ -1386,11 +1382,8 @@ impl Session {
             completed_at,
             duration_ms,
         });
-        let profile_event = build_turn_profile_event(
-            task.turn_context.sub_id.clone(),
-            &event,
-            profile,
-        );
+        let profile_event =
+            build_turn_profile_event(task.turn_context.sub_id.clone(), &event, profile);
         emit_terminal_event_sequence(self, task.turn_context.as_ref(), profile_event, event).await;
         self.services
             .guardian_rejection_circuit_breaker

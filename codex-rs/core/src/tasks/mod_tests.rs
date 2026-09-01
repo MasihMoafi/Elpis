@@ -62,11 +62,8 @@ async fn delivered_terminal_events(
     let (session, turn_context, rx) =
         crate::session::tests::make_session_and_context_with_rx().await;
     let terminal_event = terminal_event(&turn_context.sub_id);
-    let profile_event = super::build_turn_profile_event(
-        turn_context.sub_id.clone(),
-        &terminal_event,
-        profile,
-    );
+    let profile_event =
+        super::build_turn_profile_event(turn_context.sub_id.clone(), &terminal_event, profile);
 
     super::emit_terminal_event_sequence(
         session.as_ref(),
