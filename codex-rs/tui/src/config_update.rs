@@ -80,6 +80,9 @@ pub(crate) fn build_model_selection_edits(
 
 /// Config edits for pinning a model to a specific provider.
 ///
+/// `effort` retains an explicitly selected provider/model reasoning level. Passing `None`
+/// deliberately clears a stale value for providers that do not advertise reasoning metadata.
+///
 /// `context_window` is the window the provider itself reports for this model, when it can be
 /// discovered. Locally served models are absent from the bundled catalog, so without it every
 /// context measurement uses generic fallback metadata and describes the wrong model. Passing
@@ -88,12 +91,22 @@ pub(crate) fn build_model_selection_edits(
 pub(crate) fn build_provider_model_selection_edits(
     model: &str,
     provider_id: &str,
+    effort: Option<impl ToString>,
     context_window: Option<i64>,
 ) -> Vec<ConfigEdit> {
+    let effort_edit = effort.map_or_else(
+        || clear_config_value("model_reasoning_effort"),
+        |effort| {
+            replace_config_value(
+                "model_reasoning_effort",
+                serde_json::json!(effort.to_string()),
+            )
+        },
+    );
     vec![
         replace_config_value("model", serde_json::json!(model)),
         replace_config_value("model_provider", serde_json::json!(provider_id)),
-        clear_config_value("model_reasoning_effort"),
+        effort_edit,
         replace_config_value("features.auto_model_routing", serde_json::json!(false)),
         context_window.map_or_else(
             || clear_config_value("model_context_window"),
@@ -118,10 +131,7 @@ const PICKER_MANAGED_PROVIDERS: [&str; 3] = [
 ///
 /// Returns `None` when the selection carries no provider signal and the active provider
 /// is one the user configured themselves.
-pub(crate) fn build_model_provider_edits(
-    model: &str,
-    active_provider_id: &str,
-) -> Vec<ConfigEdit> {
+pub(crate) fn build_model_provider_edits(model: &str, active_provider_id: &str) -> Vec<ConfigEdit> {
     if is_openrouter_model_slug(model) {
         return vec![
             replace_config_value(

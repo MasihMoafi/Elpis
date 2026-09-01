@@ -6,6 +6,7 @@ mod session_id;
 mod thread_id;
 mod tool_name;
 pub use agent_path::AgentPath;
+pub use protocol::TurnProfileSummary;
 pub use response_item_id::ResponseItemId;
 pub use session_id::SessionId;
 pub use thread_id::ThreadId;

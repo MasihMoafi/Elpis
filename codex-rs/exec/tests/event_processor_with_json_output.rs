@@ -1243,6 +1243,7 @@ fn token_usage_update_is_emitted_on_turn_completion() {
                     },
                     model_context_window: Some(128_000),
                     context_prune_saved_tokens: 0,
+                    smart_prune: Default::default(),
                 },
             },
         ));

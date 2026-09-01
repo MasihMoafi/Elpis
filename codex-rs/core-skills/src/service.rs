@@ -278,23 +278,30 @@ struct ConfigSkillsCacheKey {
 pub fn bundled_skills_enabled_from_stack(
     config_layer_stack: &codex_config::ConfigLayerStack,
 ) -> bool {
+    skills_config_from_stack(config_layer_stack)
+        .bundled
+        .unwrap_or_default()
+        .enabled
+}
+
+pub fn skills_config_from_stack(
+    config_layer_stack: &codex_config::ConfigLayerStack,
+) -> SkillsConfig {
     let effective_config = config_layer_stack.effective_config();
     let Some(skills_value) = effective_config
         .as_table()
         .and_then(|table| table.get("skills"))
     else {
-        return true;
+        return SkillsConfig::default();
     };
 
-    let skills: SkillsConfig = match skills_value.clone().try_into() {
+    match skills_value.clone().try_into() {
         Ok(skills) => skills,
         Err(err) => {
             warn!("invalid skills config: {err}");
-            return true;
+            SkillsConfig::default()
         }
-    };
-
-    skills.bundled.unwrap_or_default().enabled
+    }
 }
 
 fn config_skills_cache_key(

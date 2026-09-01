@@ -15,6 +15,7 @@ use std::sync::Arc;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadHistoryBuilder;
+use codex_app_server_protocol::ThreadSmartPruneUpdatedNotification;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
 use codex_app_server_protocol::Turn;
@@ -26,6 +27,23 @@ use codex_protocol::protocol::RolloutItem;
 
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::OutgoingMessageSender;
+
+pub(super) async fn send_thread_smart_prune_update_to_connection(
+    outgoing: &Arc<OutgoingMessageSender>,
+    connection_id: ConnectionId,
+    thread_id: ThreadId,
+    conversation: &CodexThread,
+) {
+    outgoing
+        .send_server_notification_to_connections(
+            &[connection_id],
+            ServerNotification::ThreadSmartPruneUpdated(ThreadSmartPruneUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                smart_prune: conversation.smart_prune_snapshot().await.into(),
+            }),
+        )
+        .await;
+}
 
 /// Sends a restored token usage update to the connection that attached to a thread.
 ///
@@ -47,6 +65,7 @@ pub(super) async fn send_thread_token_usage_update_to_connection(
     };
     let mut token_usage = ThreadTokenUsage::from(info);
     token_usage.context_prune_saved_tokens = conversation.context_prune_saved_tokens().await;
+    token_usage.smart_prune = conversation.smart_prune_snapshot().await.into();
     let notification = ThreadTokenUsageUpdatedNotification {
         thread_id: thread_id.to_string(),
         turn_id: token_usage_turn_id.unwrap_or_else(|| latest_token_usage_turn_id(thread)),
@@ -166,6 +185,7 @@ mod tests {
                 info: None,
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
+                smart_prune: Default::default(),
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,

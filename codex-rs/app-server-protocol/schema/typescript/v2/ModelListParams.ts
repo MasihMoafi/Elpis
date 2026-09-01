@@ -14,4 +14,8 @@ limit?: number | null,
 /**
  * When true, include models that are hidden from the default picker list.
  */
-includeHidden?: boolean | null, };
+includeHidden?: boolean | null,
+/**
+ * Optional model provider whose catalog should be listed.
+ */
+modelProvider?: string | null, };

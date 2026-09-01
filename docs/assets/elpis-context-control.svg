@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="830" viewBox="0 0 1200 830" role="img" aria-labelledby="title desc">
 <rect x="0" y="0" width="1200" height="830" fill="#0d1117" rx="12" />
   <title id="title">Elpis Context Architecture</title>
-  <desc id="desc">A vertical flow showing raw tool output passing through RTK filtering, a deterministic safety cap, the Ace pressure cycle, and a compact fallback.</desc>
+  <desc id="desc">A vertical flow showing raw tool output passing through RTK filtering, a deterministic safety cap, and optional Ace pruning, alongside independent manual and automatic native Codex compaction.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#0e1621"/>
@@ -18,13 +18,12 @@
   <rect width="1200" height="830" fill="url(#bg)"/>
   <text x="140" y="52" fill="#8ea2b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700" letter-spacing="2.2">CONTEXT CONTROL</text>
   <text x="140" y="88" fill="#f4f7fb" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="29" font-weight="700">Elpis Context Architecture</text>
-  <text x="140" y="116" fill="#9aaabd" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16">Context is reduced progressively before the model receives it.</text>
+  <text x="140" y="116" fill="#9aaabd" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16">Three context-control mechanisms, plus independent native compaction.</text>
 
   <g stroke="#718096" stroke-width="2" marker-end="url(#arrow)">
     <line x1="600" y1="240" x2="600" y2="276"/>
     <line x1="600" y1="370" x2="600" y2="406"/>
     <line x1="600" y1="500" x2="600" y2="536"/>
-    <line x1="600" y1="630" x2="600" y2="666"/>
   </g>
 
   <g filter="url(#shadow)" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
@@ -39,28 +38,29 @@
     <rect x="140" y="280" width="920" height="90" rx="16" fill="#15343d" stroke="#39c6d8" stroke-width="2"/>
     <circle cx="178" cy="325" r="15" fill="#39c6d8"/>
     <text x="178" y="331" fill="#0e1621" font-size="15" font-weight="800" text-anchor="middle">2</text>
-    <text x="218" y="319" fill="#f4f7fb" font-size="20" font-weight="700">Layer 1 · RTK filter</text>
+    <text x="218" y="319" fill="#f4f7fb" font-size="20" font-weight="700">RTK filter</text>
     <text x="218" y="346" fill="#b5e8ed" font-size="14">Pre-model compaction of verbose CLI output.</text>
 
     <!-- Step 3: Layer 2 Safety Cap -->
     <rect x="140" y="410" width="920" height="90" rx="16" fill="#15343d" stroke="#39c6d8" stroke-width="2"/>
     <circle cx="178" cy="455" r="15" fill="#39c6d8"/>
     <text x="178" y="461" fill="#0e1621" font-size="15" font-weight="800" text-anchor="middle">3</text>
-    <text x="218" y="449" fill="#f4f7fb" font-size="20" font-weight="700">Layer 2 · Deterministic safety cap</text>
+    <text x="218" y="449" fill="#f4f7fb" font-size="20" font-weight="700">Deterministic safety cap</text>
     <text x="218" y="476" fill="#b5e8ed" font-size="14">A hard upper bound prevents oversized tool output.</text>
 
     <!-- Step 4: Layer 3 Ace Pressure Cycle -->
     <rect x="140" y="540" width="920" height="90" rx="16" fill="#15343d" stroke="#39c6d8" stroke-width="2"/>
     <circle cx="178" cy="585" r="15" fill="#39c6d8"/>
     <text x="178" y="591" fill="#0e1621" font-size="15" font-weight="800" text-anchor="middle">4</text>
-    <text x="218" y="579" fill="#f4f7fb" font-size="20" font-weight="700">Layer 3 · Ace pressure cycle</text>
-    <text x="218" y="606" fill="#b5e8ed" font-size="14">Near the limit, selectively reclaims older context while preserving the newest evidence.</text>
+    <text x="218" y="579" fill="#f4f7fb" font-size="20" font-weight="700">Ace pruning — Experimental</text>
+    <text x="218" y="606" fill="#b5e8ed" font-size="14">Manual actions always work; automatic pressure cycling is off by default.</text>
 
-    <!-- Step 5: Fallback Compact -->
-    <rect x="140" y="670" width="920" height="90" rx="16" fill="#3a3022" stroke="#d6a85f" stroke-width="2"/>
+    <!-- Independent native compaction -->
+    <rect x="140" y="660" width="920" height="110" rx="16" fill="#3a3022" stroke="#d6a85f" stroke-width="2"/>
     <circle cx="178" cy="715" r="15" fill="#d6a85f"/>
     <text x="178" y="721" fill="#211a10" font-size="15" font-weight="800" text-anchor="middle">5</text>
-    <text x="218" y="709" fill="#fff7e6" font-size="20" font-weight="700">/compact fallback</text>
-    <text x="218" y="736" fill="#ead5aa" font-size="14">Used only when selective pruning cannot reclaim enough.</text>
+    <text x="218" y="699" fill="#fff7e6" font-size="18" font-weight="700">Native Codex compaction</text>
+    <text x="218" y="728" fill="#ead5aa" font-size="14">Manual /compact: immediate native summarization</text>
+    <text x="218" y="752" fill="#ead5aa" font-size="14">Automatic: model-window threshold + usable-window headroom</text>
   </g>
 </svg>

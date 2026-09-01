@@ -584,6 +584,10 @@ async fn start_thread_seeds_extension_data_for_mcp_and_lifecycle_contributors() 
         .features
         .enable(Feature::Apps)
         .expect("test config should allow apps");
+    config
+        .features
+        .enable(Feature::Plugins)
+        .expect("test config should allow plugins");
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
 
     let lifecycle_observed = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -741,7 +745,7 @@ async fn start_thread_seeds_extension_data_for_mcp_and_lifecycle_contributors() 
 }
 
 #[tokio::test]
-async fn selected_capability_roots_round_trip_through_fork() {
+async fn selected_capability_roots_from_fork_require_plugin_support() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config().await;
     config.codex_home = temp_dir.path().join("codex-home").abs();
@@ -761,6 +765,53 @@ async fn selected_capability_roots_round_trip_through_fork() {
             path: PathUri::parse("file:///plugins/demo").expect("plugin root URI"),
         },
     }];
+    let blocked = manager
+        .start_thread_with_options(StartThreadOptions {
+            config: config.clone(),
+            allow_provider_model_fallback: false,
+            initial_history: InitialHistory::Forked(vec![RolloutItem::SessionMeta(
+                SessionMetaLine {
+                    meta: SessionMeta {
+                        selected_capability_roots: selected_roots.clone(),
+                        ..SessionMeta::default()
+                    },
+                    git: None,
+                },
+            )]),
+            history_mode: None,
+            session_source: None,
+            thread_source: None,
+            dynamic_tools: Vec::new(),
+            metrics_service_name: None,
+            parent_trace: None,
+            environments: Vec::new(),
+            thread_extension_init: Default::default(),
+            supports_openai_form_elicitation: false,
+        })
+        .await
+        .expect("start fork with plugins disabled");
+    assert!(
+        blocked
+            .thread
+            .session
+            .services
+            .selected_capability_roots
+            .is_empty()
+    );
+    assert!(
+        blocked
+            .thread
+            .session
+            .services
+            .mcp_thread_init
+            .get::<Vec<SelectedCapabilityRoot>>()
+            .is_some_and(|roots| roots.is_empty())
+    );
+
+    config
+        .features
+        .enable(Feature::Plugins)
+        .expect("test config should allow plugins");
     let inherited = manager
         .start_thread_with_options(StartThreadOptions {
             config,

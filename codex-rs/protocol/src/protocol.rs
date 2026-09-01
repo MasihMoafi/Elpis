@@ -1333,6 +1333,9 @@ pub enum EventMsg {
     #[serde(rename = "task_complete", alias = "turn_complete")]
     TurnComplete(TurnCompleteEvent),
 
+    /// Scalar-only timing profile for live consumers. This event is transient.
+    TurnProfile(TurnProfileEvent),
+
     /// Usage update for the current session, including totals and last turn.
     /// Optional means unknown — UIs should not display when `None`.
     TokenCount(TokenCountEvent),
@@ -1998,6 +2001,43 @@ pub struct TurnCompleteEvent {
     pub time_to_first_token_ms: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum TurnProfileOutcome {
+    Completed,
+    Failed,
+    Interrupted,
+}
+
+/// Scalar timing facts only; no messages, paths, account, provider, or trace data.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TurnProfileSummary {
+    pub before_first_sampling_ms: u64,
+    pub sampling_ms: u64,
+    pub compaction_ms: u64,
+    pub between_sampling_overhead_ms: u64,
+    pub tool_blocking_ms: u64,
+    pub after_last_sampling_ms: u64,
+    pub sampling_request_count: u64,
+    pub sampling_retry_count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct TurnProfileEvent {
+    pub turn_id: String,
+    pub outcome: TurnProfileOutcome,
+    #[ts(type = "number | null")]
+    pub started_at: Option<i64>,
+    #[ts(type = "number | null")]
+    pub duration_ms: Option<i64>,
+    #[ts(type = "number | null")]
+    pub time_to_first_token_ms: Option<i64>,
+    pub profile: Option<TurnProfileSummary>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct TurnStartedEvent {
     pub turn_id: String,
@@ -2074,6 +2114,77 @@ pub struct TokenUsageInfo {
     pub model_context_window: Option<i64>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+pub struct SmartPruneSnapshot {
+    pub enabled: bool,
+    #[ts(type = "number")]
+    pub examined_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub unchanged_outputs: u64,
+    #[ts(type = "number")]
+    pub failed_batches: u64,
+    #[ts(type = "number")]
+    pub approx_source_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_admitted_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    /// Optimizer calls are accounted separately from the main thread's token usage.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_requests: u64,
+    /// Number of optimizer calls for which the provider supplied token usage.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_usage_reports: u64,
+    /// Cumulative provider-reported optimizer usage. A report count of zero means
+    /// these zero values are not measurements.
+    #[serde(default)]
+    pub optimizer_usage: TokenUsage,
+    /// Cumulative wall-clock time spent awaiting optimizer calls.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_latency_ms: u64,
+    #[ts(type = "number")]
+    pub main_request_sequence: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub latest: Option<SmartPruneAdmissionSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+pub struct SmartPruneAdmissionSnapshot {
+    pub admission_id: String,
+    /// Path relative to the Codex log directory; never contains raw tool content.
+    pub audit_path: String,
+    #[ts(type = "number")]
+    pub examined_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub approx_source_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_admitted_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null", optional)]
+    pub request_sequence: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub request_input_sha256: Option<String>,
+    pub request_linkage_verified: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub response_usage: Option<TokenUsage>,
+    pub response_linkage_verified: bool,
+}
+
 impl TokenUsageInfo {
     pub fn new_or_append(
         info: &Option<TokenUsageInfo>,
@@ -2139,6 +2250,9 @@ pub struct TokenCountEvent {
     /// Cumulative context tokens reclaimed by Ace in this thread.
     #[serde(default)]
     pub context_prune_saved_tokens: u64,
+    /// Admission-time Smart Prune mechanism and provider evidence.
+    #[serde(default)]
+    pub smart_prune: SmartPruneSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]

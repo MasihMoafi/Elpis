@@ -48,8 +48,8 @@ docs/evals/deletion-sprint/capture-baseline.sh   # in the main tree, before anyt
 ### Running and scoring
 
 ```bash
-cd ~/Desktop/p/Elpis-exp2-elpis && elpis
-cd ~/Desktop/p/Elpis-exp2-codex && codex
+cd "$ELPIS_EXP_ROOT/exp2-elpis" && elpis
+cd "$ELPIS_EXP_ROOT/exp2-codex" && codex
 ```
 
 ```bash

@@ -5,6 +5,9 @@ use crate::context::world_state::WorldState;
 use crate::context::world_state::WorldStateSection;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use codex_extension_api::PreviousWorldStateSection;
+use codex_extension_api::RenderedWorldStateFragment;
+use codex_extension_api::WorldStateSectionContribution;
 use codex_protocol::AgentPath;
 use codex_protocol::ResponseItemId;
 use codex_protocol::models::BaseInstructions;
@@ -37,6 +40,7 @@ use image::Luma;
 use image::Rgba;
 use pretty_assertions::assert_eq;
 use regex_lite::Regex;
+use serde_json::json;
 
 const EXEC_FORMAT_MAX_BYTES: usize = 10_000;
 const EXEC_FORMAT_MAX_TOKENS: usize = 2_500;
@@ -284,6 +288,115 @@ fn withdrawing_instructions_removes_the_earlier_copy_from_history() {
     );
     assert_eq!(instruction_copies(&history), 1);
     assert_eq!(instruction_lifecycle_notices(&history), 0);
+}
+
+fn extension_single_slot(body: Option<&str>) -> WorldState {
+    let body = body.map(str::to_string);
+    let has_model_visible_content = body.is_some();
+    let snapshot_body = body.clone();
+    let mut state = WorldState::default();
+    state.add_extension_section(
+        WorldStateSectionContribution::new(
+            "extension_single_slot",
+            json!({ "body": snapshot_body }),
+            move |previous| {
+                if matches!(
+                    previous,
+                    PreviousWorldStateSection::Known(previous)
+                        if previous.get("body").and_then(serde_json::Value::as_str) == body.as_deref()
+                ) {
+                    return None;
+                }
+                body.as_ref().map(|body| {
+                    RenderedWorldStateFragment::new(
+                        "developer",
+                        ("", ""),
+                        body.clone(),
+                    )
+                })
+            },
+        )
+        .with_retained_fragment_matcher(|role, text| {
+            role == "developer" && matches!(text, "extension before" | "extension after")
+        })
+        .with_single_history_slot(has_model_visible_content),
+    );
+    state
+}
+
+#[test]
+fn extension_single_slot_replaces_then_removes_only_its_own_content() {
+    let mut history = ContextManager::new();
+    let (fragments, _) =
+        history.update_world_state(&extension_single_slot(Some("extension before")));
+    let mut initial_items = crate::context_manager::updates::merge_contextual_fragments(fragments);
+    let ResponseItem::Message { content, .. } = &mut initial_items[0] else {
+        panic!("the extension fragment must be a developer message");
+    };
+    content.insert(
+        0,
+        ContentItem::InputText {
+            text: "neighboring developer content".to_string(),
+        },
+    );
+    history.record_items(initial_items.iter(), TruncationPolicy::Tokens(10_000));
+
+    assert_eq!(
+        apply_world_state(
+            &mut history,
+            &extension_single_slot(Some("extension after")),
+        ),
+        1
+    );
+    assert_eq!(
+        history_texts(&history),
+        vec!["neighboring developer content", "extension after"]
+    );
+
+    history.replace(vec![
+        developer_msg_with_fragments(&[]),
+        developer_msg("neighboring developer content"),
+        developer_msg("extension before"),
+        developer_msg("extension after"),
+    ]);
+    let latest = extension_single_slot(Some("extension after"));
+    history.set_world_state_baseline(latest.snapshot());
+    let version_before_deduplication = history.history_version();
+    let (fragments, rollout_item) = history.update_world_state(&latest);
+    assert!(
+        fragments.is_empty(),
+        "an unchanged restored slot must not re-render"
+    );
+    assert_eq!(rollout_item, None);
+    assert_eq!(
+        history.history_version(),
+        version_before_deduplication.saturating_add(1),
+        "deduplicating restored content must invalidate history exactly once"
+    );
+    assert!(matches!(
+        history.raw_items().first(),
+        Some(ResponseItem::Message { role, content, .. }) if role == "developer" && content.is_empty()
+    ));
+    assert_eq!(
+        history_texts(&history),
+        vec!["neighboring developer content", "extension after"],
+        "only the newest restored slot copy may remain"
+    );
+
+    let version_before_unchanged_update = history.history_version();
+    let (fragments, rollout_item) = history.update_world_state(&latest);
+    assert!(fragments.is_empty());
+    assert_eq!(rollout_item, None);
+    assert_eq!(history.history_version(), version_before_unchanged_update);
+
+    assert_eq!(
+        apply_world_state(&mut history, &extension_single_slot(None)),
+        0
+    );
+    assert_eq!(
+        history_texts(&history),
+        vec!["neighboring developer content"]
+    );
 }
 
 fn user_msg(text: &str) -> ResponseItem {

@@ -12,6 +12,8 @@ use ratatui::text::Span;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 const OLLAMA_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
+pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
+pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
 
 impl ChatWidget {
     /// Open a popup to choose a quick auto model. Selecting "All models"
@@ -25,17 +27,13 @@ impl ChatWidget {
             return;
         }
 
-        let presets: Vec<ModelPreset> = match self.model_catalog.try_list_models() {
-            Ok(models) => models,
-            Err(_) => {
-                self.add_info_message(
-                    "Models are being updated; please try /model again in a moment.".to_string(),
-                    /*hint*/ None,
-                );
-                return;
-            }
-        };
+        let active_provider_id = self.active_model_provider_id().to_string();
+        let presets = self.models_for_active_provider();
         self.refresh_ollama_models();
+        self.request_model_catalog(Some(active_provider_id.clone()));
+        if active_provider_id != OPENAI_PROVIDER_ID {
+            self.request_model_catalog(Some(OPENAI_PROVIDER_ID.to_string()));
+        }
         self.open_model_popup_with_presets(presets);
     }
 
@@ -102,13 +100,10 @@ impl ChatWidget {
                 name: model,
                 description: Some("Runs on this machine via Ollama".to_string()),
                 actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::UpdateModelForProvider {
+                    tx.send(AppEvent::ApplyProviderModelSelection {
                         model: model_for_action.clone(),
                         provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
-                    });
-                    tx.send(AppEvent::PersistProviderModelSelection {
-                        model: model_for_action.clone(),
-                        provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
+                        effort: None,
                     });
                 })],
                 dismiss_on_select: true,
@@ -192,12 +187,9 @@ impl ChatWidget {
         }
     }
 
-    /// Appends an "OPENAI" group below the active provider's models, mirroring
-    /// `push_ollama_model_group`. The picker's main list comes from the `model/list`
-    /// answered at startup, which is scoped to whichever provider was active then, so
-    /// once a thread moves to OpenRouter or Ollama the hosted models vanish from the
-    /// picker and there is no route back. Selecting one switches both the model and the
-    /// provider for the active thread and persists both to config.toml.
+    /// Appends the account-scoped OpenAI catalog below a different active provider.
+    /// The list is fetched through the app server with the existing ChatGPT authentication;
+    /// until it arrives the picker renders an explicit loading row instead of invented models.
     fn push_openai_model_group(&self, items: &mut Vec<SelectionItem>) {
         if self.active_model_provider_id() == OPENAI_PROVIDER_ID {
             return;
@@ -207,34 +199,48 @@ impl ChatWidget {
             is_disabled: true,
             ..Default::default()
         });
-        for (model, description) in [
-            (
-                crate::chatwidget::model_routing::SOL_MODEL,
-                "Top-tier reasoning for hard or important work",
-            ),
-            (
-                crate::chatwidget::model_routing::TERRA_MODEL,
-                "Balanced default for ordinary work",
-            ),
-            (
-                crate::chatwidget::model_routing::LUNA_MODEL,
-                "Fastest, for trivial mechanical work",
-            ),
-        ] {
+        let Some(presets) = self.model_catalog.models_for_provider(OPENAI_PROVIDER_ID) else {
+            let item = if self.model_popup_request_is_pending(OPENAI_PROVIDER_ID) {
+                SelectionItem {
+                    name: "Loading available OpenAI models…".to_string(),
+                    description: Some("Uses the connected ChatGPT subscription".to_string()),
+                    is_disabled: true,
+                    ..Default::default()
+                }
+            } else {
+                SelectionItem {
+                    name: "OpenAI unavailable - retry with /model".to_string(),
+                    is_disabled: true,
+                    ..Default::default()
+                }
+            };
+            items.push(item);
+            return;
+        };
+        let mut visible_count = 0;
+        for preset in presets.into_iter().filter(|preset| preset.show_in_picker) {
+            visible_count += 1;
+            let model = preset.model.clone();
+            let preset_for_action = preset.clone();
+            let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
             items.push(SelectionItem {
-                name: model.to_string(),
-                description: Some(description.to_string()),
+                name: model.clone(),
+                description: Some(preset.description),
                 actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::UpdateModelForProvider {
-                        model: model.to_string(),
-                        provider_id: OPENAI_PROVIDER_ID.to_string(),
-                    });
-                    tx.send(AppEvent::PersistProviderModelSelection {
-                        model: model.to_string(),
-                        provider_id: OPENAI_PROVIDER_ID.to_string(),
+                    tx.send(AppEvent::OpenReasoningPopup {
+                        model: preset_for_action.clone(),
+                        provider_id: Some(OPENAI_PROVIDER_ID.to_string()),
                     });
                 })],
-                dismiss_on_select: true,
+                dismiss_on_select: single_supported_effort,
+                dismiss_parent_on_child_accept: !single_supported_effort,
+                ..Default::default()
+            });
+        }
+        if visible_count == 0 {
+            items.push(SelectionItem {
+                name: "No selectable OpenAI models are available".to_string(),
+                is_disabled: true,
                 ..Default::default()
             });
         }
@@ -397,6 +403,7 @@ impl ChatWidget {
                     vec![Box::new(move |tx| {
                         tx.send(AppEvent::OpenReasoningPopup {
                             model: preset_for_action.clone(),
+                            provider_id: None,
                         });
                     })]
                 } else {
@@ -408,6 +415,7 @@ impl ChatWidget {
                     self.model_selection_actions(
                         model.clone(),
                         Some(preset.default_reasoning_effort.clone()),
+                        None,
                         should_prompt_plan_mode_scope,
                     )
                 };
@@ -457,7 +465,8 @@ impl ChatWidget {
             "Choose a mind",
             "Provider, protocol, route, and credential source remain visible while choosing.",
         );
-        self.bottom_pane.show_selection_view(SelectionViewParams {
+        self.show_model_selection_view(SelectionViewParams {
+            view_id: Some(MODEL_SELECTION_VIEW_ID),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             header,
@@ -492,7 +501,7 @@ impl ChatWidget {
         }
     }
 
-    fn is_auto_model(model: &str) -> bool {
+    pub(super) fn is_auto_model(model: &str) -> bool {
         model.starts_with("codex-auto-")
     }
 
@@ -516,6 +525,7 @@ impl ChatWidget {
                 let preset_for_event = preset_for_action.clone();
                 tx.send(AppEvent::OpenReasoningPopup {
                     model: preset_for_event,
+                    provider_id: None,
                 });
             })];
             items.push(SelectionItem {
@@ -544,7 +554,8 @@ impl ChatWidget {
             "Choose a mind and effort",
             "Models are grouped under the active provider and routing mode.",
         );
-        self.bottom_pane.show_selection_view(SelectionViewParams {
+        self.show_model_selection_view(SelectionViewParams {
+            view_id: Some(ALL_MODELS_SELECTION_VIEW_ID),
             footer_hint: Some(self.bottom_pane.standard_popup_hint_line()),
             items,
             header,
@@ -556,13 +567,20 @@ impl ChatWidget {
         &self,
         model_for_action: String,
         effort_for_action: Option<ReasoningEffortConfig>,
+        provider_id: Option<String>,
         should_prompt_plan_mode_scope: bool,
     ) -> Vec<SelectionAction> {
         let warning = effort_for_action
             .as_ref()
             .and_then(|effort| self.ultra_reasoning_concurrency_warning(effort));
         vec![Box::new(move |tx| {
-            if effort_for_action == Some(ReasoningEffortConfig::Ultra) {
+            if let Some(provider_id) = provider_id.as_ref() {
+                tx.send(AppEvent::ApplyProviderModelSelection {
+                    model: model_for_action.clone(),
+                    provider_id: provider_id.clone(),
+                    effort: effort_for_action.clone(),
+                });
+            } else if effort_for_action == Some(ReasoningEffortConfig::Ultra) {
                 tx.send(AppEvent::ApplyAdvancedReasoning {
                     model: model_for_action.clone(),
                     effort: ReasoningEffortConfig::Ultra,
@@ -718,6 +736,14 @@ impl ChatWidget {
     /// Max and Ultra require an explicit second step so expensive efforts cannot
     /// be selected accidentally while moving through the normal effort scale.
     pub(crate) fn open_reasoning_popup(&mut self, preset: ModelPreset) {
+        self.open_reasoning_popup_for_provider(preset, None);
+    }
+
+    pub(crate) fn open_reasoning_popup_for_provider(
+        &mut self,
+        preset: ModelPreset,
+        provider_id: Option<String>,
+    ) {
         let default_effort = preset.default_reasoning_effort.clone();
         let supported = &preset.supported_reasoning_efforts;
         let in_plan_mode =
@@ -758,7 +784,9 @@ impl ChatWidget {
         if choices.len() == 1 && advanced_choices.is_empty() {
             let selected_effort = choices.first().cloned();
             let selected_model = preset.model;
-            if self
+            if let Some(provider_id) = provider_id.clone() {
+                self.apply_provider_model_and_effort(selected_model, provider_id, selected_effort);
+            } else if self
                 .should_prompt_plan_mode_reasoning_scope(&selected_model, selected_effort.clone())
             {
                 self.app_event_tx
@@ -828,6 +856,7 @@ impl ChatWidget {
             let actions = self.model_selection_actions(
                 model_slug.clone(),
                 choice_effort,
+                provider_id.clone(),
                 should_prompt_plan_mode_scope,
             );
 
@@ -854,9 +883,11 @@ impl ChatWidget {
                 "consume"
             };
             let preset_for_action = preset;
+            let provider_id_for_action = provider_id;
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
                 tx.send(AppEvent::OpenAdvancedReasoningPopup {
                     model: preset_for_action.clone(),
+                    provider_id: provider_id_for_action.clone(),
                 });
             })];
             items.push(SelectionItem {
@@ -888,6 +919,14 @@ impl ChatWidget {
 
     /// Open the explicit Max/Ultra effort picker for the given model.
     pub(crate) fn open_advanced_reasoning_popup(&mut self, preset: ModelPreset) {
+        self.open_advanced_reasoning_popup_for_provider(preset, None);
+    }
+
+    pub(crate) fn open_advanced_reasoning_popup_for_provider(
+        &mut self,
+        preset: ModelPreset,
+        provider_id: Option<String>,
+    ) {
         let mut choices = preset
             .supported_reasoning_efforts
             .iter()
@@ -925,6 +964,7 @@ impl ChatWidget {
             let actions = self.model_selection_actions(
                 model_slug.clone(),
                 Some(effort.clone()),
+                provider_id.clone(),
                 should_prompt_plan_mode_scope,
             );
 
@@ -1027,6 +1067,20 @@ impl ChatWidget {
         self.apply_model_and_effort_without_persist(model.clone(), effort.clone());
         self.app_event_tx
             .send(AppEvent::PersistModelSelection { model, effort });
+    }
+
+    fn apply_provider_model_and_effort(
+        &self,
+        model: String,
+        provider_id: String,
+        effort: Option<ReasoningEffortConfig>,
+    ) {
+        self.app_event_tx
+            .send(AppEvent::ApplyProviderModelSelection {
+                model,
+                provider_id,
+                effort,
+            });
     }
 }
 

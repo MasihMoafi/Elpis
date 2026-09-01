@@ -92,6 +92,35 @@ fn expected_visible_models() -> Vec<Model> {
         .collect()
 }
 
+fn remote_model_info(slug: &str, visibility: &str) -> Result<ModelInfo> {
+    Ok(serde_json::from_value(json!({
+        "slug": slug,
+        "display_name": slug,
+        "description": "Provider-scoped model/list coverage",
+        "default_reasoning_level": "max",
+        "supported_reasoning_levels": [
+            {"effort": "max", "description": "Maximum"},
+            {"effort": "low", "description": "Low"}
+        ],
+        "shell_type": "shell_command",
+        "visibility": visibility,
+        "minimal_client_version": [0, 1, 0],
+        "supported_in_api": true,
+        "priority": 0,
+        "upgrade": null,
+        "base_instructions": "base instructions",
+        "support_verbosity": false,
+        "default_verbosity": null,
+        "apply_patch_tool_type": null,
+        "truncation_policy": {"mode": "bytes", "limit": 10_000},
+        "supports_parallel_tool_calls": false,
+        "supports_image_detail_original": false,
+        "context_window": 272_000,
+        "max_context_window": 272_000,
+        "experimental_supported_tools": [],
+    }))?)
+}
+
 #[tokio::test]
 async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -109,6 +138,7 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
             limit: Some(100),
             cursor: None,
             include_hidden: None,
+            model_provider: None,
         })
         .await?;
 
@@ -147,6 +177,7 @@ async fn list_models_includes_hidden_models() -> Result<()> {
             limit: Some(100),
             cursor: None,
             include_hidden: Some(true),
+            model_provider: None,
         })
         .await?;
 
@@ -236,6 +267,7 @@ openai_base_url = "{server_uri}/v1"
             limit: Some(100),
             cursor: None,
             include_hidden: None,
+            model_provider: None,
         })
         .await?;
 
@@ -281,6 +313,124 @@ openai_base_url = "{server_uri}/v1"
 }
 
 #[tokio::test]
+async fn list_models_can_query_openai_when_another_provider_bootstrapped() -> Result<()> {
+    let server = MockServer::start().await;
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: vec![
+                remote_model_info("provider-scoped-openai", "list")?,
+                remote_model_info("provider-scoped-hidden", "hide")?,
+            ],
+        },
+    )
+    .await;
+
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        format!(
+            r#"
+model = "bootstrap-model"
+model_provider = "bootstrap-provider"
+approval_policy = "never"
+sandbox_mode = "read-only"
+openai_base_url = "{}/v1"
+
+[model_providers.bootstrap-provider]
+name = "Bootstrap Provider"
+base_url = "http://127.0.0.1:9/v1"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+"#,
+            server.uri()
+        ),
+    )?;
+    write_chatgpt_auth(
+        codex_home.path(),
+        ChatGptAuthFixture::new("chatgpt-access-token").plan_type("pro"),
+        AuthCredentialsStoreMode::File,
+    )?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .with_env_overrides(&[("OPENAI_API_KEY", None)])
+        .build()
+        .await?;
+    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_list_models_request(ModelListParams {
+            limit: Some(100),
+            cursor: None,
+            include_hidden: Some(false),
+            model_provider: Some("openai".to_string()),
+        })
+        .await?;
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let ModelListResponse { data, next_cursor } = to_response(response)?;
+
+    assert_eq!(
+        data.iter()
+            .map(|model| model.model.as_str())
+            .collect::<Vec<_>>(),
+        vec!["provider-scoped-openai"]
+    );
+    assert_eq!(
+        data[0]
+            .supported_reasoning_efforts
+            .iter()
+            .map(|option| option.reasoning_effort.to_string())
+            .collect::<Vec<_>>(),
+        vec!["max", "low"]
+    );
+    assert!(next_cursor.is_none());
+    assert_eq!(models_mock.requests().len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_models_rejects_unknown_provider() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_models_cache(codex_home.path())?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build()
+        .await?;
+    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_list_models_request(ModelListParams {
+            limit: None,
+            cursor: None,
+            include_hidden: None,
+            model_provider: Some("missing-provider".to_string()),
+        })
+        .await?;
+    let error: JSONRPCError = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+
+    assert_eq!(error.id, RequestId::Integer(request_id));
+    assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
+    assert_eq!(
+        error.error.message,
+        "unknown model provider: missing-provider"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn list_models_pagination_works() -> Result<()> {
     let codex_home = TempDir::new()?;
     write_models_cache(codex_home.path())?;
@@ -302,6 +452,7 @@ async fn list_models_pagination_works() -> Result<()> {
                 limit: Some(1),
                 cursor: cursor.clone(),
                 include_hidden: None,
+                model_provider: None,
             })
             .await?;
 
@@ -350,6 +501,7 @@ async fn list_models_rejects_invalid_cursor() -> Result<()> {
             limit: None,
             cursor: Some("invalid".to_string()),
             include_hidden: None,
+            model_provider: None,
         })
         .await?;
 

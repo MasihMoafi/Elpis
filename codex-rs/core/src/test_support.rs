@@ -5,6 +5,7 @@
 //! We prefer this to using a crate feature to avoid building multiple
 //! permutations of the crate.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -25,11 +26,14 @@ use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationModeMask;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
+use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use once_cell::sync::Lazy;
 
+use crate::CodexThread;
 use crate::ThreadManager;
 use crate::config::Config;
 use crate::responses_metadata::CodexResponsesMetadata;
@@ -47,6 +51,102 @@ static TEST_MODEL_PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
     ModelPreset::mark_default_by_picker_visibility(&mut presets);
     presets
 });
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextPruneStateSnapshot {
+    pub raw_history: Vec<ResponseItem>,
+    pub covered_call_ids: HashSet<String>,
+    pub saved_tokens: u64,
+}
+
+pub async fn context_prune_state_snapshot(thread: &CodexThread) -> ContextPruneStateSnapshot {
+    let (raw_history, covered_call_ids, saved_tokens) =
+        crate::session::context_prune::state_snapshot_for_test(&thread.session).await;
+    ContextPruneStateSnapshot {
+        raw_history,
+        covered_call_ids,
+        saved_tokens,
+    }
+}
+
+async fn active_prune_boundary(thread: &CodexThread) -> crate::tasks::TaskCancellationBoundary {
+    let active_turn = thread.session.active_turn.lock().await;
+    active_turn
+        .as_ref()
+        .and_then(|turn| turn.task.as_ref())
+        .and_then(|task| task.task.cancellation_boundary())
+        .expect("an active prune task must expose a cancellation boundary")
+}
+
+pub async fn interrupt_active_prune_and_wait_for_cancellation(
+    thread: &CodexThread,
+) -> codex_protocol::error::Result<String> {
+    let boundary = active_prune_boundary(thread).await;
+    let submission_id = thread.submit(Op::Interrupt).await?;
+    boundary.wait_for_cancellation_delivery().await;
+    let decision = boundary.wait_for_decision().await;
+    assert_eq!(
+        decision,
+        crate::tasks::TaskCancellationDecision::Cancelled,
+        "interrupt arrived after the prune task committed"
+    );
+    Ok(submission_id)
+}
+
+pub async fn wait_for_active_prune_commit(thread: &CodexThread) {
+    let decision = active_prune_boundary(thread)
+        .await
+        .wait_for_decision()
+        .await;
+    assert_eq!(
+        decision,
+        crate::tasks::TaskCancellationDecision::Committed,
+        "the prune task was cancelled before committing"
+    );
+}
+
+pub async fn interrupt_active_prune_and_wait_for_commit_protection(
+    thread: &CodexThread,
+) -> codex_protocol::error::Result<String> {
+    let boundary = active_prune_boundary(thread).await;
+    let submission_id = thread.submit(Op::Interrupt).await?;
+    boundary.wait_for_cancel_request().await;
+    assert_eq!(
+        boundary.wait_for_decision().await,
+        crate::tasks::TaskCancellationDecision::Committed,
+        "interrupt displaced an already committed prune task"
+    );
+    Ok(submission_id)
+}
+
+pub struct ContextPruneCommitGate {
+    boundary: crate::tasks::TaskCancellationBoundary,
+    released: bool,
+}
+
+impl ContextPruneCommitGate {
+    pub fn release(mut self) {
+        self.boundary.release_commit_for_test();
+        self.released = true;
+    }
+}
+
+impl Drop for ContextPruneCommitGate {
+    fn drop(&mut self) {
+        if !self.released {
+            self.boundary.release_commit_for_test();
+        }
+    }
+}
+
+pub async fn pause_active_prune_commit(thread: &CodexThread) -> ContextPruneCommitGate {
+    let boundary = active_prune_boundary(thread).await;
+    boundary.pause_commit_for_test();
+    ContextPruneCommitGate {
+        boundary,
+        released: false,
+    }
+}
 
 /// Test-only provider that supplies no user instructions.
 #[derive(Debug, Default)]

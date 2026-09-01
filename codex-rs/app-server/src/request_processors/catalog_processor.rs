@@ -158,13 +158,24 @@ impl CatalogRequestProcessor {
         &self,
         params: ModelListParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        Self::list_models(
-            self.thread_manager.clone(),
-            self.config.http_client_factory(),
-            params,
-        )
-        .await
-        .map(|response| Some(response.into()))
+        let models_manager = match params.model_provider.as_deref() {
+            None => self.thread_manager.get_models_manager(),
+            Some(provider_id) => {
+                let provider = self
+                    .config
+                    .model_providers
+                    .get(provider_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        invalid_request(format!("unknown model provider: {provider_id}"))
+                    })?;
+                create_model_provider(provider, Some(Arc::clone(&self.auth_manager)))
+                    .models_manager(self.config.codex_home.to_path_buf(), None)
+            }
+        };
+        Self::list_models(models_manager, self.config.http_client_factory(), params)
+            .await
+            .map(|response| Some(response.into()))
     }
 
     pub(crate) async fn experimental_feature_list(
@@ -251,7 +262,7 @@ impl CatalogRequestProcessor {
     }
 
     async fn list_models(
-        thread_manager: Arc<ThreadManager>,
+        models_manager: codex_models_manager::manager::SharedModelsManager,
         http_client_factory: codex_http_client::HttpClientFactory,
         params: ModelListParams,
     ) -> Result<ModelListResponse, JSONRPCErrorError> {
@@ -259,9 +270,10 @@ impl CatalogRequestProcessor {
             limit,
             cursor,
             include_hidden,
+            model_provider: _,
         } = params;
         let models = supported_models(
-            thread_manager,
+            models_manager,
             include_hidden.unwrap_or(false),
             http_client_factory,
         )

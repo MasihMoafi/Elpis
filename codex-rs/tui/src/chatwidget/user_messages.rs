@@ -101,7 +101,7 @@ pub(super) enum QueueDrain {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(super) struct ThreadComposerState {
+pub(crate) struct ThreadComposerState {
     pub(super) text: String,
     pub(super) local_images: Vec<LocalImageAttachment>,
     pub(super) remote_image_urls: Vec<String>,

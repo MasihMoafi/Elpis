@@ -5,6 +5,7 @@ use crate::elpis_context;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use codex_extension_api::UserInstructions;
 use codex_protocol::protocol::TurnEnvironmentSelection;
+use std::cell::Cell;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -43,16 +44,11 @@ impl AgentsMdManager {
             Some(config.memory_dir.as_path()),
             config.cwd.as_path(),
         );
-        {
+        if let Ok(admission) = &admission {
             let cache = self.cache.lock().await;
             let unchanged = cache.selections.as_ref() == Some(&selections)
-                && cache.admission.as_ref() == Some(&admission);
-            // A ledger we cannot read is not a withdrawal. Once a readable state has been
-            // seen, keep it rather than letting a deleted directory or a transient I/O
-            // error silently strip instructions the user did admit.
-            let unreadable_after_known_state =
-                admission.is_none() && matches!(cache.admission.as_ref(), Some(Some(_)));
-            if unchanged || unreadable_after_known_state {
+                && cache.admission.as_ref() == Some(admission);
+            if unchanged {
                 return;
             }
         }
@@ -61,21 +57,38 @@ impl AgentsMdManager {
             load_project_instructions(config, self.user_instructions.clone(), environments)
                 .await
                 .map(Arc::new);
+        let admission_error = Cell::new(admission.is_err());
         let admitted = loaded.as_ref().and_then(|loaded| {
-            let admitted = loaded.admitted_by(&|path| {
-                elpis_context::instruction_source_admitted(
+            if admission_error.get() {
+                return None;
+            }
+            let admitted =
+                loaded.admitted_by(&|path| match elpis_context::instruction_source_admitted(
                     Some(config.memory_dir.as_path()),
                     config.cwd.as_path(),
                     path,
-                )
-            });
-            (!admitted.is_empty()).then(|| Arc::new(admitted))
+                ) {
+                    Ok(admitted) => admitted,
+                    Err(_) => {
+                        admission_error.set(true);
+                        false
+                    }
+                });
+            (!admission_error.get() && !admitted.is_empty()).then(|| Arc::new(admitted))
         });
         let mut cache = self.cache.lock().await;
         cache.selections = Some(selections);
-        cache.admission = Some(admission);
+        cache.admission = if admission_error.get() {
+            None
+        } else {
+            admission.ok()
+        };
         cache.loaded = loaded;
-        cache.admitted = admitted;
+        cache.admitted = if admission_error.get() {
+            None
+        } else {
+            admitted
+        };
     }
 
     /// Everything discovery found, whether or not the ledger admits it. This is what the
@@ -91,5 +104,163 @@ impl AgentsMdManager {
 
     pub(crate) fn user_instructions(&self) -> Option<UserInstructions> {
         self.user_instructions.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ConfigBuilder;
+    use codex_utils_absolute_path::AbsolutePathBuf;
+    use tempfile::tempdir;
+
+    async fn config_for(codex_home: &std::path::Path, cwd: &std::path::Path) -> Config {
+        let mut config = ConfigBuilder::default()
+            .codex_home(codex_home.to_path_buf())
+            .build()
+            .await
+            .expect("test config");
+        config.cwd = AbsolutePathBuf::from_absolute_path(cwd).expect("absolute cwd");
+        config
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn elpis_context_admission_error_clears_cached_admitted_instructions() {
+        let home = tempdir().expect("home");
+        let cwd = tempdir().expect("cwd");
+        let global_path = home.path().join("AGENTS.md");
+        std::fs::write(&global_path, "optional instruction").expect("global fixture");
+        let config = config_for(home.path(), cwd.path()).await;
+        let manager = AgentsMdManager::new(Some(UserInstructions {
+            text: "optional instruction".to_string(),
+            source: AbsolutePathBuf::from_absolute_path(&global_path).expect("absolute source"),
+        }));
+        let environments = TurnEnvironmentSnapshot::default();
+
+        elpis_context::set_continuity_source_admitted(
+            Some(config.memory_dir.as_path()),
+            config.cwd.as_path(),
+            "Global AGENTS.md",
+            true,
+        )
+        .expect("admit optional instruction");
+        manager.refresh(&config, &environments).await;
+        assert_eq!(
+            manager.get_admitted().await.expect("admitted").text(),
+            "optional instruction"
+        );
+
+        let admission = elpis_context::workspace_context_dir(
+            Some(config.memory_dir.as_path()),
+            config.cwd.as_path(),
+        )
+        .expect("workspace")
+        .join("admission.toml");
+        std::fs::write(&admission, "global_rules = true # changed fingerprint\n")
+            .expect("changed valid admission");
+        assert!(
+            elpis_context::admission_fingerprint(
+                Some(config.memory_dir.as_path()),
+                config.cwd.as_path(),
+            )
+            .expect("fingerprint read succeeds")
+            .is_some()
+        );
+        {
+            let _guard = elpis_context::inject_admission_read_failure();
+            manager.refresh(&config, &environments).await;
+        }
+        assert_eq!(
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
+            "optional instruction"
+        );
+        assert!(manager.get_admitted().await.is_none());
+
+        manager.refresh(&config, &environments).await;
+        assert_eq!(
+            manager
+                .get_admitted()
+                .await
+                .expect("same-fingerprint read retry recovered")
+                .text(),
+            "optional instruction"
+        );
+
+        std::fs::write(&admission, "not valid = [").expect("corrupt admission");
+        manager.refresh(&config, &environments).await;
+        assert_eq!(
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
+            "optional instruction"
+        );
+        assert!(manager.get_admitted().await.is_none());
+
+        std::fs::write(&admission, "global_rules = true\n").expect("repair admission");
+        manager.refresh(&config, &environments).await;
+        assert_eq!(
+            manager.get_admitted().await.expect("recovered").text(),
+            "optional instruction"
+        );
+
+        std::fs::remove_file(&admission).expect("delete admission");
+        manager.refresh(&config, &environments).await;
+        assert_eq!(
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
+            "optional instruction"
+        );
+        assert!(
+            manager.get_admitted().await.is_none(),
+            "configured-file NotFound must use optional-off default"
+        );
+
+        std::fs::create_dir(&admission).expect("non-file admission");
+        manager.refresh(&config, &environments).await;
+        assert_eq!(
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
+            "optional instruction"
+        );
+        assert!(manager.get_admitted().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn admission_not_found_retries_with_default_on_dev_rules() {
+        let home = tempdir().expect("home");
+        let cwd = tempdir().expect("cwd");
+        let dev = home.path().join("skills/dev/AGENTS.md");
+        std::fs::create_dir_all(dev.parent().expect("dev parent")).expect("dev directory");
+        std::fs::write(&dev, "development instruction").expect("dev fixture");
+        let config = config_for(home.path(), cwd.path()).await;
+        let manager = AgentsMdManager::new(Some(UserInstructions {
+            text: "development instruction".to_string(),
+            source: AbsolutePathBuf::from_absolute_path(&dev).expect("absolute dev source"),
+        }));
+
+        manager
+            .refresh(&config, &TurnEnvironmentSnapshot::default())
+            .await;
+
+        assert_eq!(
+            manager
+                .get_admitted()
+                .await
+                .expect("default-on dev rule")
+                .text(),
+            "development instruction"
+        );
     }
 }

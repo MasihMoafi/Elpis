@@ -338,6 +338,8 @@ fn parses_bundled_skills_config() {
     let cfg: ConfigToml = toml::from_str(
         r#"
 [skills]
+default_enabled = false
+dev_rule_roots = ["/tmp/elpis-dev-rules"]
 include_instructions = false
 
 [skills.bundled]
@@ -350,6 +352,8 @@ enabled = false
         cfg.skills,
         Some(SkillsConfig {
             bundled: Some(BundledSkillsConfig { enabled: false }),
+            default_enabled: Some(false),
+            dev_rule_roots: vec![AbsolutePathBuf::try_from("/tmp/elpis-dev-rules").unwrap()],
             include_instructions: Some(false),
             extra_roots: Vec::new(),
             config: Vec::new(),

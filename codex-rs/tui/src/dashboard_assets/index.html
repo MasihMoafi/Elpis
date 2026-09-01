@@ -1,49 +1,188 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Elpis · Context Dashboard</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Elpis · Context Dashboard</title>
 <style>
-:root{--ink:#15130f;--paper:#f7f4ee;--card:#fff;--line:#e3ddd1;--mut:#6b635a;--teal:#17a398;--red:#c8442c}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}}
-:root[data-theme=dark]{--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}
-*{box-sizing:border-box}
-body{background:var(--paper);color:var(--ink);margin:0;padding:44px 22px 100px;font:16px/1.62 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
-h1{font:600 34px/1.1 ui-serif,Georgia,serif;letter-spacing:-.023em;margin:0}
-.sub{color:var(--mut);margin:6px 0 0;max-width:76ch;font-size:14px}
-.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-top:8px}
-.tab{background:none;border:none;color:var(--mut);font:600 13px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;padding:10px 4px;margin-right:18px;cursor:pointer;border-bottom:2px solid transparent}
-.tab.active{color:var(--ink);border-bottom-color:var(--teal)}
-.panel{display:none;flex-direction:column;gap:18px}
-.panel.active{display:flex}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px}
-.kpi .k{font:600 10.5px/1.3 ui-sans-serif,system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--mut)}
-.kpi .n{font:600 26px/1.15 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.022em;margin-top:6px}
-.kpi .l{color:var(--mut);font-size:12px;margin-top:3px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:20px 22px;display:flex;flex-direction:column;gap:11px}
-.card h3{font:600 15px/1.25 ui-sans-serif,system-ui,sans-serif;margin:0}
-table{border-collapse:collapse;width:100%;font-size:13.5px}
-th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
-th:first-child,td:first-child{text-align:left;font-variant-numeric:normal;white-space:normal}
-th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-.bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;display:flex}
-.bar i{display:block;height:100%}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut)}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-.foot{color:var(--mut);font-size:12px;text-align:right}
-.admitted{color:var(--teal)}
-.notadmitted{color:var(--mut)}
-</style></head><body>
+:root {
+  --ink: #15130f;
+  --paper: #f7f4ee;
+  --card: #fff;
+  --line: #e3ddd1;
+  --muted: #6b635a;
+  --violet: #8b5cf6;
+  --teal: #0f766e;
+  --emerald: #047857;
+  --mint: #4ade80;
+  --red: #c8442c;
+  --amber: #b36b16;
+  --smart-soft: #edf9f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --ink: #efeae2;
+    --paper: #100f0e;
+    --card: #1a1816;
+    --line: #2f2b27;
+    --muted: #a49a91;
+    --teal: #2dd4bf;
+    --emerald: #34d399;
+    --mint: #86efac;
+    --red: #f07862;
+    --amber: #f0a84b;
+    --smart-soft: #122521;
+  }
+}
+:root[data-theme=dark] {
+  --ink: #efeae2;
+  --paper: #100f0e;
+  --card: #1a1816;
+  --line: #2f2b27;
+  --muted: #a49a91;
+  --teal: #2dd4bf;
+  --emerald: #34d399;
+  --mint: #86efac;
+  --red: #f07862;
+  --amber: #f0a84b;
+  --smart-soft: #122521;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  margin: 0;
+  padding: 44px 22px 100px;
+  font: 16px/1.62 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+h1 { font: 600 34px/1.1 ui-serif, Georgia, serif; letter-spacing: -.023em; margin: 0; }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 76ch; font-size: 14px; }
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-top: 8px; overflow-x: auto; }
+.tab {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: 600 13px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .04em;
+  padding: 10px 4px;
+  margin-right: 18px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--ink); }
+.tab:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; border-radius: 2px; }
+.tab.active { color: var(--ink); border-bottom-color: var(--teal); }
+.tab.smart-tab.active { border-bottom-color: var(--emerald); }
+.panel { display: none; flex-direction: column; gap: 18px; }
+.panel.active { display: flex; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 15px 18px; }
+.kpi .k, .eyebrow {
+  font: 650 10.5px/1.3 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kpi .n {
+  font: 600 26px/1.15 ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.022em;
+  margin-top: 6px;
+}
+.kpi .l { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.detail-stack { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 20px 22px; display: flex; flex-direction: column; gap: 11px; }
+.card h2, .card h3 { font: 600 15px/1.25 ui-sans-serif, system-ui, sans-serif; margin: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: right; padding: 7px 9px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; font-variant-numeric: normal; white-space: normal; }
+th { color: var(--muted); font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.bar { height: 8px; border-radius: 5px; background: var(--line); overflow: hidden; display: flex; }
+.bar i { display: block; height: 100%; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.foot { color: var(--muted); font-size: 12px; text-align: right; }
+.admitted { color: var(--teal); }
+.notadmitted { color: var(--muted); }
+
+.smart-hero { position: relative; overflow: hidden; padding-top: 26px; }
+.smart-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, var(--violet) 0 8%, var(--teal) 24%, var(--emerald) 68%, var(--mint));
+}
+.smart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.smart-head h2 { font: 600 24px/1.15 ui-serif, Georgia, serif; letter-spacing: -.018em; margin-top: 5px; }
+.state-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  font: 700 11px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.state-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.state-pill.enabled { border-color: var(--emerald); color: var(--emerald); background: var(--smart-soft); }
+.state-pill.enabled::before { background: var(--emerald); box-shadow: 0 0 0 3px color-mix(in srgb, var(--emerald) 20%, transparent); }
+.evidence-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.flow-step { border-top: 2px solid var(--line); padding-top: 9px; min-width: 0; }
+.flow-step .step-label { display: block; font-size: 12px; font-weight: 650; }
+.flow-step .step-state { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+.flow-step.complete { border-top-color: var(--emerald); }
+.flow-step.complete .step-state { color: var(--emerald); }
+.flow-step.warning { border-top-color: var(--amber); }
+.flow-step.warning .step-state { color: var(--amber); }
+.smart-tokens { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+.smart-token { padding: 4px 18px; border-left: 1px solid var(--line); }
+.smart-token:first-child { border-left: 0; padding-left: 0; }
+.smart-token .n { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 3px; }
+.evidence-grid { display: grid; grid-template-columns: minmax(160px, .65fr) minmax(0, 1.35fr); gap: 0 22px; margin: 0; }
+.evidence-grid dt, .evidence-grid dd { border-bottom: 1px solid var(--line); margin: 0; padding: 9px 0; }
+.evidence-grid dt { color: var(--muted); font-size: 12px; }
+.evidence-grid dd { min-width: 0; font-size: 13px; text-align: right; overflow-wrap: anywhere; }
+code { color: var(--ink); font: 11.5px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.verified { color: var(--emerald); }
+.unverified { color: var(--amber); }
+.evidence-note { border-left: 3px solid var(--teal); color: var(--muted); font-size: 12px; margin: 4px 0 0; padding: 4px 0 4px 12px; }
+.empty-evidence { color: var(--muted); padding: 18px 0 6px; text-align: center; }
+
+@media (max-width: 640px) {
+  body { padding: 28px 14px 72px; }
+  h1 { font-size: 29px; }
+  .smart-head { flex-direction: column; gap: 14px; }
+  .evidence-flow { grid-template-columns: repeat(2, 1fr); row-gap: 18px; }
+  .smart-tokens { grid-template-columns: 1fr; gap: 10px; }
+  .smart-token, .smart-token:first-child { border-left: 0; border-top: 1px solid var(--line); padding: 10px 0 0; }
+  .smart-token:first-child { border-top: 0; }
+  .evidence-grid { grid-template-columns: 1fr; }
+  .evidence-grid dt { border-bottom: 0; padding-bottom: 0; }
+  .evidence-grid dd { text-align: left; padding-top: 2px; }
+}
+</style>
+</head>
+<body>
 <div class="wrap">
 <header>
 <h1>Elpis context dashboard</h1>
 <p class="sub" id="model-line">connecting…</p>
-<div class="tabs">
-<button class="tab active" data-tab="context">Context</button>
-<button class="tab" data-tab="tokens">Tokens</button>
+<div class="tabs" role="tablist" aria-label="Dashboard views">
+<button class="tab active" id="tab-context" type="button" role="tab" aria-selected="true" aria-controls="panel-context" data-tab="context">Context</button>
+<button class="tab" id="tab-tokens" type="button" role="tab" aria-selected="false" aria-controls="panel-tokens" data-tab="tokens">Tokens</button>
+<button class="tab smart-tab" id="tab-smart-prune" type="button" role="tab" aria-selected="false" aria-controls="panel-smart-prune" data-tab="smart-prune">Smart Prune</button>
 </div>
 </header>
 
-<section class="panel active" id="panel-context">
+<section class="panel active" id="panel-context" role="tabpanel" aria-labelledby="tab-context">
 <div class="kpis">
 <div class="kpi"><div class="k">Used</div><div class="n" id="ctx-used">–</div><div class="l" id="ctx-used-pct"></div></div>
 <div class="kpi"><div class="k">Window</div><div class="n" id="ctx-window">–</div><div class="l">token budget</div></div>
@@ -51,12 +190,12 @@ th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-tra
 <div class="kpi"><div class="k">Checkpoints</div><div class="n" id="ctx-checkpoints">–</div><div class="l">backtrack points</div></div>
 </div>
 <div class="card">
-<h3>Token usage by category</h3>
+<h2>Token usage by category</h2>
 <div class="bar" id="ctx-bar"></div>
 <div class="legend" id="ctx-legend"></div>
 </div>
 <div class="card">
-<h3>Admitted sources</h3>
+<h2>Admitted sources</h2>
 <div class="foot" id="src-summary"></div>
 <div style="max-height:340px;overflow-y:auto">
 <table>
@@ -67,17 +206,83 @@ th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-tra
 </div>
 </section>
 
-<section class="panel" id="panel-tokens">
+<section class="panel" id="panel-tokens" role="tabpanel" aria-labelledby="tab-tokens">
 <div class="kpis">
-<div class="kpi"><div class="k">Session input</div><div class="n" id="tok-input">–</div><div class="l" id="tok-cached"></div></div>
+<div class="kpi"><div class="k">Session input</div><div class="n" id="tok-input">–</div><div class="l detail-stack"><span id="tok-cached"></span><span id="tok-cache-write"></span></div></div>
 <div class="kpi"><div class="k">Session output</div><div class="n" id="tok-output">–</div><div class="l" id="tok-reasoning"></div></div>
 <div class="kpi"><div class="k">Session total</div><div class="n" id="tok-total">–</div><div class="l">cumulative, all turns</div></div>
-<div class="kpi"><div class="k">Last turn</div><div class="n" id="tok-last">–</div><div class="l">most recent request</div></div>
+<div class="kpi"><div class="k">Last turn</div><div class="n" id="tok-last">–</div><div class="l detail-stack"><span id="tok-last-cached"></span><span id="tok-last-cache-write"></span></div></div>
 </div>
 <div class="card">
-<h3>About this tab</h3>
-<p class="sub" style="margin:0">Elpis is plan-based (ChatGPT/Codex subscription), not metered API billing, so
-there is no real $ cost figure to show here — only measured token counts.</p>
+<h2>About this tab</h2>
+<p class="sub" style="margin:0">Elpis is plan-based (ChatGPT/Codex subscription), not metered API billing, so there is no real $ cost figure to show here — only measured token counts.</p>
+</div>
+</section>
+
+<section class="panel" id="panel-smart-prune" role="tabpanel" aria-labelledby="tab-smart-prune">
+<div class="card smart-hero">
+<div class="smart-head">
+<div>
+<div class="eyebrow">Fresh-output admission</div>
+<h2>Smart Prune evidence</h2>
+<p class="sub">Session counters and linkage for tool outputs optimized before their first main-model request.</p>
+</div>
+<div class="state-pill" id="sp-state" aria-label="Smart Prune state">OFF</div>
+</div>
+<div class="evidence-flow" aria-label="Evidence chain">
+<div class="flow-step" id="sp-flow-output"><span class="step-label">Tool result</span><span class="step-state">eligible output</span></div>
+<div class="flow-step" id="sp-flow-admission"><span class="step-label">Admission</span><span class="step-state">waiting</span></div>
+<div class="flow-step" id="sp-flow-request"><span class="step-label">Main request</span><span class="step-state">pending</span></div>
+<div class="flow-step" id="sp-flow-response"><span class="step-label">Response</span><span class="step-state">pending</span></div>
+</div>
+</div>
+
+<div class="kpis">
+<div class="kpi"><div class="k">Examined</div><div class="n" id="sp-examined">–</div><div class="l">eligible outputs</div></div>
+<div class="kpi"><div class="k">Admitted</div><div class="n" id="sp-admitted">–</div><div class="l">optimized outputs</div></div>
+<div class="kpi"><div class="k">Unchanged</div><div class="n" id="sp-unchanged">–</div><div class="l">preserved as received</div></div>
+<div class="kpi"><div class="k">Failed batches</div><div class="n" id="sp-failed">–</div><div class="l">fell back to original</div></div>
+</div>
+
+<div class="card">
+<h2>Estimated main-context delta</h2>
+<div class="smart-tokens">
+<div class="smart-token"><div class="eyebrow">Source</div><div class="n" id="sp-source-tokens">–</div></div>
+<div class="smart-token"><div class="eyebrow">Admitted</div><div class="n" id="sp-admitted-tokens">–</div></div>
+<div class="smart-token"><div class="eyebrow">Removed</div><div class="n" id="sp-saved-tokens">–</div></div>
+</div>
+<p class="evidence-note">Approximate main-context tokens removed; optimizer cost is excluded here and shown below. Mechanism evidence only; cache benefit requires matched runs.</p>
+</div>
+
+<div class="card">
+<h2>Optimizer overhead</h2>
+<div class="kpis">
+<div class="kpi"><div class="k">Requests</div><div class="n" id="sp-optimizer-requests">–</div><div class="l">all attempted batches</div></div>
+<div class="kpi"><div class="k">Usage coverage</div><div class="n" id="sp-optimizer-coverage">–</div><div class="l">provider reports / requests</div></div>
+<div class="kpi"><div class="k">Reported tokens</div><div class="n" id="sp-optimizer-tokens">–</div><div class="l detail-stack"><span id="sp-optimizer-cached"></span><span id="sp-optimizer-cache-write"></span></div></div>
+<div class="kpi"><div class="k">Cumulative wait</div><div class="n" id="sp-optimizer-latency">–</div><div class="l">wall-clock, all requests</div></div>
+</div>
+<p class="evidence-note">Optimizer usage is separate from the main session totals. Missing provider usage is shown as not reported, never as zero.</p>
+</div>
+
+<div class="card">
+<h2>Latest admission</h2>
+<p class="empty-evidence" id="sp-empty">No admission recorded in this session.</p>
+<dl class="evidence-grid" id="sp-latest" hidden>
+<dt>Admission</dt><dd id="sp-admission-id">–</dd>
+<dt>Audit record</dt><dd><code id="sp-audit-path">–</code></dd>
+<dt>Admission result</dt><dd id="sp-admission-result">–</dd>
+<dt>Main request sequence</dt><dd id="sp-request-sequence">–</dd>
+<dt>Local request SHA-256</dt><dd><code id="sp-request-hash">–</code></dd>
+<dt>Request linkage</dt><dd id="sp-request-link">–</dd>
+<dt>Response ID</dt><dd><code id="sp-response-id">–</code></dd>
+<dt>Response linkage</dt><dd id="sp-response-link">–</dd>
+<dt>Response input</dt><dd id="sp-response-input">–</dd>
+<dt>Cached input</dt><dd id="sp-response-cached">–</dd>
+<dt>Cache write</dt><dd id="sp-response-cache-write">–</dd>
+<dt>Response output</dt><dd id="sp-response-output">–</dd>
+</dl>
+<p class="evidence-note">The dashboard receives aggregate metadata and hashes only; raw tool contents are excluded.</p>
 </div>
 </section>
 
@@ -86,74 +291,208 @@ there is no real $ cost figure to show here — only measured token counts.</p>
 <script>
 const tabs = document.querySelectorAll('.tab');
 const panels = document.querySelectorAll('.panel');
-tabs.forEach(t => t.addEventListener('click', () => {
-  tabs.forEach(x => x.classList.remove('active'));
-  panels.forEach(x => x.classList.remove('active'));
-  t.classList.add('active');
-  document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+tabs.forEach(tab => tab.addEventListener('click', () => {
+  tabs.forEach(item => {
+    item.classList.remove('active');
+    item.setAttribute('aria-selected', 'false');
+  });
+  panels.forEach(panel => panel.classList.remove('active'));
+  tab.classList.add('active');
+  tab.setAttribute('aria-selected', 'true');
+  document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
 }));
 
-function fmt(n) {
-  if (n === undefined || n === null) return '–';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-  return String(n);
+function fmt(value) {
+  if (value === undefined || value === null) return '–';
+  if (Math.abs(value) >= 1000) return (value / 1000).toFixed(1) + 'k';
+  return String(value);
+}
+
+function reported(value) {
+  return value === undefined || value === null ? 'not reported' : fmt(value);
+}
+
+function cacheWriteDetail(value) {
+  return value === undefined || value === null ? 'cache write not reported' : fmt(value) + ' cache write';
+}
+
+function durationMs(value) {
+  if (value === undefined || value === null) return '–';
+  if (value >= 1000) return (value / 1000).toFixed(1) + 's';
+  return String(value) + 'ms';
+}
+
+function setText(id, value) {
+  document.getElementById(id).textContent = value;
+}
+
+function setLinkState(id, verified, present) {
+  const node = document.getElementById(id);
+  node.classList.remove('verified', 'unverified');
+  if (!present) {
+    node.textContent = 'pending';
+  } else if (verified) {
+    node.textContent = 'verified locally';
+    node.classList.add('verified');
+  } else {
+    node.textContent = 'not verified';
+    node.classList.add('unverified');
+  }
+}
+
+function setFlowState(id, label, state) {
+  const node = document.getElementById(id);
+  node.classList.remove('complete', 'warning');
+  if (state === 'complete') node.classList.add('complete');
+  if (state === 'warning') node.classList.add('warning');
+  node.querySelector('.step-state').textContent = label;
+}
+
+function renderContext(data) {
+  setText('ctx-used', fmt(data.used_tokens));
+  setText('ctx-used-pct', data.used_percent === null || data.used_percent === undefined
+    ? 'not measured yet'
+    : data.used_percent + '% of window');
+  setText('ctx-window', fmt(data.window_tokens));
+  setText('ctx-saved', fmt(data.saved_tokens));
+  setText('ctx-checkpoints', data.backtrack_points ?? 0);
+
+  const bar = document.getElementById('ctx-bar');
+  const legend = document.getElementById('ctx-legend');
+  bar.replaceChildren();
+  legend.replaceChildren();
+  const windowTokens = data.window_tokens || 1;
+  (data.categories || []).forEach(category => {
+    const percent = Math.max(0, Math.min(100, (category.tokens / windowTokens) * 100));
+    const segment = document.createElement('i');
+    segment.style.width = percent + '%';
+    segment.style.background = category.color;
+    bar.appendChild(segment);
+
+    const item = document.createElement('span');
+    const swatch = document.createElement('i');
+    swatch.style.background = category.color;
+    item.append(swatch, document.createTextNode(category.label + ': ' + fmt(category.tokens)));
+    legend.appendChild(item);
+  });
+
+  const sources = data.sources || [];
+  const admitted = sources.filter(source => source.admitted).length;
+  setText('src-summary', admitted + ' of ' + sources.length + ' discovered sources admitted to context');
+  const rows = document.getElementById('src-rows');
+  rows.replaceChildren();
+  sources.forEach(source => {
+    const row = document.createElement('tr');
+    [source.name, source.category, fmt(source.estimated_tokens)].forEach(value => {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    const status = document.createElement('td');
+    status.className = source.admitted ? 'admitted' : 'notadmitted';
+    status.textContent = source.admitted ? 'admitted' : '—';
+    row.appendChild(status);
+    rows.appendChild(row);
+  });
+}
+
+function renderTokens(data) {
+  const total = data.session_total || {};
+  const last = data.last_turn || {};
+  setText('tok-input', fmt(total.input));
+  setText('tok-cached', fmt(total.cached_input) + ' cached');
+  setText('tok-cache-write', cacheWriteDetail(total.cache_write));
+  setText('tok-output', fmt(total.output));
+  setText('tok-reasoning', fmt(total.reasoning_output) + ' reasoning');
+  setText('tok-total', fmt(total.total));
+  setText('tok-last', fmt(last.total));
+  setText('tok-last-cached', fmt(last.cached_input) + ' cached');
+  setText('tok-last-cache-write', cacheWriteDetail(last.cache_write));
+}
+
+function renderSmartPrune(data) {
+  const smart = data.smart_prune || {};
+  const state = document.getElementById('sp-state');
+  const enabled = smart.enabled === true;
+  state.textContent = enabled ? 'ON' : 'OFF';
+  state.classList.toggle('enabled', enabled);
+  state.setAttribute('aria-label', 'Smart Prune ' + (enabled ? 'on' : 'off'));
+
+  setText('sp-examined', fmt(smart.examined_outputs ?? 0));
+  setText('sp-admitted', fmt(smart.admitted_outputs ?? 0));
+  setText('sp-unchanged', fmt(smart.unchanged_outputs ?? 0));
+  setText('sp-failed', fmt(smart.failed_batches ?? 0));
+  setText('sp-source-tokens', fmt(smart.approx_source_tokens ?? 0));
+  setText('sp-admitted-tokens', fmt(smart.approx_admitted_tokens ?? 0));
+  setText('sp-saved-tokens', fmt(smart.approx_saved_tokens ?? 0));
+  const optimizerRequests = smart.optimizer_requests ?? 0;
+  const optimizerReports = smart.optimizer_usage_reports ?? 0;
+  const optimizerUsage = smart.optimizer_usage || {};
+  setText('sp-optimizer-requests', fmt(optimizerRequests));
+  setText('sp-optimizer-coverage', optimizerReports + ' / ' + optimizerRequests);
+  setText('sp-optimizer-tokens', optimizerReports > 0 ? fmt(optimizerUsage.total) : 'not reported');
+  setText('sp-optimizer-cached', optimizerReports > 0 ? fmt(optimizerUsage.cached_input) + ' cached' : 'usage not reported');
+  setText('sp-optimizer-cache-write', optimizerReports > 0 ? cacheWriteDetail(optimizerUsage.cache_write) : 'cache write not reported');
+  setText('sp-optimizer-latency', durationMs(smart.optimizer_latency_ms ?? 0));
+
+  const latest = smart.latest || null;
+  document.getElementById('sp-empty').hidden = latest !== null;
+  document.getElementById('sp-latest').hidden = latest === null;
+  document.getElementById('sp-flow-output').classList.toggle('complete', (smart.examined_outputs ?? 0) > 0);
+  setFlowState('sp-flow-admission', latest ? 'recorded' : 'waiting', latest ? 'complete' : 'pending');
+
+  if (!latest) {
+    setFlowState('sp-flow-request', 'pending', 'pending');
+    setFlowState('sp-flow-response', 'pending', 'pending');
+    return;
+  }
+
+  const requestPresent = latest.request_sequence !== null && latest.request_sequence !== undefined;
+  const responsePresent = latest.response_id !== null && latest.response_id !== undefined;
+  setFlowState(
+    'sp-flow-request',
+    requestPresent ? (latest.request_linkage_verified ? 'linked' : 'not verified') : 'pending',
+    requestPresent ? (latest.request_linkage_verified ? 'complete' : 'warning') : 'pending'
+  );
+  setFlowState(
+    'sp-flow-response',
+    responsePresent ? (latest.response_linkage_verified ? 'linked' : 'not verified') : 'pending',
+    responsePresent ? (latest.response_linkage_verified ? 'complete' : 'warning') : 'pending'
+  );
+
+  setText('sp-admission-id', latest.admission_id || '–');
+  setText('sp-audit-path', latest.audit_path || '–');
+  setText('sp-admission-result', fmt(latest.admitted_outputs) + ' of ' + fmt(latest.examined_outputs) + ' outputs admitted');
+  setText('sp-request-sequence', requestPresent ? latest.request_sequence : 'pending');
+  setText('sp-request-hash', latest.request_input_sha256 || 'pending');
+  setLinkState('sp-request-link', latest.request_linkage_verified, requestPresent);
+  setText('sp-response-id', latest.response_id || 'pending');
+  setLinkState('sp-response-link', latest.response_linkage_verified, responsePresent);
+
+  const usage = latest.response_usage;
+  setText('sp-response-input', usage ? fmt(usage.input) : 'not reported');
+  setText('sp-response-cached', usage ? fmt(usage.cached_input) : 'not reported');
+  setText('sp-response-cache-write', usage ? reported(usage.cache_write) : 'not reported');
+  setText('sp-response-output', usage ? fmt(usage.output) : 'not reported');
 }
 
 async function refresh() {
   try {
-    const res = await fetch('/data.json', { cache: 'no-store' });
-    const d = await res.json();
-    document.getElementById('model-line').textContent = d.model + ' · updated live from the running session';
-
-    document.getElementById('ctx-used').textContent = fmt(d.used_tokens);
-    document.getElementById('ctx-used-pct').textContent = d.used_percent + '% of window';
-    document.getElementById('ctx-window').textContent = fmt(d.window_tokens);
-    document.getElementById('ctx-saved').textContent = fmt(d.saved_tokens);
-    document.getElementById('ctx-checkpoints').textContent = d.backtrack_points;
-
-    const bar = document.getElementById('ctx-bar');
-    const legend = document.getElementById('ctx-legend');
-    bar.innerHTML = '';
-    legend.innerHTML = '';
-    const window = d.window_tokens || 1;
-    (d.categories || []).forEach(c => {
-      const pct = Math.max(0, Math.min(100, (c.tokens / window) * 100));
-      const seg = document.createElement('i');
-      seg.style.width = pct + '%';
-      seg.style.background = c.color;
-      bar.appendChild(seg);
-      const item = document.createElement('span');
-      item.innerHTML = '<i style="background:' + c.color + '"></i>' + c.label + ': ' + fmt(c.tokens);
-      legend.appendChild(item);
-    });
-
-    const sources = d.sources || [];
-    const admitted = sources.filter(s => s.admitted).length;
-    document.getElementById('src-summary').textContent = admitted + ' of ' + sources.length + ' discovered sources admitted to context';
-    const rows = document.getElementById('src-rows');
-    rows.innerHTML = '';
-    sources.forEach(s => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + s.name + '</td><td>' + s.category + '</td><td>' + fmt(s.estimated_tokens) +
-        '</td><td class="' + (s.admitted ? 'admitted' : 'notadmitted') + '">' + (s.admitted ? 'admitted' : '—') + '</td>';
-      rows.appendChild(tr);
-    });
-
-    const t = d.session_total || {};
-    const lt = d.last_turn || {};
-    document.getElementById('tok-input').textContent = fmt(t.input);
-    document.getElementById('tok-cached').textContent = fmt(t.cached_input) + ' cached';
-    document.getElementById('tok-output').textContent = fmt(t.output);
-    document.getElementById('tok-reasoning').textContent = fmt(t.reasoning_output) + ' reasoning';
-    document.getElementById('tok-total').textContent = fmt(t.total);
-    document.getElementById('tok-last').textContent = fmt(lt.total);
-
-    document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
-  } catch (e) {
-    document.getElementById('model-line').textContent = 'waiting for session data…';
+    const response = await fetch('/data.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('dashboard data unavailable');
+    const data = await response.json();
+    setText('model-line', (data.model || 'unknown model') + ' · updated live from the running session');
+    renderContext(data);
+    renderTokens(data);
+    renderSmartPrune(data);
+    setText('updated', 'updated ' + new Date().toLocaleTimeString());
+  } catch (error) {
+    setText('model-line', 'waiting for session data…');
   }
 }
+
 refresh();
 setInterval(refresh, 3000);
 </script>
-</body></html>
+</body>
+</html>

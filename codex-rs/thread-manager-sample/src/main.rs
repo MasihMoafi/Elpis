@@ -211,7 +211,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         orchestrator_mcp_enabled: false,
         include_environment_context: false,
         compact_prompt: None,
-        elpis_compact_cleanup: true,
         notify: None,
         tui_notifications: TuiNotificationSettings::default(),
         animations: true,
@@ -333,6 +332,7 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
                 current_turn_id = Some(event.turn_id.clone());
                 None
             }
+            EventMsg::TurnProfile(_) => None,
             EventMsg::DynamicToolCallResponse(_)
             | EventMsg::McpToolCallBegin(_)
             | EventMsg::McpToolCallEnd(_)
@@ -378,6 +378,7 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
         }
 
         match event.msg {
+            EventMsg::TurnProfile(_) => {}
             EventMsg::TurnComplete(_) => {
                 return Ok(());
             }

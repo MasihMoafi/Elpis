@@ -173,6 +173,113 @@ async fn token_usage_notification_preserves_reported_cache_write_tokens() {
 }
 
 #[tokio::test]
+async fn token_usage_notification_stores_smart_prune_evidence_and_refreshes_dashboard() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let notification = serde_json::from_value::<
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification,
+    >(serde_json::json!({
+        "threadId": chat.thread_id().map(|id| id.to_string()).unwrap_or_default(),
+        "turnId": "turn-smart-prune",
+        "tokenUsage": {
+            "total": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "last": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "modelContextWindow": 100_000,
+            "smartPrune": {
+                "enabled": true,
+                "examinedOutputs": 2,
+                "admittedOutputs": 1,
+                "unchangedOutputs": 1,
+                "failedBatches": 0,
+                "approxSourceTokens": 4_000,
+                "approxAdmittedTokens": 700,
+                "approxSavedTokens": 3_300,
+                "mainRequestSequence": 3
+            }
+        }
+    }))
+    .expect("smart prune token usage notification");
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(notification),
+        /*replay_kind*/ None,
+    );
+
+    assert!(chat.smart_prune_synced);
+    assert!(chat.smart_prune.enabled);
+    assert_eq!(chat.smart_prune.admitted_outputs, 1);
+    assert_eq!(chat.smart_prune.approx_saved_tokens, 3_300);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::RefreshContextDashboard))
+    );
+}
+
+#[tokio::test]
+async fn smart_prune_config_notification_reconciles_the_current_thread_immediately() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = true;
+    smart_prune.optimizer_requests = 2;
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadSmartPruneUpdated(
+            codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                smart_prune,
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+
+    assert!(chat.smart_prune_synced);
+    assert!(chat.smart_prune.enabled);
+    assert_eq!(chat.smart_prune.optimizer_requests, 2);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::RefreshContextDashboard))
+    );
+}
+
+#[tokio::test]
+async fn smart_prune_config_notification_ignores_another_thread() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = true;
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadSmartPruneUpdated(
+            codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+                thread_id: "another-thread".to_string(),
+                smart_prune,
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+
+    assert!(!chat.smart_prune_synced);
+    assert!(!chat.smart_prune.enabled);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .all(|event| !matches!(event, AppEvent::RefreshContextDashboard))
+    );
+}
+
+#[tokio::test]
 async fn token_usage_notification_omits_unreported_cache_write_tokens() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     let thread_id = chat
