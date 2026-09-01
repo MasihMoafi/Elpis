@@ -427,8 +427,7 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenContextDashboard => {
-                let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
-                self.chat_widget.publish_dashboard_snapshot(&totals);
+                self.publish_current_dashboard_snapshot();
                 match crate::dashboard_server::ensure_running() {
                     Some(url) => {
                         let _ = webbrowser::open(&url);

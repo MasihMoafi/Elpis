@@ -80,7 +80,7 @@ impl ChatWidget {
         }
         match notification {
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
-                self.update_context_prune_savings(
+                let savings_changed = self.update_context_prune_savings(
                     notification.token_usage.context_prune_saved_tokens,
                     from_replay,
                 );
@@ -88,9 +88,13 @@ impl ChatWidget {
                     notification.token_usage.last.total_tokens,
                     notification.token_usage.model_context_window,
                 );
-                self.set_token_info(Some(token_usage_info_from_app_server(
+                let tokens_changed = self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));
+                if savings_changed && !tokens_changed {
+                    self.app_event_tx
+                        .send(AppEvent::PublishDashboardSnapshot);
+                }
                 self.refresh_status_line();
             }
             ServerNotification::ThreadNameUpdated(notification) => {

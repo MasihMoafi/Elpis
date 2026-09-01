@@ -67,7 +67,12 @@ fn dashboard_source_projection(
     };
     crate::dashboard_server::DashboardSource {
         name,
-        category: format!("{:?}", source.category),
+        category: match source.category {
+            ContinuitySourceCategory::Files => "files",
+            ContinuitySourceCategory::Memory => "memory",
+            ContinuitySourceCategory::Instructions => "instructions",
+        }
+        .to_string(),
         estimated_tokens: source.estimated_tokens,
         admitted: source.admitted,
     }
@@ -166,15 +171,21 @@ impl ChatWidget {
         self.request_fresh_context_usage_report();
     }
 
-    pub(super) fn update_context_prune_savings(&mut self, saved_tokens: u64, from_replay: bool) {
+    pub(super) fn update_context_prune_savings(
+        &mut self,
+        saved_tokens: u64,
+        from_replay: bool,
+    ) -> bool {
         if saved_tokens == 0 {
-            return;
+            return false;
         }
+        let changed = self.last_prune_saved_tokens != Some(saved_tokens);
         let newly_saved = newly_reclaimed_tokens(self.last_prune_saved_tokens, saved_tokens);
         self.last_prune_saved_tokens = Some(saved_tokens);
         if !from_replay && let Some(line) = saved_context_flash_line(newly_saved) {
             self.bottom_pane.show_saved_context_flash(line);
         }
+        changed
     }
 
     fn context_usage_snapshot(
@@ -273,8 +284,9 @@ impl ChatWidget {
                 color: Color::DarkGray,
             });
         }
-        let used_percent =
-            has_request_snapshot.then(|| self.status_line_context_used_percent().unwrap_or(0));
+        let used_percent = has_request_snapshot
+            .then(|| self.status_line_context_used_percent())
+            .flatten();
         let (native_compaction_count, latest_native_compaction) =
             crate::branding::compaction_evidence();
 
@@ -298,8 +310,8 @@ impl ChatWidget {
         }
     }
 
-    /// Refreshes the `/dashboard` web view's live snapshot. Cheap: only recomputes
-    /// the same numbers `/context` already computes and serializes them to JSON.
+    /// Refreshes the `/dashboard` web view's typed live state. Cheap: only recomputes
+    /// the same numbers `/context` already computes and merges semantic changes.
     pub(crate) fn publish_dashboard_snapshot(&self, totals: &ContextUsageTranscriptTotals) {
         let snapshot = self.context_usage_snapshot(totals);
         let to_css_color = |color: Color| -> String {
@@ -315,15 +327,17 @@ impl ChatWidget {
             .to_string()
         };
 
-        let categories = snapshot
-            .categories
-            .iter()
-            .map(|category| crate::dashboard_server::DashboardCategory {
-                label: category.label.to_string(),
-                tokens: category.tokens,
-                color: to_css_color(category.color),
-            })
-            .collect();
+        let categories = snapshot.has_request_snapshot.then(|| {
+            snapshot
+                .categories
+                .iter()
+                .map(|category| crate::dashboard_server::DashboardCategory {
+                    label: category.label.to_string(),
+                    tokens: category.tokens,
+                    color: to_css_color(category.color),
+                })
+                .collect()
+        });
 
         let sources = snapshot
             .sources
@@ -338,34 +352,38 @@ impl ChatWidget {
             reasoning_output: usage.reasoning_output_tokens,
             total: usage.total_tokens,
         };
-        let default_usage = crate::token_usage::TokenUsage::default();
         let session_total = self
             .token_info
             .as_ref()
-            .map(|info| to_totals(&info.total_token_usage))
-            .unwrap_or_else(|| to_totals(&default_usage));
+            .map(|info| to_totals(&info.total_token_usage));
         let last_turn = self
             .token_info
             .as_ref()
-            .map(|info| to_totals(&info.last_token_usage))
-            .unwrap_or_else(|| to_totals(&default_usage));
-
-        crate::dashboard_server::publish(&crate::dashboard_server::DashboardSnapshot {
-            model: snapshot.model,
-            used_tokens: snapshot.used_tokens.unwrap_or(0),
-            window_tokens: snapshot.window_tokens,
-            used_percent: snapshot.used_percent.unwrap_or(0),
-            categories,
-            saved_tokens: snapshot.saved_tokens,
-            sources,
-            backtrack_points: snapshot.backtrack_points,
-            session_total,
-            last_turn,
-            automatic_pruning_configured_for_next_conversation: self
-                .config
+            .map(|info| to_totals(&info.last_token_usage));
+        let automatic_pruning_enabled = Some(
+            self.config
                 .features
                 .enabled(Feature::AutomaticContextPruning),
-        });
+        );
+        let activity = self.dashboard_activity_state(automatic_pruning_enabled);
+
+        crate::dashboard_server::publish_state(
+            crate::dashboard_server::DashboardContext {
+                model: snapshot.model,
+                used_tokens: snapshot.used_tokens,
+                window_tokens: snapshot.window_tokens,
+                used_percent: snapshot.used_percent,
+                categories,
+                saved_tokens: snapshot.saved_tokens,
+                sources,
+                backtrack_points: snapshot.backtrack_points,
+            },
+            crate::dashboard_server::DashboardTokens {
+                session_total,
+                last_turn,
+            },
+            activity,
+        );
     }
 
     pub(crate) fn add_context_usage_output(&mut self, totals: ContextUsageTranscriptTotals) {
@@ -944,7 +962,7 @@ mod tests {
 
     #[test]
     fn manual_memory_dashboard_source_projection_does_not_serialize_custom_absolute_paths() {
-        let absolute_path = "/home/test/private/context/secret-plan.md";
+        let absolute_path = "/home/private-user/context/secret-plan.md";
         let source = crate::legacy_core::elpis_context::ContinuitySource {
             name: absolute_path.to_string(),
             path: std::path::PathBuf::from(absolute_path),
@@ -959,15 +977,36 @@ mod tests {
         };
 
         let projected = dashboard_source_projection(&source);
-        let serialized = serde_json::to_string(&crate::dashboard_server::DashboardSnapshot {
-            sources: vec![projected.clone()],
-            ..Default::default()
+        let serialized = serde_json::to_string(&crate::dashboard_server::DashboardState {
+            schema_version: 1,
+            revision: 1,
+            generated_at: 1_000,
+            context: crate::dashboard_server::DashboardContext {
+                model: "model".to_string(),
+                used_tokens: None,
+                window_tokens: 1_000,
+                used_percent: None,
+                categories: None,
+                saved_tokens: 0,
+                sources: vec![projected.clone()],
+                backtrack_points: 0,
+            },
+            tokens: crate::dashboard_server::DashboardTokens {
+                session_total: None,
+                last_turn: None,
+            },
+            activity: crate::dashboard_server::DashboardActivity {
+                current: None,
+                recent: Vec::new(),
+                automatic_pruning_enabled: None,
+            },
         })
         .expect("serialize dashboard snapshot");
 
         assert_eq!(projected.name, "secret-plan.md");
+        assert_eq!(projected.category, "files");
         assert!(!serialized.contains(absolute_path));
-        assert!(!serialized.contains("/home/test/private/context"));
+        assert!(!serialized.contains("/home/private-user"));
     }
 
     fn filled_cells(lines: &[Line<'static>]) -> usize {

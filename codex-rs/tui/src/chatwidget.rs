@@ -1090,7 +1090,8 @@ impl ChatWidget {
         });
     }
 
-    pub(crate) fn set_token_info(&mut self, info: Option<TokenUsageInfo>) {
+    pub(crate) fn set_token_info(&mut self, info: Option<TokenUsageInfo>) -> bool {
+        let changed = self.token_info.as_ref() != info.as_ref();
         match info {
             Some(info) => self.apply_token_info(info),
             None => {
@@ -1099,6 +1100,11 @@ impl ChatWidget {
                 self.token_info = None;
             }
         }
+        if changed {
+            self.app_event_tx
+                .send(AppEvent::PublishDashboardSnapshot);
+        }
+        changed
     }
 
     fn apply_token_info(&mut self, info: TokenUsageInfo) {
@@ -1857,7 +1863,10 @@ impl ChatWidget {
     }
 
     pub(crate) fn clear_token_usage(&mut self) {
-        self.token_info = None;
+        if self.token_info.take().is_some() {
+            self.app_event_tx
+                .send(AppEvent::PublishDashboardSnapshot);
+        }
     }
 }
 

@@ -1,5 +1,105 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+
+#[tokio::test]
+async fn semantic_token_snapshot_changes_request_dashboard_publication_once() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let info = make_token_info(120, 1_000);
+
+    chat.set_token_info(Some(info.clone()));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    chat.set_token_info(Some(info.clone()));
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+
+    chat.set_token_info(None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    chat.set_token_info(None);
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+
+    chat.set_token_info(Some(info));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    chat.clear_token_usage();
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    chat.clear_token_usage();
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+}
+
+fn token_usage_notification(
+    chat: &ChatWidget,
+    saved_tokens: u64,
+) -> codex_app_server_protocol::ServerNotification {
+    let usage = || codex_app_server_protocol::TokenUsageBreakdown {
+        total_tokens: 120,
+        input_tokens: 100,
+        cached_input_tokens: 20,
+        cache_write_tokens: None,
+        output_tokens: 20,
+        reasoning_output_tokens: 0,
+    };
+    codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
+            thread_id: chat
+                .thread_id()
+                .map(|thread_id| thread_id.to_string())
+                .unwrap_or_default(),
+            turn_id: "turn-1".to_string(),
+            token_usage: codex_app_server_protocol::ThreadTokenUsage {
+                total: usage(),
+                last: usage(),
+                model_context_window: Some(1_000),
+                context_prune_saved_tokens: saved_tokens,
+            },
+        },
+    )
+}
+
+#[tokio::test]
+async fn cumulative_savings_change_with_equal_tokens_publishes_exactly_once() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    let notification = token_usage_notification(&chat, 10);
+    chat.handle_server_notification(notification, /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+
+    let notification = token_usage_notification(&chat, 20);
+    chat.handle_server_notification(notification, /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+
+    let notification = token_usage_notification(&chat, 20);
+    chat.handle_server_notification(notification, /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn only_effective_automatic_pruning_changes_request_dashboard_publication() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    assert!(!chat.set_feature_enabled(
+        codex_features::Feature::AutomaticContextPruning,
+        /*enabled*/ false,
+    ));
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+
+    assert!(chat.set_feature_enabled(
+        codex_features::Feature::AutomaticContextPruning,
+        /*enabled*/ true,
+    ));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+
+    assert!(chat.set_feature_enabled(
+        codex_features::Feature::AutomaticContextPruning,
+        /*enabled*/ true,
+    ));
+    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+
+    assert!(!chat.set_feature_enabled(
+        codex_features::Feature::AutomaticContextPruning,
+        /*enabled*/ false,
+    ));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+}
 use pretty_assertions::assert_eq;
 
 const SAFETY_BUFFERING_HEADER_TEXT: &str =
