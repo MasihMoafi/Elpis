@@ -51,6 +51,9 @@ approval_policy = "never"
 sandbox_mode = "read-only"
 model_provider = "mock_provider"
 
+[features]
+plugins = true
+
 [skills]
 include_instructions = true
 

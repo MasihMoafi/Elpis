@@ -624,7 +624,7 @@ impl Session {
             config.current_time_reminder.as_ref(),
             external_time_provider,
         )?;
-        let selected_capability_roots =
+        let selected_capability_roots = if config.features.enabled(Feature::Plugins) {
             match thread_extension_init.get::<Vec<SelectedCapabilityRoot>>() {
                 Some(roots) => roots.as_ref().clone(),
                 None => {
@@ -634,7 +634,11 @@ impl Session {
                     }
                     roots
                 }
-            };
+            }
+        } else {
+            thread_extension_init.insert(Vec::<SelectedCapabilityRoot>::new());
+            Vec::new()
+        };
         let mcp_thread_init = thread_extension_init.clone();
         let thread_extension_data = codex_extension_api::ExtensionData::new_with_init(
             thread_id.to_string(),

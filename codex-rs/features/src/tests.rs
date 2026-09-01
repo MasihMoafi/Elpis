@@ -218,9 +218,15 @@ fn from_sources_ignores_removed_terminal_resize_reflow_feature_key() {
 }
 
 #[test]
-fn tool_suggest_is_stable_and_enabled_by_default() {
-    assert_eq!(Feature::ToolSuggest.stage(), Stage::Stable);
-    assert_eq!(Feature::ToolSuggest.default_enabled(), true);
+fn plugin_surfaces_are_stable_and_disabled_by_default() {
+    for feature in [
+        Feature::Plugins,
+        Feature::RemotePlugin,
+        Feature::ToolSuggest,
+    ] {
+        assert_eq!(feature.stage(), Stage::Stable);
+        assert_eq!(feature.default_enabled(), false);
+    }
 }
 
 #[test]
