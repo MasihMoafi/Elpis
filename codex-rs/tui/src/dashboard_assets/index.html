@@ -64,6 +64,12 @@ header{border-bottom:1px solid var(--iron-rule);padding:22px 28px 0}
 .kpi .l{color:var(--ash-rose);font-size:11px;margin-top:3px;overflow-wrap:anywhere}
 .card{background:var(--night-ledger);border:1px solid var(--iron-rule);border-radius:3px;display:flex;flex-direction:column;gap:12px;padding:18px 20px}
 .card h3{font:600 11px/1.25 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.12em;margin:0;text-transform:uppercase}
+.memory-observation{align-items:start;display:grid;gap:18px;grid-template-columns:minmax(150px,.62fr) minmax(0,1.38fr)}
+.memory-state{border-left:2px solid var(--ash-rose);font:600 15px/1.35 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;padding:3px 0 3px 11px}
+.memory-state.admitted{border-left-color:var(--verdigris)}
+.memory-state.tone-flare{border-left-color:var(--flare)}
+.memory-summary{font:600 13px/1.45 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.memory-detail{margin-top:3px}
 .timing-grid{display:grid;gap:0 24px;grid-template-columns:repeat(2,minmax(0,1fr))}
 .timing-row{border-bottom:1px solid var(--iron-rule);display:grid;gap:8px;grid-template-columns:minmax(0,1fr) auto;padding:10px 0}
 .timing-row:nth-last-child(-n+2){border-bottom:0}
@@ -106,6 +112,7 @@ th{color:var(--ash-rose);font-size:10px;font-weight:600;letter-spacing:.08em;tex
   .kpis{grid-template-columns:1fr}
   .pruning-strip{align-items:start;grid-template-columns:1fr}
   .pruning-strip .l{text-align:left}
+  .memory-observation{grid-template-columns:1fr}
   .card{padding:16px}
   #updated{padding:12px 18px 14px}
 }
@@ -186,6 +193,16 @@ th{color:var(--ash-rose);font-size:10px;font-weight:600;letter-spacing:.08em;tex
 <div class="kpi"><div class="k">Pruned this session</div><div class="n" id="ctx-saved">Unavailable</div><div class="l">tokens reclaimed</div></div>
 <div class="kpi"><div class="k">Checkpoints</div><div class="n" id="ctx-checkpoints">Unavailable</div><div class="l">backtrack points</div></div>
 </div>
+<section class="card" id="manual-memory-card" aria-labelledby="manual-memory-heading">
+<h3 id="manual-memory-heading">Manual memory</h3>
+<div class="memory-observation">
+<div class="memory-state notadmitted" id="manual-memory-state">Loading</div>
+<div>
+<div class="memory-summary" id="manual-memory-summary">Next request unavailable</div>
+<p class="sub memory-detail" id="manual-memory-detail">Refreshing cached memory status</p>
+</div>
+</div>
+</section>
 <div class="card">
 <h3>Token usage by category</h3>
 <div id="ctx-bar"></div>
@@ -247,6 +264,25 @@ const CATEGORY_CLASSES = Object.freeze({
   '#d946ef': 'category-magenta',
   '#06b6d4': 'category-cyan',
   '#6b635a': 'category-muted'
+});
+const MEMORY_PHASE_LABELS = Object.freeze({
+  loading: 'Loading',
+  ready: 'Ready',
+  creating: 'Creating',
+  unavailable: 'Unavailable'
+});
+const MEMORY_STATE_LABELS = Object.freeze({
+  missing: 'Missing',
+  available_not_admitted: 'Available — not admitted',
+  admitted: 'Admitted'
+});
+const MEMORY_REASON_LABELS = Object.freeze({
+  admission_unavailable: 'Memory admission status is unavailable',
+  memory_unreadable: 'The memory file is unreadable',
+  invalid_utf8: 'The memory file is not valid UTF-8',
+  memory_path_not_file: 'The configured memory path is not a file',
+  sources_unavailable: 'Memory source discovery is unavailable',
+  worker_failed: 'The memory status worker failed'
 });
 const PROFILE_FIELDS = Object.freeze([
   ['Before first request', 'before_first_sampling_ms', 'phase-meter-before-first'],
@@ -354,6 +390,98 @@ tabs.forEach((tab, index) => {
     activateTab(tabs[next], true);
   });
 });
+
+function renderManualMemory(memory) {
+  const stateElement = byId('manual-memory-state');
+  stateElement.className = 'memory-state notadmitted';
+
+  if (!memory || typeof memory !== 'object') {
+    stateElement.textContent = 'Unavailable';
+    setText('manual-memory-summary', 'Next request unavailable');
+    setText('manual-memory-detail', 'No compatible memory state published');
+    return;
+  }
+
+  const phaseLabel = ownValue(MEMORY_PHASE_LABELS, memory.phase);
+  if (!phaseLabel) {
+    stateElement.textContent = 'Unavailable';
+    setText('manual-memory-summary', 'Next request unavailable');
+    setText('manual-memory-detail', 'Memory status is unavailable');
+    return;
+  }
+
+  const stateLabel = ownValue(MEMORY_STATE_LABELS, memory.state);
+  const reasonLabel = ownValue(MEMORY_REASON_LABELS, memory.unavailable_reason);
+  const countsAvailable = Number.isSafeInteger(memory.request_chars_if_admitted)
+    && memory.request_chars_if_admitted >= 0
+    && Number.isSafeInteger(memory.eligible_chars_now)
+    && memory.eligible_chars_now >= 0
+    && Number.isSafeInteger(memory.limit_chars)
+    && memory.limit_chars >= 0
+    && typeof memory.truncated === 'boolean'
+    && memory.eligible_chars_now <= memory.request_chars_if_admitted
+    && memory.request_chars_if_admitted <= memory.limit_chars;
+  const admissionPending = memory.admission_pending === true;
+  let countSummary = null;
+  if (stateLabel && countsAvailable) {
+    countSummary = 'Next request '
+      + String(memory.eligible_chars_now)
+      + '/'
+      + String(memory.limit_chars)
+      + ' chars';
+    if (
+      memory.state === 'available_not_admitted'
+      && memory.request_chars_if_admitted > memory.eligible_chars_now
+    ) {
+      countSummary += ' · '
+        + String(memory.request_chars_if_admitted)
+        + '/'
+        + String(memory.limit_chars)
+        + ' if admitted';
+    }
+    if (memory.truncated) countSummary += ' · truncated';
+  }
+
+  if (memory.phase === 'loading') {
+    stateElement.textContent = phaseLabel;
+    setText('manual-memory-summary', 'Next request unavailable');
+    setText(
+      'manual-memory-detail',
+      admissionPending ? 'Admission update pending' : 'Refreshing cached memory status'
+    );
+    return;
+  }
+
+  if (memory.phase === 'unavailable') {
+    stateElement.textContent = phaseLabel;
+    setText('manual-memory-summary', 'Next request unavailable');
+    setText('manual-memory-detail', reasonLabel || 'Memory status is unavailable');
+    return;
+  }
+
+  if (memory.phase === 'creating') {
+    stateElement.textContent = phaseLabel;
+    stateElement.className = 'memory-state tone-flare';
+    setText(
+      'manual-memory-summary',
+      countSummary || 'Next request unavailable'
+    );
+    setText('manual-memory-detail', 'Creating the standard memory file');
+    return;
+  }
+
+  if (!countSummary) {
+    stateElement.textContent = 'Unavailable';
+    setText('manual-memory-summary', 'Next request unavailable');
+    setText('manual-memory-detail', 'Memory status is unavailable');
+    return;
+  }
+
+  stateElement.textContent = stateLabel;
+  if (memory.state === 'admitted') stateElement.className = 'memory-state admitted';
+  setText('manual-memory-summary', countSummary);
+  setText('manual-memory-detail', 'User-maintained · read-only dashboard status');
+}
 
 function renderContext(context) {
   setText('ctx-used', formatCount(context.used_tokens));
@@ -599,6 +727,7 @@ function renderState(state) {
     (typeof context.model === 'string' ? context.model : 'Unavailable')
       + ' · current session facts'
   );
+  renderManualMemory(context.manual_memory);
   renderContext(context);
   renderTokens(tokens);
   renderActivity(activity);

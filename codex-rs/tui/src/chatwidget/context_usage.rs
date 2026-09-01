@@ -78,6 +78,98 @@ fn dashboard_source_projection(
     }
 }
 
+fn dashboard_source_projections(
+    sources: &[crate::legacy_core::elpis_context::ContinuitySource],
+    manual_memory_path: Option<&std::path::Path>,
+) -> Vec<crate::dashboard_server::DashboardSource> {
+    sources
+        .iter()
+        .filter(|source| manual_memory_path != Some(source.path.as_path()))
+        .map(dashboard_source_projection)
+        .collect()
+}
+
+fn dashboard_manual_memory_projection(
+    phase: super::ManualMemoryPhase,
+    status: Option<&crate::legacy_core::elpis_context::ManualMemoryStatus>,
+    unavailable_reason: Option<crate::app_event::ManualMemoryUnavailableReason>,
+    pending_mutation: Option<crate::app_event::ManualMemoryMutation>,
+) -> crate::dashboard_server::DashboardManualMemory {
+    let mut projected = crate::dashboard_server::DashboardManualMemory::loading();
+
+    let apply_status =
+        |projected: &mut crate::dashboard_server::DashboardManualMemory,
+         status: &crate::legacy_core::elpis_context::ManualMemoryStatus| {
+            projected.state = Some(match status.state {
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing => {
+                    crate::dashboard_server::DashboardManualMemoryState::Missing
+                }
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::AvailableNotAdmitted => {
+                    crate::dashboard_server::DashboardManualMemoryState::AvailableNotAdmitted
+                }
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted => {
+                    crate::dashboard_server::DashboardManualMemoryState::Admitted
+                }
+            });
+            projected.request_chars_if_admitted = Some(status.request_chars_if_admitted);
+            projected.eligible_chars_now = Some(status.eligible_chars_now);
+            projected.limit_chars = Some(status.limit_chars);
+            projected.truncated = Some(status.truncated);
+        };
+
+    match phase {
+        super::ManualMemoryPhase::Loading => {
+            projected.admission_pending = matches!(
+                pending_mutation,
+                Some(crate::app_event::ManualMemoryMutation::Admission { .. })
+            );
+            projected
+        }
+        super::ManualMemoryPhase::Ready => {
+            let Some(status) = status else {
+                return projected;
+            };
+            projected.phase = crate::dashboard_server::DashboardManualMemoryPhase::Ready;
+            apply_status(&mut projected, status);
+            projected
+        }
+        super::ManualMemoryPhase::Creating => {
+            projected.phase = crate::dashboard_server::DashboardManualMemoryPhase::Creating;
+            if let Some(status) = status {
+                apply_status(&mut projected, status);
+            }
+            projected
+        }
+        super::ManualMemoryPhase::Unavailable => {
+            let Some(reason) = unavailable_reason else {
+                return projected;
+            };
+            projected.phase = crate::dashboard_server::DashboardManualMemoryPhase::Unavailable;
+            projected.unavailable_reason = Some(match reason {
+                crate::app_event::ManualMemoryUnavailableReason::AdmissionUnavailable => {
+                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::AdmissionUnavailable
+                }
+                crate::app_event::ManualMemoryUnavailableReason::MemoryUnreadable => {
+                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryUnreadable
+                }
+                crate::app_event::ManualMemoryUnavailableReason::InvalidUtf8 => {
+                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::InvalidUtf8
+                }
+                crate::app_event::ManualMemoryUnavailableReason::MemoryPathNotFile => {
+                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryPathNotFile
+                }
+                crate::app_event::ManualMemoryUnavailableReason::SourcesUnavailable => {
+                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::SourcesUnavailable
+                }
+                crate::app_event::ManualMemoryUnavailableReason::WorkerFailed => {
+                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::WorkerFailed
+                }
+            });
+            projected
+        }
+    }
+}
+
 #[derive(Debug)]
 struct ContextUsageHistoryCell {
     before_chart: Vec<Line<'static>>,
@@ -339,11 +431,16 @@ impl ChatWidget {
                 .collect()
         });
 
-        let sources = snapshot
-            .sources
-            .iter()
-            .map(dashboard_source_projection)
-            .collect();
+        let manual_memory_path = self
+            .manual_memory_bound_target()
+            .map(|target| target.view.memory_path.as_path());
+        let sources = dashboard_source_projections(&snapshot.sources, manual_memory_path);
+        let manual_memory = Some(dashboard_manual_memory_projection(
+            self.manual_memory_phase(),
+            self.manual_memory_status(),
+            self.manual_memory_unavailable_reason(),
+            self.manual_memory_pending_mutation(),
+        ));
 
         let to_totals = |usage: &crate::token_usage::TokenUsage| crate::dashboard_server::DashboardTokenTotals {
             input: usage.input_tokens,
@@ -377,6 +474,7 @@ impl ChatWidget {
                 saved_tokens: snapshot.saved_tokens,
                 sources,
                 backtrack_points: snapshot.backtrack_points,
+                manual_memory,
             },
             crate::dashboard_server::DashboardTokens {
                 session_total,
@@ -961,52 +1059,214 @@ mod tests {
     use super::*;
 
     #[test]
-    fn manual_memory_dashboard_source_projection_does_not_serialize_custom_absolute_paths() {
-        let absolute_path = "/home/private-user/context/secret-plan.md";
-        let source = crate::legacy_core::elpis_context::ContinuitySource {
-            name: absolute_path.to_string(),
-            path: std::path::PathBuf::from(absolute_path),
+    fn manual_memory_dashboard_source_projection_filters_only_the_canonical_path() {
+        let canonical_path = "/home/private-user/.elpis/memories/MEMORY.md";
+        let custom_memory_path = "/home/private-user/.elpis/memories/secret-plan.md";
+        let custom_file_path = "/home/private-user/context/research.md";
+        let sources = vec![
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: "PLANTED_MEMORY_BODY".to_string(),
+                path: std::path::PathBuf::from(canonical_path),
+                bytes: 8_000,
+                estimated_tokens: 2_000,
+                category: ContinuitySourceCategory::Memory,
+                origin: "Elpis durable memory",
+                lifetime: "every turn",
+                reason: "durable memory",
+                admitted: true,
+                selectable: true,
+            },
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: custom_memory_path.to_string(),
+                path: std::path::PathBuf::from(custom_memory_path),
+                bytes: 128,
+                estimated_tokens: 32,
+                category: ContinuitySourceCategory::Memory,
+                origin: "manual addition",
+                lifetime: "every turn",
+                reason: "manually added file",
+                admitted: true,
+                selectable: true,
+            },
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: custom_file_path.to_string(),
+                path: std::path::PathBuf::from(custom_file_path),
+                bytes: 64,
+                estimated_tokens: 16,
+                category: ContinuitySourceCategory::Files,
+                origin: "manual addition",
+                lifetime: "every turn",
+                reason: "manually added file",
+                admitted: false,
+                selectable: true,
+            },
+        ];
+
+        let projected = dashboard_source_projections(
+            &sources,
+            Some(std::path::Path::new(canonical_path)),
+        );
+        let serialized = serde_json::to_string(&projected).expect("serialize projections");
+
+        assert_eq!(projected.len(), 2);
+        assert_eq!(projected[0].name, "secret-plan.md");
+        assert_eq!(projected[0].category, "memory");
+        assert_eq!(projected[1].name, "research.md");
+        assert_eq!(projected[1].category, "files");
+        for forbidden in [
+            canonical_path,
+            custom_memory_path,
+            custom_file_path,
+            "/home/private-user",
+            "PLANTED_MEMORY_BODY",
+        ] {
+            assert!(!serialized.contains(forbidden), "leaked {forbidden}");
+        }
+    }
+
+    fn manual_status(
+        state: crate::legacy_core::elpis_context::ManualMemoryAdmissionState,
+        request_chars_if_admitted: usize,
+        eligible_chars_now: usize,
+        truncated: bool,
+    ) -> crate::legacy_core::elpis_context::ManualMemoryStatus {
+        crate::legacy_core::elpis_context::ManualMemoryStatus {
             bytes: 128,
-            estimated_tokens: 32,
-            category: ContinuitySourceCategory::Files,
-            origin: "manual addition",
-            lifetime: "every turn",
-            reason: "manually added file",
-            admitted: true,
-            selectable: true,
-        };
+            state,
+            request_chars_if_admitted,
+            eligible_chars_now,
+            limit_chars: 8_000,
+            truncated,
+        }
+    }
 
-        let projected = dashboard_source_projection(&source);
-        let serialized = serde_json::to_string(&crate::dashboard_server::DashboardState {
-            schema_version: 1,
-            revision: 1,
-            generated_at: 1_000,
-            context: crate::dashboard_server::DashboardContext {
-                model: "model".to_string(),
-                used_tokens: None,
-                window_tokens: 1_000,
-                used_percent: None,
-                categories: None,
-                saved_tokens: 0,
-                sources: vec![projected.clone()],
-                backtrack_points: 0,
-            },
-            tokens: crate::dashboard_server::DashboardTokens {
-                session_total: None,
-                last_turn: None,
-            },
-            activity: crate::dashboard_server::DashboardActivity {
-                current: None,
-                recent: Vec::new(),
-                automatic_pruning_enabled: None,
-            },
-        })
-        .expect("serialize dashboard snapshot");
+    #[test]
+    fn manual_memory_dashboard_projection_preserves_cached_phase_truth() {
+        let admitted = manual_status(
+            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted,
+            8_000,
+            8_000,
+            true,
+        );
+        let ready = dashboard_manual_memory_projection(
+            crate::chatwidget::ManualMemoryPhase::Ready,
+            Some(&admitted),
+            None,
+            None,
+        );
+        assert_eq!(
+            ready,
+            crate::dashboard_server::DashboardManualMemory {
+                phase: crate::dashboard_server::DashboardManualMemoryPhase::Ready,
+                state: Some(crate::dashboard_server::DashboardManualMemoryState::Admitted),
+                request_chars_if_admitted: Some(8_000),
+                eligible_chars_now: Some(8_000),
+                limit_chars: Some(8_000),
+                truncated: Some(true),
+                unavailable_reason: None,
+                admission_pending: false,
+            }
+        );
 
-        assert_eq!(projected.name, "secret-plan.md");
-        assert_eq!(projected.category, "files");
-        assert!(!serialized.contains(absolute_path));
-        assert!(!serialized.contains("/home/private-user"));
+        let ready_ignores_stale_pending_admission = dashboard_manual_memory_projection(
+            crate::chatwidget::ManualMemoryPhase::Ready,
+            Some(&admitted),
+            None,
+            Some(crate::app_event::ManualMemoryMutation::Admission { admitted: false }),
+        );
+        assert!(!ready_ignores_stale_pending_admission.admission_pending);
+
+        let loading = dashboard_manual_memory_projection(
+            crate::chatwidget::ManualMemoryPhase::Loading,
+            Some(&admitted),
+            Some(crate::app_event::ManualMemoryUnavailableReason::MemoryUnreadable),
+            Some(crate::app_event::ManualMemoryMutation::Admission { admitted: false }),
+        );
+        assert_eq!(
+            loading,
+            crate::dashboard_server::DashboardManualMemory {
+                admission_pending: true,
+                ..crate::dashboard_server::DashboardManualMemory::loading()
+            }
+        );
+
+        let creating = dashboard_manual_memory_projection(
+            crate::chatwidget::ManualMemoryPhase::Creating,
+            Some(&manual_status(
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing,
+                0,
+                0,
+                false,
+            )),
+            None,
+            Some(crate::app_event::ManualMemoryMutation::Create),
+        );
+        assert_eq!(
+            creating.phase,
+            crate::dashboard_server::DashboardManualMemoryPhase::Creating
+        );
+        assert_eq!(
+            creating.state,
+            Some(crate::dashboard_server::DashboardManualMemoryState::Missing)
+        );
+        assert_eq!(creating.eligible_chars_now, Some(0));
+        assert!(!creating.admission_pending);
+
+        let unbound_loading = dashboard_manual_memory_projection(
+            crate::chatwidget::ManualMemoryPhase::Loading,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            unbound_loading,
+            crate::dashboard_server::DashboardManualMemory::loading()
+        );
+    }
+
+    #[test]
+    fn manual_memory_dashboard_projection_maps_all_sanitized_unavailable_reasons() {
+        for (reason, expected) in [
+            (
+                crate::app_event::ManualMemoryUnavailableReason::AdmissionUnavailable,
+                crate::dashboard_server::DashboardManualMemoryUnavailableReason::AdmissionUnavailable,
+            ),
+            (
+                crate::app_event::ManualMemoryUnavailableReason::MemoryUnreadable,
+                crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryUnreadable,
+            ),
+            (
+                crate::app_event::ManualMemoryUnavailableReason::InvalidUtf8,
+                crate::dashboard_server::DashboardManualMemoryUnavailableReason::InvalidUtf8,
+            ),
+            (
+                crate::app_event::ManualMemoryUnavailableReason::MemoryPathNotFile,
+                crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryPathNotFile,
+            ),
+            (
+                crate::app_event::ManualMemoryUnavailableReason::SourcesUnavailable,
+                crate::dashboard_server::DashboardManualMemoryUnavailableReason::SourcesUnavailable,
+            ),
+            (
+                crate::app_event::ManualMemoryUnavailableReason::WorkerFailed,
+                crate::dashboard_server::DashboardManualMemoryUnavailableReason::WorkerFailed,
+            ),
+        ] {
+            let projected = dashboard_manual_memory_projection(
+                crate::chatwidget::ManualMemoryPhase::Unavailable,
+                None,
+                Some(reason),
+                Some(crate::app_event::ManualMemoryMutation::Admission { admitted: true }),
+            );
+            assert_eq!(
+                projected,
+                crate::dashboard_server::DashboardManualMemory {
+                    phase: crate::dashboard_server::DashboardManualMemoryPhase::Unavailable,
+                    unavailable_reason: Some(expected),
+                    ..crate::dashboard_server::DashboardManualMemory::loading()
+                }
+            );
+        }
     }
 
     fn filled_cells(lines: &[Line<'static>]) -> usize {

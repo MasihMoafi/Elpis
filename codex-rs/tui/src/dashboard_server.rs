@@ -51,6 +51,8 @@ pub(crate) struct DashboardContext {
     pub(crate) saved_tokens: u64,
     pub(crate) sources: Vec<DashboardSource>,
     pub(crate) backtrack_points: usize,
+    #[serde(default)]
+    pub(crate) manual_memory: Option<DashboardManualMemory>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -66,6 +68,62 @@ pub(crate) struct DashboardSource {
     pub(crate) category: String,
     pub(crate) estimated_tokens: u64,
     pub(crate) admitted: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardManualMemory {
+    pub(crate) phase: DashboardManualMemoryPhase,
+    pub(crate) state: Option<DashboardManualMemoryState>,
+    pub(crate) request_chars_if_admitted: Option<usize>,
+    pub(crate) eligible_chars_now: Option<usize>,
+    pub(crate) limit_chars: Option<usize>,
+    pub(crate) truncated: Option<bool>,
+    pub(crate) unavailable_reason: Option<DashboardManualMemoryUnavailableReason>,
+    #[serde(default)]
+    pub(crate) admission_pending: bool,
+}
+
+impl DashboardManualMemory {
+    pub(crate) fn loading() -> Self {
+        Self {
+            phase: DashboardManualMemoryPhase::Loading,
+            state: None,
+            request_chars_if_admitted: None,
+            eligible_chars_now: None,
+            limit_chars: None,
+            truncated: None,
+            unavailable_reason: None,
+            admission_pending: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DashboardManualMemoryPhase {
+    Loading,
+    Ready,
+    Creating,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DashboardManualMemoryState {
+    Missing,
+    AvailableNotAdmitted,
+    Admitted,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DashboardManualMemoryUnavailableReason {
+    AdmissionUnavailable,
+    MemoryUnreadable,
+    InvalidUtf8,
+    MemoryPathNotFile,
+    SourcesUnavailable,
+    WorkerFailed,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -145,6 +203,40 @@ pub(crate) enum DashboardCostAvailability {
     ObservationDropped,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    // Capture call attempts before semantic de-duplication so same-state lifecycle rebinds remain
+    // observable without sharing the process-global dashboard slot across parallel tests.
+    static DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE:
+        std::cell::RefCell<Option<Vec<Option<DashboardManualMemory>>>> =
+            const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn begin_manual_memory_publication_capture_for_test() {
+    DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE.with(|capture| {
+        *capture.borrow_mut() = Some(Vec::new());
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn take_manual_memory_publication_capture_for_test(
+) -> Vec<Option<DashboardManualMemory>> {
+    DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE.with(|capture| {
+        capture.borrow_mut().take().unwrap_or_default()
+    })
+}
+
+#[cfg(test)]
+fn capture_manual_memory_publication_for_test(context: &DashboardContext) {
+    DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE.with(|capture| {
+        let mut capture = capture.borrow_mut();
+        if let Some(memories) = capture.as_mut() {
+            memories.push(context.manual_memory.clone());
+        }
+    });
+}
+
 static DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
 static SERVER_URL: Mutex<Option<String>> = Mutex::new(None);
 
@@ -153,6 +245,8 @@ pub(crate) fn publish_state(
     tokens: DashboardTokens,
     activity: DashboardActivityState,
 ) -> bool {
+    #[cfg(test)]
+    capture_manual_memory_publication_for_test(&context);
     let Ok(mut slot) = DASHBOARD_STATE.lock() else {
         return false;
     };

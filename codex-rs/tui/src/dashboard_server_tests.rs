@@ -36,6 +36,24 @@ fn context() -> DashboardContext {
             admitted: true,
         }],
         backtrack_points: 2,
+        manual_memory: None,
+    }
+}
+
+fn ready_manual_memory(state: DashboardManualMemoryState) -> DashboardManualMemory {
+    DashboardManualMemory {
+        phase: DashboardManualMemoryPhase::Ready,
+        state: Some(state),
+        request_chars_if_admitted: Some(8_000),
+        eligible_chars_now: Some(if state == DashboardManualMemoryState::Admitted {
+            8_000
+        } else {
+            0
+        }),
+        limit_chars: Some(8_000),
+        truncated: Some(true),
+        unavailable_reason: None,
+        admission_pending: false,
     }
 }
 
@@ -279,6 +297,155 @@ fn context_token_and_reset_changes_each_increment_once() {
 }
 
 #[test]
+fn manual_memory_changes_increment_revision_without_churning_other_facts() {
+    let mut slot = None;
+    let mut dashboard_context = context();
+    dashboard_context.manual_memory = Some(DashboardManualMemory {
+        phase: DashboardManualMemoryPhase::Loading,
+        state: None,
+        request_chars_if_admitted: None,
+        eligible_chars_now: None,
+        limit_chars: None,
+        truncated: None,
+        unavailable_reason: None,
+        admission_pending: false,
+    });
+    assert!(publish_state_into(
+        &mut slot,
+        dashboard_context.clone(),
+        tokens(),
+        empty_activity(),
+        1_000,
+    ));
+    assert_eq!(slot.as_ref().map(|state| state.revision), Some(1));
+
+    dashboard_context.manual_memory = Some(ready_manual_memory(
+        DashboardManualMemoryState::Admitted,
+    ));
+    assert!(publish_state_into(
+        &mut slot,
+        dashboard_context.clone(),
+        tokens(),
+        empty_activity(),
+        2_000,
+    ));
+    assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
+
+    dashboard_context.manual_memory = Some(DashboardManualMemory {
+        phase: DashboardManualMemoryPhase::Loading,
+        admission_pending: true,
+        ..DashboardManualMemory::loading()
+    });
+    assert!(publish_state_into(
+        &mut slot,
+        dashboard_context.clone(),
+        tokens(),
+        empty_activity(),
+        3_000,
+    ));
+    assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
+
+    dashboard_context.manual_memory = Some(DashboardManualMemory {
+        phase: DashboardManualMemoryPhase::Unavailable,
+        unavailable_reason: Some(DashboardManualMemoryUnavailableReason::WorkerFailed),
+        ..DashboardManualMemory::loading()
+    });
+    assert!(publish_state_into(
+        &mut slot,
+        dashboard_context,
+        tokens(),
+        empty_activity(),
+        4_000,
+    ));
+    assert_eq!(slot.as_ref().map(|state| state.revision), Some(4));
+}
+
+#[test]
+fn manual_memory_wire_is_additive_snake_case_and_path_free() {
+    let mut dashboard_context = context();
+    dashboard_context.manual_memory = Some(ready_manual_memory(
+        DashboardManualMemoryState::AvailableNotAdmitted,
+    ));
+    let mut slot = None;
+    assert!(publish_state_into(
+        &mut slot,
+        dashboard_context,
+        tokens(),
+        empty_activity(),
+        1_000,
+    ));
+
+    let value = serde_json::to_value(slot.expect("typed state")).expect("serialize state");
+    let memory = &value["context"]["manual_memory"];
+    assert_keys(
+        memory,
+        &[
+            "admission_pending",
+            "eligible_chars_now",
+            "limit_chars",
+            "phase",
+            "request_chars_if_admitted",
+            "state",
+            "truncated",
+            "unavailable_reason",
+        ],
+    );
+    assert_eq!(memory["phase"], "ready");
+    assert_eq!(memory["state"], "available_not_admitted");
+    assert_eq!(memory["request_chars_if_admitted"], 8_000);
+    assert_eq!(memory["eligible_chars_now"], 0);
+    assert_eq!(memory["limit_chars"], 8_000);
+    assert_eq!(memory["truncated"], true);
+    assert_eq!(memory["unavailable_reason"], Value::Null);
+    assert_eq!(memory["admission_pending"], false);
+
+    let serialized = value.to_string();
+    for forbidden in [
+        "/home/private-user/.elpis/memories/MEMORY.md",
+        "PLANTED_MEMORY_BODY",
+        "raw admission parse failure",
+        "memory_path",
+        "body",
+        "bytes",
+    ] {
+        assert!(!serialized.contains(forbidden), "leaked {forbidden}");
+    }
+}
+
+#[test]
+fn every_manual_memory_unavailable_reason_has_a_distinct_wire_value() {
+    for (reason, expected) in [
+        (
+            DashboardManualMemoryUnavailableReason::AdmissionUnavailable,
+            "admission_unavailable",
+        ),
+        (
+            DashboardManualMemoryUnavailableReason::MemoryUnreadable,
+            "memory_unreadable",
+        ),
+        (
+            DashboardManualMemoryUnavailableReason::InvalidUtf8,
+            "invalid_utf8",
+        ),
+        (
+            DashboardManualMemoryUnavailableReason::MemoryPathNotFile,
+            "memory_path_not_file",
+        ),
+        (
+            DashboardManualMemoryUnavailableReason::SourcesUnavailable,
+            "sources_unavailable",
+        ),
+        (
+            DashboardManualMemoryUnavailableReason::WorkerFailed,
+            "worker_failed",
+        ),
+    ] {
+        let value = serde_json::to_value(reason).expect("serialize reason");
+        assert_eq!(value, expected);
+    }
+}
+
+#[test]
 fn activity_wire_mapping_is_snake_case_and_checked() {
     let mut slot = None;
     assert!(publish_state_into(
@@ -464,6 +631,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
         &[
             "backtrack_points",
             "categories",
+            "manual_memory",
             "model",
             "saved_tokens",
             "sources",
@@ -480,6 +648,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
     assert_eq!(value["context"]["used_tokens"], Value::Null);
     assert_eq!(value["context"]["used_percent"], Value::Null);
     assert_eq!(value["context"]["categories"], Value::Null);
+    assert_eq!(value["context"]["manual_memory"], Value::Null);
     assert_eq!(value["tokens"]["session_total"], Value::Null);
     assert_eq!(value["tokens"]["last_turn"], Value::Null);
     assert_eq!(
@@ -683,6 +852,7 @@ fn activity_fixture_round_trips_only_typed_safe_facts() {
     let envelope: DashboardEnvelope =
         serde_json::from_str(ACTIVITY_FIXTURE).expect("fixture matches dashboard wire");
     assert_eq!(envelope.state.schema_version, 1);
+    assert_eq!(envelope.state.context.manual_memory, None);
     assert_eq!(envelope.state.activity.recent.len(), 2);
     assert_eq!(
         envelope
@@ -775,6 +945,10 @@ fn dashboard_asset_exposes_truthful_activity_and_existing_views() {
         "freshness-status",
         "ctx-used",
         "ctx-bar",
+        "manual-memory-card",
+        "manual-memory-state",
+        "manual-memory-summary",
+        "manual-memory-detail",
         "src-rows",
         "tok-input",
         "tok-last",
@@ -798,6 +972,11 @@ fn dashboard_asset_exposes_truthful_activity_and_existing_views() {
         "Experimental · On",
         "Experimental · Off",
         "Experimental · Unavailable",
+        "Manual memory",
+        "Available — not admitted",
+        "Admission update pending",
+        "Memory source discovery is unavailable",
+        "The memory status worker failed",
     ] {
         assert!(INDEX_HTML.contains(text), "missing copy: {text}");
     }
@@ -833,8 +1012,65 @@ fn dashboard_asset_has_no_dynamic_html_css_network_or_storage_sink() {
         "const STATUS_LABELS",
         "const COST_LABELS",
         "const CATEGORY_CLASSES",
+        "const MEMORY_STATE_LABELS",
+        "const MEMORY_REASON_LABELS",
+        "function renderManualMemory(memory)",
     ] {
         assert!(INDEX_HTML.contains(safe), "missing safe DOM guard: {safe}");
+    }
+}
+
+#[test]
+fn dashboard_asset_renders_manual_memory_with_closed_safe_mappings() {
+    for source in [
+        "const MEMORY_PHASE_LABELS = Object.freeze({",
+        "const MEMORY_STATE_LABELS = Object.freeze({",
+        "const MEMORY_REASON_LABELS = Object.freeze({",
+        "admission_unavailable: 'Memory admission status is unavailable'",
+        "memory_unreadable: 'The memory file is unreadable'",
+        "invalid_utf8: 'The memory file is not valid UTF-8'",
+        "memory_path_not_file: 'The configured memory path is not a file'",
+        "sources_unavailable: 'Memory source discovery is unavailable'",
+        "worker_failed: 'The memory status worker failed'",
+        "const stateLabel = ownValue(MEMORY_STATE_LABELS, memory.state)",
+        "const reasonLabel = ownValue(MEMORY_REASON_LABELS, memory.unavailable_reason)",
+        "memory.admission_pending === true",
+        "renderManualMemory(context.manual_memory)",
+        "setText('manual-memory-summary'",
+        "setText('manual-memory-detail'",
+    ] {
+        assert!(INDEX_HTML.contains(source), "missing memory guard: {source}");
+    }
+
+    let renderer = INDEX_HTML
+        .split("function renderManualMemory(memory) {")
+        .nth(1)
+        .and_then(|tail| tail.split("\n}\n\nfunction renderContext").next())
+        .expect("manual memory renderer");
+    for forbidden in [
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "memory.path",
+        "memory.body",
+        "memory.bytes",
+        "unavailable_reason +",
+        "memory.state +",
+        "stateElement.className = 'memory-state tone-ember'",
+    ] {
+        assert!(!renderer.contains(forbidden), "unsafe memory renderer: {forbidden}");
+    }
+
+    let observation = INDEX_HTML
+        .split("<div class=\"memory-observation\"")
+        .nth(1)
+        .and_then(|tail| tail.split('>').next())
+        .expect("manual memory observation");
+    for repeated_announcement in ["role=\"status\"", "aria-live", "aria-atomic"] {
+        assert!(
+            !observation.contains(repeated_announcement),
+            "polling memory row must stay quiet: {repeated_announcement}"
+        );
     }
 }
 
@@ -1118,7 +1354,9 @@ fn dashboard_asset_uses_closed_semantic_tones_for_turn_statuses() {
         assert!(INDEX_HTML.contains(source), "missing status tone guard: {source}");
     }
 
-    assert_eq!(INDEX_HTML.matches("var(--verdigris)").count(), 2);
+    // The third verdigris use is the positive admitted-memory fact; freshness and admitted
+    // source text retain the two original uses.
+    assert_eq!(INDEX_HTML.matches("var(--verdigris)").count(), 3);
     for unsafe_class in [
         "element.className = 'turn-primary ' + status",
         "element.className = `turn-primary ${status}`",

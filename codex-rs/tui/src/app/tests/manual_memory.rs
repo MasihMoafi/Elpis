@@ -28,6 +28,152 @@ fn ready_with_state(
     }
 }
 
+fn begin_dashboard_publication_capture() {
+    crate::dashboard_server::begin_manual_memory_publication_capture_for_test();
+}
+
+fn take_single_manual_memory_publication() -> crate::dashboard_server::DashboardManualMemory {
+    let mut memories = crate::dashboard_server::take_manual_memory_publication_capture_for_test();
+    assert_eq!(
+        memories.len(),
+        1,
+        "expected exactly one dashboard publication"
+    );
+    memories
+        .pop()
+        .flatten()
+        .expect("runtime dashboard publication must include manual memory")
+}
+
+#[tokio::test]
+async fn manual_memory_app_transitions_publish_each_dashboard_state() {
+    use crate::dashboard_server::DashboardManualMemoryPhase as DashboardPhase;
+    use crate::dashboard_server::DashboardManualMemoryState as DashboardState;
+
+    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let primary_thread_id = configured_app_ids(&mut app);
+
+    begin_dashboard_publication_capture();
+    assert!(app.activate_manual_memory_view());
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Loading);
+    assert_eq!(memory.state, None);
+    assert!(!memory.admission_pending);
+    let origin = app
+        .chat_widget
+        .manual_memory_bound_target()
+        .cloned()
+        .expect("initial loading target");
+
+    begin_dashboard_publication_capture();
+    assert_eq!(
+        app.finish_manual_memory_status(
+            &origin,
+            ready_with_state(
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::AvailableNotAdmitted,
+            ),
+        ),
+        Some(false)
+    );
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Ready);
+    assert_eq!(memory.state, Some(DashboardState::AvailableNotAdmitted));
+    assert!(!memory.admission_pending);
+
+    assert!(app.chat_widget.begin_manual_memory_admission(true));
+    begin_dashboard_publication_capture();
+    assert!(app.claim_manual_memory_mutation(
+        &origin,
+        ManualMemoryMutation::Admission { admitted: true },
+    ));
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Loading);
+    assert_eq!(memory.state, None);
+    assert!(memory.admission_pending);
+
+    let other_thread_id = ThreadId::new();
+    assert_ne!(other_thread_id, primary_thread_id);
+    app.active_thread_id = Some(other_thread_id);
+    begin_dashboard_publication_capture();
+    assert!(app.activate_manual_memory_view());
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Loading);
+    assert!(memory.admission_pending);
+    let rebound = app
+        .chat_widget
+        .manual_memory_bound_target()
+        .cloned()
+        .expect("same-storage rebound target");
+    assert_eq!(rebound.storage, origin.storage);
+    assert_eq!(rebound.view.displayed_thread_id, other_thread_id);
+
+    begin_dashboard_publication_capture();
+    let disposition = app.record_manual_memory_mutation_completion(
+        &origin,
+        ManualMemoryMutation::Admission { admitted: true },
+        ManualMemoryMutationCompletion::Succeeded,
+    );
+    let ManualMemoryCompletionDisposition::Refresh(fresh) = disposition else {
+        panic!("successful admission must publish and force a fresh status read");
+    };
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Loading);
+    assert!(memory.admission_pending);
+
+    app.manual_memory_status.in_flight = Some(fresh.clone());
+    begin_dashboard_publication_capture();
+    assert_eq!(
+        app.finish_manual_memory_status(
+            &fresh,
+            ready_with_state(
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted,
+            ),
+        ),
+        Some(false)
+    );
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Ready);
+    assert_eq!(memory.state, Some(DashboardState::Admitted));
+    assert!(!memory.admission_pending);
+
+    let ready_target = app
+        .chat_widget
+        .manual_memory_bound_target()
+        .cloned()
+        .expect("ready target");
+    app.chat_widget.request_manual_memory_status_refresh();
+    begin_dashboard_publication_capture();
+    assert!(app.begin_manual_memory_refresh(&ready_target));
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Loading);
+    assert!(!memory.admission_pending);
+    let unavailable_target = app
+        .chat_widget
+        .manual_memory_bound_target()
+        .cloned()
+        .expect("refresh target");
+
+    begin_dashboard_publication_capture();
+    assert_eq!(
+        app.finish_manual_memory_status(
+            &unavailable_target,
+            ManualMemoryStatusCompletion::Unavailable(
+                ManualMemoryUnavailableReason::SourcesUnavailable,
+            ),
+        ),
+        Some(false)
+    );
+    let memory = take_single_manual_memory_publication();
+    assert_eq!(memory.phase, DashboardPhase::Unavailable);
+    assert_eq!(
+        memory.unavailable_reason,
+        Some(
+            crate::dashboard_server::DashboardManualMemoryUnavailableReason::SourcesUnavailable
+        )
+    );
+    assert!(!memory.admission_pending);
+}
+
 #[tokio::test]
 async fn manual_memory_create_claim_is_synchronous_and_completion_forces_a_new_epoch() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
@@ -752,6 +898,7 @@ async fn manual_memory_thread_settings_cwd_transition_rebinds_and_clears_the_cac
             developer_instructions: None,
         },
     };
+    begin_dashboard_publication_capture();
     app.handle_thread_event_now(ThreadBufferedEvent::Notification(
         ServerNotification::ThreadSettingsUpdated(ThreadSettingsUpdatedNotification {
             thread_id: thread_id.to_string(),
@@ -774,6 +921,13 @@ async fn manual_memory_thread_settings_cwd_transition_rebinds_and_clears_the_cac
             },
         }),
     ));
+    let published = take_single_manual_memory_publication();
+    assert_eq!(
+        published.phase,
+        crate::dashboard_server::DashboardManualMemoryPhase::Loading
+    );
+    assert_eq!(published.state, None);
+    assert!(!published.admission_pending);
 
     let rebound = app
         .chat_widget
