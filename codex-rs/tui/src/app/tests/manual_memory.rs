@@ -1,5 +1,6 @@
 use super::*;
 use crate::chatwidget::ManualMemoryPhase;
+use pretty_assertions::assert_eq;
 
 fn configured_app_ids(app: &mut App) -> ThreadId {
     let thread_id = ThreadId::new();
