@@ -1115,13 +1115,13 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::ToolSuggest,
         key: "tool_suggest",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::Plugins,
         key: "plugins",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::PluginHooks,
@@ -1163,7 +1163,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::RemotePlugin,
         key: "remote_plugin",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::PluginSharing,
