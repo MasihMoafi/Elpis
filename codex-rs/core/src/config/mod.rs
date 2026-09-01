@@ -768,9 +768,6 @@ pub struct Config {
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
-    /// Use Elpis's conservative deletion-first behavior for manual compaction.
-    pub elpis_compact_cleanup: bool,
-
     /// Optional external notifier command. When set, Codex will spawn this
     /// program after each completed *turn* (i.e. when the agent finishes
     /// processing a user submission). The value must be the full command
@@ -4001,7 +3998,6 @@ impl Config {
             personality,
             developer_instructions,
             compact_prompt,
-            elpis_compact_cleanup: false,
             include_permissions_instructions,
             include_apps_instructions,
             include_collaboration_mode_instructions,
@@ -4331,6 +4327,11 @@ impl Config {
 
     pub fn bundled_skills_enabled(&self) -> bool {
         crate::skills::service::bundled_skills_enabled_from_stack(&self.config_layer_stack)
+    }
+
+    pub fn dev_rule_roots(&self) -> Vec<AbsolutePathBuf> {
+        crate::skills::service::skills_config_from_stack(&self.config_layer_stack)
+            .dev_rule_roots
     }
 
     /// Returns whether effective requirements allow selecting a concrete profile.

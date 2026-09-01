@@ -34,6 +34,26 @@ fn guardian_auto_review_is_opt_in() {
 }
 
 #[test]
+fn automatic_context_pruning_is_experimental_and_opt_in() {
+    assert_eq!(
+        Feature::AutomaticContextPruning.stage(),
+        Stage::Experimental {
+            name: "Automatic pruning — Experimental",
+            menu_description: "Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.",
+            announcement: "",
+        }
+    );
+    assert_eq!(
+        Feature::AutomaticContextPruning.default_enabled(),
+        false
+    );
+    assert_eq!(
+        feature_for_key("automatic_context_pruning"),
+        Some(Feature::AutomaticContextPruning)
+    );
+}
+
+#[test]
 fn default_enabled_features_are_stable() {
     for spec in crate::FEATURES {
         if spec.default_enabled {

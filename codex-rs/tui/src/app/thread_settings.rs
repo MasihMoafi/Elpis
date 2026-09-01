@@ -42,6 +42,22 @@ impl App {
         })
     }
 
+    pub(super) fn active_thread_provider_model_setting_update_params(
+        &self,
+        model: String,
+        model_provider: String,
+        effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+    ) -> Option<ThreadSettingsUpdateParams> {
+        let mut params =
+            self.active_thread_model_setting_update_params(model, Some(model_provider))?;
+        // Choosing an explicit provider/model is the inverse of automatic routing. Build the
+        // server update before mutating local widget state so a rejected request stays atomic,
+        // but still tell the server to disable routing as part of that same update.
+        params.automatic_model_routing = Some(false);
+        params.effort = effort;
+        Some(params)
+    }
+
     pub(super) async fn sync_active_thread_reasoning_setting(
         &mut self,
         app_server: &mut AppServerSession,
@@ -163,14 +179,18 @@ impl App {
         &mut self,
         app_server: &mut AppServerSession,
         params: ThreadSettingsUpdateParams,
-    ) {
+    ) -> bool {
         if !thread_settings_update_has_changes(&params) {
-            return;
+            return true;
         }
-        if let Err(err) = app_server.thread_settings_update(params).await {
-            tracing::warn!("failed to update app-server thread settings from TUI: {err}");
-            self.chat_widget
-                .add_error_message(format!("Failed to update thread settings: {err}"));
+        match app_server.thread_settings_update(params).await {
+            Ok(()) => true,
+            Err(err) => {
+                tracing::warn!("failed to update app-server thread settings from TUI: {err}");
+                self.chat_widget
+                    .add_error_message(format!("Failed to update thread settings: {err}"));
+                false
+            }
         }
     }
 }

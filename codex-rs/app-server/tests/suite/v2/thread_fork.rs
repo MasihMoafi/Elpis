@@ -929,6 +929,18 @@ async fn thread_fork_can_exclude_turns_and_skip_restored_token_usage() -> Result
     assert_eq!(thread.preview, "Saved user message");
     assert!(thread.turns.is_empty());
 
+    let smart_prune_note = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("thread/smartPrune/updated"),
+    )
+    .await??;
+    let parsed: ServerNotification = smart_prune_note.try_into()?;
+    let ServerNotification::ThreadSmartPruneUpdated(notification) = parsed else {
+        panic!("expected thread/smartPrune/updated notification");
+    };
+    assert_eq!(notification.thread_id, thread.id);
+    assert!(!notification.smart_prune.enabled);
+
     let note = timeout(
         DEFAULT_READ_TIMEOUT,
         mcp.read_stream_until_notification_message("thread/tokenUsage/updated"),

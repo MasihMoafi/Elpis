@@ -461,7 +461,6 @@ impl ConfigDocument {
         if matches!(&selector, SkillConfigSelector::Name(name) if name.is_empty()) {
             return false;
         }
-        let mut remove_skills_table = false;
         let mut mutated = false;
 
         {
@@ -469,9 +468,6 @@ impl ConfigDocument {
             let skills_item = match root.get_mut("skills") {
                 Some(item) => item,
                 None => {
-                    if enabled {
-                        return false;
-                    }
                     root.insert(
                         "skills",
                         TomlItem::Table(document_helpers::new_implicit_table()),
@@ -496,9 +492,6 @@ impl ConfigDocument {
             let config_item = match skills_table.get_mut("config") {
                 Some(item) => item,
                 None => {
-                    if enabled {
-                        return false;
-                    }
                     skills_table.insert("config", TomlItem::ArrayOfTables(ArrayOfTables::new()));
                     let Some(item) = skills_table.get_mut("config") else {
                         return false;
@@ -524,22 +517,11 @@ impl ConfigDocument {
                     .map(|_| idx)
             });
 
-            if enabled {
-                if let Some(index) = existing_index {
-                    overrides.remove(index);
-                    mutated = true;
-                    if overrides.is_empty() {
-                        skills_table.remove("config");
-                        if skills_table.is_empty() {
-                            remove_skills_table = true;
-                        }
-                    }
-                }
-            } else if let Some(index) = existing_index {
+            if let Some(index) = existing_index {
                 for (idx, table) in overrides.iter_mut().enumerate() {
                     if idx == index {
                         write_skill_config_selector(table, &selector);
-                        table["enabled"] = value(false);
+                        table["enabled"] = value(enabled);
                         mutated = true;
                         break;
                     }
@@ -548,15 +530,10 @@ impl ConfigDocument {
                 let mut entry = TomlTable::new();
                 entry.set_implicit(false);
                 write_skill_config_selector(&mut entry, &selector);
-                entry["enabled"] = value(false);
+                entry["enabled"] = value(enabled);
                 overrides.push(entry);
                 mutated = true;
             }
-        }
-
-        if remove_skills_table {
-            let root = self.doc.as_table_mut();
-            root.remove("skills");
         }
 
         mutated

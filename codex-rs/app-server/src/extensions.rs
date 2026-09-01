@@ -19,17 +19,23 @@ use codex_extension_api::ExtensionEventSink;
 use codex_extension_api::ExtensionFuture;
 use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::ExtensionRegistryBuilder;
-use codex_extension_api::PromptFragment;
+use codex_extension_api::PreviousWorldStateSection;
+use codex_extension_api::RenderedWorldStateFragment;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::ThreadStartInput;
+use codex_extension_api::WorldStateContributionInput;
+use codex_extension_api::WorldStateSectionContribution;
 use codex_goal_extension::GoalService;
 use codex_login::AuthManager;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use codex_rollout::state_db::StateDbHandle;
 use codex_thread_store::ThreadStore;
+use serde_json::json;
 
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::thread_state::ThreadListenerCommand;
@@ -107,39 +113,99 @@ where
 #[derive(Default)]
 struct ElpisContinuityExtension;
 
+const ELPIS_CONTINUITY_WORLD_STATE_ID: &str = "elpis_continuity";
+const GUARDIAN_REVIEWER_NAME: &str = "guardian";
+
 #[derive(Clone)]
 struct ElpisContinuityConfig {
     memories_root: Option<codex_utils_absolute_path::AbsolutePathBuf>,
     cwd: codex_utils_absolute_path::AbsolutePathBuf,
+    dev_rule_roots: Vec<codex_utils_absolute_path::AbsolutePathBuf>,
+    eligible: bool,
+}
+
+#[cfg(test)]
+#[test]
+fn guardian_reviewer_sessions_are_ineligible_for_elpis_continuity() {
+    assert!(elpis_continuity_is_eligible(&SessionSource::Cli));
+    assert!(!elpis_continuity_is_eligible(&SessionSource::SubAgent(
+        SubAgentSource::Other(GUARDIAN_REVIEWER_NAME.to_string())
+    )));
+}
+
+#[cfg(test)]
+#[test]
+fn elpis_continuity_matcher_requires_the_complete_generator_prefix() {
+    let generated = format!(
+        "{}[MEMORY.md (/tmp/MEMORY.md)]\n\naccepted memory",
+        codex_core::elpis_context::ELPIS_CONTINUITY_PROMPT_PREFIX
+    );
+    assert!(is_elpis_continuity_fragment("developer", &generated));
+    assert!(!is_elpis_continuity_fragment(
+        "developer",
+        "## Elpis Admitted Context\n\nneighboring developer content"
+    ));
+    assert!(!is_elpis_continuity_fragment("user", &generated));
 }
 
 impl ElpisContinuityConfig {
-    fn from_config(config: &Config) -> Self {
+    fn from_config(config: &Config, eligible: bool) -> Self {
         Self {
             memories_root: Some(config.memory_dir.clone()),
             cwd: config.cwd.clone(),
+            dev_rule_roots: config.dev_rule_roots(),
+            eligible,
         }
     }
 }
 
 impl ContextContributor for ElpisContinuityExtension {
-    fn contribute_thread_context<'a>(
+    fn contribute_world_state<'a>(
         &'a self,
-        _session_store: &'a ExtensionData,
-        thread_store: &'a ExtensionData,
-    ) -> ExtensionFuture<'a, Vec<PromptFragment>> {
+        input: WorldStateContributionInput<'a>,
+    ) -> ExtensionFuture<'a, Vec<WorldStateSectionContribution>> {
         Box::pin(async move {
-            let Some(config) = thread_store.get::<ElpisContinuityConfig>() else {
+            let Some(config) = input.thread_store.get::<ElpisContinuityConfig>() else {
                 return Vec::new();
             };
-            codex_core::elpis_context::build_continuity_prompt(
+            if !config.eligible {
+                return Vec::new();
+            }
+            let body = codex_core::elpis_context::build_continuity_prompt_with_dev_rule_roots(
                 config.memories_root.as_ref().map(|root| root.as_path()),
                 config.cwd.as_path(),
+                &config.dev_rule_roots,
             )
-            .await
-            .map(PromptFragment::separate_developer)
-            .into_iter()
-            .collect()
+            .await;
+            let has_model_visible_content = body.is_some();
+            let snapshot_body = body.clone();
+            vec![
+                WorldStateSectionContribution::new(
+                    ELPIS_CONTINUITY_WORLD_STATE_ID,
+                    json!({ "body": snapshot_body }),
+                    move |previous| {
+                        if matches!(
+                            previous,
+                            PreviousWorldStateSection::Known(previous)
+                                if previous.get("body").and_then(serde_json::Value::as_str)
+                                    == body.as_deref()
+                        ) {
+                            return None;
+                        }
+                        body.as_ref().map(|body| {
+                            RenderedWorldStateFragment::new(
+                                "developer",
+                                ("", ""),
+                                body.clone(),
+                            )
+                        })
+                    },
+                )
+                .with_retained_fragment_matcher(|role, text| {
+                    is_elpis_continuity_fragment(role, text)
+                })
+                .with_single_history_slot(has_model_visible_content),
+            ]
         })
     }
 }
@@ -150,9 +216,10 @@ impl ThreadLifecycleContributor<Config> for ElpisContinuityExtension {
         input: ThreadStartInput<'a, Config>,
     ) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
-            input
-                .thread_store
-                .insert(ElpisContinuityConfig::from_config(input.config));
+            input.thread_store.insert(ElpisContinuityConfig::from_config(
+                input.config,
+                elpis_continuity_is_eligible(input.session_source),
+            ));
         })
     }
 }
@@ -165,8 +232,26 @@ impl ConfigContributor<Config> for ElpisContinuityExtension {
         _previous_config: &Config,
         new_config: &Config,
     ) {
-        thread_store.insert(ElpisContinuityConfig::from_config(new_config));
+        let Some(previous) = thread_store.get::<ElpisContinuityConfig>() else {
+            return;
+        };
+        thread_store.insert(ElpisContinuityConfig::from_config(
+            new_config,
+            previous.eligible,
+        ));
     }
+}
+
+fn elpis_continuity_is_eligible(session_source: &SessionSource) -> bool {
+    !matches!(
+        session_source,
+        SessionSource::SubAgent(SubAgentSource::Other(name)) if name == GUARDIAN_REVIEWER_NAME
+    )
+}
+
+fn is_elpis_continuity_fragment(role: &str, text: &str) -> bool {
+    role == "developer"
+        && text.starts_with(codex_core::elpis_context::ELPIS_CONTINUITY_PROMPT_PREFIX)
 }
 
 fn install_elpis_continuity(builder: &mut ExtensionRegistryBuilder<Config>) {

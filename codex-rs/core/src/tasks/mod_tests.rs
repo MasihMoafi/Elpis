@@ -1,4 +1,8 @@
 use super::TASK_COMPACT_METRIC;
+use super::TaskAbortRequest;
+use super::TaskCancellationBoundary;
+use super::TaskCompletion;
+use super::TaskCompletionOutcome;
 use super::emit_compact_metric;
 use super::emit_turn_network_proxy_metric;
 use codex_otel::MetricsClient;
@@ -15,6 +19,7 @@ use opentelemetry_sdk::metrics::data::MetricData;
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 fn test_session_telemetry() -> SessionTelemetry {
     let exporter = InMemoryMetricExporter::default();
@@ -148,5 +153,79 @@ fn emit_compact_metric_records_auto_local() {
             ("manual".to_string(), "false".to_string()),
             ("type".to_string(), "local".to_string()),
         ])
+    );
+}
+
+#[test]
+fn prune_commit_rearms_cancellation_for_the_next_pass() {
+    let boundary = TaskCancellationBoundary::default();
+
+    assert!(boundary.try_commit());
+    assert!(boundary.finish_commit());
+    assert!(boundary.try_cancel());
+}
+
+#[test]
+fn interrupt_during_prune_commit_stops_after_that_commit() {
+    let boundary = TaskCancellationBoundary::default();
+
+    assert!(boundary.try_commit());
+    assert!(!boundary.try_cancel());
+    assert!(!boundary.finish_commit());
+}
+
+#[tokio::test]
+async fn abnormal_task_completion_is_latched_for_late_waiters() {
+    let completion = Arc::new(TaskCompletion::default());
+    let guard = completion.guard();
+
+    drop(guard);
+
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Abnormal);
+    assert_eq!(completion.wait().await, TaskCompletionOutcome::Abnormal);
+}
+
+#[tokio::test]
+async fn requested_task_abort_is_not_misclassified_as_abnormal() {
+    let completion = Arc::new(TaskCompletion::default());
+    let guard = completion.guard();
+
+    assert_eq!(
+        completion.request_abort(),
+        TaskAbortRequest::Requested
+    );
+    drop(guard);
+
+    assert_eq!(
+        completion.wait().await,
+        TaskCompletionOutcome::IntentionalAbort
+    );
+}
+
+#[tokio::test]
+async fn clean_task_completion_wins_a_late_abort_request() {
+    let completion = Arc::new(TaskCompletion::default());
+    let guard = completion.guard();
+
+    guard.finish();
+
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Finished);
+    assert_eq!(completion.wait().await, TaskCompletionOutcome::Normal);
+}
+
+#[tokio::test]
+async fn clean_exit_after_an_abort_request_is_intentional_abort() {
+    let completion = Arc::new(TaskCompletion::default());
+    let guard = completion.guard();
+
+    assert_eq!(
+        completion.request_abort(),
+        TaskAbortRequest::Requested
+    );
+    guard.finish();
+
+    assert_eq!(
+        completion.wait().await,
+        TaskCompletionOutcome::IntentionalAbort
     );
 }

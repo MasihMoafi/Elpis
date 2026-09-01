@@ -92,12 +92,26 @@ impl ChatWidget {
     }
 
     pub(crate) fn open_experimental_popup(&mut self) {
-        let features = vec![ExperimentalFeatureItem {
+        let mut features = vec![ExperimentalFeatureItem {
             feature: Feature::PreventIdleSleep,
             name: "Keep computer awake".to_string(),
             description: "Prevent sleep while Elpis is working.".to_string(),
             enabled: self.config.features.enabled(Feature::PreventIdleSleep),
         }];
+        let feature = Feature::AutomaticContextPruning;
+        let stage = feature.stage();
+        features.push(ExperimentalFeatureItem {
+            feature,
+            name: stage
+                .experimental_menu_name()
+                .expect("automatic context pruning must be Experimental")
+                .to_string(),
+            description: stage
+                .experimental_menu_description()
+                .expect("automatic context pruning must be Experimental")
+                .to_string(),
+            enabled: self.config.features.enabled(feature),
+        });
 
         let view = ExperimentalFeaturesView::new(
             features,

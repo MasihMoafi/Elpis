@@ -118,18 +118,14 @@ jobs:
               "            \"WIRE_API_GEMINI_GENERATE_CONTENT\" => Some(Self::GeminiGenerateContent),\n",
           )
           PY
-          cd codex-rs
-          cargo fmt --all
-          cargo fmt --all --check
 
-      - name: Capture launcher compiler output
+      - name: Capture TUI verification output
         id: launcher
         continue-on-error: true
-        working-directory: codex-rs
         shell: bash
         run: |
           set +e
-          cargo test -p codex-tui --bin elpis --locked > /tmp/elpis-launcher.log 2>&1
+          scripts/verify-elpis --surface tui > /tmp/elpis-launcher.log 2>&1
           status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
           tail -n 120 /tmp/elpis-launcher.log

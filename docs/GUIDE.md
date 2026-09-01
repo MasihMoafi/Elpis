@@ -86,7 +86,7 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R5. Curated memory** — Memory stores reusable facts and proven procedures, not transcripts. Promotion requires repeated useful recall across distinct contexts. Memory remains searchable, attributable, reviewable, deletable, and bounded. Deleted or faded facts enter a searchable archive before baseline reset; archive failure must stop the reset.
 
-**R6. Enforceable creator and project rules** — Applicable `AGENTS.md`, project requirements, and behavioral rules reach the model and action layer. Hard safety rules are enforced by code where prompts are insufficient.
+**R6. Enforceable creator and project rules** — Applicable `AGENTS.md`, project requirements, and behavioral rules reach the model and action layer. Configured development-rule Markdown is a visible, switchable Context Ledger source, not a skill. Elpis ordinary and bundled skills start off and become model-visible only after deliberate enablement. Hard safety rules are enforced by code where prompts are insufficient.
 
 **R7. Claims require proof** — Documentation separates implemented behavior, remote tests, and outstanding user acceptance. Design documents and hidden code are not proof.
 
@@ -127,7 +127,7 @@ Treat upstream behavior as evidence, not inspiration copied from memory.
 
 ### Codex: Execution and Interface Reference
 
-Primary source is the local sibling clone at `~/Desktop/p/codex`; its origin is [openai/codex](https://github.com/openai/codex). Use the local committed source when it can answer the question.
+Primary source is [openai/codex](https://github.com/openai/codex). Clone it beside this repository and read the committed source when it can answer the question.
 
 Important areas:
 
@@ -141,7 +141,7 @@ The foundation strategy is **fork and subtract**: preserve proven execution/TUI 
 
 ### OpenClaw: Context and Continuity Reference
 
-Primary source is the local sibling clone at `~/Desktop/p/openclaw`; upstream is [openclaw/openclaw](https://github.com/openclaw/openclaw). Read implementation and tests rather than relying on explanatory prose.
+Primary source is [openclaw/openclaw](https://github.com/openclaw/openclaw). Clone it beside this repository and read implementation and tests rather than relying on explanatory prose.
 
 Useful areas include live context pruning, guarded compaction, pre-compaction memory flush, search/retrieval, memory budgets, promotion, and dreaming. Elpis adopts ideas only when they fit its own contracts and pass Elpis acceptance.
 
@@ -243,12 +243,20 @@ At the product-contract level:
 
 - load the smallest stable routing layer and only the detailed rules required by the task;
 - send the new user message plus explicitly requested/admitted context;
+- keep configured development rules visible by source and provenance, admit new rule rows by default, and preserve an explicit exclusion;
+- keep ordinary skill metadata out of the model-visible catalog until the user enables that skill, while leaving full skill bodies lazy;
 - treat `@file` as an explicit refresh and do not repeatedly append unchanged file bodies;
 - let searches, listings, file reads, probes, dead ends, and bulky tool outputs expire from the model-visible working set after their useful conclusion and evidence pointer are retained;
 - keep exact full events in durable on-disk evidence;
 - preserve changed paths, semantic changes, verification, blockers, and the next action rather than entire stale file bodies;
 - keep memory curated and attributable rather than mirroring transcripts;
 - prefer authoritative runtime/provider token usage and context-window sizes; estimates are fallback only.
+
+Optional Smart Prune reduces eligible fresh textual tool results before their first
+main-model exposure, then leaves admitted history byte-stable. It never deletes a tool-call
+event. `/prune` remains the explicit retrospective cleanup path and may invalidate the
+cacheable suffix it rewrites. The Context Ledger switch or `/smart-prune on|off` controls
+future turns; see [context.md](context.md) for thresholds, failure behavior, and evidence.
 
 Do not turn `GUIDE.md` into an exploration log. Promote only durable rules or facts that change how future agents should work; replace stale guidance instead of accumulating discoveries.
 

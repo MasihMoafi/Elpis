@@ -227,7 +227,7 @@ impl ChatWidget {
             .values()
             .cloned()
             .collect();
-        let instruction_paths = self.instruction_source_paths_as_path_bufs();
+        let continuity_sources = self.continuity_sources();
         let (cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
             self.runtime_model_provider_base_url.as_deref(),
@@ -244,7 +244,7 @@ impl ChatWidget {
             self.model_display_name(),
             collaboration_mode,
             reasoning_effort_override,
-            &instruction_paths,
+            &continuity_sources,
             refreshing_rate_limits,
             crate::legacy_core::context_pruner::pass_count(),
             crate::legacy_core::context_pruner::saved_chars(),

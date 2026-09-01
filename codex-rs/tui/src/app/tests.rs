@@ -4,6 +4,7 @@
 #[path = "tests/advanced_reasoning_tests.rs"]
 mod advanced_reasoning_tests;
 mod model_catalog;
+mod manual_memory;
 mod plugin_catalog;
 mod rate_limits;
 mod safety_buffering;
@@ -1887,6 +1888,72 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
     assert!(config.contains("approvals_reviewer = \"auto_review\""));
     assert!(config.contains("approval_policy = \"on-request\""));
     assert!(config.contains("sandbox_mode = \"workspace-write\""));
+    app_server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_feature_flags_persists_automatic_pruning_for_next_conversation() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let codex_home = tempdir()?;
+    let cwd = codex_home.path().to_path_buf();
+    let default_config = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(cwd.clone()))
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert!(
+        !default_config
+            .features
+            .enabled(Feature::AutomaticContextPruning)
+    );
+
+    app.config.codex_home = codex_home.path().to_path_buf().abs();
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+
+    app.chat_widget.open_experimental_popup();
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Down));
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let updates = match app_event_rx.try_recv() {
+        Ok(AppEvent::UpdateFeatureFlags { updates }) => updates,
+        other => panic!("expected automatic pruning enable update, got {other:?}"),
+    };
+    assert_eq!(updates, vec![(Feature::AutomaticContextPruning, true)]);
+    app.update_feature_flags(&mut app_server, updates).await;
+
+    let config_path = codex_home.path().join("config.toml");
+    let enabled_config = std::fs::read_to_string(&config_path)?;
+    assert!(enabled_config.contains("automatic_context_pruning = true"));
+
+    app.chat_widget.open_experimental_popup();
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Down));
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let updates = match app_event_rx.try_recv() {
+        Ok(AppEvent::UpdateFeatureFlags { updates }) => updates,
+        other => panic!("expected automatic pruning disable update, got {other:?}"),
+    };
+    assert_eq!(updates, vec![(Feature::AutomaticContextPruning, false)]);
+    app.update_feature_flags(&mut app_server, updates).await;
+
+    let disabled_config = std::fs::read_to_string(&config_path)?;
+    assert!(!disabled_config.contains("automatic_context_pruning"));
+    let reloaded = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(cwd))
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert!(!reloaded.features.enabled(Feature::AutomaticContextPruning));
+
     app_server.shutdown().await?;
     Ok(())
 }
@@ -4061,6 +4128,7 @@ async fn make_test_app() -> App {
         pending_primary_events: VecDeque::new(),
         pending_app_server_requests: PendingAppServerRequests::default(),
         pending_startup_thread_start: false,
+        manual_memory_status: ManualMemoryStatusCoordinator::default(),
         rate_limit_hard_stop_generation: 0,
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
@@ -4126,6 +4194,7 @@ async fn make_test_app_with_channels() -> (
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_startup_thread_start: false,
+            manual_memory_status: ManualMemoryStatusCoordinator::default(),
             rate_limit_hard_stop_generation: 0,
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
@@ -4722,6 +4791,7 @@ fn token_usage_notification(
             },
             model_context_window,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     })
 }
@@ -5726,6 +5796,7 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
         app.enqueue_primary_thread_session(started.session, started.turns)
             .await
             .expect("primary thread should be registered");
+        app.backtrack.primed = true;
         let op = AppCommand::interrupt();
 
         let handled = Box::pin(app.try_submit_active_thread_op_via_app_server(
@@ -5737,8 +5808,49 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
         .expect("interrupt submission should not fail");
 
         assert_eq!(handled, true);
+        assert!(!app.backtrack.primed);
     })
     .await;
+}
+
+#[tokio::test]
+async fn rejected_provider_model_selection_does_not_mutate_or_persist() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let initial_model = app.chat_widget.current_model().to_string();
+    let initial_provider = app.chat_widget.active_model_provider_id().to_string();
+    let initial_effort = app.chat_widget.current_reasoning_effort();
+    app.active_thread_id = Some(ThreadId::new());
+
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let config_path = app.config.codex_home.join("config.toml");
+    let config_before = std::fs::read(&config_path).ok();
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let control = Box::pin(app.handle_event(
+        &mut tui,
+        &mut app_server,
+        AppEvent::ApplyProviderModelSelection {
+            model: "rejected-model".to_string(),
+            provider_id: codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+            effort: Some(ReasoningEffortConfig::High),
+        },
+    ))
+    .await?;
+
+    assert!(matches!(control, AppRunControl::Continue));
+    assert_eq!(app.chat_widget.current_model(), initial_model);
+    assert_eq!(app.chat_widget.active_model_provider_id(), initial_provider);
+    assert_eq!(app.chat_widget.current_reasoning_effort(), initial_effort);
+    assert_eq!(std::fs::read(&config_path).ok(), config_before);
+    assert!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok()).any(|event| {
+            matches!(event, AppEvent::InsertHistoryCell(cell)
+                if lines_to_single_string(&cell.display_lines(/*width*/ 120))
+                    .contains("Failed to update thread settings"))
+        }),
+        "thread-settings rejection should remain visible"
+    );
+    app_server.shutdown().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -5899,6 +6011,32 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
             .settings
             .model,
         "gpt-5.4"
+    );
+
+    app.chat_widget.set_auto_model_routing_enabled(true);
+    let provider_params = app
+        .active_thread_provider_model_setting_update_params(
+            "openai-reasoning-model".to_string(),
+            "openai".to_string(),
+            Some(ReasoningEffortConfig::High),
+        )
+        .expect("active thread should produce provider model update params");
+    assert_eq!(
+        (
+            provider_params.model.as_deref(),
+            provider_params.model_provider.as_deref(),
+            provider_params.effort,
+        ),
+        (
+            Some("openai-reasoning-model"),
+            Some("openai"),
+            Some(ReasoningEffortConfig::High),
+        )
+    );
+    assert_eq!(
+        provider_params.automatic_model_routing,
+        Some(false),
+        "an explicit provider/model choice must disable automatic routing"
     );
 
     app.chat_widget

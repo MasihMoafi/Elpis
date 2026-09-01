@@ -1555,10 +1555,12 @@ async fn handle_token_count_event(
         info,
         rate_limits,
         context_prune_saved_tokens,
+        smart_prune,
     } = token_count_event;
     if let Some(info) = info {
         let mut token_usage = ThreadTokenUsage::from(info);
         token_usage.context_prune_saved_tokens = context_prune_saved_tokens;
+        token_usage.smart_prune = smart_prune.into();
         let notification = ThreadTokenUsageUpdatedNotification {
             thread_id: conversation_id.to_string(),
             turn_id,
@@ -3721,6 +3723,50 @@ mod tests {
                 info: Some(info),
                 rate_limits: Some(rate_limits),
                 context_prune_saved_tokens: 0,
+                smart_prune: codex_protocol::protocol::SmartPruneSnapshot {
+                    enabled: true,
+                    examined_outputs: 2,
+                    admitted_outputs: 1,
+                    unchanged_outputs: 1,
+                    failed_batches: 0,
+                    approx_source_tokens: 4_000,
+                    approx_admitted_tokens: 700,
+                    approx_saved_tokens: 3_300,
+                    optimizer_requests: 2,
+                    optimizer_usage_reports: 1,
+                    optimizer_usage: TokenUsage {
+                        cache_write_tokens: None,
+                        input_tokens: 1_200,
+                        cached_input_tokens: 300,
+                        output_tokens: 80,
+                        reasoning_output_tokens: 20,
+                        total_tokens: 1_280,
+                    },
+                    optimizer_latency_ms: 750,
+                    main_request_sequence: 3,
+                    latest: Some(codex_protocol::protocol::SmartPruneAdmissionSnapshot {
+                        admission_id: "admission-1".to_string(),
+                        audit_path: "smart-prune/admissions/admission-1".to_string(),
+                        examined_outputs: 2,
+                        admitted_outputs: 1,
+                        approx_source_tokens: 4_000,
+                        approx_admitted_tokens: 700,
+                        approx_saved_tokens: 3_300,
+                        request_sequence: Some(3),
+                        request_input_sha256: Some("abc123".to_string()),
+                        request_linkage_verified: true,
+                        response_id: Some("response-3".to_string()),
+                        response_usage: Some(TokenUsage {
+                            cache_write_tokens: Some(0),
+                            input_tokens: 800,
+                            cached_input_tokens: 700,
+                            output_tokens: 20,
+                            reasoning_output_tokens: 5,
+                            total_tokens: 825,
+                        }),
+                        response_linkage_verified: true,
+                    }),
+                },
             },
             &outgoing,
         )
@@ -3736,6 +3782,23 @@ mod tests {
                 assert_eq!(usage.total.cached_input_tokens, 25);
                 assert_eq!(usage.last.output_tokens, 7);
                 assert_eq!(usage.model_context_window, Some(4096));
+                assert!(usage.smart_prune.enabled);
+                assert_eq!(usage.smart_prune.admitted_outputs, 1);
+                assert_eq!(usage.smart_prune.optimizer_requests, 2);
+                assert_eq!(usage.smart_prune.optimizer_usage_reports, 1);
+                assert_eq!(usage.smart_prune.optimizer_usage.total_tokens, 1_280);
+                assert_eq!(usage.smart_prune.optimizer_usage.cache_write_tokens, None);
+                assert_eq!(usage.smart_prune.optimizer_latency_ms, 750);
+                let latest = usage.smart_prune.latest.expect("Smart Prune linkage");
+                assert_eq!(latest.request_input_sha256.as_deref(), Some("abc123"));
+                assert_eq!(latest.response_id.as_deref(), Some("response-3"));
+                assert_eq!(
+                    latest
+                        .response_usage
+                        .expect("provider usage")
+                        .cache_write_tokens,
+                    Some(0)
+                );
             }
             other => bail!("unexpected notification: {other:?}"),
         }
@@ -3772,6 +3835,7 @@ mod tests {
                 info: None,
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
+                smart_prune: Default::default(),
             },
             &outgoing,
         )

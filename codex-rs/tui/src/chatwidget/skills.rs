@@ -11,6 +11,7 @@ use crate::bottom_pane::SkillsToggleView;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::skills_helpers::skill_description;
 use crate::skills_helpers::skill_display_name;
+use crate::skills_helpers::skill_scope_label;
 use codex_app_server_protocol::SkillMetadata as ProtocolSkillMetadata;
 use codex_app_server_protocol::SkillsListEntry;
 use codex_app_server_protocol::SkillsListResponse;
@@ -88,26 +89,7 @@ impl ChatWidget {
             .iter()
             .filter_map(|skill| Some((skill.enabled, protocol_skill_to_core(skill)?)))
             .collect();
-        let colliding_names = crate::skills_helpers::skill_name_collisions(
-            core_skills.iter().map(|(_, skill)| skill),
-        );
-
-        let items: Vec<SkillsToggleItem> = core_skills
-            .into_iter()
-            .map(|(enabled, core_skill)| {
-                let display_name = skill_display_name(&core_skill, &colliding_names);
-                let description = skill_description(&core_skill).to_string();
-                let name = core_skill.name.clone();
-                let path = core_skill.path_to_skills_md;
-                SkillsToggleItem {
-                    name: display_name,
-                    skill_name: name,
-                    description,
-                    enabled,
-                    path,
-                }
-            })
-            .collect();
+        let items = skills_toggle_items(core_skills);
 
         let view = SkillsToggleView::new(
             items,
@@ -204,6 +186,34 @@ fn skills_for_cwd(
         .find(|entry| entry.cwd.as_path() == cwd.as_path())
         .map(|entry| entry.skills.clone())
         .unwrap_or_default()
+}
+
+fn skills_toggle_items(mut core_skills: Vec<(bool, SkillMetadata)>) -> Vec<SkillsToggleItem> {
+    let colliding_names = crate::skills_helpers::skill_name_collisions(
+        core_skills.iter().map(|(_, skill)| skill),
+    );
+    core_skills.sort_by_key(|(enabled, skill)| {
+        (!*enabled, skill_display_name(skill, &colliding_names))
+    });
+
+    core_skills
+        .into_iter()
+        .map(|(enabled, core_skill)| {
+            let display_name = skill_display_name(&core_skill, &colliding_names);
+            let description = skill_description(&core_skill).to_string();
+            let origin = skill_scope_label(core_skill.scope).to_string();
+            let skill_name = core_skill.name;
+            let path = core_skill.path_to_skills_md;
+            SkillsToggleItem {
+                name: display_name,
+                skill_name,
+                description,
+                origin,
+                enabled,
+                path,
+            }
+        })
+        .collect()
 }
 
 fn enabled_skills_for_mentions(skills: &[ProtocolSkillMetadata]) -> Vec<SkillMetadata> {
@@ -520,7 +530,54 @@ fn app_id_from_path(path: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::PathBufExt;
+    use crate::test_support::test_path_buf;
+    use codex_protocol::protocol::SkillScope;
     use pretty_assertions::assert_eq;
+
+    fn core_skill(name: &str, display_name: &str, scope: SkillScope) -> SkillMetadata {
+        SkillMetadata {
+            name: name.to_string(),
+            description: format!("{display_name} description"),
+            short_description: None,
+            interface: Some(SkillInterface {
+                display_name: Some(display_name.to_string()),
+                short_description: None,
+                icon_small: None,
+                icon_large: None,
+                brand_color: None,
+                default_prompt: None,
+            }),
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: test_path_buf(&format!("/tmp/{name}/SKILL.md")).abs(),
+            scope,
+            plugin_id: None,
+        }
+    }
+
+    #[test]
+    fn management_items_sort_enabled_before_available_by_display_name_with_origins() {
+        let items = skills_toggle_items(vec![
+            (false, core_skill("zulu", "Zulu candidate", SkillScope::System)),
+            (true, core_skill("beta", "Beta enabled", SkillScope::User)),
+            (false, core_skill("alpha", "Alpha candidate", SkillScope::Admin)),
+            (true, core_skill("alpha-enabled", "Alpha enabled", SkillScope::Repo)),
+        ]);
+
+        assert_eq!(
+            items
+                .into_iter()
+                .map(|item| (item.name, item.enabled, item.origin))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Alpha enabled".to_string(), true, "repo".to_string()),
+                ("Beta enabled".to_string(), true, "yours".to_string()),
+                ("Alpha candidate".to_string(), false, "admin".to_string()),
+                ("Zulu candidate".to_string(), false, "bundled".to_string()),
+            ]
+        );
+    }
 
     fn app(id: &str, name: &str) -> AppInfo {
         AppInfo {

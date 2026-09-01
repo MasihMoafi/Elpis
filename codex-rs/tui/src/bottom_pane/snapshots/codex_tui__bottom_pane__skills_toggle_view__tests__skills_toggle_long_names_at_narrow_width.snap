@@ -4,7 +4,7 @@ expression: "render_lines(&view, 48)"
 ---
                                                 
   Enable/Disable Skills                         
-  Turn skills on or off. Your changes are save  
+  Only enabled skills are shown to the model.   
                                                 
   Type to search skills                         
   >                                             

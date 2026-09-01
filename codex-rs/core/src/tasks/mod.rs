@@ -7,6 +7,9 @@ mod review;
 mod user_shell;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -36,6 +39,7 @@ use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
+use crate::state::TurnState;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
@@ -65,8 +69,345 @@ pub(crate) use user_shell::execute_user_shell_command;
 
 const GRACEFULL_INTERRUPTION_TIMEOUT_MS: u64 = 100;
 const TASK_COMPACT_METRIC: &str = "codex.task.compact";
+const TASK_RUNNING: u8 = 0;
+const TASK_CANCELLED: u8 = 1;
+const TASK_COMMITTED: u8 = 2;
+const TASK_STOP_AFTER_COMMIT: u8 = 3;
+const TASK_COMPLETION_PENDING: u8 = 0;
+const TASK_COMPLETION_ABORT_REQUESTED: u8 = 1;
+const TASK_COMPLETION_NORMAL: u8 = 2;
+const TASK_COMPLETION_INTENTIONAL_ABORT: u8 = 3;
+const TASK_COMPLETION_ABNORMAL: u8 = 4;
 
 pub(crate) type SessionTaskResult = CodexResult<Option<String>>;
+
+#[derive(Default)]
+pub(crate) struct TaskCompletion {
+    state: AtomicU8,
+    completed: Notify,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TaskCompletionOutcome {
+    Normal,
+    IntentionalAbort,
+    Abnormal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskAbortRequest {
+    Requested,
+    Finished,
+    Abnormal,
+}
+
+struct TaskCompletionGuard {
+    completion: Arc<TaskCompletion>,
+    finished: bool,
+}
+
+impl TaskCompletion {
+    fn guard(self: &Arc<Self>) -> TaskCompletionGuard {
+        TaskCompletionGuard {
+            completion: Arc::clone(self),
+            finished: false,
+        }
+    }
+
+    fn request_abort(&self) -> TaskAbortRequest {
+        loop {
+            match self.state.load(Ordering::Acquire) {
+                TASK_COMPLETION_PENDING => {
+                    if self
+                        .state
+                        .compare_exchange(
+                            TASK_COMPLETION_PENDING,
+                            TASK_COMPLETION_ABORT_REQUESTED,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        return TaskAbortRequest::Requested;
+                    }
+                }
+                TASK_COMPLETION_ABORT_REQUESTED => return TaskAbortRequest::Requested,
+                TASK_COMPLETION_NORMAL | TASK_COMPLETION_INTENTIONAL_ABORT => {
+                    return TaskAbortRequest::Finished;
+                }
+                TASK_COMPLETION_ABNORMAL => return TaskAbortRequest::Abnormal,
+                state => unreachable!("invalid task completion state: {state}"),
+            }
+        }
+    }
+
+    fn finish_from_guard(&self, clean_exit: bool) {
+        loop {
+            let current = self.state.load(Ordering::Acquire);
+            let completed = match current {
+                TASK_COMPLETION_PENDING if clean_exit => TASK_COMPLETION_NORMAL,
+                TASK_COMPLETION_PENDING => TASK_COMPLETION_ABNORMAL,
+                TASK_COMPLETION_ABORT_REQUESTED => TASK_COMPLETION_INTENTIONAL_ABORT,
+                TASK_COMPLETION_NORMAL
+                | TASK_COMPLETION_INTENTIONAL_ABORT
+                | TASK_COMPLETION_ABNORMAL => return,
+                state => unreachable!("invalid task completion state: {state}"),
+            };
+            if self
+                .state
+                .compare_exchange(current, completed, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                self.completed.notify_waiters();
+                return;
+            }
+        }
+    }
+
+    pub(crate) async fn wait(&self) -> TaskCompletionOutcome {
+        loop {
+            let completed = self.completed.notified();
+            tokio::pin!(completed);
+            let _ = completed.as_mut().enable();
+            match self.state.load(Ordering::Acquire) {
+                TASK_COMPLETION_PENDING | TASK_COMPLETION_ABORT_REQUESTED => completed.await,
+                TASK_COMPLETION_NORMAL => return TaskCompletionOutcome::Normal,
+                TASK_COMPLETION_INTENTIONAL_ABORT => {
+                    return TaskCompletionOutcome::IntentionalAbort;
+                }
+                TASK_COMPLETION_ABNORMAL => return TaskCompletionOutcome::Abnormal,
+                outcome => unreachable!("invalid task completion outcome: {outcome}"),
+            }
+        }
+    }
+}
+
+impl TaskCompletionGuard {
+    fn finish(mut self) {
+        self.completion.finish_from_guard(/*clean_exit*/ true);
+        self.finished = true;
+    }
+}
+
+impl Drop for TaskCompletionGuard {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.completion.finish_from_guard(/*clean_exit*/ false);
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct TaskCancellationBoundary {
+    inner: Arc<TaskCancellationBoundaryInner>,
+}
+
+#[derive(Default)]
+struct TaskCancellationBoundaryInner {
+    decision: AtomicU8,
+    decided: Notify,
+    cancel_requested: AtomicBool,
+    cancel_request_observed: Notify,
+    cancellation_delivered: AtomicBool,
+    cancellation_delivery_observed: Notify,
+    commit_paused_for_test: AtomicBool,
+    commit_released_for_test: Notify,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TaskCancellationDecision {
+    Cancelled,
+    Committed,
+}
+
+enum ActiveTurnForAbort {
+    Missing,
+    WaitForCompletion(TaskAbortIdentity),
+    AbnormallyFinished(TaskAbortIdentity),
+    Ready(ActiveTurn),
+}
+
+struct TaskAbortIdentity {
+    completion: Arc<TaskCompletion>,
+    turn_state: Arc<tokio::sync::Mutex<TurnState>>,
+    turn_context: Arc<TurnContext>,
+}
+
+impl TaskAbortIdentity {
+    fn new(active_turn: &ActiveTurn, task: &RunningTask) -> Self {
+        Self {
+            completion: Arc::clone(&task.completion),
+            turn_state: Arc::clone(&active_turn.turn_state),
+            turn_context: Arc::clone(&task.turn_context),
+        }
+    }
+}
+
+impl TaskCancellationBoundary {
+    pub(crate) fn try_cancel(&self) -> bool {
+        self.inner.cancel_requested.store(true, Ordering::Release);
+        self.inner.cancel_request_observed.notify_waiters();
+        loop {
+            match self.inner.decision.load(Ordering::Acquire) {
+                TASK_RUNNING => {
+                    if self
+                        .inner
+                        .decision
+                        .compare_exchange(
+                            TASK_RUNNING,
+                            TASK_CANCELLED,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        self.inner.decided.notify_waiters();
+                        return true;
+                    }
+                }
+                TASK_CANCELLED => return true,
+                TASK_COMMITTED => {
+                    if self
+                        .inner
+                        .decision
+                        .compare_exchange(
+                            TASK_COMMITTED,
+                            TASK_STOP_AFTER_COMMIT,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        self.inner.decided.notify_waiters();
+                        return false;
+                    }
+                }
+                TASK_STOP_AFTER_COMMIT => return false,
+                state => unreachable!("invalid task cancellation decision: {state}"),
+            }
+        }
+    }
+
+    pub(crate) fn try_commit(&self) -> bool {
+        match self.inner.decision.compare_exchange(
+            TASK_RUNNING,
+            TASK_COMMITTED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                self.inner.decided.notify_waiters();
+                true
+            }
+            Err(TASK_COMMITTED) => false,
+            Err(TASK_CANCELLED) | Err(TASK_STOP_AFTER_COMMIT) => false,
+            Err(state) => unreachable!("invalid task cancellation decision: {state}"),
+        }
+    }
+
+    pub(crate) fn finish_commit(&self) -> bool {
+        loop {
+            match self.inner.decision.load(Ordering::Acquire) {
+                TASK_COMMITTED => {
+                    if self
+                        .inner
+                        .decision
+                        .compare_exchange(
+                            TASK_COMMITTED,
+                            TASK_RUNNING,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        return true;
+                    }
+                }
+                TASK_STOP_AFTER_COMMIT => return false,
+                TASK_CANCELLED => return false,
+                TASK_RUNNING => return false,
+                state => unreachable!("invalid task cancellation decision: {state}"),
+            }
+        }
+    }
+
+    pub(crate) async fn wait_for_decision(&self) -> TaskCancellationDecision {
+        loop {
+            let notified = self.inner.decided.notified();
+            tokio::pin!(notified);
+            let _ = notified.as_mut().enable();
+            match self.inner.decision.load(Ordering::Acquire) {
+                TASK_RUNNING => notified.await,
+                TASK_CANCELLED => return TaskCancellationDecision::Cancelled,
+                TASK_COMMITTED | TASK_STOP_AFTER_COMMIT => {
+                    return TaskCancellationDecision::Committed;
+                }
+                state => unreachable!("invalid task cancellation decision: {state}"),
+            }
+        }
+    }
+
+    pub(crate) async fn wait_for_cancel_request(&self) {
+        loop {
+            let notified = self.inner.cancel_request_observed.notified();
+            tokio::pin!(notified);
+            let _ = notified.as_mut().enable();
+            if self.inner.cancel_requested.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn acknowledge_cancellation_delivery(&self) {
+        self.inner
+            .cancellation_delivered
+            .store(true, Ordering::Release);
+        self.inner.cancellation_delivery_observed.notify_waiters();
+    }
+
+    pub(crate) async fn wait_for_cancellation_delivery(&self) {
+        loop {
+            let notified = self.inner.cancellation_delivery_observed.notified();
+            tokio::pin!(notified);
+            let _ = notified.as_mut().enable();
+            if self.inner.cancellation_delivered.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    pub(crate) fn pause_commit_for_test(&self) {
+        assert_eq!(
+            self.inner.decision.load(Ordering::Acquire),
+            TASK_RUNNING,
+            "commit can only be paused before the task decides"
+        );
+        self.inner
+            .commit_paused_for_test
+            .store(true, Ordering::Release);
+    }
+
+    pub(crate) fn release_commit_for_test(&self) {
+        self.inner
+            .commit_paused_for_test
+            .store(false, Ordering::Release);
+        self.inner.commit_released_for_test.notify_waiters();
+    }
+
+    pub(crate) async fn wait_for_commit_release_for_test(&self) {
+        loop {
+            let notified = self.inner.commit_released_for_test.notified();
+            tokio::pin!(notified);
+            let _ = notified.as_mut().enable();
+            if !self.inner.commit_paused_for_test.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InterruptedTurnHistoryMarker {
@@ -198,6 +539,12 @@ pub(crate) trait SessionTask: Send + Sync + 'static {
     /// Returns the tracing name for a spawned task span.
     fn span_name(&self) -> &'static str;
 
+    /// Returns the task's cancel-vs-commit boundary, when it has durable work
+    /// that must finish atomically once committed.
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary> {
+        None
+    }
+
     /// Executes the task until completion or cancellation.
     ///
     /// Implementations typically stream protocol events using `session` and
@@ -237,6 +584,8 @@ pub(crate) trait AnySessionTask: Send + Sync + 'static {
 
     fn span_name(&self) -> &'static str;
 
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary>;
+
     fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
@@ -262,6 +611,10 @@ where
 
     fn span_name(&self) -> &'static str {
         SessionTask::span_name(self)
+    }
+
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary> {
+        SessionTask::cancellation_boundary(self)
     }
 
     fn run(
@@ -320,7 +673,7 @@ impl Session {
         let token_usage_at_turn_start = self.total_token_usage().await.unwrap_or_default();
 
         let cancellation_token = CancellationToken::new();
-        let done = Arc::new(Notify::new());
+        let completion = Arc::new(TaskCompletion::default());
 
         self.services
             .guardian_rejection_circuit_breaker
@@ -350,7 +703,7 @@ impl Session {
             turn_context.multi_agent_version,
             &turn_context.session_source,
         );
-        let done_clone = Arc::clone(&done);
+        let completion_clone = Arc::clone(&completion);
         let session_ctx = Arc::new(SessionTaskContext::new(
             Arc::clone(self),
             Arc::clone(&turn_extension_data),
@@ -378,6 +731,7 @@ impl Session {
         );
         let handle = tokio::spawn(
             async move {
+                let completion_guard = completion_clone.guard();
                 let ctx_for_finish = Arc::clone(&ctx);
                 let task_result = task_for_run
                     .run(
@@ -406,7 +760,7 @@ impl Session {
                     sess.on_task_finished(Arc::clone(&ctx_for_finish), task_result)
                         .await;
                 }
-                done_clone.notify_waiters();
+                completion_guard.finish();
             }
             .instrument(task_span),
         );
@@ -415,7 +769,7 @@ impl Session {
             .start_timer(TURN_E2E_DURATION_METRIC, &[])
             .ok();
         let running_task = RunningTask {
-            done,
+            completion,
             handle: AbortOnDropHandle::new(handle),
             kind: task_kind,
             task,
@@ -425,7 +779,7 @@ impl Session {
             _agent_execution_guard: agent_execution_guard,
             _timer: timer,
         };
-        turn.task = Some(running_task);
+        turn.set_task(running_task);
     }
 
     /// Starts a regular turn when the session is idle and pending work is waiting.
@@ -471,15 +825,27 @@ impl Session {
         let mut aborted_turn = false;
         let mut active_turn_to_clear = None;
         let mut turn_context = None;
-        if let Some(mut active_turn) = self.take_active_turn().await {
-            let task = active_turn.task.take();
-            aborted_turn = task.is_some();
-            turn_context = task.as_ref().map(|task| Arc::clone(&task.turn_context));
-            if let Some(task) = task {
-                self.handle_task_abort(task, reason.clone()).await;
+        match self.take_active_turn_for_abort(None).await {
+            ActiveTurnForAbort::Missing => {}
+            ActiveTurnForAbort::WaitForCompletion(identity)
+            | ActiveTurnForAbort::AbnormallyFinished(identity) => {
+                let recovered = identity.completion.wait().await
+                    == TaskCompletionOutcome::Abnormal
+                    && self.recover_abnormally_finished_task(&identity).await;
+                if recovered && reason == TurnAbortReason::Interrupted {
+                    self.maybe_start_turn_for_pending_work().await;
+                }
             }
-            if aborted_turn {
-                active_turn_to_clear = Some(active_turn);
+            ActiveTurnForAbort::Ready(mut active_turn) => {
+                let task = active_turn.task.take();
+                aborted_turn = task.is_some();
+                turn_context = task.as_ref().map(|task| Arc::clone(&task.turn_context));
+                if let Some(task) = task {
+                    self.handle_task_abort(task, reason.clone()).await;
+                }
+                if aborted_turn {
+                    active_turn_to_clear = Some(active_turn);
+                }
             }
         }
 
@@ -502,20 +868,19 @@ impl Session {
         turn_id: &str,
         reason: TurnAbortReason,
     ) -> bool {
-        let active_turn = {
-            let mut active = self.active_turn.lock().await;
-            if active
-                .as_ref()
-                .and_then(|active_turn| active_turn.task.as_ref())
-                .is_some_and(|task| task.turn_context.sub_id == turn_id)
-            {
-                active.take()
-            } else {
-                None
+        let mut active_turn = match self.take_active_turn_for_abort(Some(turn_id)).await {
+            ActiveTurnForAbort::Missing => return false,
+            ActiveTurnForAbort::WaitForCompletion(identity)
+            | ActiveTurnForAbort::AbnormallyFinished(identity) => {
+                let recovered = identity.completion.wait().await
+                    == TaskCompletionOutcome::Abnormal
+                    && self.recover_abnormally_finished_task(&identity).await;
+                if recovered && reason == TurnAbortReason::Interrupted {
+                    self.maybe_start_turn_for_pending_work().await;
+                }
+                return recovered;
             }
-        };
-        let Some(mut active_turn) = active_turn else {
-            return false;
+            ActiveTurnForAbort::Ready(active_turn) => active_turn,
         };
 
         let task = active_turn.task.take();
@@ -690,10 +1055,21 @@ impl Session {
             );
         }
         let started_at = turn_context.turn_timing_state.started_at_unix_secs().await;
-        let (completed_at, duration_ms) = turn_context
+        let (completed_at, duration_ms, profile) = turn_context
             .turn_timing_state
-            .completed_at_and_duration_ms()
+            .complete_profile_and_duration_ms()
             .await;
+        self.services.session_telemetry.record_turn_profile(
+            &turn_context.sub_id,
+            profile.before_first_sampling_ms,
+            profile.sampling_ms,
+            profile.compaction_ms,
+            profile.between_sampling_overhead_ms,
+            profile.tool_blocking_ms,
+            profile.after_last_sampling_ms,
+            profile.sampling_request_count,
+            profile.sampling_retry_count,
+        );
         let event = if let Some(reason) = abort_reason {
             self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref())
                 .await;
@@ -751,9 +1127,90 @@ impl Session {
         }
     }
 
-    async fn take_active_turn(&self) -> Option<ActiveTurn> {
+    async fn take_active_turn_for_abort(
+        &self,
+        expected_turn_id: Option<&str>,
+    ) -> ActiveTurnForAbort {
         let mut active = self.active_turn.lock().await;
-        active.take()
+        let Some(active_turn) = active.as_ref() else {
+            return ActiveTurnForAbort::Missing;
+        };
+        if expected_turn_id.is_some_and(|expected_turn_id| {
+            active_turn
+                .task
+                .as_ref()
+                .is_none_or(|task| task.turn_context.sub_id != expected_turn_id)
+        }) {
+            return ActiveTurnForAbort::Missing;
+        }
+        if let Some(task) = active_turn.task.as_ref() {
+            if let Some(boundary) = task.task.cancellation_boundary()
+                && !boundary.try_cancel()
+            {
+                return ActiveTurnForAbort::WaitForCompletion(TaskAbortIdentity::new(
+                    active_turn,
+                    task,
+                ));
+            }
+            match task.completion.request_abort() {
+                TaskAbortRequest::Requested => {}
+                TaskAbortRequest::Finished => {
+                    return ActiveTurnForAbort::WaitForCompletion(TaskAbortIdentity::new(
+                        active_turn,
+                        task,
+                    ));
+                }
+                TaskAbortRequest::Abnormal => {
+                    return ActiveTurnForAbort::AbnormallyFinished(TaskAbortIdentity::new(
+                        active_turn,
+                        task,
+                    ));
+                }
+            }
+        }
+        ActiveTurnForAbort::Ready(
+            active
+                .take()
+                .expect("active turn disappeared while claiming cancellation"),
+        )
+    }
+
+    async fn recover_abnormally_finished_task(&self, identity: &TaskAbortIdentity) -> bool {
+        let active_turn = {
+            let mut active = self.active_turn.lock().await;
+            let matches_failed_task = active.as_ref().is_some_and(|active_turn| {
+                Arc::ptr_eq(&active_turn.turn_state, &identity.turn_state)
+                    && active_turn.task_completion.as_ref().is_some_and(|completion| {
+                        Arc::ptr_eq(completion, &identity.completion)
+                    })
+                    && active_turn
+                        .task_turn_context
+                        .as_ref()
+                        .is_some_and(|turn_context| {
+                            Arc::ptr_eq(turn_context, &identity.turn_context)
+                        })
+            });
+            if matches_failed_task {
+                active.take()
+            } else {
+                None
+            }
+        };
+        let Some(active_turn) = active_turn else {
+            return false;
+        };
+        warn!("task ended abnormally; clearing the matching active turn");
+        identity
+            .turn_context
+            .turn_metadata_state
+            .cancel_git_enrichment_task();
+        self.services
+            .guardian_rejection_circuit_breaker
+            .lock()
+            .await
+            .clear_turn(&identity.turn_context.sub_id);
+        self.input_queue.clear_pending(&active_turn).await;
+        true
     }
 
     pub(crate) async fn close_unified_exec_processes(&self) {
@@ -782,13 +1239,17 @@ impl Session {
 
         trace!(task_kind = ?task.kind, sub_id, "aborting running task");
         task.cancellation_token.cancel();
+        if let Some(boundary) = task.task.cancellation_boundary() {
+            boundary.acknowledge_cancellation_delivery();
+        }
         task.turn_context
             .turn_metadata_state
             .cancel_git_enrichment_task();
+        let completion = Arc::clone(&task.completion);
         let session_task = task.task;
 
         select! {
-            _ = task.done.notified() => {
+            _ = completion.wait() => {
             },
             _ = tokio::time::sleep(Duration::from_millis(GRACEFULL_INTERRUPTION_TIMEOUT_MS)) => {
                 warn!("task {sub_id} didn't complete gracefully after {}ms", GRACEFULL_INTERRUPTION_TIMEOUT_MS);
@@ -830,11 +1291,22 @@ impl Session {
             .turn_timing_state
             .started_at_unix_secs()
             .await;
-        let (completed_at, duration_ms) = task
+        let (completed_at, duration_ms, profile) = task
             .turn_context
             .turn_timing_state
-            .completed_at_and_duration_ms()
+            .complete_profile_and_duration_ms()
             .await;
+        self.services.session_telemetry.record_turn_profile(
+            &task.turn_context.sub_id,
+            profile.before_first_sampling_ms,
+            profile.sampling_ms,
+            profile.compaction_ms,
+            profile.between_sampling_overhead_ms,
+            profile.tool_blocking_ms,
+            profile.after_last_sampling_ms,
+            profile.sampling_request_count,
+            profile.sampling_retry_count,
+        );
         let event = EventMsg::TurnAborted(TurnAbortedEvent {
             turn_id: Some(task.turn_context.sub_id.clone()),
             reason,

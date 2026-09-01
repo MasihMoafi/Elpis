@@ -19,6 +19,12 @@ pub trait ToolOutput: Send {
 
     fn success_for_logging(&self) -> bool;
 
+    /// Whether admission-time semantic optimization may rewrite this model-visible
+    /// output. Policy wrappers such as explicit post-tool hook feedback opt out.
+    fn smart_prune_eligible(&self) -> bool {
+        true
+    }
+
     /// Whether this output contains external context that should disable memory generation when
     /// `memories.disable_on_external_context` is enabled.
     fn contains_external_context(&self) -> bool {
@@ -63,6 +69,10 @@ where
 
     fn success_for_logging(&self) -> bool {
         (**self).success_for_logging()
+    }
+
+    fn smart_prune_eligible(&self) -> bool {
+        (**self).smart_prune_eligible()
     }
 
     fn contains_external_context(&self) -> bool {

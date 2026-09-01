@@ -51,7 +51,8 @@ pub(super) struct PruneAuditInput<'a> {
     pub(super) pass_id: &'a str,
     pub(super) session_id: Option<&'a str>,
     pub(super) turn_id: Option<&'a str>,
-    /// Which trigger fired this pass: `steady` or `pressure`.
+    /// Selection strategy for this pass: `manual` or `pressure`. A `pressure` value can
+    /// also come from manual `/force-prune`; it does not establish automatic invocation.
     pub(super) trigger: &'a str,
     pub(super) model_slug: &'a str,
     pub(super) ace_instructions: &'a str,

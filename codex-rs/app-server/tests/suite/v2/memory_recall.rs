@@ -1,10 +1,8 @@
 //! Memory recall eval.
 //!
-//! Plants a fact that exists nowhere except durable memory, runs a turn, and checks the
-//! request that actually left for the model. The negative case is the point: a recall test
-//! that only proves the fact arrives passes just as happily when everything on disk is
-//! admitted unconditionally, which is not memory working — it is memory being ignored in
-//! the user's favour. Switching `MEMORY.md` off in the Context Ledger must remove it.
+//! Captures consecutive real Responses requests from one live app-server thread. The
+//! planted markers exist only in this test's non-secret fixture, so every assertion is at
+//! the request boundary rather than the Ledger's persisted state.
 use anyhow::Result;
 use app_test_support::TestAppServer;
 use app_test_support::to_response;
@@ -22,39 +20,25 @@ use tokio::time::timeout;
 
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Deliberately unguessable: a model cannot answer this from training data, and no other
-/// file in the fixture contains it, so its presence in the request can only come from
-/// durable memory.
-const PLANTED_FACT: &str = "The Elpis staging cluster is named quiet-heron-42.";
+const MEMORY_CREATE_MARKER: &str = "MEMORY_CREATE_MARKER";
+const MEMORY_UPDATED_MARKER: &str = "MEMORY_UPDATED_MARKER";
+const MEMORY_SOURCE_HEADER: &str = "MEMORY.md (";
+const ELPIS_CONTINUITY_HEADER: &str = "## Elpis Admitted Context\n\n";
 
 #[tokio::test]
-async fn durable_memory_reaches_the_model_and_the_ledger_switch_withholds_it() -> Result<()> {
-    let admitted = developer_context_for_turn(/*admit_memory*/ true).await?;
-    assert!(
-        admitted.iter().any(|text| text.contains(PLANTED_FACT)),
-        "durable memory never reached the model; developer context was: {admitted:#?}"
-    );
-
-    let withheld = developer_context_for_turn(/*admit_memory*/ false).await?;
-    assert!(
-        !withheld.iter().any(|text| text.contains(PLANTED_FACT)),
-        "MEMORY.md was switched off in the ledger and still reached the model: {withheld:#?}"
-    );
-
-    Ok(())
-}
-
-/// Runs one full turn against a mock model and returns the developer messages the model
-/// received.
-async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
+async fn manual_memory_request_boundaries_follow_current_admission() -> Result<()> {
     let server = responses::start_mock_server().await;
-    let response_mock = responses::mount_sse_once(
+    let response_mock = responses::mount_sse_sequence(
         &server,
-        responses::sse(vec![
-            responses::ev_response_created("resp-1"),
-            responses::ev_assistant_message("msg-1", "acknowledged"),
-            responses::ev_completed("resp-1"),
-        ]),
+        (1..=7)
+            .map(|turn| {
+                responses::sse(vec![
+                    responses::ev_response_created(&format!("resp-{turn}")),
+                    responses::ev_assistant_message(&format!("msg-{turn}"), "acknowledged"),
+                    responses::ev_completed(&format!("resp-{turn}")),
+                ])
+            })
+            .collect(),
     )
     .await;
 
@@ -62,22 +46,6 @@ async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
     let workspace = TempDir::new()?;
     let memory_root = codex_home.path().join("memories");
     write_config_toml(codex_home.path(), &server.uri())?;
-
-    tokio::fs::create_dir_all(&memory_root).await?;
-    tokio::fs::write(
-        memory_root.join("MEMORY.md"),
-        format!("# Durable memory\n\n- {PLANTED_FACT}\n"),
-    )
-    .await?;
-
-    if !admit_memory {
-        codex_core::elpis_context::set_continuity_source_admitted(
-            Some(memory_root.as_path()),
-            workspace.path(),
-            "MEMORY.md",
-            /*admitted*/ false,
-        )?;
-    }
 
     let mut app = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -99,11 +67,99 @@ async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
     .await??;
     let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(response)?;
 
+    complete_turn(&mut app, &thread.id).await?;
+    assert_no_manual_memory(&response_mock.requests()[0].message_input_texts("developer"));
+
+    codex_core::elpis_context::create_manual_memory(
+        Some(memory_root.as_path()),
+        workspace.path(),
+    )?;
+    tokio::fs::write(memory_root.join("MEMORY.md"), MEMORY_CREATE_MARKER).await?;
+    complete_turn(&mut app, &thread.id).await?;
+    assert_no_manual_memory(&response_mock.requests()[1].message_input_texts("developer"));
+
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(memory_root.as_path()),
+        workspace.path(),
+        "MEMORY.md",
+        true,
+    )?;
+    complete_turn(&mut app, &thread.id).await?;
+    let admitted = response_mock.requests()[2].message_input_texts("developer");
+    assert!(admitted.iter().any(|text| text.contains(MEMORY_CREATE_MARKER)));
+
+    tokio::fs::write(memory_root.join("MEMORY.md"), MEMORY_UPDATED_MARKER).await?;
+    complete_turn(&mut app, &thread.id).await?;
+    let updated = response_mock.requests()[3].message_input_texts("developer");
+    let continuity = elpis_continuity_fragments(&updated);
+    assert_eq!(
+        continuity.len(),
+        1,
+        "continuity must own one live request slot"
+    );
+    assert!(continuity[0].contains(MEMORY_UPDATED_MARKER));
+    assert!(!continuity[0].contains(MEMORY_CREATE_MARKER));
+
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(memory_root.as_path()),
+        workspace.path(),
+        "MEMORY.md",
+        false,
+    )?;
+    complete_turn(&mut app, &thread.id).await?;
+    assert_no_manual_memory(&response_mock.requests()[4].message_input_texts("developer"));
+
+    let long_memory = "🦀".repeat(8_001);
+    tokio::fs::write(memory_root.join("MEMORY.md"), &long_memory).await?;
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(memory_root.as_path()),
+        workspace.path(),
+        "MEMORY.md",
+        true,
+    )?;
+    assert!(
+        codex_core::elpis_context::manual_memory_status(
+            Some(memory_root.as_path()),
+            workspace.path(),
+        )?
+        .expect("configured memory status")
+        .truncated
+    );
+    complete_turn(&mut app, &thread.id).await?;
+    let long_request = response_mock.requests()[5].message_input_texts("developer");
+    assert_eq!(
+        manual_memory_body(&long_request),
+        format!("{}…", "🦀".repeat(7_999)),
+        "the request body must stop at exactly 8,000 Rust characters"
+    );
+
+    let admission_path = codex_core::elpis_context::workspace_context_dir(
+        Some(memory_root.as_path()),
+        workspace.path(),
+    )
+    .expect("workspace admission path")
+    .join("admission.toml");
+    let corrupt = b"memory = [not valid";
+    tokio::fs::write(&admission_path, corrupt).await?;
+    complete_turn(&mut app, &thread.id).await?;
+    let corrupt_request = response_mock.requests()[6].message_input_texts("developer");
+    assert!(
+        corrupt_request
+            .iter()
+            .all(|text| !text.contains("## Elpis Admitted Context")),
+        "a corrupt admission record must fail closed"
+    );
+    assert_eq!(tokio::fs::read(&admission_path).await?, corrupt.as_slice());
+
+    Ok(())
+}
+
+async fn complete_turn(app: &mut TestAppServer, thread_id: &str) -> Result<()> {
     let request_id = app
         .send_turn_start_request(TurnStartParams {
-            thread_id: thread.id,
+            thread_id: thread_id.to_string(),
             input: vec![V2UserInput::Text {
-                text: "What is the staging cluster called?".to_string(),
+                text: "Check the current memory boundary.".to_string(),
                 text_elements: Vec::new(),
             }],
             ..Default::default()
@@ -119,10 +175,35 @@ async fn developer_context_for_turn(admit_memory: bool) -> Result<Vec<String>> {
         app.read_stream_until_notification_message("turn/completed"),
     )
     .await??;
+    Ok(())
+}
 
-    Ok(response_mock
-        .single_request()
-        .message_input_texts("developer"))
+fn assert_no_manual_memory(developer: &[String]) {
+    assert!(
+        developer.iter().all(|text| !text.contains(MEMORY_SOURCE_HEADER)),
+        "manual memory source unexpectedly reached the model: {developer:#?}"
+    );
+    assert!(
+        developer.iter().all(|text| !text.contains(MEMORY_CREATE_MARKER)),
+        "manual memory fixture unexpectedly reached the model: {developer:#?}"
+    );
+}
+
+fn manual_memory_body(developer: &[String]) -> String {
+    developer
+        .iter()
+        .find_map(|text| {
+            text.rsplit_once("MEMORY.md (8000 characters)\n\n")
+                .map(|(_, body)| body.to_string())
+        })
+        .expect("the admitted request must contain the capped manual-memory source")
+}
+
+fn elpis_continuity_fragments(developer: &[String]) -> Vec<&str> {
+    developer
+        .iter()
+        .filter_map(|text| text.contains(ELPIS_CONTINUITY_HEADER).then_some(text.as_str()))
+        .collect()
 }
 
 fn write_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {

@@ -315,7 +315,28 @@ enabled = false
 }
 
 #[test]
-fn set_skill_config_removes_entry_when_enabled() {
+fn set_skill_config_writes_enabled_entry() {
+    let tmp = tempdir().expect("tmpdir");
+    let codex_home = tmp.path();
+
+    ConfigEditsBuilder::new(codex_home)
+        .with_edits([ConfigEdit::SetSkillConfig {
+            path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
+            enabled: true,
+        }])
+        .apply_blocking()
+        .expect("persist");
+
+    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let expected = r#"[[skills.config]]
+path = "/tmp/skills/demo/SKILL.md"
+enabled = true
+"#;
+    assert_eq!(contents, expected);
+}
+
+#[test]
+fn set_skill_config_updates_disabled_entry_when_enabled() {
     let tmp = tempdir().expect("tmpdir");
     let codex_home = tmp.path();
     std::fs::write(
@@ -336,7 +357,32 @@ enabled = false
         .expect("persist");
 
     let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    assert_eq!(contents, "");
+    let expected = r#"[[skills.config]]
+path = "/tmp/skills/demo/SKILL.md"
+enabled = true
+"#;
+    assert_eq!(contents, expected);
+}
+
+#[test]
+fn set_skill_config_preserves_incompatible_value_when_enabled() {
+    for existing in ["skills = \"keep-me\"\n", "[skills]\nconfig = \"keep-me\"\n"] {
+        let tmp = tempdir().expect("tmpdir");
+        let codex_home = tmp.path();
+        std::fs::write(codex_home.join(CONFIG_TOML_FILE), existing).expect("seed config");
+
+        ConfigEditsBuilder::new(codex_home)
+            .with_edits([ConfigEdit::SetSkillConfig {
+                path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
+                enabled: true,
+            }])
+            .apply_blocking()
+            .expect("persist");
+
+        let contents =
+            std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+        assert_eq!(contents, existing);
+    }
 }
 
 #[test]

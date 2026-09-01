@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -22,6 +21,7 @@ use crate::agent::control::AgentExecutionGuard;
 use crate::session::TurnInputQueue;
 use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
+use crate::tasks::TaskCompletion;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
@@ -29,6 +29,8 @@ use codex_protocol::protocol::TokenUsage;
 /// Metadata about the currently running turn.
 pub(crate) struct ActiveTurn {
     pub(crate) task: Option<RunningTask>,
+    pub(crate) task_completion: Option<Arc<TaskCompletion>>,
+    pub(crate) task_turn_context: Option<Arc<TurnContext>>,
     pub(crate) turn_state: Arc<Mutex<TurnState>>,
 }
 
@@ -57,8 +59,18 @@ impl Default for ActiveTurn {
     fn default() -> Self {
         Self {
             task: None,
+            task_completion: None,
+            task_turn_context: None,
             turn_state: Arc::new(Mutex::new(TurnState::default())),
         }
+    }
+}
+
+impl ActiveTurn {
+    pub(crate) fn set_task(&mut self, task: RunningTask) {
+        self.task_completion = Some(Arc::clone(&task.completion));
+        self.task_turn_context = Some(Arc::clone(&task.turn_context));
+        self.task = Some(task);
     }
 }
 
@@ -71,7 +83,7 @@ pub(crate) enum TaskKind {
 }
 
 pub(crate) struct RunningTask {
-    pub(crate) done: Arc<Notify>,
+    pub(crate) completion: Arc<TaskCompletion>,
     pub(crate) kind: TaskKind,
     pub(crate) task: Arc<dyn AnySessionTask>,
     pub(crate) cancellation_token: CancellationToken,

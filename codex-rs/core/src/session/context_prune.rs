@@ -1,10 +1,14 @@
-//! Runs the Ace pass (`crate::context_pruner`) under whichever trigger applies: the
-//! steady backlog floor, the 30% pressure boundary, or a manual `/prune`. Mirrors
+//! Runs the Ace pass (`crate::context_pruner`) for explicit manual
+//! `/prune`/`/force-prune`; `pressure` is the selection strategy for manual
+//! `/force-prune`. Smart Prune admission lives in `super::smart_prune` and does not
+//! invoke this retrospective pass. Mirrors
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual
 //! turn.
 
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::client::ModelClientSession;
@@ -12,6 +16,7 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::context_pruner;
 use crate::responses_metadata::CodexResponsesRequestKind;
+use crate::tasks::TaskCancellationBoundary;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -21,6 +26,7 @@ use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::WorldStateItem;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
+use tokio_util::sync::CancellationToken;
 
 /// Upper bound on the passes one `/prune` sweep will run, so an explicit sweep is
 /// bounded even if the backlog keeps producing eligible batches.
@@ -30,34 +36,82 @@ use super::context_prune_audit;
 use super::session::Session;
 use super::turn_context::TurnContext;
 
-/// Whether an exhausted pressure pass may escalate to a context-window rollover.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Escalation {
-    Allowed,
-    Deferred,
+struct PruneCancelled;
+
+struct PruneCommit<'a> {
+    cancellation_boundary: Option<&'a TaskCancellationBoundary>,
 }
 
-pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_context_prune(sess, turn_context, None, None, Escalation::Allowed).await;
+impl PruneCommit<'_> {
+    fn finish(self) -> bool {
+        self.cancellation_boundary
+            .is_none_or(TaskCancellationBoundary::finish_commit)
+    }
 }
 
-/// The pre-request pass. Reclaims what it can so the history sent to the provider,
-/// the context-limit check, and the UI snapshot describe the same state — but leaves
-/// the rollover decision to the post-sampling pass, which already owns it and sees
-/// fresh usage. Escalating here would stack a second rollover on top of one the model
-/// just requested through `new_context`.
-pub(super) async fn prune_before_request(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_context_prune(sess, turn_context, None, None, Escalation::Deferred).await;
+struct PruneDebugRecord {
+    model_slug: String,
+    input_text: String,
+    reason: String,
+    output_text: Option<String>,
 }
 
-pub(crate) async fn run_manual_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_manual_context_prune_with_target(sess, turn_context, None).await;
+impl PruneDebugRecord {
+    fn new(model_slug: &str, input_text: &str, reason: &str, output_text: Option<&str>) -> Self {
+        Self {
+            model_slug: model_slug.to_string(),
+            input_text: input_text.to_string(),
+            reason: reason.to_string(),
+            output_text: output_text.map(ToString::to_string),
+        }
+    }
+}
+
+async fn begin_prune_commit<'a>(
+    cancellation_token: Option<&CancellationToken>,
+    cancellation_boundary: Option<&'a TaskCancellationBoundary>,
+) -> Option<PruneCommit<'a>> {
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return None;
+    }
+    if let Some(cancellation_boundary) = cancellation_boundary {
+        if !cancellation_boundary.try_commit() {
+            return None;
+        }
+        // The session abort path claims the same atomic decision before removing the
+        // active task. Once commit wins, that path leaves the task registered and waits
+        // for normal TurnComplete delivery instead of aborting a partially applied pass.
+        cancellation_boundary
+            .wait_for_commit_release_for_test()
+            .await;
+    }
+    Some(PruneCommit {
+        cancellation_boundary,
+    })
+}
+
+async fn await_or_cancelled<T>(
+    cancellation_token: Option<&CancellationToken>,
+    future: impl std::future::Future<Output = T>,
+) -> Result<T, PruneCancelled> {
+    match cancellation_token {
+        Some(cancellation_token) => {
+            tokio::select! {
+                biased;
+                _ = cancellation_token.cancelled() => Err(PruneCancelled),
+                output = future => Ok(output),
+            }
+        }
+        None => Ok(future.await),
+    }
 }
 
 pub(crate) async fn run_manual_context_prune_with_target(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     target_pct: Option<i64>,
+    cancellation_token: Option<&CancellationToken>,
+    cancellation_boundary: Option<&TaskCancellationBoundary>,
 ) {
     if let Some(pct) = target_pct {
         run_context_prune(
@@ -65,7 +119,8 @@ pub(crate) async fn run_manual_context_prune_with_target(
             turn_context,
             Some(context_pruner::PruneTrigger::Pressure),
             Some(pct),
-            Escalation::Allowed,
+            cancellation_token,
+            cancellation_boundary,
         )
         .await;
         return;
@@ -79,7 +134,8 @@ pub(crate) async fn run_manual_context_prune_with_target(
             turn_context,
             Some(context_pruner::PruneTrigger::Manual),
             None,
-            Escalation::Allowed,
+            cancellation_token,
+            cancellation_boundary,
         )
         .await
         {
@@ -115,8 +171,12 @@ async fn run_context_prune(
     turn_context: &Arc<TurnContext>,
     requested_trigger: Option<context_pruner::PruneTrigger>,
     target_pct: Option<i64>,
-    escalation: Escalation,
+    cancellation_token: Option<&CancellationToken>,
+    cancellation_boundary: Option<&TaskCancellationBoundary>,
 ) -> bool {
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return false;
+    }
     let context_window = turn_context.model_context_window().unwrap_or(0);
     if requested_trigger.is_none() && context_window <= 0 {
         return false;
@@ -161,10 +221,7 @@ async fn run_context_prune(
             // A cycle that closed without reaching its target, while use is still past
             // the boundary, is the case the existing compaction/rollover mechanism owns.
             // A cycle merely cooling below the boundary is healthy and hands off nothing.
-            if stalled
-                && escalation == Escalation::Allowed
-                && context_pruner::pressure_reached(active_context_tokens, context_window)
-            {
+            if stalled && context_pruner::pressure_reached(active_context_tokens, context_window) {
                 request_compaction_if_enabled(
                     sess,
                     turn_context,
@@ -208,15 +265,13 @@ async fn run_context_prune(
         // still owed, and pruning could never re-arm.
         if requested_trigger.is_none() && trigger == Some(context_pruner::PruneTrigger::Pressure) {
             sess.state.lock().await.close_context_prune_cycle();
-            if escalation == Escalation::Allowed {
-                request_compaction_if_enabled(
-                    sess,
-                    turn_context,
-                    active_context_tokens,
-                    "nothing left to reclaim",
-                )
-                .await;
-            }
+            request_compaction_if_enabled(
+                sess,
+                turn_context,
+                active_context_tokens,
+                "nothing left to reclaim",
+            )
+            .await;
         }
         return false;
     };
@@ -225,18 +280,31 @@ async fn run_context_prune(
     // incremental request state. This lets the pressure check run between tool
     // follow-ups without perturbing the user's model session.
     let mut prune_client_session = sess.services.model_client.load().new_session();
+    let log_dir = sess.codex_home().await.join("logs");
 
-    let (pass_result, attempts) = run_prune_pass(
+    let (pass_result, attempts, debug_records) = match run_prune_pass(
         sess,
         turn_context,
         &mut prune_client_session,
         &batch,
         active_question.as_deref(),
+        cancellation_token,
     )
-    .await;
+    .await
+    {
+        Ok(result) => result,
+        Err(PruneCancelled) => return false,
+    };
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return false;
+    }
 
     let Some((record, raw, model_slug, usage, pass_id)) = pass_result else {
-        let log_dir = sess.codex_home().await.join("logs");
+        let Some(commit) = begin_prune_commit(cancellation_token, cancellation_boundary).await
+        else {
+            return false;
+        };
+        write_prune_debug_records(&log_dir, &debug_records);
         if let Err(err) = context_prune_audit::record_failed_attempts(&log_dir, &attempts) {
             tracing::warn!("Failed to record failed pruning attempt audit: {err:#}");
         }
@@ -248,17 +316,24 @@ async fn run_context_prune(
             "Context prune pass failed ({failures} in a row); retrying after {:?}",
             context_pruner::retry_delay_after_failures(failures)
         );
+        let _ = commit.finish();
         return false;
     };
 
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return false;
+    }
     let mut after_items = items;
     let saved = context_pruner::apply_prune_record_untracked(&mut after_items, &record);
     let mut after_history = history;
     after_history.replace(after_items.clone());
     let after_model_items = after_history.for_prompt(&turn_context.model_info.input_modalities);
     let ace_input = context_pruner::build_prune_input(&batch, active_question.as_deref());
-    let log_dir = sess.codex_home().await.join("logs");
     let session_id = sess.session_id().to_string();
+    let Some(commit) = begin_prune_commit(cancellation_token, cancellation_boundary).await else {
+        return false;
+    };
+    write_prune_debug_records(&log_dir, &debug_records);
     let audit = match context_prune_audit::write_applied_pass(
         &log_dir,
         context_prune_audit::PruneAuditInput {
@@ -283,13 +358,14 @@ async fn run_context_prune(
         Err(err) => {
             tracing::warn!("Context prune audit failed; preserving history: {err:#}");
             sess.state.lock().await.record_context_prune_failure();
+            let _ = commit.finish();
             return false;
         }
     };
 
     let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(saved);
+    let mut state = sess.state.lock().await;
     let (context_prune_saved_tokens, window_number, window_ids, world_state_snapshot) = {
-        let mut state = sess.state.lock().await;
         // `ContextManager::replace` unconditionally clears the world-state baseline (it
         // has no way to know whether the rewritten items still match it). A prune pass
         // never touches world-state sections like AGENTS.md, so the pre-replace baseline
@@ -316,6 +392,7 @@ async fn run_context_prune(
             world_state_snapshot,
         )
     };
+    drop(state);
     // Persist the rewritten working set as an append-only replacement checkpoint.
     // Raw rollout evidence remains intact, while resume starts from this compact base.
     sess.persist_rollout_items(&[RolloutItem::Compacted(CompactedItem {
@@ -365,7 +442,7 @@ async fn run_context_prune(
             audit.pass_dir.display()
         );
     }
-    true
+    commit.finish()
 }
 
 async fn run_prune_pass(
@@ -374,18 +451,27 @@ async fn run_prune_pass(
     client_session: &mut ModelClientSession,
     batch: &[(String, String)],
     active_question: Option<&str>,
-) -> (
-    Option<(
-        crate::context_pruner::PruneRecord,
-        String,
-        String,
-        Option<TokenUsage>,
-        String,
-    )>,
-    Vec<context_prune_audit::PruneAttemptRecord>,
-) {
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<
+    (
+        Option<(
+            crate::context_pruner::PruneRecord,
+            String,
+            String,
+            Option<TokenUsage>,
+            String,
+        )>,
+        Vec<context_prune_audit::PruneAttemptRecord>,
+        Vec<PruneDebugRecord>,
+    ),
+    PruneCancelled,
+> {
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return Err(PruneCancelled);
+    }
     let pass_id = uuid::Uuid::now_v7().to_string();
     let mut attempts = Vec::new();
+    let mut debug_records = Vec::new();
     let primary_slug =
         if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
             context_pruner::PRUNE_MODEL_SLUG
@@ -403,15 +489,21 @@ async fn run_prune_pass(
         &pass_id,
         context_prune_audit::PruneAttemptKind::Primary,
         &mut attempts,
+        &mut debug_records,
+        cancellation_token,
     )
-    .await
+    .await?
     {
-        return (
+        return Ok((
             Some((record, output, primary_slug.to_string(), usage, pass_id)),
             attempts,
-        );
+            debug_records,
+        ));
     }
 
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return Err(PruneCancelled);
+    }
     let fallback_slug = turn_context.model_info.slug.as_str();
     if primary_slug != fallback_slug {
         if let Some((record, output, usage)) = try_validated_prune_pass(
@@ -424,17 +516,20 @@ async fn run_prune_pass(
             &pass_id,
             context_prune_audit::PruneAttemptKind::Fallback,
             &mut attempts,
+            &mut debug_records,
+            cancellation_token,
         )
-        .await
+        .await?
         {
-            return (
+            return Ok((
                 Some((record, output, fallback_slug.to_string(), usage, pass_id)),
                 attempts,
-            );
+                debug_records,
+            ));
         }
     }
 
-    (None, attempts)
+    Ok((None, attempts, debug_records))
 }
 
 async fn try_validated_prune_pass(
@@ -447,11 +542,16 @@ async fn try_validated_prune_pass(
     pass_id: &str,
     kind: context_prune_audit::PruneAttemptKind,
     attempts: &mut Vec<context_prune_audit::PruneAttemptRecord>,
-) -> Option<(
-    crate::context_pruner::PruneRecord,
-    String,
-    Option<TokenUsage>,
-)> {
+    debug_records: &mut Vec<PruneDebugRecord>,
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<
+    Option<(
+        crate::context_pruner::PruneRecord,
+        String,
+        Option<TokenUsage>,
+    )>,
+    PruneCancelled,
+> {
     let timestamp = chrono::Utc::now().to_rfc3339();
     let reasoning_effort = Some(context_pruner::PRUNE_REASONING_EFFORT.as_str().to_string());
 
@@ -462,23 +562,26 @@ async fn try_validated_prune_pass(
         batch,
         active_question,
         prune_model_slug,
+        debug_records,
+        cancellation_token,
     )
-    .await
+    .await?
     {
         Ok((output, usage)) => {
+            if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+                return Err(PruneCancelled);
+            }
             let Some(record) = context_pruner::parse_prune_output(&output, batch) else {
                 tracing::warn!(
                     "Context prune response was malformed for model {prune_model_slug}; preserving history"
                 );
                 let input_text = context_pruner::build_prune_input(batch, active_question);
-                log_prune_debug(
-                    sess,
+                debug_records.push(PruneDebugRecord::new(
                     prune_model_slug,
                     &input_text,
                     "response did not parse as a decision manifest",
                     Some(&output),
-                )
-                .await;
+                ));
                 attempts.push(context_prune_audit::PruneAttemptRecord {
                     pass_id: pass_id.to_string(),
                     timestamp,
@@ -489,7 +592,7 @@ async fn try_validated_prune_pass(
                     error: Some("response did not parse as a decision manifest".to_string()),
                     usage,
                 });
-                return None;
+                return Ok(None);
             };
             attempts.push(context_prune_audit::PruneAttemptRecord {
                 pass_id: pass_id.to_string(),
@@ -501,9 +604,12 @@ async fn try_validated_prune_pass(
                 error: None,
                 usage: usage.clone(),
             });
-            Some((record, output, usage))
+            Ok(Some((record, output, usage)))
         }
         Err((err_msg, usage)) => {
+            if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+                return Err(PruneCancelled);
+            }
             attempts.push(context_prune_audit::PruneAttemptRecord {
                 pass_id: pass_id.to_string(),
                 timestamp,
@@ -514,7 +620,7 @@ async fn try_validated_prune_pass(
                 error: Some(err_msg),
                 usage,
             });
-            None
+            Ok(None)
         }
     }
 }
@@ -526,7 +632,12 @@ async fn try_stream_prune_pass(
     batch: &[(String, String)],
     active_question: Option<&str>,
     prune_model_slug: &str,
-) -> Result<(String, Option<TokenUsage>), (String, Option<TokenUsage>)> {
+    debug_records: &mut Vec<PruneDebugRecord>,
+    cancellation_token: Option<&CancellationToken>,
+) -> Result<Result<(String, Option<TokenUsage>), (String, Option<TokenUsage>)>, PruneCancelled> {
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return Err(PruneCancelled);
+    }
     let model_info = sess
         .services
         .models_manager
@@ -559,8 +670,9 @@ async fn try_stream_prune_pass(
         CodexResponsesRequestKind::ContextPrune,
     );
 
-    let mut stream = match client_session
-        .stream(
+    let stream = await_or_cancelled(
+        cancellation_token,
+        client_session.stream(
             &prompt,
             &model_info,
             &turn_context.session_telemetry,
@@ -569,28 +681,33 @@ async fn try_stream_prune_pass(
             turn_context.config.service_tier.clone(),
             &responses_metadata,
             &InferenceTraceContext::disabled(),
-        )
-        .await
-    {
+        ),
+    )
+    .await?;
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return Err(PruneCancelled);
+    }
+    let mut stream = match stream {
         Ok(stream) => stream,
         Err(err) => {
             let msg = format!("stream could not be opened: {err}");
             tracing::warn!("Context prune stream failed for model {prune_model_slug}: {err}");
-            log_prune_debug(
-                sess,
+            debug_records.push(PruneDebugRecord::new(
                 prune_model_slug,
                 &input_text,
                 &msg,
                 None,
-            )
-            .await;
-            return Err((msg, None));
+            ));
+            return Ok(Err((msg, None)));
         }
     };
 
     let mut events = Vec::new();
-    while let Some(res) = stream.next().await {
+    while let Some(res) = await_or_cancelled(cancellation_token, stream.next()).await? {
         events.push(res);
+    }
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return Err(PruneCancelled);
     }
 
     let outcome = process_prune_stream_events(events);
@@ -600,10 +717,15 @@ async fn try_stream_prune_pass(
         }
         Err((reason, _)) => {
             tracing::warn!("Context prune LLM stream error/empty ({prune_model_slug}): {reason}");
-            log_prune_debug(sess, prune_model_slug, &input_text, reason, None).await;
+            debug_records.push(PruneDebugRecord::new(
+                prune_model_slug,
+                &input_text,
+                reason,
+                None,
+            ));
         }
     }
-    outcome
+    Ok(outcome)
 }
 
 fn process_prune_stream_events<E: std::fmt::Display>(
@@ -652,14 +774,10 @@ fn process_prune_stream_events<E: std::fmt::Display>(
     }
 }
 
-async fn log_prune_debug(
-    sess: &Arc<Session>,
-    model_slug: &str,
-    input_text: &str,
-    reason: &str,
-    output_text: Option<&str>,
-) {
-    let log_dir = sess.codex_home().await.join("logs");
+fn write_prune_debug_records(log_dir: &Path, records: &[PruneDebugRecord]) {
+    if records.is_empty() {
+        return;
+    }
     let _ = std::fs::create_dir_all(&log_dir);
 
     // Raw debug log only; prune_report.md describes the last successfully
@@ -671,13 +789,27 @@ async fn log_prune_debug(
         .open(debug_file)
     {
         use std::io::Write;
-        let ts = chrono::Utc::now().to_rfc3339();
-        let out_str = output_text.unwrap_or("<none>");
-        let _ = writeln!(
-            file,
-            "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {model_slug}\nFAILURE: {reason}\n--- INPUT BATCH SENT TO LLM ---\n{input_text}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n"
-        );
+        for record in records {
+            let ts = chrono::Utc::now().to_rfc3339();
+            let out_str = record.output_text.as_deref().unwrap_or("<none>");
+            let _ = writeln!(
+                file,
+                "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {}\nFAILURE: {}\n--- INPUT BATCH SENT TO LLM ---\n{}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n",
+                record.model_slug, record.reason, record.input_text,
+            );
+        }
     }
+}
+
+pub(crate) async fn state_snapshot_for_test(
+    sess: &Arc<Session>,
+) -> (Vec<ResponseItem>, HashSet<String>, u64) {
+    let state = sess.state.lock().await;
+    (
+        state.history.raw_items().to_vec(),
+        state.context_prune_covered.clone(),
+        state.context_prune_saved_tokens,
+    )
 }
 
 #[cfg(test)]
@@ -695,7 +827,9 @@ mod tests {
             total_tokens: 1_550,
         };
         let events: Vec<Result<ResponseEvent, String>> = vec![
-            Ok(ResponseEvent::OutputTextDelta("call_1: kept output".to_string())),
+            Ok(ResponseEvent::OutputTextDelta(
+                "call_1: kept output".to_string(),
+            )),
             Ok(ResponseEvent::Completed {
                 token_usage: Some(usage.clone()),
                 response_id: "res-123".to_string(),
@@ -709,9 +843,9 @@ mod tests {
 
     #[test]
     fn stream_ending_without_completed_event_yields_none_usage_not_zero() {
-        let events: Vec<Result<ResponseEvent, String>> = vec![
-            Ok(ResponseEvent::OutputTextDelta("call_1: kept output".to_string())),
-        ];
+        let events: Vec<Result<ResponseEvent, String>> = vec![Ok(ResponseEvent::OutputTextDelta(
+            "call_1: kept output".to_string(),
+        ))];
 
         let res = process_prune_stream_events(events);
         assert_eq!(res, Ok(("call_1: kept output".to_string(), None)));
@@ -739,7 +873,10 @@ mod tests {
         let res = process_prune_stream_events(events);
         assert_eq!(
             res,
-            Err(("stream ended with an error: connection reset by peer".to_string(), Some(usage)))
+            Err((
+                "stream ended with an error: connection reset by peer".to_string(),
+                Some(usage)
+            ))
         );
     }
 
@@ -777,7 +914,10 @@ mod tests {
 
         assert_eq!(attempts.len(), 1);
         assert_eq!(attempts[0].pass_id, "test-pass-999");
-        assert_eq!(attempts[0].status, context_prune_audit::PruneAttemptStatus::ParseError);
+        assert_eq!(
+            attempts[0].status,
+            context_prune_audit::PruneAttemptStatus::ParseError
+        );
         assert_eq!(attempts[0].usage, usage);
     }
 
@@ -820,7 +960,13 @@ mod tests {
         assert_eq!(attempts.len(), 2);
         assert_eq!(attempts[0].pass_id, "shared-pass-uuid-777");
         assert_eq!(attempts[1].pass_id, "shared-pass-uuid-777");
-        assert_eq!(attempts[0].kind, context_prune_audit::PruneAttemptKind::Primary);
-        assert_eq!(attempts[1].kind, context_prune_audit::PruneAttemptKind::Fallback);
+        assert_eq!(
+            attempts[0].kind,
+            context_prune_audit::PruneAttemptKind::Primary
+        );
+        assert_eq!(
+            attempts[1].kind,
+            context_prune_audit::PruneAttemptKind::Fallback
+        );
     }
 }

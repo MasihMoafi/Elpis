@@ -5,6 +5,7 @@
 //! request/response plumbing out of `App` and `ChatWidget`.
 
 mod fs;
+mod models;
 
 use crate::legacy_core::config::Config;
 use crate::permission_compat::legacy_compatible_permission_profile;
@@ -300,6 +301,7 @@ impl AppServerSession {
                     cursor: None,
                     limit: None,
                     include_hidden: Some(true),
+                    model_provider: None,
                 },
             })
             .await
@@ -1172,7 +1174,7 @@ impl AppServerSession {
         self.client.request_handle()
     }
 
-    fn next_request_id(&mut self) -> RequestId {
+    pub(crate) fn next_request_id(&mut self) -> RequestId {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
         RequestId::Integer(request_id)

@@ -161,11 +161,11 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
     }
 
     fn owns_single_history_slot(&self) -> bool {
-        false
+        self.0.owns_single_history_slot()
     }
 
     fn has_model_visible_content(&self) -> bool {
-        true
+        self.0.has_model_visible_content()
     }
 
     fn render_diff(
@@ -424,8 +424,9 @@ impl WorldState {
         })
     }
 
-    /// Empties the history slot of every single-slot section that is about to refill it or
-    /// no longer has anything to say. Returns whether any item was changed.
+    /// Reconciles every single-slot section against retained history. A refilled or empty slot
+    /// loses every old copy; an unchanged visible slot retains only its newest copy. Returns
+    /// whether any item was changed.
     ///
     /// This is what keeps an admitted source to one effective copy and makes a withdrawn
     /// one actually disappear, instead of leaving earlier copies in the request and
@@ -435,36 +436,57 @@ impl WorldState {
         items: &mut Vec<ResponseItem>,
         refilled: &BTreeSet<&str>,
     ) -> bool {
-        let vacating = self
+        let single_slots = self
             .sections
             .iter()
-            .filter(|(id, section)| {
-                section.owns_single_history_slot()
-                    && (refilled.contains(*id) || !section.has_model_visible_content())
-            })
-            .map(|(_, section)| section.as_ref())
+            .filter(|(_, section)| section.owns_single_history_slot())
+            .map(|(id, section)| (*id, section.as_ref()))
             .collect::<Vec<_>>();
-        if vacating.is_empty() {
+        if single_slots.is_empty() {
             return false;
         }
 
         let mut changed = false;
-        items.retain_mut(|item| {
-            let ResponseItem::Message { role, content, .. } = item else {
-                return true;
-            };
-            let before = content.len();
-            content.retain(|content| {
-                let ContentItem::InputText { text } = content else {
-                    return true;
+        let mut newest_retained = BTreeSet::<&str>::new();
+        for item_index in (0..items.len()).rev() {
+            let remove_message = {
+                let ResponseItem::Message { role, content, .. } = &mut items[item_index] else {
+                    continue;
                 };
-                !vacating
-                    .iter()
-                    .any(|section| section.matches_retained_fragment(role, text))
-            });
-            changed |= content.len() != before;
-            !content.is_empty()
-        });
+                let mut removed_owned_content = false;
+                for content_index in (0..content.len()).rev() {
+                    let ContentItem::InputText { text } = &content[content_index] else {
+                        continue;
+                    };
+                    let mut matched_slot = None;
+                    let mut remove_content = false;
+                    for (id, section) in &single_slots {
+                        if !section.matches_retained_fragment(role, text) {
+                            continue;
+                        }
+                        if refilled.contains(*id)
+                            || !section.has_model_visible_content()
+                            || newest_retained.contains(*id)
+                        {
+                            remove_content = true;
+                            break;
+                        }
+                        matched_slot = Some(*id);
+                    }
+                    if remove_content {
+                        content.remove(content_index);
+                        changed = true;
+                        removed_owned_content = true;
+                    } else if let Some(id) = matched_slot {
+                        newest_retained.insert(id);
+                    }
+                }
+                removed_owned_content && content.is_empty()
+            };
+            if remove_message {
+                items.remove(item_index);
+            }
+        }
         changed
     }
 

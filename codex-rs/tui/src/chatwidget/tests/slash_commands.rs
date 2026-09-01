@@ -155,10 +155,29 @@ async fn slash_prune_submits_selective_prune_instead_of_compaction() {
     chat.dispatch_command(SlashCommand::Prune);
 
     assert!(chat.bottom_pane.is_task_running());
+    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
     match rx.try_recv() {
         Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => {}
         other => panic!("expected selective prune op to be submitted, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn slash_prune_status_identifies_a_manual_action() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Prune);
+
+    let event = rx.try_recv().expect("manual prune status");
+    let AppEvent::InsertHistoryCell(cell) = event else {
+        panic!("expected manual prune status, got {event:?}");
+    };
+    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+    assert!(rendered.contains("Manual pruning"), "status: {rendered:?}");
+    assert!(
+        !rendered.contains("Automatic pruning"),
+        "manual status must not claim automatic invocation: {rendered:?}"
+    );
 }
 
 #[tokio::test]
@@ -195,6 +214,56 @@ async fn slash_dashboard_requests_a_read_only_context_snapshot() {
 }
 
 #[tokio::test]
+async fn slash_smart_prune_toggles_and_accepts_explicit_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    assert!(
+        !chat
+            .config
+            .features
+            .enabled(Feature::AutomaticContextPruning)
+    );
+
+    chat.smart_prune_synced = true;
+    chat.dispatch_command(SlashCommand::SmartPrune);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+
+    chat.smart_prune_synced = false;
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "off".to_string(), Vec::new());
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, false)]
+    ));
+}
+
+#[tokio::test]
+async fn slash_smart_prune_rejects_invalid_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::SmartPrune,
+        "sometimes".to_string(),
+        Vec::new(),
+    );
+
+    match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+            assert!(rendered.contains("Usage: /smart-prune [on|off]"));
+        }
+        other => panic!("expected usage error, got {other:?}"),
+    }
+    assert!(
+        rx.try_recv().is_err(),
+        "invalid input dispatched a feature update"
+    );
+}
+
+#[tokio::test]
 async fn slash_force_prune_with_percentage_submits_target_to_runtime() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -210,6 +279,119 @@ async fn slash_force_prune_with_percentage_submits_target_to_runtime() {
             other => panic!("expected targeted prune op, got {other:?}"),
         }
     }
+}
+
+#[tokio::test]
+async fn slash_force_prune_status_identifies_its_manual_targeting() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::ForcePrune, "20%".to_string(), Vec::new());
+
+    let event = rx.try_recv().expect("manual force-prune status");
+    let AppEvent::InsertHistoryCell(cell) = event else {
+        panic!("expected manual force-prune status, got {event:?}");
+    };
+    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+    assert!(rendered.contains("Manual pruning"), "status: {rendered:?}");
+    assert!(rendered.contains("20%"), "status: {rendered:?}");
+    assert!(
+        !rendered.contains("Automatic pruning"),
+        "manual status must not claim automatic invocation: {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    seed_manual_memory_cache_from_disk(&mut chat).expect("seed manual-memory cache");
+    chat.dispatch_command(SlashCommand::Prune);
+    let _ = rx.try_recv().expect("manual prune start status");
+    let _ = rx.try_recv().expect("manual prune operation");
+
+    handle_turn_completed(&mut chat, "prune-turn", /*duration_ms*/ None);
+
+    let mut completion_messages = Vec::new();
+    let mut requested_context_report = false;
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            AppEvent::InsertHistoryCell(cell) => completion_messages
+                .push(lines_to_single_string(&cell.display_lines(/*width*/ 80))),
+            AppEvent::RequestContextUsageReport(_) => requested_context_report = true,
+            _ => {}
+        }
+    }
+    assert!(requested_context_report, "normal manual completion refreshes context usage");
+    assert_eq!(
+        completion_messages,
+        vec!["Manual pruning command finished\n"],
+        "normal completion must be neutral about applied work"
+    );
+}
+
+#[tokio::test]
+async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.dispatch_command(SlashCommand::Prune);
+    let _ = rx.try_recv().expect("manual prune start status");
+    let _ = rx.try_recv().expect("manual prune operation");
+
+    chat.finalize_turn();
+    handle_turn_completed(&mut chat, "unrelated-turn", /*duration_ms*/ None);
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::RequestContextUsageReport(_)),
+            "failed or interrupted manual tracking must not refresh a later turn"
+        );
+        if let AppEvent::InsertHistoryCell(cell) = event {
+            assert_ne!(
+                lines_to_single_string(&cell.display_lines(/*width*/ 80)),
+                "Manual pruning command finished\n",
+                "failed or interrupted manual tracking must not complete later"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
+) -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let cwd = root.path().join("workspace");
+    let memories = root.path().join("memories");
+    let source = root.path().join("notes.md");
+    std::fs::create_dir_all(&cwd)?;
+    std::fs::create_dir_all(&memories)?;
+    std::fs::write(&source, "context notes")?;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.cwd = cwd.abs();
+    chat.config.memory_dir = memories.abs();
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Add,
+        source.display().to_string(),
+        Vec::new(),
+    );
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
+        event,
+        AppEvent::ManualMemoryStatusRefreshRequested(_)
+    )));
+
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    chat.dispatch_command_with_args(
+        SlashCommand::Add,
+        root.path().join("missing.md").display().to_string(),
+        Vec::new(),
+    );
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
+        event,
+        AppEvent::ManualMemoryStatusRefreshRequested(_)
+    )));
+    Ok(())
 }
 
 #[tokio::test]
@@ -504,7 +686,9 @@ async fn queued_settings_selection_applies_before_next_input() {
         while let Ok(event) = rx.try_recv() {
             match event {
                 AppEvent::OpenAllModelsPopup { models } => chat.open_all_models_popup(models),
-                AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
+                AppEvent::OpenReasoningPopup { model, provider_id } => {
+                    chat.open_reasoning_popup_for_provider(model, provider_id);
+                }
                 AppEvent::UpdateModel(model) => chat.set_model(&model),
                 AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
                 AppEvent::SettingsSelectionClosed => {
