@@ -482,31 +482,10 @@ pub async fn build_continuity_prompt_with_dev_rule_roots(
         if !source.admitted || source.name == GLOBAL_RULES || source.name == PROJECT_RULES {
             continue;
         }
-        let Ok(content) = tokio::fs::read_to_string(&source.path).await else {
-            continue;
-        };
-        let content = truncate_chars(content.trim(), source_char_limit(&source.name));
-        if !content.is_empty() {
-            if source.name == MANUAL_MEMORY_FILE {
-                let Some(workspace_dir) = workspace_context_dir(memories_root, cwd) else {
-                    continue;
-                };
-                let admission = fail_if_injected(
-                    InjectedPersistenceFailure::MemoryPostReadAdmission,
-                )
-                .and_then(|()| read_admission(&workspace_dir));
-                match admission {
-                    Ok(admission) if admission.memory => {}
-                    Ok(_) => continue,
-                    Err(_) => return None,
-                }
-            }
-            sections.push(format!(
-                "### Source: {} ({} characters)\n\n{}",
-                source.path.display(),
-                content.chars().count(),
-                content
-            ));
+        if let Some(section) =
+            read_continuity_source_section(&source, memories_root, cwd).await
+        {
+            sections.push(section);
         }
     }
     if sections.is_empty() {
@@ -518,6 +497,33 @@ pub async fn build_continuity_prompt_with_dev_rule_roots(
          transcript. Verify mutable repository state before acting, and prefer the current user\n\
          message when it changes the task.\n\n{}",
         sections.join("\n\n")
+    ))
+}
+
+async fn read_continuity_source_section(
+    source: &ContinuitySource,
+    memories_root: Option<&Path>,
+    cwd: &Path,
+) -> Option<String> {
+    let content = tokio::fs::read_to_string(&source.path).await.ok()?;
+    let content = truncate_chars(content.trim(), source_char_limit(&source.name));
+    if content.is_empty() {
+        return None;
+    }
+    if source.name == MANUAL_MEMORY_FILE {
+        let workspace_dir = workspace_context_dir(memories_root, cwd)?;
+        let admission = fail_if_injected(InjectedPersistenceFailure::MemoryPostReadAdmission)
+            .and_then(|()| read_admission(&workspace_dir))
+            .ok()?;
+        if !admission.memory {
+            return None;
+        }
+    }
+    Some(format!(
+        "### Source: {} ({} characters)\n\n{}",
+        source.path.display(),
+        content.chars().count(),
+        content
     ))
 }
 
@@ -2730,7 +2736,35 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn post_read_memory_admission_error_discards_the_entire_prompt()
+    async fn withdrawn_prebuilt_memory_source_is_skipped_before_injection(
+    ) -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        tokio::fs::create_dir_all(&memories).await?;
+        tokio::fs::write(
+            memories.join(MANUAL_MEMORY_FILE),
+            "MEMORY_WITHDRAWN_MARKER",
+        )
+        .await?;
+        set_continuity_source_admitted(Some(&memories), &cwd, MANUAL_MEMORY_FILE, true)?;
+        let source = continuity_sources(Some(&memories), &cwd, &[])?
+            .into_iter()
+            .find(|source| source.name == MANUAL_MEMORY_FILE)
+            .expect("prebuilt admitted memory source");
+
+        set_continuity_source_admitted(Some(&memories), &cwd, MANUAL_MEMORY_FILE, false)?;
+
+        assert_eq!(
+            read_continuity_source_section(&source, Some(&memories), &cwd).await,
+            None,
+            "a durable withdrawal after source discovery must win before injection"
+        );
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn post_read_memory_admission_error_skips_the_memory_section()
     -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
@@ -2749,11 +2783,11 @@ mod tests {
         let _guard = inject_persistence_failure(
             InjectedPersistenceFailure::MemoryPostReadAdmission,
         );
-        assert_eq!(
-            build_continuity_prompt(Some(&memories), &cwd).await,
-            None,
-            "an admission error after reading memory must discard every admitted section"
-        );
+        let prompt = build_continuity_prompt(Some(&memories), &cwd)
+            .await
+            .expect("the independently admitted goal remains available");
+        assert!(prompt.contains("goal that must also fail closed"));
+        assert!(!prompt.contains("memory"));
         Ok(())
     }
 
