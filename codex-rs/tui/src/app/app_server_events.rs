@@ -224,7 +224,10 @@ impl App {
             .handle_server_notification(notification, /*replay_kind*/ None);
     }
 
-    async fn mirror_elpis_context_notification(&mut self, notification: &ServerNotification) {
+    pub(super) async fn mirror_elpis_context_notification(
+        &mut self,
+        notification: &ServerNotification,
+    ) {
         if let ServerNotification::ItemCompleted(notification) = notification {
             self.elpis_turn_items
                 .entry(notification.thread_id.clone())
@@ -252,11 +255,20 @@ impl App {
                 &turn,
             )
             .await;
-            if let Err(err) = result {
-                tracing::warn!(error = %err, "failed to save Elpis session checkpoint");
-                self.chat_widget.add_error_message(format!(
-                    "Turn completed, but Elpis could not save ES.md: {err}"
-                ));
+            match result {
+                Ok(_) => {
+                    let memories_root = self.config.memory_dir.clone();
+                    self.request_manual_memory_refresh_for_paths(
+                        memories_root.as_path(),
+                        cwd.as_path(),
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!(error = %err, "failed to save Elpis session checkpoint");
+                    self.chat_widget.add_error_message(format!(
+                        "Turn completed, but Elpis could not save ES.md: {err}"
+                    ));
+                }
             }
             return;
         }
@@ -291,11 +303,20 @@ impl App {
                 .await
                 .map(|_| ()),
         };
-        if let Err(err) = result {
-            tracing::warn!(error = %err, "failed to mirror Elpis goal");
-            self.chat_widget.add_error_message(format!(
-                "Goal changed, but Elpis could not save its portable GOAL.md: {err}"
-            ));
+        match result {
+            Ok(()) => {
+                let memories_root = self.config.memory_dir.clone();
+                self.request_manual_memory_refresh_for_paths(
+                    memories_root.as_path(),
+                    cwd.as_path(),
+                );
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to mirror Elpis goal");
+                self.chat_widget.add_error_message(format!(
+                    "Goal changed, but Elpis could not save its portable GOAL.md: {err}"
+                ));
+            }
         }
     }
 

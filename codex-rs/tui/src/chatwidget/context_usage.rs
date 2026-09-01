@@ -53,6 +53,26 @@ struct ContextUsageSnapshot {
     rollout_path: Option<std::path::PathBuf>,
 }
 
+fn dashboard_source_projection(
+    source: &crate::legacy_core::elpis_context::ContinuitySource,
+) -> crate::dashboard_server::DashboardSource {
+    let name = if source.origin == "manual addition" {
+        source
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Custom source".to_string())
+    } else {
+        source.name.clone()
+    };
+    crate::dashboard_server::DashboardSource {
+        name,
+        category: format!("{:?}", source.category),
+        estimated_tokens: source.estimated_tokens,
+        admitted: source.admitted,
+    }
+}
+
 #[derive(Debug)]
 struct ContextUsageHistoryCell {
     before_chart: Vec<Line<'static>>,
@@ -143,8 +163,7 @@ impl ChatWidget {
             return;
         }
         self.add_info_message("Manual pruning command finished".to_string(), None);
-        self.app_event_tx
-            .send(crate::app_event::AppEvent::RequestContextUsageReport);
+        self.request_fresh_context_usage_report();
     }
 
     pub(super) fn update_context_prune_savings(&mut self, saved_tokens: u64, from_replay: bool) {
@@ -309,12 +328,7 @@ impl ChatWidget {
         let sources = snapshot
             .sources
             .iter()
-            .map(|source| crate::dashboard_server::DashboardSource {
-                name: source.name.clone(),
-                category: format!("{:?}", source.category),
-                estimated_tokens: source.estimated_tokens,
-                admitted: source.admitted,
-            })
+            .map(dashboard_source_projection)
             .collect();
 
         let to_totals = |usage: &crate::token_usage::TokenUsage| {
@@ -985,6 +999,34 @@ fn fmt_percent(tokens: u64, window: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_memory_dashboard_source_projection_does_not_serialize_custom_absolute_paths() {
+        let absolute_path = "/home/test/private/context/secret-plan.md";
+        let source = crate::legacy_core::elpis_context::ContinuitySource {
+            name: absolute_path.to_string(),
+            path: std::path::PathBuf::from(absolute_path),
+            bytes: 128,
+            estimated_tokens: 32,
+            category: ContinuitySourceCategory::Files,
+            origin: "manual addition",
+            lifetime: "every turn",
+            reason: "manually added file",
+            admitted: true,
+            selectable: true,
+        };
+
+        let projected = dashboard_source_projection(&source);
+        let serialized = serde_json::to_string(&crate::dashboard_server::DashboardSnapshot {
+            sources: vec![projected.clone()],
+            ..Default::default()
+        })
+        .expect("serialize dashboard snapshot");
+
+        assert_eq!(projected.name, "secret-plan.md");
+        assert!(!serialized.contains(absolute_path));
+        assert!(!serialized.contains("/home/test/private/context"));
+    }
 
     fn filled_cells(lines: &[Line<'static>]) -> usize {
         lines

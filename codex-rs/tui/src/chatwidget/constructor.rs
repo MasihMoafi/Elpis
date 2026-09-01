@@ -100,6 +100,7 @@ impl ChatWidget {
                 skills: None,
             }),
             context_ledger: ContextLedgerState::default(),
+            manual_memory_cache: ManualMemoryCache::default(),
             transcript: TranscriptState::new(active_cell),
             raw_output_mode: config.tui_raw_output_mode,
             config,

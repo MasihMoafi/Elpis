@@ -54,6 +54,60 @@ use codex_protocol::openai_models::ReasoningEffort;
 
 use crate::history_cell::HistoryCell;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ManualMemoryViewKey {
+    pub(crate) epoch: u64,
+    pub(crate) primary_root_thread_id: ThreadId,
+    pub(crate) displayed_thread_id: ThreadId,
+    pub(crate) cwd: PathBuf,
+    pub(crate) memory_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ManualMemoryStorageTarget {
+    pub(crate) admission_path: PathBuf,
+    pub(crate) memory_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ManualMemoryRequestTarget {
+    pub(crate) view: ManualMemoryViewKey,
+    pub(crate) storage: ManualMemoryStorageTarget,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryUnavailableReason {
+    AdmissionUnavailable,
+    MemoryUnreadable,
+    InvalidUtf8,
+    MemoryPathNotFile,
+    SourcesUnavailable,
+    WorkerFailed,
+}
+
+impl From<crate::legacy_core::elpis_context::ManualMemoryUnavailableReason>
+    for ManualMemoryUnavailableReason
+{
+    fn from(reason: crate::legacy_core::elpis_context::ManualMemoryUnavailableReason) -> Self {
+        use crate::legacy_core::elpis_context::ManualMemoryUnavailableReason as CoreReason;
+        match reason {
+            CoreReason::AdmissionUnavailable => Self::AdmissionUnavailable,
+            CoreReason::MemoryUnreadable => Self::MemoryUnreadable,
+            CoreReason::InvalidUtf8 => Self::InvalidUtf8,
+            CoreReason::MemoryPathNotFile => Self::MemoryPathNotFile,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryStatusCompletion {
+    Ready {
+        status: crate::legacy_core::elpis_context::ManualMemoryStatus,
+        sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
+    },
+    Unavailable(ManualMemoryUnavailableReason),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ThreadGoalSetMode {
     ConfirmIfExists,
@@ -226,7 +280,13 @@ pub(crate) enum AppEvent {
 
     /// Render the `/context` usage report. Requires the App-owned transcript cell list
     /// (checkpoint count, per-category totals), so it cannot be built inside `ChatWidget`.
-    RequestContextUsageReport,
+    RequestContextUsageReport(ManualMemoryRequestTarget),
+
+    /// Refresh the cached manual-memory/source projection after a local write.
+    ManualMemoryStatusRefreshRequested(ManualMemoryRequestTarget),
+
+    /// Result of a blocking manual-memory/source read.
+    ManualMemoryStatusLoaded(ManualMemoryRequestTarget, ManualMemoryStatusCompletion),
 
     /// Open a read-only dashboard of the current context window and its provenance.
     OpenContextDashboard,

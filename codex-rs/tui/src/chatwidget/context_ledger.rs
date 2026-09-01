@@ -180,12 +180,15 @@ impl ChatWidget {
             self.context_ledger.pending_g = false;
             match key_event.code {
                 KeyCode::Char('i') => {
-                    let selectable_sources = sources
-                        .iter()
-                        .filter(|source| source.selectable)
-                        .collect::<Vec<_>>();
-                    let all_admitted = !selectable_sources.is_empty()
-                        && selectable_sources.iter().all(|source| source.admitted);
+                    let manual_memory_path = self
+                        .manual_memory_cache
+                        .bound_target
+                        .as_ref()
+                        .map(|target| target.view.memory_path.clone());
+                    let all_admitted = all_bulk_context_sources_admitted(
+                        &sources,
+                        manual_memory_path.as_deref(),
+                    );
                     self.set_all_context_sources_admitted(&sources, !all_admitted);
                     self.request_redraw();
                     return true;
@@ -204,12 +207,15 @@ impl ChatWidget {
                 self.context_ledger.focused = false;
             }
             KeyCode::Char('i') => {
-                let selectable_sources = sources
-                    .iter()
-                    .filter(|source| source.selectable)
-                    .collect::<Vec<_>>();
-                let all_admitted = !selectable_sources.is_empty()
-                    && selectable_sources.iter().all(|source| source.admitted);
+                let manual_memory_path = self
+                    .manual_memory_cache
+                    .bound_target
+                    .as_ref()
+                    .map(|target| target.view.memory_path.clone());
+                let all_admitted = all_bulk_context_sources_admitted(
+                    &sources,
+                    manual_memory_path.as_deref(),
+                );
                 self.set_all_context_sources_admitted(&sources, !all_admitted);
             }
             KeyCode::Char('g') => {
@@ -754,23 +760,126 @@ impl ChatWidget {
         false
     }
 
-    pub(super) fn continuity_sources(
+    pub(crate) fn continuity_sources(
         &self,
     ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
-        crate::legacy_core::elpis_context::continuity_sources_with_dev_rule_roots(
-            Some(self.config.memory_dir.as_path()),
-            self.config.cwd.as_path(),
-            &self.instruction_source_paths_as_path_bufs(),
-            &self.config.dev_rule_roots(),
-        )
-        // ponytail: temporary fail-closed bridge; Memory A3 replaces live reads
-        // with cached Unavailable state.
-        .unwrap_or_default()
+        self.manual_memory_cache.sources.clone()
+    }
+
+    pub(crate) fn manual_memory_bound_target(&self) -> Option<&ManualMemoryRequestTarget> {
+        self.manual_memory_cache.bound_target.as_ref()
+    }
+
+    pub(crate) fn manual_memory_phase(&self) -> ManualMemoryPhase {
+        self.manual_memory_cache.phase
+    }
+
+    pub(crate) fn manual_memory_status(
+        &self,
+    ) -> Option<&crate::legacy_core::elpis_context::ManualMemoryStatus> {
+        self.manual_memory_cache.status.as_ref()
+    }
+
+    pub(crate) fn manual_memory_unavailable_reason(
+        &self,
+    ) -> Option<ManualMemoryUnavailableReason> {
+        self.manual_memory_cache.unavailable_reason
+    }
+
+    pub(crate) fn manual_memory_refresh_requested(&self) -> bool {
+        self.manual_memory_cache.refresh_requested
+    }
+
+    pub(crate) fn manual_memory_context_report_pending(&self) -> bool {
+        self.manual_memory_cache.pending_context_report
+    }
+
+    pub(crate) fn bind_manual_memory_loading(
+        &mut self,
+        target: ManualMemoryRequestTarget,
+        pending_context_report: bool,
+    ) {
+        self.manual_memory_cache = ManualMemoryCache {
+            bound_target: Some(target),
+            phase: ManualMemoryPhase::Loading,
+            pending_context_report,
+            ..ManualMemoryCache::default()
+        };
+        self.request_redraw();
+    }
+
+    fn mark_manual_memory_loading(&mut self) -> Option<ManualMemoryRequestTarget> {
+        let target = self.manual_memory_cache.bound_target.clone()?;
+        self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+        self.manual_memory_cache.status = None;
+        self.manual_memory_cache.sources.clear();
+        self.manual_memory_cache.unavailable_reason = None;
+        self.manual_memory_cache.refresh_requested = true;
+        self.request_redraw();
+        Some(target)
+    }
+
+    pub(crate) fn request_manual_memory_status_refresh(&mut self) {
+        if self.manual_memory_cache.refresh_requested {
+            return;
+        }
+        if let Some(target) = self.mark_manual_memory_loading() {
+            self.app_event_tx
+                .send(AppEvent::ManualMemoryStatusRefreshRequested(target));
+        }
+    }
+
+    pub(crate) fn request_fresh_context_usage_report(&mut self) {
+        if self.manual_memory_cache.pending_context_report {
+            return;
+        }
+        let Some(target) = self.mark_manual_memory_loading() else {
+            self.add_info_message(
+                "Context status is still initializing.".to_string(),
+                /*hint*/ None,
+            );
+            return;
+        };
+        self.manual_memory_cache.pending_context_report = true;
+        self.app_event_tx
+            .send(AppEvent::RequestContextUsageReport(target));
+    }
+
+    pub(crate) fn apply_manual_memory_status_completion(
+        &mut self,
+        target: &ManualMemoryRequestTarget,
+        completion: ManualMemoryStatusCompletion,
+    ) -> bool {
+        if self.manual_memory_cache.bound_target.as_ref() != Some(target)
+            || self.manual_memory_cache.refresh_requested
+        {
+            return false;
+        }
+        match completion {
+            ManualMemoryStatusCompletion::Ready { status, sources } => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Ready;
+                self.manual_memory_cache.status = Some(status);
+                self.manual_memory_cache.sources = sources;
+                self.manual_memory_cache.unavailable_reason = None;
+            }
+            ManualMemoryStatusCompletion::Unavailable(reason) => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Unavailable;
+                self.manual_memory_cache.status = None;
+                self.manual_memory_cache.sources.clear();
+                self.manual_memory_cache.unavailable_reason = Some(reason);
+            }
+        }
+        self.request_redraw();
+        true
+    }
+
+    pub(crate) fn take_pending_context_report(&mut self) -> bool {
+        std::mem::take(&mut self.manual_memory_cache.pending_context_report)
     }
 
     /// The server-reported instruction sources, converted for `elpis_context` — the
     /// same list `/usage` renders, so the ledger cannot disagree with it.
-    pub(super) fn instruction_source_paths_as_path_bufs(&self) -> Vec<std::path::PathBuf> {
+    pub(crate) fn instruction_source_paths_as_path_bufs(&self) -> Vec<std::path::PathBuf> {
         self.instruction_source_paths
             .iter()
             .filter_map(|uri| uri.to_abs_path().ok())
@@ -792,7 +901,14 @@ impl ChatWidget {
         sources: &[crate::legacy_core::elpis_context::ContinuitySource],
         admitted: bool,
     ) {
-        for source in sources.iter().filter(|source| source.selectable) {
+        let manual_memory_path = self
+            .manual_memory_cache
+            .bound_target
+            .as_ref()
+            .map(|target| target.view.memory_path.clone());
+        for source in sources.iter().filter(|source| {
+            is_bulk_context_source_actionable(source, manual_memory_path.as_deref())
+        }) {
             if !self.set_context_source_admitted(source, admitted) {
                 break;
             }
@@ -807,6 +923,20 @@ impl ChatWidget {
         source: &crate::legacy_core::elpis_context::ContinuitySource,
         selectable: &[usize],
     ) {
+        let is_manual_memory = is_manual_memory_source(
+            source,
+            self.manual_memory_cache
+                .bound_target
+                .as_ref()
+                .map(|target| target.view.memory_path.as_path()),
+        );
+        if is_manual_memory {
+            self.add_info_message(
+                "Manual Memory controls are not available yet.".to_string(),
+                /*hint*/ None,
+            );
+            return;
+        }
         match crate::legacy_core::elpis_context::remove_continuity_source(
             Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
@@ -817,7 +947,7 @@ impl ChatWidget {
                 if self.context_ledger.selected >= selectable.len() {
                     self.move_context_ledger_selection(selectable, -1);
                 }
-                self.refresh_context_window_display();
+                self.request_manual_memory_status_refresh();
             }
             Ok(false) => {
                 self.add_info_message(
@@ -830,6 +960,7 @@ impl ChatWidget {
             }
             Err(error) => {
                 self.add_error_message(format!("Could not remove context source: {error}"));
+                self.request_manual_memory_status_refresh();
             }
         }
     }
@@ -839,22 +970,61 @@ impl ChatWidget {
         source: &crate::legacy_core::elpis_context::ContinuitySource,
         admitted: bool,
     ) -> bool {
-        match crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        let is_manual_memory = is_manual_memory_source(
+            source,
+            self.manual_memory_cache
+                .bound_target
+                .as_ref()
+                .map(|target| target.view.memory_path.as_path()),
+        );
+        if is_manual_memory {
+            self.add_info_message(
+                "Manual Memory controls are not available yet.".to_string(),
+                /*hint*/ None,
+            );
+            return false;
+        }
+        let updated = match crate::legacy_core::elpis_context::set_continuity_source_admitted(
             Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
             &source.name,
             admitted,
         ) {
-            Ok(()) => {
-                self.refresh_context_window_display();
-                true
-            }
+            Ok(()) => true,
             Err(error) => {
                 self.add_error_message(format!("Could not update context admission: {error}"));
                 false
             }
-        }
+        };
+        self.request_manual_memory_status_refresh();
+        updated
     }
+}
+
+fn is_manual_memory_source(
+    source: &crate::legacy_core::elpis_context::ContinuitySource,
+    manual_memory_path: Option<&std::path::Path>,
+) -> bool {
+    manual_memory_path == Some(source.path.as_path())
+}
+
+fn is_bulk_context_source_actionable(
+    source: &crate::legacy_core::elpis_context::ContinuitySource,
+    manual_memory_path: Option<&std::path::Path>,
+) -> bool {
+    source.selectable && !is_manual_memory_source(source, manual_memory_path)
+}
+
+fn all_bulk_context_sources_admitted(
+    sources: &[crate::legacy_core::elpis_context::ContinuitySource],
+    manual_memory_path: Option<&std::path::Path>,
+) -> bool {
+    let mut actionable = sources
+        .iter()
+        .filter(|source| is_bulk_context_source_actionable(source, manual_memory_path));
+    actionable
+        .next()
+        .is_some_and(|first| first.admitted && actionable.all(|source| source.admitted))
 }
 
 fn category_color(category: crate::legacy_core::elpis_context::ContinuitySourceCategory) -> Color {

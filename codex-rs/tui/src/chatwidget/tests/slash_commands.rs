@@ -303,6 +303,7 @@ async fn slash_force_prune_status_identifies_its_manual_targeting() {
 #[tokio::test]
 async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    seed_manual_memory_cache_from_disk(&mut chat).expect("seed manual-memory cache");
     chat.dispatch_command(SlashCommand::Prune);
     let _ = rx.try_recv().expect("manual prune start status");
     let _ = rx.try_recv().expect("manual prune operation");
@@ -315,7 +316,7 @@ async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() 
         match event {
             AppEvent::InsertHistoryCell(cell) => completion_messages
                 .push(lines_to_single_string(&cell.display_lines(/*width*/ 80))),
-            AppEvent::RequestContextUsageReport => requested_context_report = true,
+            AppEvent::RequestContextUsageReport(_) => requested_context_report = true,
             _ => {}
         }
     }
@@ -339,7 +340,7 @@ async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() 
 
     while let Ok(event) = rx.try_recv() {
         assert!(
-            !matches!(event, AppEvent::RequestContextUsageReport),
+            !matches!(event, AppEvent::RequestContextUsageReport(_)),
             "failed or interrupted manual tracking must not refresh a later turn"
         );
         if let AppEvent::InsertHistoryCell(cell) = event {
@@ -350,6 +351,47 @@ async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() 
             );
         }
     }
+}
+
+#[tokio::test]
+async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
+) -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let cwd = root.path().join("workspace");
+    let memories = root.path().join("memories");
+    let source = root.path().join("notes.md");
+    std::fs::create_dir_all(&cwd)?;
+    std::fs::create_dir_all(&memories)?;
+    std::fs::write(&source, "context notes")?;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.cwd = cwd.abs();
+    chat.config.memory_dir = memories.abs();
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Add,
+        source.display().to_string(),
+        Vec::new(),
+    );
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
+        event,
+        AppEvent::ManualMemoryStatusRefreshRequested(_)
+    )));
+
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    chat.dispatch_command_with_args(
+        SlashCommand::Add,
+        root.path().join("missing.md").display().to_string(),
+        Vec::new(),
+    );
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
+        event,
+        AppEvent::ManualMemoryStatusRefreshRequested(_)
+    )));
+    Ok(())
 }
 
 #[tokio::test]
