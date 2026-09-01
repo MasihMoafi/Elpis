@@ -131,8 +131,14 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
         &config_toml_path,
         toml::from_str::<TomlValue>(&format!(
             "[skills]\ndev_rule_roots = [{}]\n",
-            toml::Value::String(configured.parent().expect("configured root").display().to_string())
-                .to_string(),
+            toml::Value::String(
+                configured
+                    .parent()
+                    .expect("configured root")
+                    .display()
+                    .to_string()
+            )
+            .to_string(),
         ))
         .expect("development-rule config"),
     );
@@ -148,13 +154,22 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
     let rendered = render_ledger(&chat, 100);
 
     assert!(rendered.contains("≈"), "token estimates must stay labeled");
-    for estimate in ["≈1,244 est. tokens", "≈1,185 est. tokens", "≈1,050 est. tokens"] {
-        assert!(rendered.contains(estimate), "missing {estimate}:\n{rendered}");
+    for estimate in [
+        "≈1,244 est. tokens",
+        "≈1,185 est. tokens",
+        "≈1,050 est. tokens",
+    ] {
+        assert!(
+            rendered.contains(estimate),
+            "missing {estimate}:\n{rendered}"
+        );
     }
     assert!(rendered.contains("Origin: configured development rules"));
-    assert!(rendered.contains(
-        "Size: 4,739 bytes · Estimate: ≈1,185 tokens (trimmed characters ÷ 4, capped)"
-    ));
+    assert!(
+        rendered.contains(
+            "Size: 4,739 bytes · Estimate: ≈1,185 tokens (trimmed characters ÷ 4, capped)"
+        )
+    );
     assert!(rendered.contains("› [x]"));
     assert!(rendered.contains("INCLUDED"));
     assert!(rendered.contains("Lifetime: every turn"));
@@ -191,18 +206,18 @@ async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyh
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('e')));
     assert!(
         chat.continuity_sources()
-        .iter()
-        .filter(|source| source.selectable)
-        .all(|source| !source.admitted)
+            .iter()
+            .filter(|source| source.selectable)
+            .all(|source| !source.admitted)
     );
 
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
     assert!(
         chat.continuity_sources()
-        .iter()
-        .filter(|source| source.selectable)
-        .all(|source| source.admitted)
+            .iter()
+            .filter(|source| source.selectable)
+            .all(|source| source.admitted)
     );
     Ok(())
 }
@@ -274,4 +289,214 @@ async fn full_widget_render_keeps_context_ledger_visible() -> anyhow::Result<()>
         .collect::<String>();
     assert!(rendered.contains("CONTEXT LEDGER"));
     Ok(())
+}
+
+#[tokio::test]
+async fn ledger_renders_smart_prune_switch_in_both_states() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    let off = render_ledger(&chat, 30);
+    assert!(off.contains("SMART PRUNE"));
+    assert!(off.contains("[●━━━] OFF"));
+    assert!(off.contains("Tool results pass through unchanged"));
+
+    assert!(chat.set_feature_enabled(Feature::AutomaticContextPruning, true));
+    let pending = render_ledger(&chat, 30);
+    assert!(
+        pending.contains("[●━━━] OFF"),
+        "a persisted user-layer request must not be shown as the core-effective state"
+    );
+
+    chat.smart_prune.enabled = true;
+    let on = render_ledger(&chat, 30);
+    assert!(on.contains("[━━━●] ON"));
+    assert!(on.contains("Before first send"));
+
+    chat.smart_prune.examined_outputs = 3;
+    chat.smart_prune.admitted_outputs = 2;
+    chat.smart_prune.failed_batches = 1;
+    chat.smart_prune.approx_source_tokens = 4_000;
+    chat.smart_prune.approx_admitted_tokens = 700;
+    chat.smart_prune.latest = Some(
+        codex_app_server_protocol::ThreadSmartPruneAdmissionSnapshot {
+            admission_id: "019d0000-example".to_string(),
+            audit_path: "smart-prune/admissions/019d0000-example".to_string(),
+            examined_outputs: 3,
+            admitted_outputs: 2,
+            approx_source_tokens: 4_000,
+            approx_admitted_tokens: 700,
+            approx_saved_tokens: 3_300,
+            request_sequence: Some(2),
+            request_input_sha256: Some("abc123".to_string()),
+            request_linkage_verified: true,
+            response_id: Some("response-2".to_string()),
+            response_usage: None,
+            response_linkage_verified: true,
+        },
+    );
+    let evidenced = render_ledger(&chat, 30);
+    assert!(evidenced.contains("2/3 admitted"));
+    assert!(evidenced.contains("≈4.0k→≈700"));
+    assert!(evidenced.contains("1 failed"));
+    assert!(evidenced.contains("Latest 019d0000 · response linked"));
+
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    let busy = render_ledger(&chat, 30);
+    assert!(busy.contains("Available after turn"));
+}
+
+#[tokio::test]
+async fn focused_ledger_p_requests_next_turn_toggle_even_without_sources() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(120));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    assert!(
+        !chat
+            .config
+            .features
+            .enabled(Feature::AutomaticContextPruning),
+        "the switch must wait for durable persistence before changing"
+    );
+}
+
+#[tokio::test]
+async fn focused_ledger_p_toggles_from_authoritative_snapshot_when_layers_differ() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(120));
+    chat.smart_prune.enabled = true;
+    assert!(
+        !chat
+            .config
+            .features
+            .enabled(Feature::AutomaticContextPruning),
+        "the fixture must exercise a higher-precedence effective state"
+    );
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, false)]
+    ));
+}
+
+#[tokio::test]
+async fn focused_ledger_p_is_consumed_without_update_during_active_turn() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(120));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, AppEvent::UpdateFeatureFlags { .. }))
+    );
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::InsertHistoryCell(cell)
+            if lines_to_single_string(&cell.display_lines(/*width*/ 80))
+                .contains("changed after this turn")
+    )));
+}
+
+#[tokio::test]
+async fn focused_ledger_p_is_consumed_without_update_while_turn_start_is_pending() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(120));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    chat.input_queue.user_turn_pending_start = true;
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, AppEvent::UpdateFeatureFlags { .. }))
+    );
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::InsertHistoryCell(cell)
+            if lines_to_single_string(&cell.display_lines(/*width*/ 80))
+                .contains("changed after this turn")
+    )));
+}
+
+#[tokio::test]
+async fn ledger_switch_mouse_hitbox_only_covers_the_switch() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let buffer = render_ledger_buffer(&chat, 30);
+    let switch_cell = buffer
+        .content()
+        .iter()
+        .enumerate()
+        .find(|(_, cell)| cell.symbol() == "●")
+        .map(|(index, _)| ((index / 52) as u16, (index % 52) as u16))
+        .expect("switch knob");
+
+    assert!(!chat.handle_context_ledger_mouse_click(switch_cell.0, 2));
+    assert!(rx.try_recv().is_err());
+    assert!(chat.handle_context_ledger_mouse_click(switch_cell.0, switch_cell.1));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+}
+
+#[tokio::test]
+async fn ledger_switch_is_not_interactive_after_the_terminal_hides_it() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(80));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+
+    let wide_area = ratatui::layout::Rect::new(0, 0, 80, 80);
+    let mut wide_buffer = ratatui::buffer::Buffer::empty(wide_area);
+    Renderable::render(&chat, wide_area, &mut wide_buffer);
+    let switch_cell = wide_buffer
+        .content()
+        .iter()
+        .enumerate()
+        .find(|(_, cell)| cell.symbol() == "●")
+        .map(|(index, _)| ((index / 80) as u16, (index % 80) as u16))
+        .expect("switch knob");
+    assert!(
+        switch_cell.1 < 79,
+        "test click must remain inside the narrower terminal"
+    );
+
+    let narrow_area = ratatui::layout::Rect::new(0, 0, 79, 80);
+    let mut narrow_buffer = ratatui::buffer::Buffer::empty(narrow_area);
+    Renderable::render(&chat, narrow_area, &mut narrow_buffer);
+
+    assert!(!chat.handle_context_ledger_mouse_click(switch_cell.0, switch_cell.1));
+    assert!(!chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .all(|event| !matches!(event, AppEvent::UpdateFeatureFlags { .. }))
+    );
+}
+
+#[tokio::test]
+async fn enabled_ledger_switch_keeps_textual_state_and_a_bold_knob() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.smart_prune.enabled = true;
+    let buffer = render_ledger_buffer(&chat, 30);
+    let switch = buffer
+        .content()
+        .windows(6)
+        .find(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>() == "[━━━●]")
+        .expect("enabled switch");
+
+    assert!(switch[4].modifier.contains(Modifier::BOLD));
 }

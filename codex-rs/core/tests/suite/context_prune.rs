@@ -27,7 +27,6 @@ const CONTEXT_WINDOW: i64 = 10_000;
 const MAIN_MODEL: &str = "gpt-5.4";
 const PRUNE_MODEL: &str = "gpt-5.6-luna";
 const OLD_CALL_ID: &str = "old-pressure-output";
-const CURRENT_CALL_ID: &str = "current-turn-output";
 const GLOBAL_INSTRUCTIONS: &str = "global instructions for the prune/AGENTS.md regression test";
 
 /// Pins the thread to one workspace and admits the global AGENTS.md row there, so build
@@ -36,10 +35,9 @@ fn pin_workspace_and_admit_global_rules(
     workspace: Arc<TempDir>,
 ) -> impl FnOnce(&mut codex_core::config::Config) + Send + 'static {
     move |config| {
-        config.cwd = codex_utils_absolute_path::AbsolutePathBuf::try_from(
-            workspace.path().to_path_buf(),
-        )
-        .expect("absolute workspace path");
+        config.cwd =
+            codex_utils_absolute_path::AbsolutePathBuf::try_from(workspace.path().to_path_buf())
+                .expect("absolute workspace path");
         codex_core::elpis_context::set_continuity_source_admitted(
             Some(config.memory_dir.as_path()),
             config.cwd.as_path(),
@@ -59,14 +57,11 @@ fn shell_arguments(command: &str) -> String {
     .expect("serialize shell arguments")
 }
 
-async fn pressure_harness() -> Result<TestCodexHarness> {
+async fn manual_harness() -> Result<TestCodexHarness> {
     TestCodexHarness::with_builder(
         test_codex()
             .with_model(MAIN_MODEL)
-            .with_config(|config| {
-                config.model_context_window = Some(CONTEXT_WINDOW);
-                let _ = config.features.enable(Feature::AutomaticContextPruning);
-            }),
+            .with_config(|config| config.model_context_window = Some(CONTEXT_WINDOW)),
     )
     .await
 }
@@ -135,60 +130,43 @@ async fn automatic_prune_is_disabled_by_default() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(context_prune_counters)]
-async fn pressure_prune_runs_at_thirty_percent_and_rewrites_next_request() -> Result<()> {
+async fn smart_prune_flag_never_runs_retrospective_pressure_pruning() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
-    let harness = pressure_harness().await?;
-    let prune_response = sse(vec![
-        ev_assistant_message(
-            "prune-result",
-            &format!("{OLD_CALL_ID}: command output was generated and inspected"),
-        ),
-        ev_completed_with_tokens("prune-result", /*total_tokens*/ 100),
-    ]);
+    let harness =
+        TestCodexHarness::with_builder(test_codex().with_model(MAIN_MODEL).with_config(|config| {
+            config.model_context_window = Some(CONTEXT_WINDOW);
+            let _ = config.features.enable(Feature::AutomaticContextPruning);
+        }))
+        .await?;
     let requests = mount_sse_sequence(
         harness.server(),
         vec![
             main_tool_response(
                 OLD_CALL_ID,
-                /*total_tokens*/ 2_500,
-                "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
-            ),
-            final_response(),
-            prune_response,
-            main_tool_response(
-                CURRENT_CALL_ID,
                 /*total_tokens*/ 3_000,
-                "printf current-marker",
+                // Deliberately below Smart Prune's admission threshold but still
+                // reclaimable by the retired pressure path.
+                "awk 'BEGIN { for (i=0; i<800; i++) printf \"x\" }'",
             ),
             final_response(),
         ],
     )
     .await;
 
-    harness.submit("generate an old diagnostic output").await?;
-    harness.submit("inspect the current marker").await?;
+    harness
+        .submit("generate a modest diagnostic output")
+        .await?;
 
     let requests = requests.requests();
-    assert_eq!(requests.len(), 5);
-    assert_eq!(requests[0].body_json()["model"], MAIN_MODEL);
-    assert_eq!(requests[2].body_json()["model"], PRUNE_MODEL);
-    assert_eq!(requests[2].body_json()["reasoning"]["effort"], "max");
-    assert_eq!(requests[3].body_json()["model"], MAIN_MODEL);
-    assert_eq!(requests[4].body_json()["model"], MAIN_MODEL);
-    assert!(requests[2].body_contains_text("<evidence_batch>"));
-    assert!(requests[2].body_contains_text(OLD_CALL_ID));
+    assert_eq!(requests.len(), 2);
     assert!(
-        !requests[2].body_contains_text("output:\ncurrent-marker"),
-        "the pruning model must never receive current-turn tool output"
+        requests
+            .iter()
+            .all(|request| request.body_json()["model"] == MAIN_MODEL)
     );
-    assert!(requests[3].body_contains_text("[ELPIS CONTEXT UPDATE]"));
-    assert!(requests[3].body_contains_text(&format!("rollout://tool-call/{OLD_CALL_ID}")));
-    assert!(requests[4].body_contains_text("Output:\ncurrent-marker"));
-    assert!(
-        !requests[3].body_contains_text(&"x".repeat(128)),
-        "the next real model request must receive the compact receipt, not raw bulk output"
-    );
+    assert!(requests[1].body_contains_text(&"x".repeat(128)));
+    assert!(!requests[1].body_contains_text("[ELPIS CONTEXT UPDATE]"));
 
     Ok(())
 }
@@ -393,39 +371,10 @@ async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(context_prune_counters)]
-async fn pressure_prune_does_not_run_below_thirty_percent() -> Result<()> {
-    skip_if_host_windows!(Ok(()));
-
-    let harness = pressure_harness().await?;
-    let requests = mount_sse_sequence(
-        harness.server(),
-        vec![
-            main_tool_response(CURRENT_CALL_ID, /*total_tokens*/ 2_999, "printf x"),
-            final_response(),
-        ],
-    )
-    .await;
-
-    harness.submit("generate a large diagnostic output").await?;
-
-    let requests = requests.requests();
-    assert_eq!(requests.len(), 2);
-    assert!(
-        requests
-            .iter()
-            .all(|request| request.body_json()["model"] == MAIN_MODEL)
-    );
-    assert!(requests[1].body_contains_text("Output:\nx"));
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[serial(context_prune_counters)]
 async fn manual_prune_rewrites_completed_tool_output_without_compacting_messages() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
-    let harness = pressure_harness().await?;
+    let harness = manual_harness().await?;
     let prune_response = sse(vec![
         ev_assistant_message(
             "manual-prune-result",
@@ -485,8 +434,8 @@ async fn manual_prune_rewrites_completed_tool_output_without_compacting_messages
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(context_prune_counters)]
-async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint(
-) -> Result<()> {
+async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint()
+-> Result<()> {
     skip_if_host_windows!(Ok(()));
 
     let (release_prune_tx, release_prune_rx) = oneshot::channel();
@@ -540,19 +489,18 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
         retry_prune,
     ])
     .await;
-    let mut builder = test_codex()
-        .with_model(MAIN_MODEL)
-        .with_config(|config| {
-            config.model_context_window = Some(CONTEXT_WINDOW);
-            // The generic interruption marker is unrelated to pruning. Disable it so
-            // identical retry input proves that pruning itself left working history and
-            // covered-call selection byte-for-byte unchanged.
-            config.agent_interrupt_message_enabled = false;
-        });
+    let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
+        config.model_context_window = Some(CONTEXT_WINDOW);
+        // The generic interruption marker is unrelated to pruning. Disable it so
+        // identical retry input proves that pruning itself left working history and
+        // covered-call selection byte-for-byte unchanged.
+        config.agent_interrupt_message_enabled = false;
+    });
     let test = builder.build_with_streaming_server(&server).await?;
     let codex = Arc::clone(&test.codex);
 
-    test.submit_turn("generate an old diagnostic output").await?;
+    test.submit_turn("generate an old diagnostic output")
+        .await?;
     codex.flush_rollout().await?;
 
     let logs_dir = test.home.path().join("logs");
@@ -574,12 +522,8 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
     let prune_state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     let applied_passes_before = codex_core::context_pruner::pass_count();
     let saved_chars_before = codex_core::context_pruner::saved_chars();
-    let checkpoints_before = context_prune_checkpoints(
-        codex
-            .load_history(/*include_archived*/ false)
-            .await?
-            .items,
-    );
+    let checkpoints_before =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
 
     codex.submit(Op::Prune { target_pct: None }).await?;
     server.wait_for_request_count(3).await;
@@ -587,7 +531,11 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
     let first_prune_body: serde_json::Value =
         serde_json::from_slice(&requests[2]).expect("parse first prune request");
     assert_eq!(first_prune_body["model"], PRUNE_MODEL);
-    assert!(first_prune_body["input"].to_string().contains("<evidence_batch>"));
+    assert!(
+        first_prune_body["input"]
+            .to_string()
+            .contains("<evidence_batch>")
+    );
     assert!(first_prune_body["input"].to_string().contains(OLD_CALL_ID));
     let first_prune_input = first_prune_body["input"].clone();
 
@@ -645,12 +593,8 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
         "user cancellation must not be recorded as a failed pruning attempt"
     );
 
-    let checkpoints_after = context_prune_checkpoints(
-        codex
-            .load_history(/*include_archived*/ false)
-            .await?
-            .items,
-    );
+    let checkpoints_after =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
     assert_eq!(
         checkpoints_after, checkpoints_before,
         "cancelled pruning must not persist a replacement checkpoint"
@@ -672,14 +616,16 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
     let commit_gate = codex_core::test_support::pause_active_prune_commit(&codex).await;
     let _ = release_retry_tx.send(());
     codex_core::test_support::wait_for_active_prune_commit(&codex).await;
-    codex_core::test_support::interrupt_active_prune_and_wait_for_commit_protection(&codex)
-        .await?;
+    codex_core::test_support::interrupt_active_prune_and_wait_for_commit_protection(&codex).await?;
     commit_gate.release();
 
     let committed_terminal = loop {
         let event = codex.next_event().await?;
         if event.id == retry_id
-            && matches!(event.msg, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
+            && matches!(
+                event.msg,
+                EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)
+            )
         {
             break event.msg;
         }
@@ -701,13 +647,8 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
     assert_eq!(std::fs::read_dir(&passes_dir)?.count(), 1);
     assert_ne!(std::fs::read(&report_path)?, report_before);
     assert_eq!(
-        context_prune_checkpoints(
-            codex
-                .load_history(/*include_archived*/ false)
-                .await?
-                .items,
-        )
-        .len(),
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items,)
+            .len(),
         checkpoints_before.len() + 1
     );
 
@@ -776,13 +717,11 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
         second_pass,
     ])
     .await;
-    let mut builder = test_codex()
-        .with_model(MAIN_MODEL)
-        .with_config(|config| {
-            config.model_context_window = Some(CONTEXT_WINDOW);
-            config.tool_output_token_limit = Some(30_000);
-            config.agent_interrupt_message_enabled = false;
-        });
+    let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
+        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.tool_output_token_limit = Some(30_000);
+        config.agent_interrupt_message_enabled = false;
+    });
     let test = builder.build_with_streaming_server(&server).await?;
     let codex = Arc::clone(&test.codex);
 
@@ -795,12 +734,8 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
     let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     let applied_passes_before = codex_core::context_pruner::pass_count();
     let saved_chars_before = codex_core::context_pruner::saved_chars();
-    let checkpoints_before = context_prune_checkpoints(
-        codex
-            .load_history(/*include_archived*/ false)
-            .await?
-            .items,
-    );
+    let checkpoints_before =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
 
     let prune_id = codex.submit(Op::Prune { target_pct: None }).await?;
     server.wait_for_request_count(6).await;
@@ -829,12 +764,18 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
         .copied()
         .filter(|call_id| !state_after_first_commit.covered_call_ids.contains(*call_id))
         .collect::<Vec<_>>();
-    assert!(!newly_covered.is_empty(), "the first pass must be non-vacuous");
+    assert!(
+        !newly_covered.is_empty(),
+        "the first pass must be non-vacuous"
+    );
     assert!(
         !still_uncovered.is_empty(),
         "the gated request must be a real later batch"
     );
-    assert_ne!(state_after_first_commit.raw_history, state_before.raw_history);
+    assert_ne!(
+        state_after_first_commit.raw_history,
+        state_before.raw_history
+    );
     assert!(state_after_first_commit.saved_tokens > state_before.saved_tokens);
     for call_id in &newly_covered {
         assert!(first_prune_input.contains(*call_id));
@@ -849,7 +790,10 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
     let terminal = loop {
         let event = codex.next_event().await?;
         if event.id == prune_id
-            && matches!(event.msg, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
+            && matches!(
+                event.msg,
+                EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)
+            )
         {
             break event.msg;
         }
@@ -859,8 +803,7 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
         "an interrupt before the second commit must abort the sweep: {terminal:?}"
     );
 
-    let state_after_cancel =
-        codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    let state_after_cancel = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     assert_eq!(
         state_after_cancel.raw_history, state_after_first_commit.raw_history,
         "the cancelled second pass must not change live working history"
@@ -879,13 +822,8 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
     );
     assert!(codex_core::context_pruner::saved_chars() > saved_chars_before);
     assert_eq!(
-        context_prune_checkpoints(
-            codex
-                .load_history(/*include_archived*/ false)
-                .await?
-                .items,
-        )
-        .len(),
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items,)
+            .len(),
         checkpoints_before.len() + 1
     );
     assert_eq!(
@@ -958,13 +896,11 @@ async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> R
         }],
     ])
     .await;
-    let mut builder = test_codex()
-        .with_model(MAIN_MODEL)
-        .with_config(|config| {
-            config.model_context_window = Some(CONTEXT_WINDOW);
-            config.tool_output_token_limit = Some(30_000);
-            config.agent_interrupt_message_enabled = false;
-        });
+    let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
+        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.tool_output_token_limit = Some(30_000);
+        config.agent_interrupt_message_enabled = false;
+    });
     let test = builder.build_with_streaming_server(&server).await?;
     let codex = Arc::clone(&test.codex);
 
@@ -977,12 +913,8 @@ async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> R
     let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     let applied_passes_before = codex_core::context_pruner::pass_count();
     let saved_chars_before = codex_core::context_pruner::saved_chars();
-    let checkpoints_before = context_prune_checkpoints(
-        codex
-            .load_history(/*include_archived*/ false)
-            .await?
-            .items,
-    );
+    let checkpoints_before =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
 
     let prune_id = codex.submit(Op::Prune { target_pct: None }).await?;
     server.wait_for_request_count(5).await;
@@ -999,14 +931,16 @@ async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> R
     let commit_gate = codex_core::test_support::pause_active_prune_commit(&codex).await;
     let _ = release_first_pass_tx.send(());
     codex_core::test_support::wait_for_active_prune_commit(&codex).await;
-    codex_core::test_support::interrupt_active_prune_and_wait_for_commit_protection(&codex)
-        .await?;
+    codex_core::test_support::interrupt_active_prune_and_wait_for_commit_protection(&codex).await?;
     commit_gate.release();
 
     let terminal = loop {
         let event = codex.next_event().await?;
         if event.id == prune_id
-            && matches!(event.msg, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
+            && matches!(
+                event.msg,
+                EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)
+            )
         {
             break event.msg;
         }
@@ -1027,13 +961,8 @@ async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> R
     );
     assert!(codex_core::context_pruner::saved_chars() > saved_chars_before);
     assert_eq!(
-        context_prune_checkpoints(
-            codex
-                .load_history(/*include_archived*/ false)
-                .await?
-                .items,
-        )
-        .len(),
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items,)
+            .len(),
         checkpoints_before.len() + 1
     );
     assert_eq!(
@@ -1049,7 +978,7 @@ async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> R
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(context_prune_counters)]
 async fn manual_prune_without_completed_tool_output_makes_no_model_request() -> Result<()> {
-    let harness = pressure_harness().await?;
+    let harness = manual_harness().await?;
     let requests =
         mount_sse_sequence(harness.server(), vec![final_response(), final_response()]).await;
 

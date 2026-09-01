@@ -19,6 +19,7 @@ This ledger records local integration decisions. It is not release evidence, doe
 | `agent/candidate-portable-checkpoint` | `1730ac2` | one distinct patch | Rejected for integration. It only seeds an evaluation prompt and is not a product feature. |
 | `docs/evaluation-status` | `6307fed` | two distinct documentation patches | Deferred for selective documentation review; do not merge stale or claim-changing documentation wholesale. |
 | `eval/rq3-*` | `51de0a2` / `1a722a4` | historical evaluation heads | No product integration. RQ3 remains unestablished; these branches are evidence/history only. |
+| `feat/smart-prune-admission` | base `9024d4b` + worktree changes | isolated candidate | Admission-time Smart Prune candidate only. Automatic history rewriting is removed, manual `/prune` is retained, and no merge/install/restart is authorized. Require focused provider-mock, audit, Ledger/dashboard, schema, and final diff evidence before integration review. |
 
 ## Final integration boundary
 

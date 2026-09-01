@@ -164,6 +164,10 @@ impl App {
                 }
                 tui.frame_requester().schedule_frame();
             }
+            AppEvent::RefreshContextDashboard => {
+                let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                self.chat_widget.publish_dashboard_snapshot(&totals);
+            }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
                 match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
                     Some(target_session) => {
@@ -982,13 +986,8 @@ impl App {
                 self.on_update_reasoning_effort(effort.clone());
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
-                self.persist_provider_model_selection(
-                    app_server,
-                    model,
-                    provider_id,
-                    effort,
-                )
-                .await;
+                self.persist_provider_model_selection(app_server, model, provider_id, effort)
+                    .await;
             }
             AppEvent::EnableAutoModelRouting => {
                 let model = crate::chatwidget::model_routing::TERRA_MODEL.to_string();
@@ -2266,9 +2265,7 @@ impl App {
             .chat_widget
             .model_provider_base_url(provider_id.as_str())
         {
-            Some(base_url)
-                if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID =>
-            {
+            Some(base_url) if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
                 crate::chatwidget::model_popups::fetch_ollama_context_window(
                     base_url,
                     model.clone(),

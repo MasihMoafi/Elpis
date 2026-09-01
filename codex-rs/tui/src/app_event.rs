@@ -231,6 +231,9 @@ pub(crate) enum AppEvent {
     /// Open a read-only dashboard of the current context window and its provenance.
     OpenContextDashboard,
 
+    /// Republish dashboard JSON without inserting a `/context` history cell.
+    RefreshContextDashboard,
+
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
 

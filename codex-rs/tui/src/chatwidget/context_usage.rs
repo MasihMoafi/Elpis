@@ -317,12 +317,15 @@ impl ChatWidget {
             })
             .collect();
 
-        let to_totals = |usage: &crate::token_usage::TokenUsage| crate::dashboard_server::DashboardTokenTotals {
-            input: usage.input_tokens,
-            cached_input: usage.cached_input_tokens,
-            output: usage.output_tokens,
-            reasoning_output: usage.reasoning_output_tokens,
-            total: usage.total_tokens,
+        let to_totals = |usage: &crate::token_usage::TokenUsage| {
+            crate::dashboard_server::DashboardTokenTotals {
+                input: usage.input_tokens,
+                cached_input: usage.cached_input_tokens,
+                cache_write: usage.cache_write_tokens,
+                output: usage.output_tokens,
+                reasoning_output: usage.reasoning_output_tokens,
+                total: usage.total_tokens,
+            }
         };
         let default_usage = crate::token_usage::TokenUsage::default();
         let session_total = self
@@ -335,12 +338,61 @@ impl ChatWidget {
             .as_ref()
             .map(|info| to_totals(&info.last_token_usage))
             .unwrap_or_else(|| to_totals(&default_usage));
+        let smart_prune_latest = self.smart_prune.latest.as_ref().map(|latest| {
+            crate::dashboard_server::DashboardSmartPruneAdmissionSnapshot {
+                admission_id: latest.admission_id.clone(),
+                audit_path: latest.audit_path.clone(),
+                examined_outputs: latest.examined_outputs,
+                admitted_outputs: latest.admitted_outputs,
+                approx_source_tokens: latest.approx_source_tokens,
+                approx_admitted_tokens: latest.approx_admitted_tokens,
+                approx_saved_tokens: latest.approx_saved_tokens,
+                request_sequence: latest.request_sequence,
+                request_input_sha256: latest.request_input_sha256.clone(),
+                request_linkage_verified: latest.request_linkage_verified,
+                response_id: latest.response_id.clone(),
+                response_usage: latest.response_usage.as_ref().map(|usage| {
+                    crate::dashboard_server::DashboardTokenTotals {
+                        input: usage.input_tokens,
+                        cached_input: usage.cached_input_tokens,
+                        cache_write: usage.cache_write_tokens,
+                        output: usage.output_tokens,
+                        reasoning_output: usage.reasoning_output_tokens,
+                        total: usage.total_tokens,
+                    }
+                }),
+                response_linkage_verified: latest.response_linkage_verified,
+            }
+        });
+        let smart_prune = crate::dashboard_server::DashboardSmartPruneSnapshot {
+            enabled: self.smart_prune.enabled,
+            examined_outputs: self.smart_prune.examined_outputs,
+            admitted_outputs: self.smart_prune.admitted_outputs,
+            unchanged_outputs: self.smart_prune.unchanged_outputs,
+            failed_batches: self.smart_prune.failed_batches,
+            approx_source_tokens: self.smart_prune.approx_source_tokens,
+            approx_admitted_tokens: self.smart_prune.approx_admitted_tokens,
+            approx_saved_tokens: self.smart_prune.approx_saved_tokens,
+            optimizer_requests: self.smart_prune.optimizer_requests,
+            optimizer_usage_reports: self.smart_prune.optimizer_usage_reports,
+            optimizer_usage: crate::dashboard_server::DashboardTokenTotals {
+                input: self.smart_prune.optimizer_usage.input_tokens,
+                cached_input: self.smart_prune.optimizer_usage.cached_input_tokens,
+                cache_write: self.smart_prune.optimizer_usage.cache_write_tokens,
+                output: self.smart_prune.optimizer_usage.output_tokens,
+                reasoning_output: self.smart_prune.optimizer_usage.reasoning_output_tokens,
+                total: self.smart_prune.optimizer_usage.total_tokens,
+            },
+            optimizer_latency_ms: self.smart_prune.optimizer_latency_ms,
+            main_request_sequence: self.smart_prune.main_request_sequence,
+            latest: smart_prune_latest,
+        };
 
         crate::dashboard_server::publish(&crate::dashboard_server::DashboardSnapshot {
             model: snapshot.model,
-            used_tokens: snapshot.used_tokens.unwrap_or(0),
+            used_tokens: snapshot.used_tokens,
             window_tokens: snapshot.window_tokens,
-            used_percent: snapshot.used_percent.unwrap_or(0),
+            used_percent: snapshot.used_percent,
             categories,
             saved_tokens: snapshot.saved_tokens,
             sources,
@@ -351,6 +403,7 @@ impl ChatWidget {
                 .config
                 .features
                 .enabled(Feature::AutomaticContextPruning),
+            smart_prune,
         });
     }
 
@@ -637,8 +690,13 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     }
     if let Some(latest) = &snapshot.latest_native_compaction {
         if narrow {
-            lines
-                .push(format!("   Latest process compaction: {} · {}", latest.reason, latest.count).into());
+            lines.push(
+                format!(
+                    "   Latest process compaction: {} · {}",
+                    latest.reason, latest.count
+                )
+                .into(),
+            );
             lines.push(format!("     evidence {}", latest.evidence).dim().into());
         } else {
             lines.push(

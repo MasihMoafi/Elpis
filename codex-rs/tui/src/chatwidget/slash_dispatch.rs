@@ -55,6 +55,7 @@ fn clean_dropped_path(raw: &str) -> String {
     without_scheme.replace("\\ ", " ")
 }
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
+const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off]";
 
 impl ChatWidget {
     /// Dispatch a bare slash command and record its staged local-history entry.
@@ -266,6 +267,9 @@ impl ChatWidget {
                 }
                 self.add_info_message("Manual pruning...".to_string(), None);
                 self.app_event_tx.prune(None);
+            }
+            SlashCommand::SmartPrune => {
+                self.toggle_smart_prune();
             }
             // `/force-prune` needs its target; without one there is nothing to force,
             // so say so rather than silently running an ordinary prune.
@@ -677,6 +681,15 @@ impl ChatWidget {
             SlashCommand::Dashboard => {
                 self.app_event_tx.send(AppEvent::OpenContextDashboard);
             }
+            SlashCommand::SmartPrune => match trimmed.to_ascii_lowercase().as_str() {
+                "on" => {
+                    self.request_smart_prune_enabled(/*enabled*/ true);
+                }
+                "off" => {
+                    self.request_smart_prune_enabled(/*enabled*/ false);
+                }
+                _ => self.add_error_message(SMART_PRUNE_USAGE.to_string()),
+            },
             SlashCommand::Ide => {
                 self.handle_ide_command_args(trimmed);
             }
@@ -1067,6 +1080,7 @@ impl ChatWidget {
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Prune
+            | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Review
             | SlashCommand::Model

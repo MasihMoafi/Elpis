@@ -214,6 +214,54 @@ async fn slash_dashboard_requests_a_read_only_context_snapshot() {
 }
 
 #[tokio::test]
+async fn slash_smart_prune_toggles_and_accepts_explicit_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    assert!(
+        !chat
+            .config
+            .features
+            .enabled(Feature::AutomaticContextPruning)
+    );
+
+    chat.dispatch_command(SlashCommand::SmartPrune);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "off".to_string(), Vec::new());
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, false)]
+    ));
+}
+
+#[tokio::test]
+async fn slash_smart_prune_rejects_invalid_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::SmartPrune,
+        "sometimes".to_string(),
+        Vec::new(),
+    );
+
+    match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+            assert!(rendered.contains("Usage: /smart-prune [on|off]"));
+        }
+        other => panic!("expected usage error, got {other:?}"),
+    }
+    assert!(
+        rx.try_recv().is_err(),
+        "invalid input dispatched a feature update"
+    );
+}
+
+#[tokio::test]
 async fn slash_force_prune_with_percentage_submits_target_to_runtime() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

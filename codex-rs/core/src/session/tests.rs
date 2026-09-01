@@ -1653,6 +1653,55 @@ disabled_tools = [
 }
 
 #[tokio::test]
+async fn smart_prune_refresh_applies_to_next_turn_without_changing_active_turn() {
+    let (session, active_turn) = make_session_and_context().await;
+    let codex_home = session.codex_home().await;
+    std::fs::create_dir_all(&codex_home).expect("create codex home");
+    assert!(!session.smart_prune_enabled());
+    assert!(!active_turn.smart_prune_enabled);
+    assert!(
+        !session.features.enabled(Feature::AutomaticContextPruning),
+        "the session-static feature set starts disabled"
+    );
+
+    std::fs::write(
+        codex_home.join(CONFIG_TOML_FILE),
+        "[features]\nautomatic_context_pruning = true\n",
+    )
+    .expect("enable Smart Prune in user config");
+    session
+        .refresh_runtime_config(load_latest_config_for_session(&session).await)
+        .await;
+
+    assert!(session.smart_prune_enabled());
+    assert!(
+        !active_turn.smart_prune_enabled,
+        "a turn must retain the policy it started with"
+    );
+    assert!(
+        !session.features.enabled(Feature::AutomaticContextPruning),
+        "only the narrow runtime gate is refreshable"
+    );
+    let enabled_turn = session.new_default_turn().await;
+    assert!(enabled_turn.smart_prune_enabled);
+
+    std::fs::write(
+        codex_home.join(CONFIG_TOML_FILE),
+        "[features]\nautomatic_context_pruning = false\n",
+    )
+    .expect("disable Smart Prune in user config");
+    session
+        .refresh_runtime_config(load_latest_config_for_session(&session).await)
+        .await;
+    assert!(!session.smart_prune_enabled());
+    assert!(
+        enabled_turn.smart_prune_enabled,
+        "the already-created turn remains enabled"
+    );
+    assert!(!session.new_default_turn().await.smart_prune_enabled);
+}
+
+#[tokio::test]
 async fn reconstruct_history_matches_live_compactions() {
     let (session, turn_context) = make_session_and_context().await;
     let (rollout_items, expected) = sample_rollout(&session, &turn_context).await;
@@ -2303,6 +2352,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: Some(info1),
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2310,6 +2360,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: None,
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2317,6 +2368,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: Some(info2.clone()),
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2324,6 +2376,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: None,
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
 
@@ -5427,6 +5480,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
         skills_snapshot,
+        config.features.enabled(Feature::AutomaticContextPruning),
     );
     let session = Session {
         thread_id,
@@ -5436,6 +5490,9 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        smart_prune_enabled: std::sync::atomic::AtomicBool::new(
+            config.features.enabled(Feature::AutomaticContextPruning),
+        ),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
         conversation: Arc::new(RealtimeConversationManager::new()),
@@ -7535,6 +7592,7 @@ where
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
         skills_snapshot,
+        config.features.enabled(Feature::AutomaticContextPruning),
     ));
     let session = Arc::new(Session {
         thread_id,
@@ -7544,6 +7602,9 @@ where
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        smart_prune_enabled: std::sync::atomic::AtomicBool::new(
+            config.features.enabled(Feature::AutomaticContextPruning),
+        ),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
         conversation: Arc::new(RealtimeConversationManager::new()),

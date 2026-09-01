@@ -185,62 +185,6 @@
       ],
       "type": "object"
     },
-    "ThreadTokenUsage": {
-      "properties": {
-        "contextPruneSavedTokens": {
-          "default": 0,
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "last": {
-          "$ref": "#/definitions/TokenUsageBreakdown"
-        },
-        "modelContextWindow": {
-          "format": "int64",
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "smartPrune": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ThreadSmartPruneSnapshot"
-            }
-          ],
-          "default": {
-            "admittedOutputs": 0,
-            "approxAdmittedTokens": 0,
-            "approxSavedTokens": 0,
-            "approxSourceTokens": 0,
-            "enabled": false,
-            "examinedOutputs": 0,
-            "failedBatches": 0,
-            "mainRequestSequence": 0,
-            "optimizerLatencyMs": 0,
-            "optimizerRequests": 0,
-            "optimizerUsage": {
-              "cachedInputTokens": 0,
-              "inputTokens": 0,
-              "outputTokens": 0,
-              "reasoningOutputTokens": 0,
-              "totalTokens": 0
-            },
-            "optimizerUsageReports": 0,
-            "unchangedOutputs": 0
-          }
-        },
-        "total": {
-          "$ref": "#/definitions/TokenUsageBreakdown"
-        }
-      },
-      "required": [
-        "last",
-        "total"
-      ],
-      "type": "object"
-    },
     "TokenUsageBreakdown": {
       "properties": {
         "cacheWriteTokens": {
@@ -282,22 +226,19 @@
       "type": "object"
     }
   },
+  "description": "Thread-scoped Smart Prune state emitted after an idle config refresh.\n\nThis is intentionally separate from token usage because a config change can happen without an active turn or a provider usage sample.",
   "properties": {
+    "smartPrune": {
+      "$ref": "#/definitions/ThreadSmartPruneSnapshot"
+    },
     "threadId": {
-      "type": "string"
-    },
-    "tokenUsage": {
-      "$ref": "#/definitions/ThreadTokenUsage"
-    },
-    "turnId": {
       "type": "string"
     }
   },
   "required": [
-    "threadId",
-    "tokenUsage",
-    "turnId"
+    "smartPrune",
+    "threadId"
   ],
-  "title": "ThreadTokenUsageUpdatedNotification",
+  "title": "ThreadSmartPruneUpdatedNotification",
   "type": "object"
 }

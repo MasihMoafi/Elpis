@@ -447,6 +447,10 @@ impl CodexThread {
         self.session.context_prune_saved_tokens().await
     }
 
+    pub async fn smart_prune_snapshot(&self) -> codex_protocol::protocol::SmartPruneSnapshot {
+        self.session.smart_prune_snapshot().await
+    }
+
     /// Records a user-role session-prefix message without creating a new user turn boundary.
     pub(crate) async fn inject_user_message_without_turn(&self, message: String) {
         let item = ResponseItem::Message {

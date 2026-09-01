@@ -79,7 +79,18 @@ impl ChatWidget {
             self.restore_retry_status_header_if_present();
         }
         match notification {
+            ServerNotification::ThreadSmartPruneUpdated(notification) => {
+                let is_current_thread = self
+                    .thread_id()
+                    .is_some_and(|thread_id| thread_id.to_string() == notification.thread_id);
+                if is_current_thread {
+                    self.smart_prune = notification.smart_prune;
+                    self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+                    self.request_redraw();
+                }
+            }
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
+                self.smart_prune = notification.token_usage.smart_prune.clone();
                 self.update_context_prune_savings(
                     notification.token_usage.context_prune_saved_tokens,
                     from_replay,
@@ -91,6 +102,7 @@ impl ChatWidget {
                 self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));
+                self.app_event_tx.send(AppEvent::RefreshContextDashboard);
                 self.refresh_status_line();
             }
             ServerNotification::ThreadNameUpdated(notification) => {

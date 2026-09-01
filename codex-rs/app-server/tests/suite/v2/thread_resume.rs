@@ -2096,6 +2096,50 @@ async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Re
                 }),
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
+                smart_prune: codex_protocol::protocol::SmartPruneSnapshot {
+                    enabled: true,
+                    examined_outputs: 1,
+                    admitted_outputs: 1,
+                    unchanged_outputs: 0,
+                    failed_batches: 0,
+                    approx_source_tokens: 3_000,
+                    approx_admitted_tokens: 500,
+                    approx_saved_tokens: 2_500,
+                    optimizer_requests: 1,
+                    optimizer_usage_reports: 1,
+                    optimizer_usage: TokenUsage {
+                        cache_write_tokens: Some(0),
+                        input_tokens: 600,
+                        cached_input_tokens: 400,
+                        output_tokens: 50,
+                        reasoning_output_tokens: 10,
+                        total_tokens: 650,
+                    },
+                    optimizer_latency_ms: 321,
+                    main_request_sequence: 4,
+                    latest: Some(codex_protocol::protocol::SmartPruneAdmissionSnapshot {
+                        admission_id: "resume-admission".to_string(),
+                        audit_path: "smart-prune/admissions/resume-admission".to_string(),
+                        examined_outputs: 1,
+                        admitted_outputs: 1,
+                        approx_source_tokens: 3_000,
+                        approx_admitted_tokens: 500,
+                        approx_saved_tokens: 2_500,
+                        request_sequence: Some(4),
+                        request_input_sha256: Some("resume-hash".to_string()),
+                        request_linkage_verified: true,
+                        response_id: Some("resume-response".to_string()),
+                        response_usage: Some(TokenUsage {
+                            cache_write_tokens: None,
+                            input_tokens: 100,
+                            cached_input_tokens: 80,
+                            output_tokens: 10,
+                            reasoning_output_tokens: 2,
+                            total_tokens: 112,
+                        }),
+                        response_linkage_verified: true,
+                    }),
+                },
             }))?,
         })
         .to_string(),
@@ -2156,6 +2200,38 @@ async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Re
     assert_eq!(notification.turn_id, interrupted_turn_id);
     assert_eq!(notification.token_usage.total.total_tokens, 230);
     assert_eq!(notification.token_usage.last.total_tokens, 130);
+    assert_eq!(notification.token_usage.smart_prune.admitted_outputs, 1);
+    assert_eq!(notification.token_usage.smart_prune.optimizer_requests, 1);
+    assert_eq!(
+        notification.token_usage.smart_prune.optimizer_usage_reports,
+        1
+    );
+    assert_eq!(
+        notification
+            .token_usage
+            .smart_prune
+            .optimizer_usage
+            .cache_write_tokens,
+        Some(0)
+    );
+    assert_eq!(
+        notification.token_usage.smart_prune.optimizer_latency_ms,
+        321
+    );
+    let latest = notification
+        .token_usage
+        .smart_prune
+        .latest
+        .expect("restored Smart Prune evidence");
+    assert_eq!(latest.request_input_sha256.as_deref(), Some("resume-hash"));
+    assert_eq!(latest.response_id.as_deref(), Some("resume-response"));
+    assert_eq!(
+        latest
+            .response_usage
+            .expect("restored response usage")
+            .cache_write_tokens,
+        None
+    );
 
     Ok(())
 }

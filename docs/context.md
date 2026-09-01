@@ -15,18 +15,41 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
-Elpis has three context-control mechanisms. Ace pruning is optional; native Codex compaction
-is independent of it rather than a fourth pruning layer or fallback.
+Elpis separates prevention from retrospective cleanup. **Smart Prune** is the optional
+automatic path: it considers a fresh textual tool result after post-tool hooks finish but
+before that result is recorded or sent to the main model for the first time. It may replace
+only the result body with a smaller, evidence-linked body. It never removes the tool-call
+event, changes its call id, or rewrites an item that has already entered sent history.
 
-| Mechanism | Trigger | Scope | Behavior | Failure Recovery |
+`/prune` remains the explicit retrospective Ace pass. It can rewrite older tool-result
+bodies on request, which necessarily changes the cacheable prefix after the first changed
+item. This trade-off is acceptable only because the user asked for cleanup; it is no longer
+the automatic path. See [cache-friendly-pruning.md](cache-friendly-pruning.md).
+
+### Pipeline Layer Comparison
+
+| Layer | Trigger | Scope | Behavior | Failure Recovery |
 | :--- | :--- | :--- | :--- | :--- |
-| **RTK filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
-| **Safety cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
-| **Ace pruning — Experimental** | Explicit `/prune` or `/force-prune`; automatic pressure cycling only when enabled for this conversation | Eligible old tool evidence | Manual actions sweep eligible evidence. Automatic mode targets roughly 20% use, protects the newest 10%, allows at most two back-to-back passes, and seals regions with epoch markers. | A failed pass changes nothing. Native compaction keeps its own threshold/headroom lifecycle. |
+| **1. RTK Filter** | Before selected shell tools execute | Shell command/request | Rewrites supported commands so the external RTK process can emit a smaller result. RTK is syntactic filtering, not semantic history pruning. | Hook rejection or tool failure leaves normal or unfiltered output available. |
+| **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
+| **3. Smart Prune** | After sibling tools and post-tool hooks, before first main-model exposure, when enabled | Fresh textual function/custom-tool results of at least 1,024 estimated tokens, up to a 24k-token batch | Ace returns `compact` or `unchanged` for every result. Elpis admits a compact body only when it saves at least 256 estimated tokens and 20%; the original envelope and call id remain. | Any timeout, malformed response, audit failure, unsupported body, or weak saving admits the exact original result. |
+| **4. Explicit cleanup** | `/prune` or `/compact` | Already-recorded history | `/prune` selectively rewrites eligible old tool-result bodies; `/compact` performs the broader documented rollover. | Incomplete or invalid decisions leave history unchanged. |
 
-RTK is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
+RTK is a separate binary and an optional `PreToolUse` hook. `scripts/install-elpis.sh`
+installs it alongside Elpis unless `ELPIS_SKIP_RTK=1` is set. On a launch that finds `rtk`
+on `PATH` and no user-owned `~/.elpis/hooks.json`, Elpis writes the hook and subjects it to
+the normal startup review. An existing hooks file is never modified, so `{"hooks":{}}`
+opts out permanently. Elpis's hook runtime accepts RTK's rewrite response. RTK and Smart
+Prune may coexist: RTK changes supported shell execution before it runs; Smart Prune
+evaluates the final post-hook result that would otherwise enter model history.
 
-Automatic Ace pruning is **off by default**. `/settings` labels it `Automatic pruning — Experimental` and uses this exact warning: `Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.` Saving that setting affects the **next conversation**, not the already-running one.
+Smart Prune is off by default. Toggle it for subsequent turns with the Context Ledger's
+`p` key/switch or `/smart-prune on|off`; the underlying persisted feature key remains
+`features.automatic_context_pruning`. A turn captures the setting once, so changing the
+configuration cannot change outputs halfway through an active turn. OpenAI-backed
+admission passes use Luna at maximal reasoning effort; other providers use the selected
+provider model. The admission call has its own `:smart-prune` prompt-cache namespace and
+does not consume the main turn's stable cache key.
 
 `/prune` and `/force-prune <pct>` are explicit manual Ace actions. Both work while automatic
 pruning is off. `/force-prune` records `pressure` in its audit to name the targeted selection
@@ -38,13 +61,20 @@ threshold and usable-window headroom. The Context Ledger's exact used-token numb
 authoritative after either mechanism. Ace saved-token totals are cumulative and origin-neutral:
 they do not identify a pass as manual or automatic.
 
-### Ace pass audit trail
+### Audit trail
 
-Every applied Ace pass writes an immutable audit before the working history changes. If that audit cannot be written, Elpis keeps the working history and does not record the pass as applied.
+Before a compact body can enter history, every applied Smart Prune admission writes its
+exact source, admitted envelope, source hash, and model decision under
+`~/.elpis/logs/smart-prune/admissions/<admission-id>/`. Elpis later appends hash-only
+main-request linkage and the matching response id/usage. If the initial audit cannot be
+written, Elpis admits the original output. Manual Ace passes retain their existing
+immutable pruning audit.
 
 ![Elpis immutable audit trail](assets/elpis-audit-trail-template.svg)
 
-You do not have to go looking for these: `prune_report.md` renders `ace.json` and `manifest.json` as clickable links (`context_prune_audit.rs`). The audit deliberately omits the system prompt, skills, and transcript, so it stays readable.
+For manual Ace, `prune_report.md` renders `ace.json` and `manifest.json` as clickable
+links (`context_prune_audit.rs`). Those manual reports deliberately omit the system prompt,
+skills, and transcript so they stay readable.
 
 ---
 

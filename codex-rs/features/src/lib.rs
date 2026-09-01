@@ -224,7 +224,7 @@ pub enum Feature {
     Goals,
     /// Add current context-window metadata to model-visible context.
     TokenBudget,
-    /// Run the model-backed Ace pruner automatically under context pressure.
+    /// Optimize large fresh tool outputs before their first main-model exposure.
     AutomaticContextPruning,
     /// Track and report a shared token budget across a session's agent threads.
     RolloutBudget,

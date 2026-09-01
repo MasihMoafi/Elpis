@@ -1,6 +1,7 @@
-//! Runs the Ace pass (`crate::context_pruner`) under opt-in automatic pressure selection or
-//! explicit manual `/prune`/`/force-prune`; `pressure` is also the selection strategy for manual
-//! `/force-prune`. Mirrors
+//! Runs the Ace pass (`crate::context_pruner`) for explicit manual
+//! `/prune`/`/force-prune`; `pressure` is the selection strategy for manual
+//! `/force-prune`. Smart Prune admission lives in `super::smart_prune` and does not
+//! invoke this retrospective pass. Mirrors
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual
@@ -16,7 +17,6 @@ use crate::client_common::ResponseEvent;
 use crate::context_pruner;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::tasks::TaskCancellationBoundary;
-use codex_features::Feature;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -35,13 +35,6 @@ const MAX_MANUAL_PRUNE_PASSES: usize = 12;
 use super::context_prune_audit;
 use super::session::Session;
 use super::turn_context::TurnContext;
-
-/// Whether an exhausted pressure pass may escalate to a context-window rollover.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Escalation {
-    Allowed,
-    Deferred,
-}
 
 struct PruneCancelled;
 
@@ -64,12 +57,7 @@ struct PruneDebugRecord {
 }
 
 impl PruneDebugRecord {
-    fn new(
-        model_slug: &str,
-        input_text: &str,
-        reason: &str,
-        output_text: Option<&str>,
-    ) -> Self {
+    fn new(model_slug: &str, input_text: &str, reason: &str, output_text: Option<&str>) -> Self {
         Self {
             model_slug: model_slug.to_string(),
             input_text: input_text.to_string(),
@@ -93,7 +81,9 @@ async fn begin_prune_commit<'a>(
         // The session abort path claims the same atomic decision before removing the
         // active task. Once commit wins, that path leaves the task registered and waits
         // for normal TurnComplete delivery instead of aborting a partially applied pass.
-        cancellation_boundary.wait_for_commit_release_for_test().await;
+        cancellation_boundary
+            .wait_for_commit_release_for_test()
+            .await;
     }
     Some(PruneCommit {
         cancellation_boundary,
@@ -116,51 +106,6 @@ async fn await_or_cancelled<T>(
     }
 }
 
-pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    if !turn_context
-        .config
-        .features
-        .enabled(Feature::AutomaticContextPruning)
-    {
-        return;
-    }
-    run_context_prune(
-        sess,
-        turn_context,
-        None,
-        None,
-        Escalation::Allowed,
-        None,
-        None,
-    )
-    .await;
-}
-
-/// The pre-request pass. Reclaims what it can so the history sent to the provider,
-/// the context-limit check, and the UI snapshot describe the same state — but leaves
-/// the rollover decision to the post-sampling pass, which already owns it and sees
-/// fresh usage. Escalating here would stack a second rollover on top of one the model
-/// just requested through `new_context`.
-pub(super) async fn prune_before_request(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    if !turn_context
-        .config
-        .features
-        .enabled(Feature::AutomaticContextPruning)
-    {
-        return;
-    }
-    run_context_prune(
-        sess,
-        turn_context,
-        None,
-        None,
-        Escalation::Deferred,
-        None,
-        None,
-    )
-    .await;
-}
-
 pub(crate) async fn run_manual_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
     run_manual_context_prune_with_target(sess, turn_context, None, None, None).await;
 }
@@ -178,7 +123,6 @@ pub(crate) async fn run_manual_context_prune_with_target(
             turn_context,
             Some(context_pruner::PruneTrigger::Pressure),
             Some(pct),
-            Escalation::Allowed,
             cancellation_token,
             cancellation_boundary,
         )
@@ -194,7 +138,6 @@ pub(crate) async fn run_manual_context_prune_with_target(
             turn_context,
             Some(context_pruner::PruneTrigger::Manual),
             None,
-            Escalation::Allowed,
             cancellation_token,
             cancellation_boundary,
         )
@@ -232,7 +175,6 @@ async fn run_context_prune(
     turn_context: &Arc<TurnContext>,
     requested_trigger: Option<context_pruner::PruneTrigger>,
     target_pct: Option<i64>,
-    escalation: Escalation,
     cancellation_token: Option<&CancellationToken>,
     cancellation_boundary: Option<&TaskCancellationBoundary>,
 ) -> bool {
@@ -283,10 +225,7 @@ async fn run_context_prune(
             // A cycle that closed without reaching its target, while use is still past
             // the boundary, is the case the existing compaction/rollover mechanism owns.
             // A cycle merely cooling below the boundary is healthy and hands off nothing.
-            if stalled
-                && escalation == Escalation::Allowed
-                && context_pruner::pressure_reached(active_context_tokens, context_window)
-            {
+            if stalled && context_pruner::pressure_reached(active_context_tokens, context_window) {
                 request_compaction_if_enabled(
                     sess,
                     turn_context,
@@ -330,15 +269,13 @@ async fn run_context_prune(
         // still owed, and pruning could never re-arm.
         if requested_trigger.is_none() && trigger == Some(context_pruner::PruneTrigger::Pressure) {
             sess.state.lock().await.close_context_prune_cycle();
-            if escalation == Escalation::Allowed {
-                request_compaction_if_enabled(
-                    sess,
-                    turn_context,
-                    active_context_tokens,
-                    "nothing left to reclaim",
-                )
-                .await;
-            }
+            request_compaction_if_enabled(
+                sess,
+                turn_context,
+                active_context_tokens,
+                "nothing left to reclaim",
+            )
+            .await;
         }
         return false;
     };
@@ -357,7 +294,8 @@ async fn run_context_prune(
         active_question.as_deref(),
         cancellation_token,
     )
-    .await {
+    .await
+    {
         Ok(result) => result,
         Err(PruneCancelled) => return false,
     };
@@ -700,10 +638,7 @@ async fn try_stream_prune_pass(
     prune_model_slug: &str,
     debug_records: &mut Vec<PruneDebugRecord>,
     cancellation_token: Option<&CancellationToken>,
-) -> Result<
-    Result<(String, Option<TokenUsage>), (String, Option<TokenUsage>)>,
-    PruneCancelled,
-> {
+) -> Result<Result<(String, Option<TokenUsage>), (String, Option<TokenUsage>)>, PruneCancelled> {
     if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
         return Err(PruneCancelled);
     }
@@ -864,9 +799,7 @@ fn write_prune_debug_records(log_dir: &Path, records: &[PruneDebugRecord]) {
             let _ = writeln!(
                 file,
                 "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {}\nFAILURE: {}\n--- INPUT BATCH SENT TO LLM ---\n{}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n",
-                record.model_slug,
-                record.reason,
-                record.input_text,
+                record.model_slug, record.reason, record.input_text,
             );
         }
     }
@@ -898,7 +831,9 @@ mod tests {
             total_tokens: 1_550,
         };
         let events: Vec<Result<ResponseEvent, String>> = vec![
-            Ok(ResponseEvent::OutputTextDelta("call_1: kept output".to_string())),
+            Ok(ResponseEvent::OutputTextDelta(
+                "call_1: kept output".to_string(),
+            )),
             Ok(ResponseEvent::Completed {
                 token_usage: Some(usage.clone()),
                 response_id: "res-123".to_string(),
@@ -912,9 +847,9 @@ mod tests {
 
     #[test]
     fn stream_ending_without_completed_event_yields_none_usage_not_zero() {
-        let events: Vec<Result<ResponseEvent, String>> = vec![
-            Ok(ResponseEvent::OutputTextDelta("call_1: kept output".to_string())),
-        ];
+        let events: Vec<Result<ResponseEvent, String>> = vec![Ok(ResponseEvent::OutputTextDelta(
+            "call_1: kept output".to_string(),
+        ))];
 
         let res = process_prune_stream_events(events);
         assert_eq!(res, Ok(("call_1: kept output".to_string(), None)));
@@ -942,7 +877,10 @@ mod tests {
         let res = process_prune_stream_events(events);
         assert_eq!(
             res,
-            Err(("stream ended with an error: connection reset by peer".to_string(), Some(usage)))
+            Err((
+                "stream ended with an error: connection reset by peer".to_string(),
+                Some(usage)
+            ))
         );
     }
 
@@ -980,7 +918,10 @@ mod tests {
 
         assert_eq!(attempts.len(), 1);
         assert_eq!(attempts[0].pass_id, "test-pass-999");
-        assert_eq!(attempts[0].status, context_prune_audit::PruneAttemptStatus::ParseError);
+        assert_eq!(
+            attempts[0].status,
+            context_prune_audit::PruneAttemptStatus::ParseError
+        );
         assert_eq!(attempts[0].usage, usage);
     }
 
@@ -1023,7 +964,13 @@ mod tests {
         assert_eq!(attempts.len(), 2);
         assert_eq!(attempts[0].pass_id, "shared-pass-uuid-777");
         assert_eq!(attempts[1].pass_id, "shared-pass-uuid-777");
-        assert_eq!(attempts[0].kind, context_prune_audit::PruneAttemptKind::Primary);
-        assert_eq!(attempts[1].kind, context_prune_audit::PruneAttemptKind::Fallback);
+        assert_eq!(
+            attempts[0].kind,
+            context_prune_audit::PruneAttemptKind::Primary
+        );
+        assert_eq!(
+            attempts[1].kind,
+            context_prune_audit::PruneAttemptKind::Fallback
+        );
     }
 }

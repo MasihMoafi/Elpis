@@ -47,6 +47,7 @@ pub(super) async fn send_thread_token_usage_update_to_connection(
     };
     let mut token_usage = ThreadTokenUsage::from(info);
     token_usage.context_prune_saved_tokens = conversation.context_prune_saved_tokens().await;
+    token_usage.smart_prune = conversation.smart_prune_snapshot().await.into();
     let notification = ThreadTokenUsageUpdatedNotification {
         thread_id: thread_id.to_string(),
         turn_id: token_usage_turn_id.unwrap_or_else(|| latest_token_usage_turn_id(thread)),
@@ -166,6 +167,7 @@ mod tests {
                 info: None,
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
+                smart_prune: Default::default(),
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,

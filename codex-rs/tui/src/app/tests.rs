@@ -4788,6 +4788,7 @@ fn token_usage_notification(
             },
             model_context_window,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     })
 }
@@ -5813,10 +5814,7 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
 async fn rejected_provider_model_selection_does_not_mutate_or_persist() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let initial_model = app.chat_widget.current_model().to_string();
-    let initial_provider = app
-        .chat_widget
-        .active_model_provider_id()
-        .to_string();
+    let initial_provider = app.chat_widget.active_model_provider_id().to_string();
     let initial_effort = app.chat_widget.current_reasoning_effort();
     app.active_thread_id = Some(ThreadId::new());
 
@@ -5837,10 +5835,7 @@ async fn rejected_provider_model_selection_does_not_mutate_or_persist() -> Resul
 
     assert!(matches!(control, AppRunControl::Continue));
     assert_eq!(app.chat_widget.current_model(), initial_model);
-    assert_eq!(
-        app.chat_widget.active_model_provider_id(),
-        initial_provider
-    );
+    assert_eq!(app.chat_widget.active_model_provider_id(), initial_provider);
     assert_eq!(app.chat_widget.current_reasoning_effort(), initial_effort);
     assert_eq!(std::fs::read(&config_path).ok(), config_before);
     assert!(
