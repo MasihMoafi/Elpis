@@ -4787,7 +4787,7 @@ async fn new_primary_session_attachment_resets_activity_and_requests_publication
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let previous_thread_id = ThreadId::new();
     seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
-    assert_eq!(app.chat_widget.dashboard_activity_state(None).recent.len(), 1);
+    assert_eq!(app.chat_widget.dashboard_activity_state().recent.len(), 1);
     while app_event_rx.try_recv().is_ok() {}
 
     let next_thread_id = ThreadId::new();
@@ -4797,7 +4797,7 @@ async fn new_primary_session_attachment_resets_activity_and_requests_publication
     )
     .await?;
 
-    let activity = app.chat_widget.dashboard_activity_state(None);
+    let activity = app.chat_widget.dashboard_activity_state();
     assert_eq!(activity.current, None);
     assert!(activity.recent.is_empty());
     assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
@@ -4823,7 +4823,7 @@ async fn resumed_primary_session_attachment_resets_activity_before_history_repla
     )
     .await?;
 
-    let activity = app.chat_widget.dashboard_activity_state(None);
+    let activity = app.chat_widget.dashboard_activity_state();
     assert_eq!(activity.current, None);
     assert!(activity.recent.is_empty());
     assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
@@ -4855,7 +4855,7 @@ async fn visible_thread_snapshot_switch_resets_activity_before_replay() {
         /*resume_restored_queue*/ false,
     );
 
-    let activity = app.chat_widget.dashboard_activity_state(None);
+    let activity = app.chat_widget.dashboard_activity_state();
     assert_eq!(activity.current, None);
     assert!(activity.recent.is_empty());
     assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())

@@ -973,11 +973,8 @@ impl ChatWidget {
             .send(AppEvent::RefreshContextDashboard);
     }
 
-    pub(crate) fn dashboard_activity_state(
-        &self,
-        automatic_pruning_enabled: Option<bool>,
-    ) -> DashboardActivityState {
-        self.activity_state.project(automatic_pruning_enabled)
+    pub(crate) fn dashboard_activity_state(&self) -> DashboardActivityState {
+        self.activity_state.project()
     }
 
     /// Width available to wrapped transcript history. The terminal-pet feature used to
@@ -1093,7 +1090,8 @@ impl ChatWidget {
         });
     }
 
-    pub(crate) fn set_token_info(&mut self, info: Option<TokenUsageInfo>) {
+    pub(crate) fn set_token_info(&mut self, info: Option<TokenUsageInfo>) -> bool {
+        let changed = self.token_info.as_ref() != info.as_ref();
         match info {
             Some(info) => self.apply_token_info(info),
             None => {
@@ -1102,6 +1100,11 @@ impl ChatWidget {
                 self.token_info = None;
             }
         }
+        if changed {
+            self.app_event_tx
+                .send(AppEvent::RefreshContextDashboard);
+        }
+        changed
     }
 
     fn apply_token_info(&mut self, info: TokenUsageInfo) {
@@ -1120,14 +1123,7 @@ impl ChatWidget {
 
     fn restore_pre_review_token_info(&mut self) {
         if let Some(saved) = self.review.pre_review_token_info.take() {
-            match saved {
-                Some(info) => self.apply_token_info(info),
-                None => {
-                    self.bottom_pane
-                        .set_context_window(/*percent*/ None, /*used_tokens*/ None);
-                    self.token_info = None;
-                }
-            }
+            self.set_token_info(saved);
         }
     }
 
@@ -1860,7 +1856,10 @@ impl ChatWidget {
     }
 
     pub(crate) fn clear_token_usage(&mut self) {
-        self.token_info = None;
+        if self.token_info.take().is_some() {
+            self.app_event_tx
+                .send(AppEvent::RefreshContextDashboard);
+        }
     }
 }
 

@@ -28,7 +28,6 @@ pub(crate) struct DashboardActivityRow {
 pub(crate) struct DashboardActivityState {
     pub(crate) current: Option<DashboardActivityRow>,
     pub(crate) recent: Vec<DashboardActivityRow>,
-    pub(crate) automatic_pruning_enabled: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,10 +121,7 @@ impl ActivityState {
         changed
     }
 
-    pub(crate) fn project(
-        &self,
-        automatic_pruning_enabled: Option<bool>,
-    ) -> DashboardActivityState {
+    pub(crate) fn project(&self) -> DashboardActivityState {
         DashboardActivityState {
             current: self.current.as_ref().map(|entry| entry.row.clone()),
             recent: self
@@ -133,7 +129,6 @@ impl ActivityState {
                 .iter()
                 .map(|entry| entry.row.clone())
                 .collect(),
-            automatic_pruning_enabled,
         }
     }
 }
@@ -163,7 +158,7 @@ mod tests {
 
         assert!(state.start("turn-a".to_string(), Some(10)));
         assert_eq!(
-            state.project(Some(true)),
+            state.project(),
             DashboardActivityState {
                 current: Some(DashboardActivityRow {
                     status: DashboardActivityStatus::Running,
@@ -174,7 +169,6 @@ mod tests {
                     cost: None,
                 }),
                 recent: Vec::new(),
-                automatic_pruning_enabled: Some(true),
             }
         );
 
@@ -199,7 +193,7 @@ mod tests {
             backend_total_usd: "1.250000".to_string(),
         };
         assert!(state.update_cost("turn-a", exact_price.clone()));
-        let projected = state.project(None);
+        let projected = state.project();
         assert_eq!(projected.current, None);
         assert_eq!(projected.recent.len(), 2);
         assert_eq!(projected.recent[0].status, DashboardActivityStatus::Completed);
@@ -210,7 +204,6 @@ mod tests {
         assert_eq!(projected.recent[0].cost, Some(exact_price));
         assert_eq!(projected.recent[1].status, DashboardActivityStatus::Interrupted);
         assert_eq!(projected.recent[1].cost, None);
-        assert_eq!(projected.automatic_pruning_enabled, None);
     }
 
     #[test]
@@ -228,7 +221,7 @@ mod tests {
             ));
         }
 
-        let before = state.project(None);
+        let before = state.project();
         assert_eq!(before.recent.len(), ACTIVITY_RECENT_LIMIT);
         assert!(!state.update_cost(
             "turn-0",
@@ -242,7 +235,7 @@ mod tests {
                 backend_total_usd: "9.000000".to_string(),
             },
         ));
-        assert_eq!(state.project(None), before);
+        assert_eq!(state.project(), before);
     }
 
     #[test]
@@ -266,7 +259,7 @@ mod tests {
             None,
         ));
 
-        let row = &state.project(None).recent[0];
+        let row = &state.project().recent[0];
         assert_eq!(row.started_at, None);
         assert_eq!(row.duration_ms, None);
         assert_eq!(row.time_to_first_token_ms, None);
