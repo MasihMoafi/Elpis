@@ -25,6 +25,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 const MAIN_MODEL: &str = "gpt-5.4";
+const CACHE_TEST_MODEL: &str = "gpt-5.6-sol";
 const SMART_PRUNE_MODEL: &str = "gpt-5.6-luna";
 const CALL_A: &str = "smart-prune-call-a";
 const CALL_B: &str = "smart-prune-call-b";
@@ -145,24 +146,24 @@ fn assert_source_output_preserved(
     );
 }
 
-async fn harness(enabled: bool) -> Result<TestCodexHarness> {
-    TestCodexHarness::with_builder(
-        test_codex()
-            .with_model(MAIN_MODEL)
-            .with_config(move |config| {
-                config.model_context_window = Some(100_000);
-                if enabled {
-                    let _ = config.features.enable(Feature::AutomaticContextPruning);
-                }
-            }),
-    )
+async fn harness_for_model(enabled: bool, model: &str) -> Result<TestCodexHarness> {
+    TestCodexHarness::with_builder(test_codex().with_model(model).with_config(move |config| {
+        config.model_context_window = Some(100_000);
+        if enabled {
+            let _ = config.features.enable(Feature::AutomaticContextPruning);
+        }
+    }))
     .await
+}
+
+async fn harness(enabled: bool) -> Result<TestCodexHarness> {
+    harness_for_model(enabled, MAIN_MODEL).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn smart_prune_admits_compact_output_before_first_main_followup() -> Result<()> {
     skip_if_host_windows!(Ok(()));
-    let harness = harness(true).await?;
+    let harness = harness_for_model(true, CACHE_TEST_MODEL).await?;
     let requests = mount_sse_sequence(
         harness.server(),
         vec![
@@ -177,10 +178,10 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
 
     let requests = requests.requests();
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0].body_json()["model"], MAIN_MODEL);
+    assert_eq!(requests[0].body_json()["model"], CACHE_TEST_MODEL);
     assert_eq!(requests[1].body_json()["model"], SMART_PRUNE_MODEL);
     assert_eq!(requests[1].body_json()["reasoning"]["effort"], "max");
-    assert_eq!(requests[2].body_json()["model"], MAIN_MODEL);
+    assert_eq!(requests[2].body_json()["model"], CACHE_TEST_MODEL);
     assert!(requests[1].body_contains_text(CALL_A));
     assert!(requests[1].body_contains_text(&"Z".repeat(256)));
     assert!(requests[2].body_contains_text(COMPACT_A));
@@ -195,24 +196,61 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
         .as_array()
         .expect("follow-up main input")
         .clone();
+    assert!(
+        followup_main_input.len() >= first_main_input.len(),
+        "Smart Prune shortened already-visible main history"
+    );
     assert_eq!(
         first_main_input,
         followup_main_input[..first_main_input.len()],
         "Smart Prune must append to, never rewrite, the provider-visible main prefix"
     );
-    assert_eq!(
-        requests[0].body_json()["prompt_cache_key"],
-        requests[2].body_json()["prompt_cache_key"]
-    );
-    assert_ne!(
-        requests[0].body_json()["prompt_cache_key"],
-        requests[1].body_json()["prompt_cache_key"]
-    );
+    let first_main_body = requests[0].body_json();
+    let followup_main_body = requests[2].body_json();
     assert!(
-        requests[1].body_json()["prompt_cache_key"]
-            .as_str()
-            .is_some_and(|key| key.ends_with(":smart-prune"))
+        first_main_body["input"]
+            .as_array()
+            .is_some_and(|items| items
+                .iter()
+                .filter_map(|item| item["content"].as_array())
+                .flatten()
+                .any(|block| block["prompt_cache_breakpoint"]["mode"] == "explicit")),
+        "GPT-5.6 direct Responses requests must exercise a stamped cache breakpoint"
     );
+    for field in [
+        "instructions",
+        "tools",
+        "tool_choice",
+        "parallel_tool_calls",
+        "reasoning",
+        "store",
+        "stream",
+        "include",
+        "service_tier",
+        "prompt_cache_options",
+        "text",
+    ] {
+        assert_eq!(
+            first_main_body.get(field),
+            followup_main_body.get(field),
+            "cache-relevant main request field changed: {field}"
+        );
+    }
+    let main_cache_key = first_main_body["prompt_cache_key"]
+        .as_str()
+        .filter(|key| !key.is_empty())
+        .expect("main request must carry a nonempty prompt cache key");
+    assert_eq!(
+        followup_main_body["prompt_cache_key"].as_str(),
+        Some(main_cache_key)
+    );
+    let optimizer_body = requests[1].body_json();
+    let optimizer_cache_key = optimizer_body["prompt_cache_key"]
+        .as_str()
+        .filter(|key| !key.is_empty())
+        .expect("Smart Prune request must carry a nonempty prompt cache key");
+    assert_ne!(main_cache_key, optimizer_cache_key);
+    assert!(optimizer_cache_key.ends_with(":smart-prune"));
 
     let admission_root = harness
         .test()
@@ -235,16 +273,26 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     let request_link: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
         admission_dir.join("request.json"),
     )?)?;
-    let exact_followup: Vec<ResponseItem> =
-        serde_json::from_value(requests[2].body_json()["input"].clone())?;
-    let expected_hash = format!("{:x}", Sha256::digest(serde_json::to_vec(&exact_followup)?));
     assert_eq!(request_link["request_sequence"], 2);
-    assert_eq!(request_link["request_input_sha256"], expected_hash);
+    assert_eq!(
+        request_link["input_representation"],
+        "logical_response_items_before_transport"
+    );
+    let request_hash = request_link["request_input_sha256"]
+        .as_str()
+        .expect("request linkage must carry a SHA-256 receipt");
+    assert_eq!(request_hash.len(), 64);
+    assert!(request_hash.bytes().all(|byte| byte.is_ascii_hexdigit()));
     let response_link: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
         admission_dir.join("response.json"),
     )?)?;
     assert_eq!(response_link["response_id"], "main-final");
     assert_eq!(response_link["usage"]["total_tokens"], 200);
+    let snapshot = harness.test().codex.smart_prune_snapshot().await;
+    let latest = snapshot.latest.expect("latest Smart Prune admission");
+    assert_eq!(latest.request_input_sha256.as_deref(), Some(request_hash));
+    assert!(latest.request_linkage_verified);
+    assert!(latest.response_linkage_verified);
 
     Ok(())
 }
@@ -252,7 +300,7 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn smart_prune_off_sends_original_without_optimizer_request() -> Result<()> {
     skip_if_host_windows!(Ok(()));
-    let harness = harness(false).await?;
+    let harness = harness_for_model(false, CACHE_TEST_MODEL).await?;
     let requests = mount_sse_sequence(
         harness.server(),
         vec![tool_response(CALL_A, 90), final_response()],
@@ -266,7 +314,7 @@ async fn smart_prune_off_sends_original_without_optimizer_request() -> Result<()
     assert!(
         requests
             .iter()
-            .all(|request| request.body_json()["model"] == MAIN_MODEL)
+            .all(|request| request.body_json()["model"] == CACHE_TEST_MODEL)
     );
     assert!(requests[1].body_contains_text(&"Z".repeat(256)));
     assert!(!requests[1].body_contains_text("[ELPIS SMART PRUNE]"));
