@@ -94,7 +94,7 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused checks. Exhaustive inherited TUI/app-server regression runs belong to nightly/manual/release verification unless a change directly touches that surface. CI must not edit source or create status-only commits. Dependency deletion follows measured cost and product optionality, not crate names.
 
-**R10. Distinctive continuity-first identity** — Elpis uses a cyan visual identity and visibly separates runtime, model, context, memory, permissions, and evidence. UI design is an acceptance contract, not proof of implementation.
+**R10. Distinctive continuity-first identity** — Elpis uses a restrained ember-and-rose identity on deep charcoal and visibly separates runtime, model, context, memory, permissions, and evidence. Verdigris is reserved for positive facts such as fresh or admitted state. UI design is an acceptance contract, not proof of implementation.
 
 **R11. Claude models use the native provider path** — The removed Claude Code CLI-subprocess bridge is not a supported runtime. Claude models are supported through the native Anthropic Messages API adapter; authentication/provider selection must remain explicit.
 
@@ -268,7 +268,7 @@ Elpis should feel unique because the interface exposes what Elpis uniquely owns:
 
 > The model may change; the work continues.
 
-The identity is cyan and continuity-first. UI changes should make runtime/model ownership, context, memory, permission state, and evidence legible without degrading the contained TUI's interaction quality.
+The identity is continuity-first: deep charcoal structure, bone text, restrained ember/rose accents, and motion only when it communicates active work. UI changes should make runtime/model ownership, context, memory, permission state, and evidence legible without degrading the contained TUI's interaction quality.
 
 Implementation status belongs in `TASKS.md`; context-specific UI mechanics belong in [context.md](context.md).
 
