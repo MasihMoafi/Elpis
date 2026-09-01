@@ -523,10 +523,10 @@ Add only implemented behavior. Do not describe Masih's source path as a product 
 The required focused commands are:
 
 ```text
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core-skills default_disabled_skills_require_one_explicit_enable --locked
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core --lib configured_dev_rule_roots_replace_managed_fallback --locked
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib context_ledger --locked
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib enabled_skills_render_before_available_candidates_with_origins --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core-skills default_disabled_skills_require_one_explicit_enable --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core --lib configured_dev_rule_roots_replace_managed_fallback --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib context_ledger --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib enabled_skills_render_before_available_candidates_with_origins --locked
 ```
 
 Do not edit the workflow or upload the branch in this task. The separate verification-selector plan makes `tools/verify-elpis/surfaces.toml` the single command list and then migrates Linux CI to it. Record these four filters as required rows for that plan; do not add a second workflow list here.

@@ -52,7 +52,7 @@ Assert API-key authorization and only `OpenAI-Organization` / `OpenAI-Project` p
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target cargo test -p codex-backend-client --test turn_usage -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-backend-client --test turn_usage --locked -- --nocapture
 ```
 
 Expected: compilation fails because the module, exported types, and methods do not exist.
@@ -101,7 +101,7 @@ Add an in-memory metric test that records `0.0001245` and asserts exactly `125` 
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target cargo test -p codex-otel --test tests turn_cost -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-otel --test tests turn_cost --locked -- --nocapture
 ```
 
 Expected: compilation fails because `record_turn_cost` and the metric name do not exist.
@@ -125,7 +125,7 @@ Add tests for these literal behaviors:
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target cargo test -p codex-app-server turn_cost_worker -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-app-server turn_cost_worker --locked -- --nocapture
 ```
 
 Expected: compilation fails because the worker and event wiring do not exist.
@@ -188,7 +188,7 @@ Add separate compaction exclusivity, sum-equals-duration, repeated-completion, p
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target cargo test -p codex-core turn_timing --lib -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-core turn_timing --lib --locked -- --nocapture
 ```
 
 Expected: compilation fails because the profile API does not exist.
@@ -210,7 +210,7 @@ Record a literal profile and assert six `codex.turn.profile.duration_ms` points 
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target cargo test -p codex-otel --test tests turn_profile -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-otel --test tests turn_profile --locked -- --nocapture
 ```
 
 Expected: compilation fails because profile metric names and recording method do not exist.

@@ -130,11 +130,11 @@ pub struct TurnCostUpdatedNotification {
 - [ ] **Step 3: Run the focused checks and verify RED.** Defer until implementation:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core tasks::tests:: --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core turn_timing --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core transient_turn_profile_event_is_not_persisted --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-rollout turn_profile_events_are_never_persisted --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server turn_activity --lib -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core tasks::tests:: --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core turn_timing --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core transient_turn_profile_event_is_not_persisted --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-rollout turn_profile_events_are_never_persisted --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server turn_activity --lib --locked -- --nocapture
 ```
 
 Expected: the tests fail because live profile fields/notification do not exist; no broad workspace command.
@@ -181,10 +181,10 @@ Assert dynamic subscription auth takes precedence over exporter/provider status 
 - [ ] **Step 2: Run the focused RED checks.** Defer until implementation:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-otel turn_cost_decimal_parser_rounds_seventh_digit_and_rejects_invalid --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-otel --test tests manager_turn_cost_ -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server turn_cost_worker --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server activity_notifications --lib -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-otel turn_cost_decimal_parser_rounds_seventh_digit_and_rejects_invalid --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-otel --test tests manager_turn_cost_ --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server turn_cost_worker --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server activity_notifications --lib --locked -- --nocapture
 ```
 
 Expected: type/notification/policy symbols are absent. The existing subscription negative test must stay red if implementation accidentally begins a request.
@@ -230,10 +230,10 @@ Omit `outgoing_message.rs`, `activity_notifications_tests.rs`, or `lib.rs` from 
 - [ ] **Step 3: Run the focused RED checks.** Defer until implementation:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui activity_state --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui chatwidget::tests::app_server --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui history_replay --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui app_server_event_targets --lib -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui activity_state --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui chatwidget::tests::app_server --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui history_replay --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui app_server_event_targets --lib --locked -- --nocapture
 ```
 
 Expected: activity model and cost notification handling do not exist.
@@ -271,7 +271,7 @@ Add request-helper tests: `127.0.0.1` binding only; `Host: 127.0.0.1:<port>` and
 - [ ] **Step 2: Run the focused RED check.** Defer until implementation:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui dashboard_server --lib -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui dashboard_server --lib --locked -- --nocapture
 ```
 
 Expected: versioned state, host guard, envelope, and headers are absent.
@@ -321,7 +321,7 @@ Add hostile values (`<img src=x onerror=1>`, `<script>`, a fake `/home/private-u
 - [ ] **Step 2: Run the focused RED check.** Defer until implementation:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui dashboard_server_tests --lib -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui dashboard_server_tests --lib --locked -- --nocapture
 ```
 
 Expected: frozen fixture, Activity ids, precise unavailable copy, and DOM safety checks fail.
@@ -355,21 +355,21 @@ git commit -m "feat(dashboard): render truthful activity facts"
 - [ ] **Step 2: Run focused green checks.** Defer until implementation; execute only:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core turn_timing --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core tasks::tests:: --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core transient_turn_profile_event_is_not_persisted --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-rollout turn_profile_events_are_never_persisted --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo check -p codex-rollout-trace -p codex-mcp-server -p codex-thread-manager-sample --all-targets
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-otel turn_cost_decimal_parser_rounds_seventh_digit_and_rejects_invalid --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-otel --test tests manager_turn_cost_ -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server turn_activity --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server turn_cost_worker --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server activity_notifications --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui activity_state --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui dashboard_server --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui chatwidget::tests::app_server --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui history_replay --lib -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui app_server_event_targets --lib -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core turn_timing --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core tasks::tests:: --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core transient_turn_profile_event_is_not_persisted --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-rollout turn_profile_events_are_never_persisted --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo check -p codex-rollout-trace -p codex-mcp-server -p codex-thread-manager-sample --all-targets --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-otel turn_cost_decimal_parser_rounds_seventh_digit_and_rejects_invalid --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-otel --test tests manager_turn_cost_ --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server turn_activity --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server turn_cost_worker --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server activity_notifications --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui activity_state --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui dashboard_server --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui chatwidget::tests::app_server --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui history_replay --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui app_server_event_targets --lib --locked -- --nocapture
 ```
 
 Expected: every listed test filter produces at least one positive libtest summary and all selected tests pass; a zero-match filter is a failure. The three-package check covers the explicit exhaustive non-live consumers without building an executable. Do not run broad workspace tests, start a server, open a browser, or perform a network call in this slice.

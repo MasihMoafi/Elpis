@@ -57,7 +57,7 @@ Assert that `params.modelProvider == "openai"`. Keep the existing default serial
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server-protocol serialize_list_models -- --exact
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server-protocol serialize_list_models --locked -- --exact
 ```
 
 Expected: compilation fails because `ModelListParams` has no `model_provider` field.
@@ -82,7 +82,7 @@ The positive assertion requires a unique visible OpenAI model and its exact reas
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server --test all model_list -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server --test all model_list --locked -- --nocapture
 ```
 
 Expected: the provider-scoped test fails because the request cannot choose a provider.
@@ -168,7 +168,7 @@ Also assert that a stale request ID, an empty response, or an error leaves the l
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib model_catalog -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib model_catalog --locked -- --nocapture
 ```
 
 Expected: the unique model is absent because Elpis still renders its hardcoded OpenAI group.
@@ -251,8 +251,8 @@ Assert exact edits for `model`, `model_provider`, `model_reasoning_effort = "hig
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib model_reasoning_selection -- --nocapture
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib config_update_tests -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib model_reasoning_selection --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib config_update_tests --locked -- --nocapture
 ```
 
 Expected: cross-provider OpenAI selects immediately instead of opening reasoning, and provider persistence clears reasoning effort.
@@ -285,7 +285,7 @@ Change `build_provider_model_selection_edits` so `Some(effort)` writes `model_re
 Run both commands from Step 3 plus the focused thread-settings tests:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib thread_settings -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib thread_settings --locked -- --nocapture
 ```
 
 Expected: positive and negative picker, cancellation, thread-settings, and config-edit cases pass.
@@ -335,7 +335,7 @@ Run the green commands from Tasks 1-3 again and record exact pass/fail counts.
 Run:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo check --workspace --all-targets --exclude codex-sandboxing
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo check --workspace --all-targets --exclude codex-sandboxing --locked
 ```
 
 Report any known baseline failure separately from failures introduced by this branch.
