@@ -354,12 +354,14 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
     );
 
     history.replace(vec![
+        developer_msg_with_fragments(&[]),
         developer_msg("neighboring developer content"),
         developer_msg("extension before"),
         developer_msg("extension after"),
     ]);
     let latest = extension_single_slot(Some("extension after"));
     history.set_world_state_baseline(latest.snapshot());
+    let version_before_deduplication = history.history_version();
     let (fragments, rollout_item) = history.update_world_state(&latest);
     assert!(
         fragments.is_empty(),
@@ -367,10 +369,25 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
     );
     assert_eq!(rollout_item, None);
     assert_eq!(
+        history.history_version(),
+        version_before_deduplication.saturating_add(1),
+        "deduplicating restored content must invalidate history exactly once"
+    );
+    assert!(matches!(
+        history.raw_items().first(),
+        Some(ResponseItem::Message { role, content, .. }) if role == "developer" && content.is_empty()
+    ));
+    assert_eq!(
         history_texts(&history),
         vec!["neighboring developer content", "extension after"],
         "only the newest restored slot copy may remain"
     );
+
+    let version_before_unchanged_update = history.history_version();
+    let (fragments, rollout_item) = history.update_world_state(&latest);
+    assert!(fragments.is_empty());
+    assert_eq!(rollout_item, None);
+    assert_eq!(history.history_version(), version_before_unchanged_update);
 
     assert_eq!(
         apply_world_state(&mut history, &extension_single_slot(None)),

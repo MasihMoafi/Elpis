@@ -448,43 +448,45 @@ impl WorldState {
 
         let mut changed = false;
         let mut newest_retained = BTreeSet::<&str>::new();
-        for item in items.iter_mut().rev() {
-            let ResponseItem::Message { role, content, .. } = item else {
-                continue;
-            };
-            let before = content.len();
-            let mut retained = Vec::with_capacity(before);
-            for content in std::mem::take(content).into_iter().rev() {
-                let ContentItem::InputText { text } = &content else {
-                    retained.push(content);
+        for item_index in (0..items.len()).rev() {
+            let remove_message = {
+                let ResponseItem::Message { role, content, .. } = &mut items[item_index] else {
                     continue;
                 };
-                let matching = single_slots
-                    .iter()
-                    .filter(|(_, section)| section.matches_retained_fragment(role, text))
-                    .collect::<Vec<_>>();
-                let remove = matching.iter().any(|(id, section)| {
-                    refilled.contains(*id) || !section.has_model_visible_content()
-                }) || matching.iter().any(|(id, _)| newest_retained.contains(*id));
-                if remove {
-                    changed = true;
-                    continue;
+                let mut removed_owned_content = false;
+                for content_index in (0..content.len()).rev() {
+                    let ContentItem::InputText { text } = &content[content_index] else {
+                        continue;
+                    };
+                    let mut matched_slot = None;
+                    let mut remove_content = false;
+                    for (id, section) in &single_slots {
+                        if !section.matches_retained_fragment(role, text) {
+                            continue;
+                        }
+                        if refilled.contains(*id)
+                            || !section.has_model_visible_content()
+                            || newest_retained.contains(*id)
+                        {
+                            remove_content = true;
+                            break;
+                        }
+                        matched_slot = Some(*id);
+                    }
+                    if remove_content {
+                        content.remove(content_index);
+                        changed = true;
+                        removed_owned_content = true;
+                    } else if let Some(id) = matched_slot {
+                        newest_retained.insert(id);
+                    }
                 }
-                for (id, _) in matching {
-                    newest_retained.insert(*id);
-                }
-                retained.push(content);
+                removed_owned_content && content.is_empty()
+            };
+            if remove_message {
+                items.remove(item_index);
             }
-            retained.reverse();
-            changed |= retained.len() != before;
-            *content = retained;
         }
-        items.retain(|item| {
-            let keep =
-                !matches!(item, ResponseItem::Message { content, .. } if content.is_empty());
-            changed |= !keep;
-            keep
-        });
         changed
     }
 
