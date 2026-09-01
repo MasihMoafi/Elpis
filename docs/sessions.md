@@ -15,13 +15,13 @@ Elpis separates the model provider's native thread from its own provider-neutral
 | **Provider mobility** | Bound to the originating provider thread. | Provider-neutral — the checkpoint is plain Markdown. |
 | **Evidence** | Provider transcript on disk. | Provider transcript on disk, plus the checkpoint. |
 
-> **Open decision.** The threshold at which Elpis should switch automatically from exact resume to lean continuation is listed under Deferred Decisions in [`GUIDE.md`](https://github.com/MasihMoafi/Elpis/blob/main/docs/GUIDE.md). Today the portable checkpoint is contributed to thread context on every thread start; there is no automatic tier-switching state machine.
+> **Open decision.** The threshold at which Elpis should switch automatically from exact resume to lean continuation is listed under Deferred Decisions in [`GUIDE.md`](https://github.com/MasihMoafi/Elpis/blob/main/docs/GUIDE.md). There is no automatic tier-switching state machine.
 
 ---
 
 ## 2. How Lean Continuation Is Delivered
 
-Continuity is a context contribution, not a separate replay path. `ElpisContinuityExtension` (`codex-rs/app-server/src/extensions.rs`) implements `ContextContributor`; on thread context assembly it calls `build_continuity_prompt` (`codex-rs/core/src/elpis_context.rs`) and injects the result as a separate developer prompt fragment.
+Continuity is a context contribution, not a separate replay path. `ElpisContinuityExtension` (`codex-rs/app-server/src/extensions.rs`) contributes one replaceable World State developer section before every turn and calls `build_continuity_prompt` (`codex-rs/core/src/elpis_context.rs`) as its sole generator. The section is empty when nothing is admitted, which removes any earlier continuity fragment instead of leaving stale context in the request. Guardian reviewer sessions do not receive this section.
 
 `build_continuity_prompt` reads only the sources currently admitted in the Context Ledger, so anything you toggle off in the ledger stops being carried forward on the next turn.
 

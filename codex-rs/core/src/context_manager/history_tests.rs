@@ -28,6 +28,9 @@ use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::PLUGINS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnContextItem;
+use codex_extension_api::PreviousWorldStateSection;
+use codex_extension_api::RenderedWorldStateFragment;
+use codex_extension_api::WorldStateSectionContribution;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::truncate_text;
@@ -37,6 +40,7 @@ use image::Luma;
 use image::Rgba;
 use pretty_assertions::assert_eq;
 use regex_lite::Regex;
+use serde_json::json;
 
 const EXEC_FORMAT_MAX_BYTES: usize = 10_000;
 const EXEC_FORMAT_MAX_TOKENS: usize = 2_500;
@@ -284,6 +288,76 @@ fn withdrawing_instructions_removes_the_earlier_copy_from_history() {
     );
     assert_eq!(instruction_copies(&history), 1);
     assert_eq!(instruction_lifecycle_notices(&history), 0);
+}
+
+fn extension_single_slot(body: Option<&str>) -> WorldState {
+    let body = body.map(str::to_string);
+    let has_model_visible_content = body.is_some();
+    let snapshot_body = body.clone();
+    let mut state = WorldState::default();
+    state.add_extension_section(
+        WorldStateSectionContribution::new(
+            "extension_single_slot",
+            json!({ "body": snapshot_body }),
+            move |previous| {
+                if matches!(
+                    previous,
+                    PreviousWorldStateSection::Known(previous)
+                        if previous.get("body").and_then(serde_json::Value::as_str) == body.as_deref()
+                ) {
+                    return None;
+                }
+                body.as_ref().map(|body| {
+                    RenderedWorldStateFragment::new(
+                        "developer",
+                        ("", ""),
+                        body.clone(),
+                    )
+                })
+            },
+        )
+        .with_retained_fragment_matcher(|role, text| {
+            role == "developer" && matches!(text, "extension before" | "extension after")
+        })
+        .with_single_history_slot(has_model_visible_content),
+    );
+    state
+}
+
+#[test]
+fn extension_single_slot_replaces_then_removes_only_its_own_content() {
+    let mut history = ContextManager::new();
+    let (fragments, _) =
+        history.update_world_state(&extension_single_slot(Some("extension before")));
+    let mut initial_items = crate::context_manager::updates::merge_contextual_fragments(fragments);
+    let ResponseItem::Message { content, .. } = &mut initial_items[0] else {
+        panic!("the extension fragment must be a developer message");
+    };
+    content.insert(
+        0,
+        ContentItem::InputText {
+            text: "neighboring developer content".to_string(),
+        },
+    );
+    history.record_items(initial_items.iter(), TruncationPolicy::Tokens(10_000));
+
+    assert_eq!(
+        apply_world_state(
+            &mut history,
+            &extension_single_slot(Some("extension after")),
+        ),
+        1
+    );
+    assert_eq!(
+        history_texts(&history),
+        vec!["neighboring developer content", "extension after"]
+    );
+
+    assert_eq!(
+        apply_world_state(&mut history, &extension_single_slot(None)),
+        0
+    );
+    assert_eq!(history_texts(&history), vec!["neighboring developer content"]);
 }
 
 fn user_msg(text: &str) -> ResponseItem {

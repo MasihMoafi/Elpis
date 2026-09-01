@@ -21,14 +21,16 @@ use tokio::time::timeout;
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 const MEMORY_CREATE_MARKER: &str = "MEMORY_CREATE_MARKER";
+const MEMORY_UPDATED_MARKER: &str = "MEMORY_UPDATED_MARKER";
 const MEMORY_SOURCE_HEADER: &str = "MEMORY.md (";
+const ELPIS_CONTINUITY_HEADER: &str = "## Elpis Admitted Context\n\n";
 
 #[tokio::test]
 async fn manual_memory_request_boundaries_follow_current_admission() -> Result<()> {
     let server = responses::start_mock_server().await;
     let response_mock = responses::mount_sse_sequence(
         &server,
-        (1..=6)
+        (1..=7)
             .map(|turn| {
                 responses::sse(vec![
                     responses::ev_response_created(&format!("resp-{turn}")),
@@ -86,6 +88,18 @@ async fn manual_memory_request_boundaries_follow_current_admission() -> Result<(
     let admitted = response_mock.requests()[2].message_input_texts("developer");
     assert!(admitted.iter().any(|text| text.contains(MEMORY_CREATE_MARKER)));
 
+    tokio::fs::write(memory_root.join("MEMORY.md"), MEMORY_UPDATED_MARKER).await?;
+    complete_turn(&mut app, &thread.id).await?;
+    let updated = response_mock.requests()[3].message_input_texts("developer");
+    let continuity = elpis_continuity_fragments(&updated);
+    assert_eq!(
+        continuity.len(),
+        1,
+        "continuity must own one live request slot"
+    );
+    assert!(continuity[0].contains(MEMORY_UPDATED_MARKER));
+    assert!(!continuity[0].contains(MEMORY_CREATE_MARKER));
+
     codex_core::elpis_context::set_continuity_source_admitted(
         Some(memory_root.as_path()),
         workspace.path(),
@@ -93,7 +107,7 @@ async fn manual_memory_request_boundaries_follow_current_admission() -> Result<(
         false,
     )?;
     complete_turn(&mut app, &thread.id).await?;
-    assert_no_manual_memory(&response_mock.requests()[3].message_input_texts("developer"));
+    assert_no_manual_memory(&response_mock.requests()[4].message_input_texts("developer"));
 
     let long_memory = "🦀".repeat(8_001);
     tokio::fs::write(memory_root.join("MEMORY.md"), &long_memory).await?;
@@ -112,7 +126,7 @@ async fn manual_memory_request_boundaries_follow_current_admission() -> Result<(
         .truncated
     );
     complete_turn(&mut app, &thread.id).await?;
-    let long_request = response_mock.requests()[4].message_input_texts("developer");
+    let long_request = response_mock.requests()[5].message_input_texts("developer");
     assert_eq!(
         manual_memory_body(&long_request),
         format!("{}…", "🦀".repeat(7_999)),
@@ -128,7 +142,7 @@ async fn manual_memory_request_boundaries_follow_current_admission() -> Result<(
     let corrupt = b"memory = [not valid";
     tokio::fs::write(&admission_path, corrupt).await?;
     complete_turn(&mut app, &thread.id).await?;
-    let corrupt_request = response_mock.requests()[5].message_input_texts("developer");
+    let corrupt_request = response_mock.requests()[6].message_input_texts("developer");
     assert!(
         corrupt_request
             .iter()
@@ -183,6 +197,13 @@ fn manual_memory_body(developer: &[String]) -> String {
                 .map(|(_, body)| body.to_string())
         })
         .expect("the admitted request must contain the capped manual-memory source")
+}
+
+fn elpis_continuity_fragments(developer: &[String]) -> Vec<&str> {
+    developer
+        .iter()
+        .filter_map(|text| text.contains(ELPIS_CONTINUITY_HEADER).then_some(text.as_str()))
+        .collect()
 }
 
 fn write_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {

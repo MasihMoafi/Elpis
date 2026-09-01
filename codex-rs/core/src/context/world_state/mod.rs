@@ -161,11 +161,11 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
     }
 
     fn owns_single_history_slot(&self) -> bool {
-        false
+        self.0.owns_single_history_slot()
     }
 
     fn has_model_visible_content(&self) -> bool {
-        true
+        self.0.has_model_visible_content()
     }
 
     fn render_diff(
