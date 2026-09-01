@@ -25,11 +25,11 @@
 - Preserve unrelated worktree state. Stage only the exact files named by the completed task; never use `git add -A`.
 - Start every behavior change with a failing focused Rust test. A new test must prove both its positive behavior and its negative/no-op case where stated below.
 - The exact automatic-pruning warning copy is: `Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.` Do not paraphrase it in settings or configuration documentation.
-- The feature label is exactly `Automatic pruning — Experimental`. The future dashboard rendering contract is exactly `Automatic pruning: Off` or `Automatic pruning: On · Experimental`.
+- The feature label is exactly `Automatic pruning — Experimental`. Because persisted settings do not mutate the active core session, the future dashboard rendering contract is exactly `Automatic pruning next conversation: Off` or `Automatic pruning next conversation: On · Experimental`.
 - The only dashboard work here is the additive data interface described in Task 5. Do not edit `codex-rs/tui/src/dashboard_assets/index.html`, add current-layout snapshots, or implement the typed-dashboard/observability redesign.
 - Existing manifests/checkpoints and raw rollouts remain evidence. This plan does not rewrite historic rollout data. Test updates may replace only tests for the removed dormant cleanup route; normal native compaction and manual-prune resume coverage must remain.
 - Documentation describes implemented semantics and limits, not unmeasured latency, pruning quality, cache benefit, or Headroom-product compatibility.
-- All Rust commands below are deferred until execution. Before any Cargo command, read `docs/LOCAL_BUILD_RULES.md`, capture the pre-existing failure baseline, inspect target disk use, and prefix every command with `CODEX_SKIP_BWRAP_BUILD=1`.
+- All Rust commands below are deferred until execution. Run them from `codex-rs`. Before any Cargo command, read `docs/LOCAL_BUILD_RULES.md`, capture the pre-existing failure baseline, inspect target disk use, and retain the exact `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo ... --locked` wrapper shown below.
 
 ## Source-only interim checks for every task
 
@@ -85,8 +85,8 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   Deferred execution command:
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core context_window --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-protocol model_context_window_limits_preserve_their_distinct_meanings --lib
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core context_window --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-protocol model_context_window_limits_preserve_their_distinct_meanings --lib --locked
   ```
 
   Expected before implementation: the old `155_040` / `103_360` assertions or Total-scope configured-limit expectation conflicts with the new donor fixtures.
@@ -161,7 +161,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   Deferred execution command:
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite --locked
   ```
 
   Expected before implementation: the explicit hidden flag selects `CLEANUP_PROMPT`, so the inverted native-route assertion fails. After implementation the flag assignment is removed because the field no longer exists, while the same native-route assertions pass.
@@ -191,8 +191,8 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 - [ ] **Step 5: Run focused regression checks.**
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core compact --test suite
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core compact --test suite --locked
   ```
 
   Expected: native compaction requests retain normal summarization; manual `/prune` tests still exercise the separate task.
@@ -240,7 +240,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   Deferred execution command:
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib --locked
   ```
 
   Expected before implementation: the test cannot observe its injected notification until the gated `turn_interrupt(...).await` returns, or it consumes a second request for duplicate Ctrl-C.
@@ -269,9 +269,9 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 - [ ] **Step 5: Run focused TUI tests.**
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui failed_active_turn_interrupt_clears_pending_and_allows_retry --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui interrupt_without_active_turn_is_treated_as_handled --lib
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui failed_active_turn_interrupt_clears_pending_and_allows_retry --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui interrupt_without_active_turn_is_treated_as_handled --lib --locked
   ```
 
   Expected: delayed RPC does not block a later UI event, duplicates coalesce, stale retry/failure route remains visible, and pending state clears on lifecycle notification.
@@ -283,87 +283,64 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   git commit -m "fix(tui): make active-turn interrupts nonblocking"
   ```
 
-### Task 4: Make manual prune cancellation stop before any history mutation
+### Task 4: Make prune cancellation atomic across streams, commits, and task completion
 
 **Files:**
 
 - Modify: `codex-rs/core/src/tasks/prune.rs`
 - Modify: `codex-rs/core/src/session/context_prune.rs`
-- Modify: `codex-rs/core/tests/suite/context_prune.rs`
-- Modify: colocated unit tests in `codex-rs/core/src/session/context_prune.rs` only if a private stream helper needs direct cancellation coverage
+- Modify: `codex-rs/core/src/session/handlers.rs`
+- Modify: `codex-rs/core/src/tasks/mod.rs`
+- Modify: `codex-rs/core/src/state/turn.rs`
+- Modify: `codex-rs/core/src/test_support.rs`
+- Test: `codex-rs/core/tests/suite/context_prune.rs`
+- Test: `codex-rs/core/src/tasks/mod_tests.rs`
+- Test: `codex-rs/core/src/session/tests.rs`
 
-**Interfaces:**
+**Interfaces and invariants:**
 
-- Consumes: `PruneTask::run(..., cancellation_token: CancellationToken)`, `run_manual_context_prune_with_target`, the model stream, and the current atomic mutation sequence beginning with `state.history.replace(...)`.
-- Produces: cancellation-aware manual prune helpers. Automatic pressure calls pass no cancellation token and retain their existing behavior. A cancelled manual stream returns without fallback inference, history replacement, prune checkpoint persistence, covered-call updates, saved-token updates, applied-pass accounting, or latest-report write.
-- Required private result distinction: cancellation must be distinguishable from a provider/parse failure so `run_prune_pass` does not attempt the fallback model after cancellation.
+- Manual `PruneTask` threads its cancellation token through the pruning stream. Automatic pressure pruning retains `None` and its existing feature gate.
+- Cancellation before a pass claims its commit boundary causes no fallback request, history replacement, checkpoint/audit/report write, covered-call update, saved-token update, or applied-pass increment.
+- A pass that has atomically begun committing finishes that pass. A simultaneous interrupt records stop-after-commit, reports the completed work as `TurnComplete`, and prevents the next batch. A normal committed pass re-arms cancellation before the next batch.
+- Task completion uses one atomic five-state lifecycle: Pending, AbortRequested, Normal, IntentionalAbort, Abnormal. AbortRequested is nonterminal; Abnormal is terminal and can never be relabelled as a user abort.
+- Late interrupts after abnormal completion enter recovery instead of the normal `TurnAborted` path. Recovery may clear only the exact installed task, matched by completion, turn-state, and turn-context identity; a replacement active turn is never cleared.
 
-- [ ] **Step 1: Write a gated-stream failing regression test.**
+- [x] **Step 1: Add deterministic gated regression sources.**
 
-  In `core/tests/suite/context_prune.rs`, use the existing mock response machinery to start a manual prune, gate the pruning stream after it starts, cancel the task token, then release the stream. Assert all negative invariants as well as the positive precondition:
+  The tests cover cancellation before mutation, re-arming before a later batch, interrupt during commit, transition latching, genuine requested abort, late abort after normal completion, and a real session task that panics before a later interrupt. Gates use channels/notifications rather than timing sleeps.
 
-  ```text
-  precondition: candidate batch and prune request were created
-  after cancellation: raw working history equals its pre-prune copy
-  after cancellation: no CompactedItem::context_prune_checkpoint_message exists
-  after cancellation: context_prune_saved_tokens and covered_call_ids are unchanged
-  after cancellation: no fallback pruning-model request is issued
-  ```
+- [x] **Step 2: Implement stream cancellation and the pass-scoped commit boundary.**
 
-  Name the test `manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint`.
+  A dedicated cancelled result stops retry/fallback. The mutation sequence is guarded by `TaskCancellationBoundary`; `finish_commit` either re-arms the next pass or returns stop-after-commit.
 
-- [ ] **Step 2: Run the focused test to prove a late stream can currently commit.**
+- [x] **Step 3: Implement panic-safe task completion and pointer-matched recovery.**
 
-  Deferred execution command:
+  One `AtomicU8` owns abort intent and terminal outcome. `take_active_turn_for_abort` distinguishes requested, already-finished, and abnormal tasks; abnormal recovery requires all three stored identities and emits no false abort lifecycle.
 
-  ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint --test suite
-  ```
+- [x] **Step 4: Pass fresh independent source review.**
 
-  Expected before implementation: `PruneTask::run` discards `_cancellation_token`, and the delayed response can reach `state.history.replace(...)` and checkpoint persistence.
-
-- [ ] **Step 3: Thread cancellation through the manual path and make the stream responsive to it.**
-
-  Change the manual API to accept an optional token and retain automatic callers as `None`:
-
-  ```rust
-  pub(crate) async fn run_manual_context_prune_with_target(
-      sess: &Arc<Session>,
-      turn_context: &Arc<TurnContext>,
-      target_pct: Option<i64>,
-      cancellation_token: Option<&CancellationToken>,
-  )
-  ```
-
-  `PruneTask::run` passes `Some(&_cancellation_token)`. Propagate the option to `run_context_prune`, `run_prune_pass`, `try_validated_prune_pass`, and `try_stream_prune_pass`. Use `tokio::select!` between `cancellation_token.cancelled()` and each awaited stream item. Return a dedicated private cancelled outcome, stop retry/fallback on that outcome, and re-check cancellation immediately before the first mutation (`apply_prune_record_untracked` / `state.history.replace`).
-
-  Do not write a failure audit for user cancellation and do not mark the batch covered. Provider/parse failures retain the current fail-open audit/backoff behavior.
-
-- [ ] **Step 4: Source-check the mutation boundary.**
+  Review the complete source slice at commits `f7e5a2a`, `0364701`, and `86ee247`, including every caller of the changed task/turn helpers. Reject hangs, abnormal-to-intentional relabeling, unlocked mutation paths, loss of between-pass re-arming, or replacement-turn clearing.
 
   ```bash
-  rg -n -C 5 'CancellationToken|is_cancelled|cancelled\(|state\.history\.replace|persist_rollout_items' codex-rs/core/src/tasks/prune.rs codex-rs/core/src/session/context_prune.rs
-  git diff --check
+  git show --check f7e5a2a
+  git show --check 0364701
+  git show --check 86ee247
+  rg -n -C 5 'CancellationToken|TaskCancellationBoundary|TaskCompletion|state\.history\.replace|persist_rollout_items' codex-rs/core/src/tasks codex-rs/core/src/session codex-rs/core/src/state/turn.rs
   ```
 
-  Expected: the manual token reaches the stream and an explicit cancellation check precedes every state/rollout mutation path; automatic entry points remain feature-gated and token-free.
-
-- [ ] **Step 5: Run cancellation plus existing manual/automatic regression checks.**
+- [ ] **Step 5: Run the deferred focused checks only at functional close.**
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint --test suite
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_prune --test suite
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core automatic_prune_is_disabled_by_default --test suite
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint --test suite --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core manual_prune --test suite --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core tasks::tests --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core interrupt_recovers_latched_abnormal_task_without_turn_aborted --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core automatic_prune_is_disabled_by_default --test suite --locked
   ```
 
-  Expected: the cancellation test passes; direct manual prune and default-off automatic pruning remain independent.
+  Expected: all deterministic cancellation/completion tests pass; manual and default-off automatic pruning remain independent. Runtime evidence remains deferred until this source slice and later functional tasks close.
 
-- [ ] **Step 6: Commit.**
-
-  ```bash
-  git add codex-rs/core/src/tasks/prune.rs codex-rs/core/src/session/context_prune.rs codex-rs/core/tests/suite/context_prune.rs
-  git commit -m "fix(prune): prevent cancelled passes from mutating history"
-  ```
+**Source commits:** `f7e5a2a` (atomic mutation boundary), `0364701` (between-pass re-arm and latched completion), and `86ee247` (single-state abnormal-safe completion/recovery).
 
 ### Task 5: Expose automatic pruning as persisted Experimental metadata and publish its dashboard contract
 
@@ -371,6 +348,9 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
 - Modify: `codex-rs/features/src/lib.rs`
 - Modify: `codex-rs/features/src/tests.rs`
+- Modify: `codex-rs/core/src/session/mod.rs`
+- Modify: `codex-rs/core/src/session/tests.rs`
+- Modify: `codex-rs/tui/src/bottom_pane/experimental_features_view.rs`
 - Modify: `codex-rs/tui/src/chatwidget/settings_popups.rs`
 - Modify: `codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs`
 - Modify: `codex-rs/tui/src/slash_command.rs`
@@ -382,9 +362,10 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 **Interfaces:**
 
 - Consumes: `Feature::stage()`, `Feature::default_enabled()`, `Feature::key()`, `FEATURES`, `AppEvent::UpdateFeatureFlags`, `App::update_feature_flags`, and `DashboardSnapshot` serialization.
-- Produces: `AutomaticContextPruning` metadata at `Stage::Experimental { name, menu_description, announcement }`, one metadata-derived automatic-pruning settings row appended to the existing `Keep computer awake` row, and additive `DashboardSnapshot { automatic_pruning_enabled: bool, .. }` JSON. It does not expose unrelated Experimental registry entries such as Network proxy.
-- Dashboard handoff contract: the later typed-dashboard plan consumes the boolean and renders `Automatic pruning: Off` when false and `Automatic pruning: On · Experimental` when true. This task does not render those strings in current `index.html`.
-- Persistence contract: opening `/settings` merely reads current state; accepting a toggle sends the existing `UpdateFeatureFlags` route, persists `[features] automatic_context_pruning = true|false`, and leaves manual `/prune` enabled regardless of the flag.
+- Produces: `AutomaticContextPruning` metadata at `Stage::Experimental { name, menu_description, announcement }`, one metadata-derived automatic-pruning settings row appended to the existing `Keep computer awake` row, and additive `DashboardSnapshot { automatic_pruning_configured_for_next_conversation: bool, .. }` JSON. It does not expose unrelated Experimental registry entries such as Network proxy.
+- Network contract: automatic pruning is local Elpis behavior. Enabling it must not add `automatic_context_pruning` to the OpenAI `x-codex-beta-features` header; the existing server-advertised feature behavior remains unchanged.
+- Dashboard handoff contract: the later typed-dashboard plan consumes the configured-value boolean and renders `Automatic pruning next conversation: Off` when false and `Automatic pruning next conversation: On · Experimental` when true. This task does not render those strings in current `index.html` and does not claim to change the active thread's feature gates.
+- Persistence contract: opening or cancelling `/settings`, and accepting without a changed row, emit no update and perform no write. Accepting changes emits only the changed rows through the existing `UpdateFeatureFlags` route. Enabling persists `[features] automatic_context_pruning = true`; disabling a default-false feature removes that key through the existing config edit helper, and config reload resolves it Off. Manual `/prune` remains enabled regardless of the flag. Saved settings apply to the next conversation; live feature-gate updates for an active core session are out of scope.
 
 - [ ] **Step 1: Write failing feature, settings-discovery, persistence, and JSON-contract tests.**
 
@@ -392,7 +373,14 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
   ```rust
   assert_eq!(Feature::AutomaticContextPruning.default_enabled(), false);
-  assert!(matches!(Feature::AutomaticContextPruning.stage(), Stage::Experimental { .. }));
+  assert_eq!(
+      Feature::AutomaticContextPruning.stage(),
+      Stage::Experimental {
+          name: "Automatic pruning — Experimental",
+          menu_description: "Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.",
+          announcement: "",
+      }
+  );
   ```
 
   Render `/settings` through `ChatWidget::open_experimental_popup()` and assert it retains `Keep computer awake`, contains both exact automatic-pruning strings below, and does not expose `Network proxy`:
@@ -402,16 +390,17 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.
   ```
 
-  Assert `/settings` is included in `built_in_slash_commands()` rather than only parseable/hidden. In `tui/src/app/tests.rs`, toggle the automatic-pruning row, accept it, run the real existing `App::update_feature_flags` persistence path in a temp `codex_home`, and assert the written TOML contains `automatic_context_pruning = true`; then disable it and assert `false` persists. Reopen/read config and assert false remains the default without user action. Add the explicitly named `dashboard_snapshot_serializes_automatic_pruning_state` test: serialize `DashboardSnapshot` and assert its new boolean is present with exact false and true values.
+  Assert `/settings` is included in `built_in_slash_commands()` rather than only parseable/hidden. Add view-level tests proving Esc, Ctrl-C, and unchanged accept emit no feature events, while accepting one changed row emits only that row and cannot overwrite a stale sibling value. In `tui/src/app/tests.rs`, toggle the automatic-pruning row, accept it, run the real existing `App::update_feature_flags` persistence path in a temp `codex_home`, and assert the written TOML contains `automatic_context_pruning = true`; then disable it, assert the key is absent, reload config, and assert the feature resolves Off. Reopen/read config and assert Off remains the default without user action. Add the explicitly named `dashboard_snapshot_serializes_automatic_pruning_configuration` test: serialize `DashboardSnapshot` and assert its new configured-for-next-conversation boolean is present with exact false and true values. Add `automatic_context_pruning_is_local_only_in_beta_header`: enabling only the local pruning flag must not add its key to the model-client beta header, while a known server-advertised feature must still be present. This test must fail if the local key leaks or if the existing positive path is accidentally disabled.
 
 - [ ] **Step 2: Run focused tests and show current gaps.**
 
   Deferred execution commands:
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-features automatic_context_pruning_is_experimental_and_opt_in --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui experimental --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui settings --lib
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-features automatic_context_pruning_is_experimental_and_opt_in --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core automatic_context_pruning_is_local_only_in_beta_header --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui experimental --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui settings --lib --locked
   ```
 
   Expected before implementation: the stage is `UnderDevelopment`; settings has only `PreventIdleSleep`; `/settings` is excluded from discovered slash commands; JSON has no automatic-pruning field.
@@ -429,48 +418,54 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   default_enabled: false,
   ```
 
-  In `open_experimental_popup`, retain the existing explicit `Feature::PreventIdleSleep` / `Keep computer awake` row. Then look up only `Feature::AutomaticContextPruning` in `FEATURES` and derive that row's name/description through `stage.experimental_menu_name()` / `experimental_menu_description()` plus `self.config.features.enabled(spec.id)`. Do not iterate every Experimental registry entry: Network proxy and other unrelated features remain hidden. Do not add hard-coded automatic-pruning copy outside its metadata.
+  In `open_experimental_popup`, retain the existing explicit `Feature::PreventIdleSleep` / `Keep computer awake` row. Then use only `Feature::AutomaticContextPruning` and its `stage()` metadata to derive that row's name/description through `experimental_menu_name()` / `experimental_menu_description()`, plus `self.config.features.enabled(feature)`. Do not iterate `FEATURES`: Network proxy and other unrelated features remain hidden. Do not add hard-coded automatic-pruning copy outside its metadata.
 
-- [ ] **Step 4: Restore `/settings` discovery and use existing persistence.**
+  In `Session::build_model_client_beta_features_header`, exclude only `Feature::AutomaticContextPruning` from advertisement before the existing Experimental/`RemoteCompactionV2` selection. Do not broaden the exclusion or change any existing advertised key. The focused core test owns this local/server boundary.
 
-  Change `built_in_slash_commands()` visibility only so the already parsing/dispatching `SlashCommand::Experimental` (`/settings`) is discoverable. Keep its command string and existing popup/event route. Do not add a new slash command or a new config store; `AppEvent::UpdateFeatureFlags` and `App::update_feature_flags` are the sole persistence path.
+- [ ] **Step 4: Restore `/settings` discovery and make the existing popup write only real changes.**
+
+  Change `built_in_slash_commands()` visibility only so the already parsing/dispatching `SlashCommand::Experimental` (`/settings`) is discoverable. In the shared `ExperimentalFeaturesView`, retain each row's initial value: Esc/Ctrl-C emit nothing, unchanged accept emits nothing, and changed accept emits only changed rows. Keep the command string and existing popup/event route. Do not add a new slash command or config store; `AppEvent::UpdateFeatureFlags`, `App::update_feature_flags`, and the existing default-aware config edit helper remain the sole persistence path. Do not special-case automatic pruning in the helper: true is explicit, while disabling this default-false feature clears its key and reloads as Off.
 
 - [ ] **Step 5: Add the additive dashboard data field only.**
 
   Extend the snapshot and publisher:
 
   ```rust
-  pub(crate) automatic_pruning_enabled: bool,
-  // publish from self.config.features.enabled(Feature::AutomaticContextPruning)
+  pub(crate) automatic_pruning_configured_for_next_conversation: bool,
+  // publish the effective TUI config after persistence/override resolution,
+  // not Task 4's active-turn execution state
   ```
 
-  Give the field Serde's existing snake_case output (`automatic_pruning_enabled`). Add a narrow serialization/publisher test. Do not infer the field from saved tokens or prune history: it reports configured mode only, so manual and automatic completion cannot be conflated.
+  Give the field Serde's existing snake_case output (`automatic_pruning_configured_for_next_conversation`). Add a narrow serialization/publisher test. Derive it from the TUI's effective configuration after successful persistence and any override resolution, never from the raw requested toggle, Task 4's pass/commit state, saved tokens, or prune history. It reports what a newly started conversation will use, not whether automatic pruning is active or completed in the current thread.
 
 - [ ] **Step 6: Source-review metadata, discovery, persistence, and interface boundaries.**
 
   ```bash
-  rg -n -C 3 'Automatic pruning — Experimental|Distills completed tool output|AutomaticContextPruning|automatic_pruning_enabled' codex-rs/features codex-rs/tui
+  rg -n -C 3 'Automatic pruning — Experimental|Distills completed tool output|AutomaticContextPruning|automatic_pruning_configured_for_next_conversation' codex-rs/features codex-rs/core/src/session codex-rs/tui
+  rg -n -C 3 'initial|changed|UpdateFeatureFlags' codex-rs/tui/src/bottom_pane/experimental_features_view.rs
   rg -n -C 2 'settings' codex-rs/tui/src/slash_command.rs
   git diff --check
   ```
 
-  Expected: exact automatic-pruning copy appears only through metadata and docs; settings retains Keep computer awake, derives only the automatic-pruning addition from registry data, and excludes Network proxy; the dashboard asset remains untouched; no current snapshot UI claims an automatic completion.
+  Expected: exact automatic-pruning copy appears only through metadata and docs; settings retains Keep computer awake, derives only the automatic-pruning addition from the named feature, excludes Network proxy, and writes only changed rows; the local pruning key is absent from the OpenAI beta-feature header while existing advertised keys remain; the dashboard asset remains untouched; no current snapshot UI claims active-thread enablement or automatic completion.
 
 - [ ] **Step 7: Run focused feature/TUI checks.**
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-features automatic_context_pruning_is_experimental_and_opt_in --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui experimental_popup --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui update_feature_flags --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui renamed_commands_use_elpis_names --lib
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-features automatic_context_pruning_is_experimental_and_opt_in --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core automatic_context_pruning_is_local_only_in_beta_header --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui experimental --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui update_feature_flags --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui dashboard_snapshot_serializes_automatic_pruning_configuration --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui renamed_commands_use_elpis_names --lib --locked
   ```
 
-  Expected: off by default; explicit enable persists; `/settings` is discoverable; manual prune tests continue to pass while the flag is off; dashboard JSON has the Boolean contract.
+  Expected: off by default; cancel/no-change writes nothing; explicit enable persists true; disable removes the key and reloads Off; `/settings` is discoverable; manual prune tests continue to pass while the flag is off; dashboard JSON has the configured-for-next-conversation Boolean contract.
 
 - [ ] **Step 8: Commit.**
 
   ```bash
-  git add codex-rs/features/src/lib.rs codex-rs/features/src/tests.rs codex-rs/tui/src/chatwidget/settings_popups.rs codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs codex-rs/tui/src/slash_command.rs codex-rs/tui/src/dashboard_server.rs codex-rs/tui/src/chatwidget/context_usage.rs codex-rs/tui/src/app/tests.rs
+  git add codex-rs/features/src/lib.rs codex-rs/features/src/tests.rs codex-rs/core/src/session/mod.rs codex-rs/core/src/session/tests.rs codex-rs/tui/src/bottom_pane/experimental_features_view.rs codex-rs/tui/src/chatwidget/settings_popups.rs codex-rs/tui/src/chatwidget/tests/popups_and_settings.rs codex-rs/tui/src/slash_command.rs codex-rs/tui/src/dashboard_server.rs codex-rs/tui/src/chatwidget/context_usage.rs codex-rs/tui/src/app/tests.rs
   git commit -m "feat(prune): expose experimental automatic pruning setting"
   ```
 
@@ -494,15 +489,15 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
 
 - [ ] **Step 1: Write failing manual-status and documentation regression tests.**
 
-  Extend existing slash-command/context-usage tests so `/prune` and `/force-prune` retain their exact operation routing while manual UI feedback includes `Manual pruning` and never says `Automatic pruning: On`. Add documentation truth checks that fail if `docs/context.md` says `/compact` is Elpis cleanup or `/prune` is a `/compact` phase; use targeted read assertions or a lightweight source-text test only if this repository's existing test conventions support it. Otherwise record documentation exactness in the task's manual diff review rather than creating a new test harness.
+  Extend existing slash-command/context-usage tests so `/prune` and `/force-prune` retain their exact operation routing while manual UI feedback includes `Manual pruning` and contains no `Automatic pruning` state claim. Add documentation truth checks that fail if `docs/context.md` says `/compact` is Elpis cleanup or `/prune` is a `/compact` phase; use targeted read assertions or a lightweight source-text test only if this repository's existing test conventions support it. Otherwise record documentation exactness in the task's manual diff review rather than creating a new test harness.
 
 - [ ] **Step 2: Run focused TUI tests before implementation.**
 
   Deferred execution commands:
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_prune --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_force_prune --lib
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui slash_prune --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui slash_force_prune --lib --locked
   ```
 
   Expected before implementation: direct manual routing works, but status tracking is generic and current documentation falsely describes `/compact` as the cleanup/prune route.
@@ -525,7 +520,7 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   ```text
   Native `/compact`: Codex normal summarization/lifecycle and donor model-window threshold.
   Manual `/prune` and `/force-prune`: explicit Ace actions, independent of automatic setting.
-  Automatic pruning — Experimental: off by default; configured through visible `/settings`; uses the exact warning copy; may run before native compaction only after explicit enablement.
+  Automatic pruning — Experimental: off by default; saved through visible `/settings` for the next conversation; uses the exact warning copy; may run before native compaction only in a conversation started with it enabled.
   ```
 
   Remove all claims that `/compact` runs an Elpis cleanup pass, invokes Ace pruning first, uses Luna Max to delete conversation messages, or is an opt-out from cleanup. Retain the cautious, source-backed pruning limitations and never state that automatic pruning improves task success, cost, cache reuse, or latency.
@@ -537,13 +532,13 @@ At the end of the implementation sequence, run only the deferred Rust checks lis
   git diff --check
   ```
 
-  Expected: docs use the exact warning and distinguish all three flows; no user-facing cleanup-route claim remains; manual status is not conflated with automatic mode.
+  Expected: docs use the exact warning and distinguish all three flows; no user-facing cleanup-route claim remains; manual status is not conflated with automatic mode; settings never imply that saving the flag mutates the active conversation.
 
 - [ ] **Step 6: Run focused tests and inspect the documentation diff.**
 
   ```bash
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_prune --lib
-  CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_force_prune --lib
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui slash_prune --lib --locked
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui slash_force_prune --lib --locked
   ```
 
   Then inspect only:
@@ -567,27 +562,31 @@ This final batch is the accumulated union of every deferred task command; no per
 
 ```bash
 du -sh codex-rs/target
-CODEX_SKIP_BWRAP_BUILD=1 cargo check --workspace --all-targets --exclude codex-sandboxing
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core context_window --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-protocol model_context_window_limits_preserve_their_distinct_meanings --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core compact --test suite
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint --test suite
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core manual_prune --test suite
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core automatic_prune_is_disabled_by_default --test suite
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui failed_active_turn_interrupt_clears_pending_and_allows_retry --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui interrupt_without_active_turn_is_treated_as_handled --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-features automatic_context_pruning_is_experimental_and_opt_in --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui experimental_popup --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui update_feature_flags --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui dashboard_snapshot_serializes_automatic_pruning_state --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui renamed_commands_use_elpis_names --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_prune --lib
-CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui slash_force_prune --lib
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo check --workspace --all-targets --exclude codex-sandboxing --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core context_window --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-protocol model_context_window_limits_preserve_their_distinct_meanings --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core native_compact_uses_summarization_without_elpis_cleanup_route --test suite --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core compact --test suite --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint --test suite --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core manual_prune --test suite --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core tasks::tests --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core interrupt_recovers_latched_abnormal_task_without_turn_aborted --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core automatic_prune_is_disabled_by_default --test suite --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core automatic_context_pruning_is_local_only_in_beta_header --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui failed_active_turn_interrupt_clears_pending_and_allows_retry --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui interrupt_without_active_turn_is_treated_as_handled --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-features automatic_context_pruning_is_experimental_and_opt_in --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui experimental --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui settings --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui update_feature_flags --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui dashboard_snapshot_serializes_automatic_pruning_configuration --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui renamed_commands_use_elpis_names --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui slash_prune --lib --locked
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui slash_force_prune --lib --locked
 ```
 
-Then perform the Stage 1 manual acceptance on a disposable state directory: default automatic pruning must cause no automatic pass; `/settings` must show the exact Experimental row and persist explicit enablement; `/prune` and `/force-prune` must still work with it off; ordinary `/compact` must follow normal native summarization; Ctrl-C during a delayed active turn must keep the UI responsive and repeated Ctrl-C must coalesce. The future typed-dashboard task must consume `automatic_pruning_enabled` and render the two exact dashboard strings before dashboard acceptance is claimed.
+Then perform the Stage 1 manual acceptance on a disposable state directory: default automatic pruning must cause no automatic pass; `/settings` must show the exact Experimental row, write nothing on cancel/no-change, persist explicit enablement, remove the key on disable, and truthfully say the saved value applies to the next conversation; `/prune` and `/force-prune` must still work with it off; ordinary `/compact` must follow normal native summarization; Ctrl-C during a delayed active turn must keep the UI responsive and repeated Ctrl-C must coalesce. The future typed-dashboard task must consume `automatic_pruning_configured_for_next_conversation` and render the two exact next-conversation strings before dashboard acceptance is claimed.
 
 Do not alter top-level shutdown based on this plan. The separate direct non-tmux PTY comparison (five runs per interrupt/exit state; healthy Elpis median within 250 ms of Codex and no healthy exit over three seconds) is required only after this source/test slice demonstrates a measured residual difference or as the spec's later candidate-evaluation gate.
 
