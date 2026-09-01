@@ -366,7 +366,10 @@ impl StatusHistoryCell {
             config.cwd.as_path(),
             instruction_source_paths,
             &config.dev_rule_roots(),
-        );
+        )
+        // ponytail: temporary fail-closed bridge; Memory A3 replaces live reads
+        // with cached Unavailable state.
+        .unwrap_or_default();
 
         (
             Self {

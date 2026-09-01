@@ -609,6 +609,9 @@ impl ChatWidget {
             &self.instruction_source_paths_as_path_bufs(),
             &self.config.dev_rule_roots(),
         )
+        // ponytail: temporary fail-closed bridge; Memory A3 replaces live reads
+        // with cached Unavailable state.
+        .unwrap_or_default()
     }
 
     /// The server-reported instruction sources, converted for `elpis_context` — the
