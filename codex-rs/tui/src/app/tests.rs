@@ -1210,6 +1210,7 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
         thread_id,
         "turn-1",
         Some(950_000),
+        /*context_prune_saved_tokens*/ 0,
     )));
 
     let roomy = app.chat_widget.status_line_text().unwrap_or_default();
@@ -1218,6 +1219,7 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
         thread_id,
         "turn-1",
         Some(20),
+        /*context_prune_saved_tokens*/ 0,
     )));
 
     let cramped = app.chat_widget.status_line_text().unwrap_or_default();
@@ -4786,8 +4788,25 @@ fn seed_live_activity(chat_widget: &mut ChatWidget, thread_id: ThreadId, turn_id
 async fn new_primary_session_attachment_resets_activity_and_requests_publication() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let previous_thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        previous_thread_id,
+        test_path_buf("/tmp/previous"),
+    ));
     seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
+    app.chat_widget.handle_server_notification(
+        token_usage_notification(
+            previous_thread_id,
+            "turn-previous",
+            Some(1_000),
+            /*context_prune_saved_tokens*/ 40,
+        ),
+        /*replay_kind*/ None,
+    );
     assert_eq!(app.chat_widget.dashboard_activity_state().recent.len(), 1);
+    assert_eq!(
+        app.chat_widget.dashboard_usage_state_for_test(),
+        (Some(10), Some(10), Some(40))
+    );
     while app_event_rx.try_recv().is_ok() {}
 
     let next_thread_id = ThreadId::new();
@@ -4800,19 +4819,35 @@ async fn new_primary_session_attachment_resets_activity_and_requests_publication
     let activity = app.chat_widget.dashboard_activity_state();
     assert_eq!(activity.current, None);
     assert!(activity.recent.is_empty());
-    assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
-        .any(|event| matches!(event, AppEvent::RefreshContextDashboard)));
+    let (used_tokens, session_total, saved_tokens) =
+        app.chat_widget.dashboard_usage_state_for_test();
+    assert_eq!((used_tokens, session_total), (None, None));
+    assert_eq!(saved_tokens, None);
+    assert_eq!(
+        saved_tokens.unwrap_or(0),
+        0,
+        "the dashboard projects absent thread savings as zero"
+    );
+    assert_eq!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn resumed_primary_session_attachment_resets_activity_before_history_replay() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let previous_thread_id = ThreadId::new();
-    seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
+    let resumed_thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        resumed_thread_id,
+        test_path_buf("/tmp/resumed"),
+    ));
+    seed_live_activity(&mut app.chat_widget, resumed_thread_id, "turn-previous");
     while app_event_rx.try_recv().is_ok() {}
 
-    let resumed_thread_id = ThreadId::new();
     app.enqueue_primary_thread_session(
         test_thread_session(resumed_thread_id, test_path_buf("/tmp/resumed")),
         vec![test_turn(
@@ -4826,8 +4861,12 @@ async fn resumed_primary_session_attachment_resets_activity_before_history_repla
     let activity = app.chat_widget.dashboard_activity_state();
     assert_eq!(activity.current, None);
     assert!(activity.recent.is_empty());
-    assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
-        .any(|event| matches!(event, AppEvent::RefreshContextDashboard)));
+    assert_eq!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
     Ok(())
 }
 
@@ -4835,6 +4874,10 @@ async fn resumed_primary_session_attachment_resets_activity_before_history_repla
 async fn visible_thread_snapshot_switch_resets_activity_before_replay() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let previous_thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        previous_thread_id,
+        test_path_buf("/tmp/previous"),
+    ));
     seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
     while app_event_rx.try_recv().is_ok() {}
 
@@ -4858,8 +4901,12 @@ async fn visible_thread_snapshot_switch_resets_activity_before_replay() {
     let activity = app.chat_widget.dashboard_activity_state();
     assert_eq!(activity.current, None);
     assert!(activity.recent.is_empty());
-    assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok())
-        .any(|event| matches!(event, AppEvent::RefreshContextDashboard)));
+    assert_eq!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -4999,6 +5046,7 @@ fn token_usage_notification(
     thread_id: ThreadId,
     turn_id: &str,
     model_context_window: Option<i64>,
+    context_prune_saved_tokens: u64,
 ) -> ServerNotification {
     ServerNotification::ThreadTokenUsageUpdated(ThreadTokenUsageUpdatedNotification {
         thread_id: thread_id.to_string(),
@@ -5021,7 +5069,7 @@ fn token_usage_notification(
                 reasoning_output_tokens: 0,
             },
             model_context_window,
-            context_prune_saved_tokens: 0,
+            context_prune_saved_tokens,
             smart_prune: Default::default(),
         },
     })

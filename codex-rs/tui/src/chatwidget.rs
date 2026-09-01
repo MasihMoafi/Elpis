@@ -973,6 +973,11 @@ impl ChatWidget {
             .send(AppEvent::RefreshContextDashboard);
     }
 
+    /// Clears Activity before a different session emits the coalesced dashboard refresh.
+    pub(crate) fn reset_activity_for_thread_change(&mut self) {
+        self.activity_state.reset();
+    }
+
     pub(crate) fn dashboard_activity_state(&self) -> DashboardActivityState {
         self.activity_state.project()
     }
@@ -1757,6 +1762,21 @@ impl ChatWidget {
             .as_ref()
             .map(|ti| ti.total_token_usage.clone())
             .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn dashboard_usage_state_for_test(
+        &self,
+    ) -> (Option<i64>, Option<i64>, Option<u64>) {
+        (
+            self.token_info
+                .as_ref()
+                .map(|info| info.last_token_usage.tokens_in_context_window()),
+            self.token_info
+                .as_ref()
+                .map(|info| info.total_token_usage.total_tokens),
+            self.last_prune_saved_tokens,
+        )
     }
 
     pub(crate) fn thread_id(&self) -> Option<ThreadId> {
