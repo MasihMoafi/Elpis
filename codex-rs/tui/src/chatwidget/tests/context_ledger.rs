@@ -295,8 +295,14 @@ async fn full_widget_render_keeps_context_ledger_visible() -> anyhow::Result<()>
 async fn ledger_renders_smart_prune_switch_in_both_states() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
+    let syncing = render_ledger(&chat, 30);
+    assert!(syncing.contains("SMART PRUNE"));
+    assert!(syncing.contains("SYNC"));
+    assert!(syncing.contains("Reading current thread state"));
+    assert!(!syncing.contains(" OFF"));
+
+    chat.smart_prune_synced = true;
     let off = render_ledger(&chat, 30);
-    assert!(off.contains("SMART PRUNE"));
     assert!(off.contains("[●━━━] OFF"));
     assert!(off.contains("Tool results pass through unchanged"));
 
@@ -349,6 +355,7 @@ async fn ledger_renders_smart_prune_switch_in_both_states() {
 async fn focused_ledger_p_requests_next_turn_toggle_even_without_sources() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));
+    chat.smart_prune_synced = true;
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
@@ -370,7 +377,6 @@ async fn focused_ledger_p_requests_next_turn_toggle_even_without_sources() {
 async fn focused_ledger_p_toggles_from_authoritative_snapshot_when_layers_differ() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));
-    chat.smart_prune.enabled = true;
     assert!(
         !chat
             .config
@@ -379,6 +385,35 @@ async fn focused_ledger_p_toggles_from_authoritative_snapshot_when_layers_differ
         "the fixture must exercise a higher-precedence effective state"
     );
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, AppEvent::UpdateFeatureFlags { .. }))
+    );
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::InsertHistoryCell(cell)
+            if lines_to_single_string(&cell.display_lines(/*width*/ 80))
+                .contains("still syncing")
+    )));
+
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = true;
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadSmartPruneUpdated(
+            codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                smart_prune,
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
     assert!(matches!(
@@ -435,6 +470,7 @@ async fn focused_ledger_p_is_consumed_without_update_while_turn_start_is_pending
 #[tokio::test]
 async fn ledger_switch_mouse_hitbox_only_covers_the_switch() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.smart_prune_synced = true;
     let buffer = render_ledger_buffer(&chat, 30);
     let switch_cell = buffer
         .content()
@@ -457,6 +493,7 @@ async fn ledger_switch_mouse_hitbox_only_covers_the_switch() {
 #[tokio::test]
 async fn ledger_switch_is_not_interactive_after_the_terminal_hides_it() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.smart_prune_synced = true;
     chat.last_rendered_width.set(Some(80));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
 
@@ -490,6 +527,7 @@ async fn ledger_switch_is_not_interactive_after_the_terminal_hides_it() {
 #[tokio::test]
 async fn enabled_ledger_switch_keeps_textual_state_and_a_bold_knob() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.smart_prune_synced = true;
     chat.smart_prune.enabled = true;
     let buffer = render_ledger_buffer(&chat, 30);
     let switch = buffer

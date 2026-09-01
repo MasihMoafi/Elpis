@@ -216,6 +216,7 @@ async fn token_usage_notification_stores_smart_prune_evidence_and_refreshes_dash
         /*replay_kind*/ None,
     );
 
+    assert!(chat.smart_prune_synced);
     assert!(chat.smart_prune.enabled);
     assert_eq!(chat.smart_prune.admitted_outputs, 1);
     assert_eq!(chat.smart_prune.approx_saved_tokens, 3_300);
@@ -244,6 +245,7 @@ async fn smart_prune_config_notification_reconciles_the_current_thread_immediate
         /*replay_kind*/ None,
     );
 
+    assert!(chat.smart_prune_synced);
     assert!(chat.smart_prune.enabled);
     assert_eq!(chat.smart_prune.optimizer_requests, 2);
     assert!(
@@ -269,6 +271,7 @@ async fn smart_prune_config_notification_ignores_another_thread() {
         /*replay_kind*/ None,
     );
 
+    assert!(!chat.smart_prune_synced);
     assert!(!chat.smart_prune.enabled);
     assert!(
         std::iter::from_fn(|| rx.try_recv().ok())

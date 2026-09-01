@@ -553,6 +553,7 @@ pub(crate) struct ChatWidget {
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     token_info: Option<TokenUsageInfo>,
     smart_prune: ThreadSmartPruneSnapshot,
+    smart_prune_synced: bool,
     context_prune_report_pending: bool,
     last_prune_saved_tokens: Option<u64>,
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,

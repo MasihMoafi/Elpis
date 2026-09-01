@@ -23,6 +23,14 @@ impl ChatWidget {
     }
 
     pub(super) fn toggle_smart_prune(&mut self) -> bool {
+        if !self.smart_prune_synced && !self.is_user_turn_pending_or_running() {
+            self.add_info_message(
+                "Smart Prune state is still syncing.".to_string(),
+                Some("Use /smart-prune on|off to set an explicit state now.".to_string()),
+            );
+            self.request_redraw();
+            return false;
+        }
         let enabled = !self.smart_prune.enabled;
         self.request_smart_prune_enabled(enabled)
     }

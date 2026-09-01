@@ -337,7 +337,9 @@ impl ChatWidget {
         // higher-precedence thread layer, so do not optimistically render the staged
         // user-layer value while the core refresh is still being reconciled.
         let smart_prune_enabled = self.smart_prune.enabled;
-        let smart_prune_button = if smart_prune_enabled {
+        let smart_prune_button = if !self.smart_prune_synced {
+            "[···] SYNC"
+        } else if smart_prune_enabled {
             "[━━━●] ON"
         } else {
             "[●━━━] OFF"
@@ -352,7 +354,12 @@ impl ChatWidget {
             smart_prune_column_start..smart_prune_column_start + smart_prune_button.chars().count();
         let [violet, teal, emerald, green] =
             smart_prune_on_colors(default_bg(), stdout_color_level());
-        let switch_spans = if smart_prune_enabled {
+        let switch_spans = if !self.smart_prune_synced {
+            vec![Span::styled(
+                smart_prune_button,
+                Style::default().fg(teal).bold(),
+            )]
+        } else if smart_prune_enabled {
             vec![
                 Span::styled("[", Style::default().fg(teal)),
                 Span::styled("━", Style::default().fg(violet)),
@@ -369,7 +376,9 @@ impl ChatWidget {
         ];
         smart_prune_spans.extend(switch_spans);
         lines.push(Line::from(smart_prune_spans));
-        let smart_prune_detail = if self.smart_prune.examined_outputs > 0 {
+        let smart_prune_detail = if !self.smart_prune_synced {
+            "Reading current thread state".to_string()
+        } else if self.smart_prune.examined_outputs > 0 {
             format!(
                 "{}/{} admitted · ≈{}→≈{} · {} failed",
                 self.smart_prune.admitted_outputs,
@@ -384,7 +393,9 @@ impl ChatWidget {
             "Tool results pass through unchanged".to_string()
         };
         lines.push(Line::from(Span::styled(smart_prune_detail, muted)));
-        if let Some(latest) = self.smart_prune.latest.as_ref() {
+        if self.smart_prune_synced
+            && let Some(latest) = self.smart_prune.latest.as_ref()
+        {
             let short_id = latest.admission_id.get(..8).unwrap_or(&latest.admission_id);
             let status = if latest.response_linkage_verified {
                 "response linked"
@@ -400,7 +411,9 @@ impl ChatWidget {
                 muted,
             )));
         }
-        let smart_prune_hint = if self.is_user_turn_pending_or_running() {
+        let smart_prune_hint = if !self.smart_prune_synced {
+            "Syncing… · /smart-prune on|off sets an explicit state"
+        } else if self.is_user_turn_pending_or_running() {
             "Available after turn · active turn policy is fixed"
         } else {
             "p toggle · /smart-prune on|off"

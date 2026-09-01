@@ -1192,6 +1192,18 @@ async fn thread_resume_can_skip_turns_for_metadata_only_resume() -> Result<()> {
     assert_eq!(thread.id, conversation_id);
     assert!(thread.turns.is_empty());
 
+    let note = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("thread/smartPrune/updated"),
+    )
+    .await??;
+    let parsed: ServerNotification = note.try_into()?;
+    let ServerNotification::ThreadSmartPruneUpdated(notification) = parsed else {
+        panic!("expected thread/smartPrune/updated notification");
+    };
+    assert_eq!(notification.thread_id, thread.id);
+    assert!(!notification.smart_prune.enabled);
+
     Ok(())
 }
 
@@ -3206,6 +3218,16 @@ async fn thread_resume_rejoins_running_thread_even_with_override_mismatch() -> R
         ThreadStatus::Idle => {}
         status => panic!("unexpected thread status after running resume: {status:?}"),
     }
+
+    assert!(
+        timeout(
+            std::time::Duration::from_millis(250),
+            primary.read_stream_until_notification_message("thread/smartPrune/updated"),
+        )
+        .await
+        .is_err(),
+        "an already-subscribed connection must not receive a duplicate initial snapshot"
+    );
 
     timeout(
         DEFAULT_READ_TIMEOUT,

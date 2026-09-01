@@ -223,6 +223,7 @@ async fn slash_smart_prune_toggles_and_accepts_explicit_state() {
             .enabled(Feature::AutomaticContextPruning)
     );
 
+    chat.smart_prune_synced = true;
     chat.dispatch_command(SlashCommand::SmartPrune);
     assert!(matches!(
         rx.try_recv(),
@@ -230,6 +231,7 @@ async fn slash_smart_prune_toggles_and_accepts_explicit_state() {
             if updates == vec![(Feature::AutomaticContextPruning, true)]
     ));
 
+    chat.smart_prune_synced = false;
     chat.dispatch_command_with_args(SlashCommand::SmartPrune, "off".to_string(), Vec::new());
     assert!(matches!(
         rx.try_recv(),

@@ -122,6 +122,7 @@ impl ChatWidget {
             remote_connection: None,
             token_info: None,
             smart_prune: ThreadSmartPruneSnapshot::default(),
+            smart_prune_synced: false,
             context_prune_report_pending: false,
             last_prune_saved_tokens: None,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),
