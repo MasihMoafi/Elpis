@@ -416,6 +416,13 @@ impl App {
             return Ok(());
         }
 
+        let restored_admission_input = if self.active_thread_id.is_none()
+            && self.chat_widget.manual_memory_submission_blocked()
+        {
+            self.prepare_manual_memory_lifecycle_change()
+        } else {
+            None
+        };
         let previous_thread_id = self.active_thread_id;
         self.store_active_thread_receiver().await;
         self.active_thread_id = None;
@@ -449,6 +456,8 @@ impl App {
 
         self.reset_for_thread_switch(tui)?;
         self.replay_thread_snapshot(snapshot, !is_replay_only);
+        self.chat_widget
+            .restore_manual_memory_lifecycle_composer_state(restored_admission_input);
         if is_replay_only {
             let message = if attached_replay_only {
                 format!(
@@ -635,13 +644,16 @@ impl App {
         // Initial messages are for freshly attached primary threads only. Thread switches and
         // resume/fork flows pass `None` so they cannot replay old history and then auto-submit a new
         // user turn by accident.
+        let restored_admission_input = self.prepare_manual_memory_lifecycle_change();
         self.reset_thread_event_state();
         let init = self.chatwidget_init_for_forked_or_resumed_thread(
             tui,
             self.config.clone(),
             initial_user_message,
         );
-        self.replace_chat_widget(ChatWidget::new_with_app_event(init));
+        let mut replacement = ChatWidget::new_with_app_event(init);
+        replacement.restore_manual_memory_lifecycle_composer_state(restored_admission_input);
+        self.replace_chat_widget(replacement);
         self.enqueue_primary_thread_session_with_presentation(
             started.session,
             started.turns,

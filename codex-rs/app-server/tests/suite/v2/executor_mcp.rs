@@ -20,6 +20,7 @@ use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::UserInput;
+use codex_features::Feature;
 use codex_utils_path_uri::PathUri;
 use core_test_support::responses;
 use core_test_support::stdio_server_bin;
@@ -117,7 +118,7 @@ async fn selected_executor_plugin_exposes_its_mcps_only_to_that_thread() -> Resu
     write_mock_responses_config_toml(
         codex_home.path(),
         &responses_server.uri(),
-        &BTreeMap::new(),
+        &BTreeMap::from([(Feature::Plugins, true)]),
         /*auto_compact_limit*/ 1024,
         /*requires_openai_auth*/ None,
         "mock_provider",

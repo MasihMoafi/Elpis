@@ -54,6 +54,81 @@ use codex_protocol::openai_models::ReasoningEffort;
 
 use crate::history_cell::HistoryCell;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ManualMemoryViewKey {
+    pub(crate) epoch: u64,
+    pub(crate) primary_root_thread_id: ThreadId,
+    pub(crate) displayed_thread_id: ThreadId,
+    pub(crate) cwd: PathBuf,
+    pub(crate) memory_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ManualMemoryStorageTarget {
+    pub(crate) admission_path: PathBuf,
+    pub(crate) memory_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ManualMemoryRequestTarget {
+    pub(crate) view: ManualMemoryViewKey,
+    pub(crate) storage: ManualMemoryStorageTarget,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryUnavailableReason {
+    AdmissionUnavailable,
+    MemoryUnreadable,
+    InvalidUtf8,
+    MemoryPathNotFile,
+    SourcesUnavailable,
+    WorkerFailed,
+}
+
+impl From<crate::legacy_core::elpis_context::ManualMemoryUnavailableReason>
+    for ManualMemoryUnavailableReason
+{
+    fn from(reason: crate::legacy_core::elpis_context::ManualMemoryUnavailableReason) -> Self {
+        use crate::legacy_core::elpis_context::ManualMemoryUnavailableReason as CoreReason;
+        match reason {
+            CoreReason::AdmissionUnavailable => Self::AdmissionUnavailable,
+            CoreReason::MemoryUnreadable => Self::MemoryUnreadable,
+            CoreReason::InvalidUtf8 => Self::InvalidUtf8,
+            CoreReason::MemoryPathNotFile => Self::MemoryPathNotFile,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryStatusCompletion {
+    Ready {
+        status: crate::legacy_core::elpis_context::ManualMemoryStatus,
+        sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
+    },
+    Unavailable(ManualMemoryUnavailableReason),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryMutation {
+    Create,
+    Admission { admitted: bool },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryMutationFailure {
+    AlreadyExists,
+    Missing,
+    StorageUnavailable,
+    PersistenceFailed,
+    WorkerFailed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryMutationCompletion {
+    Succeeded,
+    Failed(ManualMemoryMutationFailure),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ThreadGoalSetMode {
     ConfirmIfExists,
@@ -226,10 +301,35 @@ pub(crate) enum AppEvent {
 
     /// Render the `/context` usage report. Requires the App-owned transcript cell list
     /// (checkpoint count, per-category totals), so it cannot be built inside `ChatWidget`.
-    RequestContextUsageReport,
+    RequestContextUsageReport(ManualMemoryRequestTarget),
+
+    /// Refresh the cached manual-memory/source projection after a local write.
+    ManualMemoryStatusRefreshRequested(ManualMemoryRequestTarget),
+
+    /// Result of a blocking manual-memory/source read.
+    ManualMemoryStatusLoaded(ManualMemoryRequestTarget, ManualMemoryStatusCompletion),
+
+    /// Create the configured manual-memory file on a blocking worker.
+    ManualMemoryCreateRequested(ManualMemoryRequestTarget),
+
+    /// Result of a manual-memory create worker.
+    ManualMemoryCreateFinished(ManualMemoryRequestTarget, ManualMemoryMutationCompletion),
+
+    /// Persist the configured manual-memory admission state on a blocking worker.
+    ManualMemoryAdmissionRequested(ManualMemoryRequestTarget, bool),
+
+    /// Result of a manual-memory admission worker.
+    ManualMemoryAdmissionFinished(
+        ManualMemoryRequestTarget,
+        bool,
+        ManualMemoryMutationCompletion,
+    ),
 
     /// Open a read-only dashboard of the current context window and its provenance.
     OpenContextDashboard,
+
+    /// Republish dashboard JSON without inserting a `/context` history cell.
+    RefreshContextDashboard,
 
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
@@ -664,16 +764,6 @@ pub(crate) enum AppEvent {
     /// Update the current model slug in the running app and widget.
     UpdateModel(String),
 
-    /// Update the current model slug together with an explicit provider override.
-    ///
-    /// Used when a model is only available under a specific provider (e.g. a locally
-    /// installed Ollama model) and the provider can't be inferred from the model
-    /// slug the way OpenRouter models are in `UpdateModel`.
-    UpdateModelForProvider {
-        model: String,
-        provider_id: String,
-    },
-
     /// Enable the conservative Sol/Terra/Luna routing policy from `/model`.
     EnableAutoModelRouting,
 
@@ -691,10 +781,24 @@ pub(crate) enum AppEvent {
         effort: Option<ReasoningEffort>,
     },
 
-    /// Persist a model selection together with an explicit provider override.
-    PersistProviderModelSelection {
+    /// Apply provider, model, and reasoning to the active thread, then persist the accepted choice.
+    ApplyProviderModelSelection {
         model: String,
         provider_id: String,
+        effort: Option<ReasoningEffort>,
+    },
+
+    /// Fetch the latest picker catalog for one configured provider.
+    FetchModels {
+        request_id: uuid::Uuid,
+        provider_id: Option<String>,
+    },
+
+    /// Result of a provider-scoped picker catalog refresh.
+    ModelsLoaded {
+        request_id: uuid::Uuid,
+        provider_id: Option<String>,
+        result: Result<Vec<ModelPreset>, String>,
     },
 
     /// Persist the selected personality to the appropriate config.
@@ -710,11 +814,13 @@ pub(crate) enum AppEvent {
     /// Open the reasoning selection popup after picking a model.
     OpenReasoningPopup {
         model: ModelPreset,
+        provider_id: Option<String>,
     },
 
     /// Open the explicit Max/Ultra reasoning selection popup for a model.
     OpenAdvancedReasoningPopup {
         model: ModelPreset,
+        provider_id: Option<String>,
     },
 
     /// Apply an advanced reasoning effort to the active conversation without changing defaults.

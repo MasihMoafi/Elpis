@@ -73,14 +73,16 @@ pub fn parse_rust_scopes(source: &str) -> Vec<SymbolScope> {
 
         // Only check keyword on non-whitespace word starts
         if !bytes[i].is_ascii_whitespace() {
-            let is_word_start = i == 0 || !bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_';
+            let is_word_start =
+                i == 0 || !bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_';
             if is_word_start {
                 let rem = &source[i..];
 
                 // 1. Check for `impl`
                 if rem.starts_with("impl") && is_keyword(source, i, 4) {
                     let decl_start = find_line_start(source, i);
-                    if let Some((sig, name, body_start, body_end)) = extract_brace_block(source, i) {
+                    if let Some((sig, name, body_start, body_end)) = extract_brace_block(source, i)
+                    {
                         let (start_line, _) = line_index.line_col(source, decl_start);
                         let (end_line, _) = line_index.line_col(source, body_end.saturating_sub(1));
 
@@ -115,7 +117,8 @@ pub fn parse_rust_scopes(source: &str) -> Vec<SymbolScope> {
                 // 2. Check for `fn` or `pub ... fn` or `async fn`
                 if is_fn_declaration(rem) {
                     let decl_start = find_line_start(source, i);
-                    if let Some((sig, name, _body_start, body_end)) = extract_brace_block(source, i) {
+                    if let Some((sig, name, _body_start, body_end)) = extract_brace_block(source, i)
+                    {
                         let (start_line, _) = line_index.line_col(source, decl_start);
                         let (end_line, _) = line_index.line_col(source, body_end.saturating_sub(1));
 
@@ -227,7 +230,8 @@ fn parse_rust_inner_methods(
         }
 
         if !bytes[i].is_ascii_whitespace() {
-            let is_word_start = i == 0 || !bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_';
+            let is_word_start =
+                i == 0 || !bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_';
             if is_word_start && is_fn_declaration(&source[i..]) {
                 let decl_start = find_line_start(source, i);
                 if let Some((sig, name, _, body_end)) = extract_brace_block(source, i) {

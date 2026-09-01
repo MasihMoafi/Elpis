@@ -80,6 +80,8 @@ use crate::state::TaskKind;
 use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
 use crate::tasks::SessionTaskResult;
+use crate::tasks::TaskCancellationBoundary;
+use crate::tasks::TaskCompletionOutcome;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::execute_user_shell_command;
 use crate::tools::ToolRouter;
@@ -222,6 +224,20 @@ fn user_message(text: &str) -> ResponseItem {
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     }
+}
+
+#[tokio::test]
+async fn automatic_context_pruning_is_local_only_in_beta_header() {
+    let mut config = test_config().await;
+    config.features.enable(Feature::AutomaticContextPruning);
+    config.features.enable(Feature::RemoteCompactionV2);
+
+    let header = Session::build_model_client_beta_features_header(&config)
+        .expect("remote compaction should remain advertised");
+    let advertised = header.split(',').collect::<Vec<_>>();
+
+    assert!(!advertised.contains(&Feature::AutomaticContextPruning.key()));
+    assert!(advertised.contains(&Feature::RemoteCompactionV2.key()));
 }
 
 #[test]
@@ -1637,6 +1653,55 @@ disabled_tools = [
 }
 
 #[tokio::test]
+async fn smart_prune_refresh_applies_to_next_turn_without_changing_active_turn() {
+    let (session, active_turn) = make_session_and_context().await;
+    let codex_home = session.codex_home().await;
+    std::fs::create_dir_all(&codex_home).expect("create codex home");
+    assert!(!session.smart_prune_enabled());
+    assert!(!active_turn.smart_prune_enabled);
+    assert!(
+        !session.features.enabled(Feature::AutomaticContextPruning),
+        "the session-static feature set starts disabled"
+    );
+
+    std::fs::write(
+        codex_home.join(CONFIG_TOML_FILE),
+        "[features]\nautomatic_context_pruning = true\n",
+    )
+    .expect("enable Smart Prune in user config");
+    session
+        .refresh_runtime_config(load_latest_config_for_session(&session).await)
+        .await;
+
+    assert!(session.smart_prune_enabled());
+    assert!(
+        !active_turn.smart_prune_enabled,
+        "a turn must retain the policy it started with"
+    );
+    assert!(
+        !session.features.enabled(Feature::AutomaticContextPruning),
+        "only the narrow runtime gate is refreshable"
+    );
+    let enabled_turn = session.new_default_turn().await;
+    assert!(enabled_turn.smart_prune_enabled);
+
+    std::fs::write(
+        codex_home.join(CONFIG_TOML_FILE),
+        "[features]\nautomatic_context_pruning = false\n",
+    )
+    .expect("disable Smart Prune in user config");
+    session
+        .refresh_runtime_config(load_latest_config_for_session(&session).await)
+        .await;
+    assert!(!session.smart_prune_enabled());
+    assert!(
+        enabled_turn.smart_prune_enabled,
+        "the already-created turn remains enabled"
+    );
+    assert!(!session.new_default_turn().await.smart_prune_enabled);
+}
+
+#[tokio::test]
 async fn reconstruct_history_matches_live_compactions() {
     let (session, turn_context) = make_session_and_context().await;
     let (rollout_items, expected) = sample_rollout(&session, &turn_context).await;
@@ -2287,6 +2352,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: Some(info1),
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2294,6 +2360,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: None,
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2301,6 +2368,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: Some(info2.clone()),
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2308,6 +2376,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: None,
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
 
@@ -5411,6 +5480,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
         skills_snapshot,
+        config.features.enabled(Feature::AutomaticContextPruning),
     );
     let session = Session {
         thread_id,
@@ -5420,6 +5490,9 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        smart_prune_enabled: std::sync::atomic::AtomicBool::new(
+            config.features.enabled(Feature::AutomaticContextPruning),
+        ),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
         conversation: Arc::new(RealtimeConversationManager::new()),
@@ -7519,6 +7592,7 @@ where
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
         skills_snapshot,
+        config.features.enabled(Feature::AutomaticContextPruning),
     ));
     let session = Arc::new(Session {
         thread_id,
@@ -7528,6 +7602,9 @@ where
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        smart_prune_enabled: std::sync::atomic::AtomicBool::new(
+            config.features.enabled(Feature::AutomaticContextPruning),
+        ),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
         conversation: Arc::new(RealtimeConversationManager::new()),
@@ -9083,6 +9160,46 @@ impl SessionTask for CompletingTask {
     }
 }
 
+struct PanickingBoundaryTask {
+    boundary: TaskCancellationBoundary,
+    started: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+impl SessionTask for PanickingBoundaryTask {
+    fn kind(&self) -> TaskKind {
+        TaskKind::Regular
+    }
+
+    fn span_name(&self) -> &'static str {
+        "session_task.panicking_boundary"
+    }
+
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary> {
+        Some(self.boundary.clone())
+    }
+
+    async fn run(
+        self: Arc<Self>,
+        _session: Arc<SessionTaskContext>,
+        _ctx: Arc<TurnContext>,
+        _input: Vec<TurnInput>,
+        _cancellation_token: CancellationToken,
+    ) -> SessionTaskResult {
+        if let Some(started) = self.started.lock().expect("started gate lock").take() {
+            let _ = started.send(());
+        }
+        let release = self
+            .release
+            .lock()
+            .await
+            .take()
+            .expect("release gate receiver");
+        let _ = release.await;
+        panic!("deterministic abnormal task completion");
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TerminalEventKind {
     TurnComplete,
@@ -9161,6 +9278,61 @@ async fn recv_terminal_event(
     })
     .await
     .expect("terminal event should be delivered")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn interrupt_recovers_latched_abnormal_task_without_turn_aborted() {
+    let (sess, tc, rx) = make_session_and_context_with_rx().await;
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    sess.spawn_task(
+        Arc::clone(&tc),
+        Vec::new(),
+        PanickingBoundaryTask {
+            boundary: TaskCancellationBoundary::default(),
+            started: std::sync::Mutex::new(Some(started_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        },
+    )
+    .await;
+    timeout(StdDuration::from_secs(2), started_rx)
+        .await
+        .expect("panicking task should start")
+        .expect("started gate sender");
+
+    let completion = {
+        let active = sess.active_turn.lock().await;
+        Arc::clone(
+            &active
+                .as_ref()
+                .and_then(|active_turn| active_turn.task.as_ref())
+                .expect("panicking task should be active")
+                .completion,
+        )
+    };
+    let _ = release_tx.send(());
+    assert_eq!(
+        timeout(StdDuration::from_secs(2), completion.wait())
+            .await
+            .expect("abnormal completion should be latched"),
+        TaskCompletionOutcome::Abnormal
+    );
+
+    timeout(
+        StdDuration::from_secs(2),
+        sess.abort_all_tasks(TurnAbortReason::Interrupted),
+    )
+    .await
+    .expect("interrupt should recover the abnormal active task");
+
+    assert_eq!(completion.wait().await, TaskCompletionOutcome::Abnormal);
+    assert!(sess.active_turn.lock().await.is_none());
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event.msg, EventMsg::TurnAborted(_)),
+            "an already-abnormal task must not be reported as a user abort"
+        );
+    }
 }
 
 #[derive(Clone, Copy)]

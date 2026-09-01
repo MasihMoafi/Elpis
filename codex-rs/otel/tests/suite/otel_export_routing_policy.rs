@@ -93,6 +93,64 @@ fn auth_env_metadata() -> AuthEnvTelemetryMetadata {
 }
 
 #[test]
+fn turn_profile_event_is_structured_and_contains_no_content_fields() {
+    let log_exporter = InMemoryLogExporter::default();
+    let logger_provider = SdkLoggerProvider::builder()
+        .with_simple_exporter(log_exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry().with(
+        opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&logger_provider)
+            .with_filter(filter_fn(OtelProvider::log_export_filter)),
+    );
+
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::callsite::rebuild_interest_cache();
+        let manager = SessionTelemetry::new(
+            ThreadId::new(),
+            "gpt-5.6",
+            "gpt-5.6",
+            /*account_id*/ None,
+            /*account_email*/ None,
+            Some(TelemetryAuthMode::Chatgpt),
+            "codex_exec".to_string(),
+            /*log_user_prompts*/ true,
+            "tty".to_string(),
+            SessionSource::Cli,
+        );
+        manager.record_turn_profile("turn-123", 100, 700, 200, 50, 300, 75, 2, 1);
+    });
+
+    logger_provider.force_flush().expect("flush logs");
+    let logs = log_exporter.get_emitted_logs().expect("log export");
+    let profile_log = find_log_by_event_name(&logs, "codex.turn_profile");
+    let attrs = log_attributes(&profile_log.record);
+
+    for (field, expected) in [
+        ("turn.id", "turn-123"),
+        ("before_first_sampling_ms", "100"),
+        ("sampling_ms", "700"),
+        ("compaction_ms", "200"),
+        ("between_sampling_overhead_ms", "50"),
+        ("tool_blocking_ms", "300"),
+        ("after_last_sampling_ms", "75"),
+        ("sampling_request_count", "2"),
+        ("sampling_retry_count", "1"),
+    ] {
+        assert_eq!(attrs.get(field).map(String::as_str), Some(expected));
+    }
+    for forbidden in [
+        "prompt",
+        "response",
+        "output",
+        "arguments",
+        "reasoning",
+        "content",
+    ] {
+        assert!(!attrs.contains_key(forbidden));
+    }
+}
+
+#[test]
 fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
     let log_exporter = InMemoryLogExporter::default();
     let logger_provider = SdkLoggerProvider::builder()

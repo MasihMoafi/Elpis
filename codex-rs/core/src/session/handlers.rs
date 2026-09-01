@@ -469,7 +469,7 @@ pub async fn prune(sess: &Arc<Session>, sub_id: String, target_pct: Option<i64>)
     sess.spawn_task(
         Arc::clone(&turn_context),
         Vec::new(),
-        PruneTask { target_pct },
+        PruneTask::new(target_pct),
     )
     .await;
 }

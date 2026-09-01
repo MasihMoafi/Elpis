@@ -5,8 +5,8 @@ expression: popup
  Elpis · model gpt-5.2 · location /tmp/project
 ┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
 │ Select Reasoning Level for gpt-5.2           ││admitted
-│                                              ││i = select/deselect all ·
-  1. Low                   Balances speed with ││backspace = remove added file
+│                                              ││Tab focus · Alt+C focus/hide ·
+  1. Low                   Balances speed with ││Ctrl+click open file
                            some reasoning;     ││
                            useful for          ││CONTEXT WINDOW  ≈0 of 258.4k
                            straightforward     ││used (0%)

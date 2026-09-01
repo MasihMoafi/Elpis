@@ -180,6 +180,7 @@ fn token_count_item(last_model_visible_tokens: i64) -> RolloutItem {
         }),
         rate_limits: None,
         context_prune_saved_tokens: 0,
+        smart_prune: Default::default(),
     }))
 }
 

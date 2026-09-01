@@ -45,6 +45,10 @@ use std::time::Instant;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
+use crate::app_event::ManualMemoryMutation;
+use crate::app_event::ManualMemoryRequestTarget;
+use crate::app_event::ManualMemoryStatusCompletion;
+use crate::app_event::ManualMemoryUnavailableReason;
 use crate::app_server_approval_conversions::file_update_changes_to_display;
 use crate::approval_events::ApplyPatchApprovalRequestEvent;
 use crate::approval_events::ExecApprovalRequestEvent;
@@ -109,6 +113,7 @@ use codex_app_server_protocol::ThreadGoalStatus as AppThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadSettings;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
+use codex_app_server_protocol::ThreadSmartPruneSnapshot;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::Turn;
@@ -364,6 +369,7 @@ use self::plugins::PluginListFetchState;
 use self::plugins::PluginsCacheState;
 mod plan_implementation;
 use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
+mod model_popup_state;
 pub(crate) mod model_popups;
 pub(crate) mod model_routing;
 mod notifications;
@@ -419,7 +425,7 @@ use self::user_messages::PendingSteerCompareKey;
 use self::user_messages::QueueDrain;
 use self::user_messages::QueuedUserMessage;
 use self::user_messages::ShellEscapePolicy;
-use self::user_messages::ThreadComposerState;
+pub(crate) use self::user_messages::ThreadComposerState;
 pub(crate) use self::user_messages::ThreadInputState;
 pub(crate) use self::user_messages::ThreadInputStateRestoreMode;
 pub(crate) use self::user_messages::UserMessage;
@@ -506,6 +512,27 @@ pub(crate) enum ExternalEditorState {
     Active,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum ManualMemoryPhase {
+    #[default]
+    Loading,
+    Ready,
+    Creating,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ManualMemoryCache {
+    bound_target: Option<ManualMemoryRequestTarget>,
+    phase: ManualMemoryPhase,
+    status: Option<crate::legacy_core::elpis_context::ManualMemoryStatus>,
+    sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
+    unavailable_reason: Option<ManualMemoryUnavailableReason>,
+    pending_mutation: Option<ManualMemoryMutation>,
+    refresh_requested: bool,
+    pending_context_report: bool,
+}
+
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///
 /// `ChatWidget` owns the state derived from the protocol event stream (history cells, streaming
@@ -523,6 +550,7 @@ pub(crate) struct ChatWidget {
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
     context_ledger: ContextLedgerState,
+    manual_memory_cache: ManualMemoryCache,
     transcript: TranscriptState,
     config: Config,
     raw_output_mode: bool,
@@ -537,6 +565,10 @@ pub(crate) struct ChatWidget {
     has_chatgpt_account: bool,
     has_codex_backend_auth: bool,
     model_catalog: Arc<ModelCatalog>,
+    /// Latest in-flight model-list request per explicit provider scope.
+    model_popup_request_ids: HashMap<Option<String>, uuid::Uuid>,
+    /// Row names used to retain the highlighted model during an in-place refresh.
+    model_popup_model_ids: Vec<String>,
     /// Locally installed Ollama model names, refreshed in the background for the `/model` picker.
     ollama_local_models: Vec<String>,
     session_telemetry: SessionTelemetry,
@@ -546,6 +578,8 @@ pub(crate) struct ChatWidget {
     runtime_model_provider_base_url: Option<String>,
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     token_info: Option<TokenUsageInfo>,
+    smart_prune: ThreadSmartPruneSnapshot,
+    smart_prune_synced: bool,
     context_prune_report_pending: bool,
     last_prune_saved_tokens: Option<u64>,
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,

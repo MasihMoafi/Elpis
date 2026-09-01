@@ -22,7 +22,7 @@ pub(crate) fn skill_name_collisions<'a>(
         .collect()
 }
 
-fn skill_scope_label(scope: SkillScope) -> &'static str {
+pub(crate) fn skill_scope_label(scope: SkillScope) -> &'static str {
     match scope {
         SkillScope::User => "yours",
         SkillScope::System => "bundled",

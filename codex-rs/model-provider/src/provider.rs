@@ -646,7 +646,11 @@ mod tests {
     #[tokio::test]
     async fn scoped_auth_ignores_scope_for_non_openai_provider() {
         let provider = create_model_provider(
-            create_oss_provider_with_base_url(codex_model_provider_info::OLLAMA_OSS_PROVIDER_NAME, "http://localhost:11434/v1", WireApi::Responses),
+            create_oss_provider_with_base_url(
+                codex_model_provider_info::OLLAMA_OSS_PROVIDER_NAME,
+                "http://localhost:11434/v1",
+                WireApi::Responses,
+            ),
             /*auth_manager*/ None,
         );
 

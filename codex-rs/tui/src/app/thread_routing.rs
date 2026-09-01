@@ -9,6 +9,9 @@ use super::session_lifecycle::ThreadAttachPresentation;
 use super::*;
 use crate::chatwidget::ThreadInputStateRestoreMode;
 use crate::session_resume::read_session_model;
+use codex_app_server_protocol::TurnInterruptParams;
+use codex_app_server_protocol::TurnInterruptResponse;
+use codex_app_server_protocol::WarningNotification;
 
 impl App {
     pub(super) async fn shutdown_current_thread(&mut self, app_server: &mut AppServerSession) {
@@ -68,6 +71,7 @@ impl App {
         let Some(active_id) = self.active_thread_id else {
             return;
         };
+        self.prepare_manual_memory_lifecycle_change();
         let input_state = self.chat_widget.capture_thread_input_state();
         if let Some(channel) = self.thread_event_channels.get_mut(&active_id) {
             let receiver = self.active_thread_rx.take();
@@ -517,41 +521,76 @@ impl App {
     ) -> Result<bool> {
         match op {
             AppCommand::Interrupt => {
-                if let Some(turn_id) = self.active_turn_id_for_thread(thread_id).await {
-                    let mut interrupt_turn_id = turn_id;
-                    for retried_after_turn_mismatch in [false, true] {
-                        match app_server
-                            .turn_interrupt(thread_id, interrupt_turn_id.clone())
-                            .await
-                        {
-                            Ok(()) => return Ok(true),
-                            Err(error) if !retried_after_turn_mismatch => {
-                                let Some(actual_turn_id) = active_turn_interrupt_race(&error)
-                                else {
-                                    return Err(error).wrap_err("turn/interrupt failed in TUI");
-                                };
-                                if actual_turn_id == interrupt_turn_id {
-                                    return Err(error).wrap_err("turn/interrupt failed in TUI");
-                                }
-                                // Review flows can swap the active turn before the TUI processes
-                                // the corresponding notification. Retry once with the
-                                // server-reported turn id so Ctrl+C/Esc do not fatally exit on that
-                                // stale cache, but let lifecycle notifications own the cached
-                                // active turn id.
-                                interrupt_turn_id = actual_turn_id;
-                            }
+                let mut turn_id = self
+                    .active_turn_id_for_thread(thread_id)
+                    .await
+                    .unwrap_or_default();
+                let (thread_event_tx, thread_event_store) = {
+                    let channel = self.ensure_thread_channel(thread_id);
+                    (channel.sender.clone(), Arc::clone(&channel.store))
+                };
+                self.reset_backtrack_state();
+                if !turn_id.is_empty() {
+                    let mut store = thread_event_store.lock().await;
+                    if store.pending_interrupt_turn_id.as_deref() == Some(turn_id.as_str()) {
+                        return Ok(true);
+                    }
+                    store.pending_interrupt_turn_id = Some(turn_id.clone());
+                }
+                let request_handle = app_server.request_handle();
+                let request_ids = [app_server.next_request_id(), app_server.next_request_id()];
+                tokio::spawn(async move {
+                    for (attempt, request_id) in request_ids.into_iter().enumerate() {
+                        let result = request_handle
+                            .request_typed::<TurnInterruptResponse>(ClientRequest::TurnInterrupt {
+                                request_id,
+                                params: TurnInterruptParams {
+                                    thread_id: thread_id.to_string(),
+                                    turn_id: turn_id.clone(),
+                                },
+                            })
+                            .await;
+
+                        match result {
+                            Ok(_) => break,
                             Err(error) => {
-                                return Err(error).wrap_err("turn/interrupt failed in TUI");
+                                if attempt == 0
+                                    && let Some(actual_turn_id) = active_turn_interrupt_race(&error)
+                                    && actual_turn_id != turn_id
+                                {
+                                    thread_event_store.lock().await.pending_interrupt_turn_id =
+                                        Some(actual_turn_id.clone());
+                                    turn_id = actual_turn_id;
+                                    continue;
+                                }
+                                tracing::warn!(error = %error, "turn/interrupt failed in TUI");
+                                let notification =
+                                    ServerNotification::Warning(WarningNotification {
+                                        thread_id: Some(thread_id.to_string()),
+                                        message: format!("Failed to interrupt turn: {error}"),
+                                    });
+                                let should_send = {
+                                    let mut store = thread_event_store.lock().await;
+                                    if store.pending_interrupt_turn_id.as_deref()
+                                        == Some(turn_id.as_str())
+                                    {
+                                        store.pending_interrupt_turn_id = None;
+                                    }
+                                    store.push_notification(notification.clone());
+                                    store.active
+                                };
+                                if should_send
+                                    && let Err(error) = thread_event_tx
+                                        .send(ThreadBufferedEvent::Notification(notification))
+                                        .await
+                                {
+                                    tracing::warn!(error = %error, "thread event channel closed");
+                                }
+                                break;
                             }
                         }
                     }
-                    unreachable!("interrupt retry loop should return");
-                } else {
-                    app_server
-                        .startup_interrupt(thread_id)
-                        .await
-                        .wrap_err("turn/interrupt failed in TUI")?;
-                }
+                });
                 Ok(true)
             }
             AppCommand::UserTurn {
@@ -1129,6 +1168,7 @@ impl App {
         self.activate_thread_channel(thread_id).await;
         self.chat_widget
             .set_initial_user_message_submit_suppressed(/*suppressed*/ true);
+        self.seed_manual_memory_mutation_for_cwd(session.cwd.as_path());
         match presentation {
             ThreadAttachPresentation::SessionLineage => {
                 self.chat_widget.handle_thread_session(session);
@@ -1137,6 +1177,7 @@ impl App {
                 self.chat_widget.handle_prompt_edit_thread_session(session);
             }
         }
+        self.activate_manual_memory_view();
         let should_buffer_initial_replay = !turns.is_empty();
         if should_buffer_initial_replay {
             self.app_event_tx
@@ -1335,6 +1376,7 @@ impl App {
         let suppress_replay_notices =
             replay_filter::snapshot_has_pending_interactive_request(&snapshot);
         if let Some(session) = snapshot.session {
+            self.seed_manual_memory_mutation_for_cwd(session.cwd.as_path());
             if session.reasoning_effort != Some(ReasoningEffortConfig::Ultra) {
                 self.chat_widget
                     .set_plan_mode_reasoning_effort(self.config.plan_mode_reasoning_effort.clone());
@@ -1377,6 +1419,7 @@ impl App {
         if resume_restored_queue {
             self.chat_widget.maybe_send_next_queued_input();
         }
+        self.activate_manual_memory_view();
         self.refresh_status_line();
     }
 
@@ -1426,6 +1469,19 @@ impl App {
             ThreadBufferedEvent::Notification(ServerNotification::TurnStarted(_))
                 | ThreadBufferedEvent::Notification(ServerNotification::ThreadTokenUsageUpdated(_))
         );
+        let may_change_manual_memory_view = matches!(
+            &event,
+            ThreadBufferedEvent::Notification(ServerNotification::ThreadSettingsUpdated(_))
+        );
+        let changes_manual_memory_storage = matches!(
+            &event,
+            ThreadBufferedEvent::Notification(ServerNotification::ThreadSettingsUpdated(
+                notification
+            )) if self.chat_widget.config_ref().cwd != notification.thread_settings.cwd
+        );
+        if changes_manual_memory_storage {
+            self.prepare_manual_memory_lifecycle_change();
+        }
         match event {
             ThreadBufferedEvent::Notification(notification) => {
                 self.cache_collab_receiver_threads_for_notification(&notification);
@@ -1447,6 +1503,9 @@ impl App {
         }
         if needs_refresh {
             self.refresh_status_line();
+        }
+        if may_change_manual_memory_view {
+            self.activate_manual_memory_view_if_changed();
         }
     }
 
