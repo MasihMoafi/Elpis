@@ -40,6 +40,7 @@ use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
 use crate::state::TurnState;
+use crate::turn_timing::TurnProfile;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
@@ -54,6 +55,8 @@ use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
+use codex_protocol::protocol::TurnProfileEvent;
+use codex_protocol::protocol::TurnProfileOutcome;
 use codex_protocol::protocol::WarningEvent;
 
 use codex_protocol::error::CodexErr;
@@ -78,6 +81,67 @@ const TASK_COMPLETION_ABORT_REQUESTED: u8 = 1;
 const TASK_COMPLETION_NORMAL: u8 = 2;
 const TASK_COMPLETION_INTENTIONAL_ABORT: u8 = 3;
 const TASK_COMPLETION_ABNORMAL: u8 = 4;
+
+fn build_turn_profile_event(
+    turn_id: String,
+    terminal_event: &EventMsg,
+    profile: Option<TurnProfile>,
+) -> TurnProfileEvent {
+    let (outcome, started_at, duration_ms, time_to_first_token_ms) = match terminal_event {
+        EventMsg::TurnComplete(event) => (
+            if event.error.is_some() {
+                TurnProfileOutcome::Failed
+            } else {
+                TurnProfileOutcome::Completed
+            },
+            event.started_at,
+            event.duration_ms,
+            event.time_to_first_token_ms,
+        ),
+        EventMsg::TurnAborted(event) => (
+            TurnProfileOutcome::Interrupted,
+            event.started_at,
+            event.duration_ms,
+            None,
+        ),
+        _ => unreachable!("activity profile requires a terminal turn event"),
+    };
+    TurnProfileEvent {
+        turn_id,
+        outcome,
+        started_at,
+        duration_ms,
+        time_to_first_token_ms,
+        profile: profile.map(Into::into),
+    }
+}
+
+fn terminal_event_sequence(
+    profile_event: TurnProfileEvent,
+    terminal_event: EventMsg,
+) -> [(EventMsg, bool); 2] {
+    [
+        (EventMsg::TurnProfile(profile_event), false),
+        (terminal_event, true),
+    ]
+}
+
+async fn emit_terminal_event_sequence(
+    session: &Session,
+    turn_context: &TurnContext,
+    profile_event: TurnProfileEvent,
+    terminal_event: EventMsg,
+) {
+    for (event, persist) in terminal_event_sequence(profile_event, terminal_event) {
+        if persist {
+            session.send_event(turn_context, event).await;
+        } else {
+            session
+                .send_event_without_persistence(turn_context, event)
+                .await;
+        }
+    }
+}
 
 pub(crate) type SessionTaskResult = CodexResult<Option<String>>;
 
@@ -1057,17 +1121,19 @@ impl Session {
             .turn_timing_state
             .complete_profile_and_duration_ms()
             .await;
-        self.services.session_telemetry.record_turn_profile(
-            &turn_context.sub_id,
-            profile.before_first_sampling_ms,
-            profile.sampling_ms,
-            profile.compaction_ms,
-            profile.between_sampling_overhead_ms,
-            profile.tool_blocking_ms,
-            profile.after_last_sampling_ms,
-            profile.sampling_request_count,
-            profile.sampling_retry_count,
-        );
+        if let Some(profile) = profile.as_ref() {
+            self.services.session_telemetry.record_turn_profile(
+                &turn_context.sub_id,
+                profile.before_first_sampling_ms,
+                profile.sampling_ms,
+                profile.compaction_ms,
+                profile.between_sampling_overhead_ms,
+                profile.tool_blocking_ms,
+                profile.after_last_sampling_ms,
+                profile.sampling_request_count,
+                profile.sampling_retry_count,
+            );
+        }
         let event = if let Some(reason) = abort_reason {
             self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref())
                 .await;
@@ -1096,7 +1162,12 @@ impl Session {
                 time_to_first_token_ms,
             })
         };
-        self.send_event(turn_context.as_ref(), event).await;
+        let profile_event = build_turn_profile_event(
+            turn_context.sub_id.clone(),
+            &event,
+            profile,
+        );
+        emit_terminal_event_sequence(self, turn_context.as_ref(), profile_event, event).await;
         self.services
             .guardian_rejection_circuit_breaker
             .lock()
@@ -1295,17 +1366,19 @@ impl Session {
             .turn_timing_state
             .complete_profile_and_duration_ms()
             .await;
-        self.services.session_telemetry.record_turn_profile(
-            &task.turn_context.sub_id,
-            profile.before_first_sampling_ms,
-            profile.sampling_ms,
-            profile.compaction_ms,
-            profile.between_sampling_overhead_ms,
-            profile.tool_blocking_ms,
-            profile.after_last_sampling_ms,
-            profile.sampling_request_count,
-            profile.sampling_retry_count,
-        );
+        if let Some(profile) = profile.as_ref() {
+            self.services.session_telemetry.record_turn_profile(
+                &task.turn_context.sub_id,
+                profile.before_first_sampling_ms,
+                profile.sampling_ms,
+                profile.compaction_ms,
+                profile.between_sampling_overhead_ms,
+                profile.tool_blocking_ms,
+                profile.after_last_sampling_ms,
+                profile.sampling_request_count,
+                profile.sampling_retry_count,
+            );
+        }
         let event = EventMsg::TurnAborted(TurnAbortedEvent {
             turn_id: Some(task.turn_context.sub_id.clone()),
             reason,
@@ -1313,7 +1386,12 @@ impl Session {
             completed_at,
             duration_ms,
         });
-        self.send_event(task.turn_context.as_ref(), event).await;
+        let profile_event = build_turn_profile_event(
+            task.turn_context.sub_id.clone(),
+            &event,
+            profile,
+        );
+        emit_terminal_event_sequence(self, task.turn_context.as_ref(), profile_event, event).await;
         self.services
             .guardian_rejection_circuit_breaker
             .lock()

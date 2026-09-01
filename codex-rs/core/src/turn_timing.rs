@@ -9,6 +9,7 @@ use std::time::UNIX_EPOCH;
 use codex_otel::TURN_TTFM_DURATION_METRIC;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::TurnProfileSummary;
 use tokio::sync::Mutex;
 
 use crate::ResponseEvent;
@@ -114,7 +115,7 @@ impl TurnTimingState {
 
     pub(crate) async fn complete_profile_and_duration_ms(
         &self,
-    ) -> (Option<i64>, Option<i64>, TurnProfile) {
+    ) -> (Option<i64>, Option<i64>, Option<TurnProfile>) {
         let completed_at_instant = Instant::now();
         let state = self.state.lock().await;
         let completed_at = Some(now_unix_timestamp_secs());
@@ -126,7 +127,9 @@ impl TurnTimingState {
             )
             .unwrap_or(i64::MAX)
         });
-        let profile = self.profile_state().complete(completed_at_instant);
+        let profile = state
+            .started_at
+            .map(|_| self.profile_state().complete(completed_at_instant));
         (completed_at, duration_ms, profile)
     }
 
@@ -191,6 +194,21 @@ impl TurnTimingState {
         self.profile
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl From<TurnProfile> for TurnProfileSummary {
+    fn from(profile: TurnProfile) -> Self {
+        Self {
+            before_first_sampling_ms: profile.before_first_sampling_ms,
+            sampling_ms: profile.sampling_ms,
+            compaction_ms: profile.compaction_ms,
+            between_sampling_overhead_ms: profile.between_sampling_overhead_ms,
+            tool_blocking_ms: profile.tool_blocking_ms,
+            after_last_sampling_ms: profile.after_last_sampling_ms,
+            sampling_request_count: u64::from(profile.sampling_request_count),
+            sampling_retry_count: u64::from(profile.sampling_retry_count),
+        }
     }
 }
 

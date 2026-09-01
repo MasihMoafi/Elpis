@@ -1923,6 +1923,22 @@ impl Session {
             .await;
     }
 
+    /// Delivers a live event without persisting it or invoking terminal/legacy side effects.
+    pub(crate) async fn send_event_without_persistence(
+        &self,
+        turn_context: &TurnContext,
+        msg: EventMsg,
+    ) {
+        self.send_event_raw_with_persistence(
+            Event {
+                id: turn_context.sub_id.clone(),
+                msg,
+            },
+            /*persist*/ false,
+        )
+        .await;
+    }
+
     /// Delivers an event without creating a local rollout for a thread that has not materialized.
     pub(crate) async fn send_event_raw_without_materializing_rollout(&self, event: Event) {
         let persist = match self.current_rollout_path().await {

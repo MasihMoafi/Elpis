@@ -120,6 +120,7 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
 
         // Transient, non-durable events.
         EventMsg::Error(_)
+        | EventMsg::TurnProfile(_)
         | EventMsg::GuardianAssessment(_)
         | EventMsg::ExecCommandEnd(_)
         | EventMsg::ViewImageToolCall(_)
@@ -179,5 +180,43 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode) 
         | EventMsg::CollabWaitingBegin(_)
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabResumeBegin(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_protocol::TurnProfileSummary;
+    use codex_protocol::protocol::TurnProfileEvent;
+    use codex_protocol::protocol::TurnProfileOutcome;
+
+    #[test]
+    fn turn_profile_events_are_never_persisted() {
+        let event = EventMsg::TurnProfile(TurnProfileEvent {
+            turn_id: "turn-1".to_string(),
+            outcome: TurnProfileOutcome::Completed,
+            started_at: Some(10),
+            duration_ms: Some(20),
+            time_to_first_token_ms: Some(3),
+            profile: Some(TurnProfileSummary {
+                before_first_sampling_ms: 1,
+                sampling_ms: 2,
+                compaction_ms: 3,
+                between_sampling_overhead_ms: 4,
+                tool_blocking_ms: 5,
+                after_last_sampling_ms: 6,
+                sampling_request_count: 7,
+                sampling_retry_count: 8,
+            }),
+        });
+
+        assert!(!should_persist_event_msg(
+            &event,
+            ThreadHistoryMode::Legacy
+        ));
+        assert!(!should_persist_event_msg(
+            &event,
+            ThreadHistoryMode::Paginated
+        ));
     }
 }
