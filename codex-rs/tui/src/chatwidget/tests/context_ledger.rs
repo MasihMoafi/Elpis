@@ -99,6 +99,37 @@ async fn manual_memory_create_key_emits_once_and_blocks_same_loop_duplicates(
 }
 
 #[tokio::test]
+async fn manual_memory_focused_ledger_does_not_capture_ctrl_c() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let memories = root.path().join("memories");
+    let cwd = root.path().join("project");
+    std::fs::create_dir_all(&memories)?;
+    std::fs::create_dir_all(&cwd)?;
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.config.memory_dir = memories.abs();
+    chat.config.cwd = cwd.abs();
+    chat.last_rendered_width.set(Some(120));
+    chat.thread_id = Some(ThreadId::new());
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    handle_turn_started(&mut chat, "turn-1");
+    while rx.try_recv().is_ok() {}
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+    next_interrupt_op(&mut op_rx);
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Ready);
+    assert_eq!(chat.manual_memory_pending_mutation(), None);
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::ManualMemoryCreateRequested(_)),
+            "Ctrl-C must stay on the global interrupt/quit path"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn manual_memory_mutation_excludes_ordinary_and_add_writers_before_disk_io(
 ) -> anyhow::Result<()> {
     let root = tempdir()?;

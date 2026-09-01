@@ -124,6 +124,10 @@ impl ChatWidget {
         if !self.context_ledger.focused {
             return false;
         }
+        if !key_event.modifiers.is_empty() {
+            self.context_ledger.pending_g = false;
+            return false;
+        }
 
         let sources = self.continuity_sources();
         let selectable = sources
