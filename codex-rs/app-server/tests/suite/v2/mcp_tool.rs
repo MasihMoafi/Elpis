@@ -330,7 +330,10 @@ async fn mcp_server_elicitation_survives_environment_runtime_refresh() -> Result
     write_mock_responses_config_toml(
         codex_home.path(),
         &responses_server.uri(),
-        &BTreeMap::from([(Feature::DeferredExecutor, true)]),
+        &BTreeMap::from([
+            (Feature::DeferredExecutor, true),
+            (Feature::Plugins, true),
+        ]),
         /*auto_compact_limit*/ 1024,
         /*requires_openai_auth*/ None,
         "mock_provider",
