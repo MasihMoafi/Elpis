@@ -533,7 +533,7 @@ td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
           <div class="latest-section">
             <h3>Reduction</h3>
             <dl class="evidence-list">
-              <dt>Outputs</dt><dd id="latest-outputs">Unavailable</dd>
+              <dt>Admitted / examined</dt><dd id="latest-outputs">Unavailable</dd>
               <dt>Approx. source</dt><dd id="latest-source">Unavailable</dd>
               <dt>Approx. admitted</dt><dd id="latest-admitted">Unavailable</dd>
               <dt>Approx. saved</dt><dd id="latest-saved">Unavailable</dd>
@@ -944,7 +944,7 @@ function renderSmartPrune(smart) {
   byId('smart-latest-empty').hidden = latest !== null;
   byId('smart-latest').hidden = latest === null;
   if (latest === null) return;
-  setText('latest-outputs', formatNumber(latest.admitted_outputs) + ' admitted / ' + formatNumber(latest.examined_outputs) + ' examined');
+  setText('latest-outputs', formatNumber(latest.admitted_outputs) + ' / ' + formatNumber(latest.examined_outputs));
   setText('latest-source', formatNumber(latest.approx_source_tokens));
   setText('latest-admitted', formatNumber(latest.approx_admitted_tokens));
   setText('latest-saved', formatNumber(latest.approx_saved_tokens));
