@@ -224,6 +224,18 @@ fn mark_turn_dropped(dropped_turns: &DroppedTurns, turn_id: &str) -> bool {
     true
 }
 
+fn terminalize_dropped_turn(dropped_turns: &DroppedTurns, turn_id: &str) {
+    let mut dropped_turns = dropped_turns
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let newly_dropped = dropped_turns.dropped.insert(turn_id.to_string());
+    let was_active = dropped_turns.active.remove(turn_id);
+    if newly_dropped || was_active {
+        dropped_turns.order.push_back(turn_id.to_string());
+    }
+    evict_dropped_history(&mut dropped_turns);
+}
+
 fn clear_dropped_turn(dropped_turns: &DroppedTurns, turn_id: &str) {
     let mut dropped_turns = dropped_turns
         .lock()
@@ -423,6 +435,9 @@ impl TurnCostWorkerHandle {
             Err(error) => {
                 let observation = error.into_inner();
                 let newly_dropped = mark_turn_dropped(&self.dropped_turns, &observation.turn_id);
+                if matches!(observation.kind, TurnCostObservationKind::Finished { .. }) {
+                    terminalize_dropped_turn(&self.dropped_turns, &observation.turn_id);
+                }
                 newly_dropped.then_some(TurnCostState::Unavailable {
                     reason: TurnCostAvailability::ObservationDropped,
                 })
@@ -505,6 +520,7 @@ impl WorkerRuntime {
                                     TurnCostState::Unavailable { reason },
                                 )
                                 .await;
+                            terminalize_dropped_turn(&self.dropped_turns, &observation.turn_id);
                         }
                         if finished {
                             clear_dropped_turn(&self.dropped_turns, &observation.turn_id);
@@ -524,6 +540,7 @@ impl WorkerRuntime {
                                     TurnCostState::Unavailable { reason },
                                 )
                                 .await;
+                            terminalize_dropped_turn(&self.dropped_turns, &observation.turn_id);
                         }
                         if finished {
                             clear_dropped_turn(&self.dropped_turns, &observation.turn_id);
@@ -573,7 +590,7 @@ impl WorkerRuntime {
             if matches!(auth_changes.has_changed(), Ok(true)) {
                 continue;
             }
-            self.discard_invalidated();
+            self.terminalize_invalidated();
             self.discard_stale_entries(
                 revision,
                 reason.unwrap_or(TurnCostAvailability::BackendUnavailable),
@@ -900,7 +917,7 @@ impl WorkerRuntime {
     }
 
     async fn discard_all(&mut self, reason: TurnCostAvailability) {
-        self.discard_invalidated();
+        self.terminalize_invalidated();
         for (turn_id, thread_id) in self
             .turns
             .iter()
@@ -914,7 +931,7 @@ impl WorkerRuntime {
                     TurnCostState::Unavailable { reason },
                 )
                 .await;
-            self.remove_turn(&turn_id);
+            self.terminalize_turn(&turn_id);
         }
     }
 
@@ -937,7 +954,7 @@ impl WorkerRuntime {
                     TurnCostState::Unavailable { reason },
                 )
                 .await;
-            self.remove_turn(&turn_id);
+            self.terminalize_turn(&turn_id);
         }
     }
 
@@ -965,7 +982,7 @@ impl WorkerRuntime {
                 },
             )
             .await;
-        self.remove_turn(turn_id);
+        self.terminalize_turn(turn_id);
         true
     }
 
@@ -985,6 +1002,11 @@ impl WorkerRuntime {
         if finished {
             clear_dropped_turn(&self.dropped_turns, turn_id);
         }
+    }
+
+    fn terminalize_turn(&mut self, turn_id: &str) {
+        self.turns.remove(turn_id);
+        terminalize_dropped_turn(&self.dropped_turns, turn_id);
     }
 
     fn discard_if_invalidated(&mut self, turn_id: &str) -> bool {
@@ -1014,6 +1036,23 @@ impl WorkerRuntime {
         drop(dropped_turns);
         for turn_id in invalidated_turns {
             self.remove_turn(&turn_id);
+        }
+    }
+
+    fn terminalize_invalidated(&mut self) {
+        let dropped_turns = self
+            .dropped_turns
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let invalidated_turns = self
+            .turns
+            .keys()
+            .filter(|turn_id| dropped_turns.dropped.contains(*turn_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        drop(dropped_turns);
+        for turn_id in invalidated_turns {
+            self.terminalize_turn(&turn_id);
         }
     }
 }
