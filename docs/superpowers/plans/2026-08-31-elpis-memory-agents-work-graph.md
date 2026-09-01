@@ -509,6 +509,7 @@ pub fn instruction_source_admitted(
 - Cold resume uses a `Config` reconstructed from the loaded root's current effective session configuration, not app-server startup config. It validates the stored parent chain/depth and closed edge, restores stored path/nickname/role/source, and lets `resume_agent_from_rollout` select V1/V2 from stored history. A loaded target may emit `Shutdown` before its session loop exits; wait through the existing completion/unload seam until that old target is absent before spawning, so `spawn_thread_with_source` cannot return the dead loaded thread. After resume, reject/compensate any fresh `Shutdown`/`NotFound` result instead of reopening the edge. Preserve the existing descendant policy exactly: only current-effective V1 plus stored-history V1 may reopen persisted Open descendants; current-effective V2 or stored-history V2 stops descendant reopening. Closed descendants never reopen. Existing V2 open-but-unloaded messaging continues through `ensure_v2_agent_loaded`; do not fake resume by changing a status flag.
 - Durable state is part of success, not best-effort bookkeeping for the new root-authoritative persisted-edge bridge. The current edge-status store can acknowledge a missing-row no-op, so every bridge Closed/Open transition must immediately read back the exact parent+child edge and required status; a missing, mismatched, unreadable, or wrong-status readback is failure. Persisted-edge close must observe `Closed` before shutdown; a write/readback failure returns rejection and sends no shutdown. A validated persisted edge counts as known even when the target is unloaded—do not rely only on in-memory agent metadata—so Open+`NotFound` closes durably without a fake load. Enumerate the full ThreadSpawn descendant closure by reconciling persisted and live edges: persisted edges bridge unloaded intermediate agents, and live metadata adds reachable live-only descendants. Revalidate conflicts/cycles/errors before mutation, then return Applied only after target plus every live member re-observe as `Shutdown`/`NotFound`. If target or descendant shutdown fails and anything remains live, restore the target edge to `Open` and observe the exact readback before rejection. If that compensation write/readback also fails, return only `CoreOperationFailed`; a later close must accept and repair Closed+live-target and/or live-descendant state rather than rejecting or treating it as idempotent. Resume returns Applied only after the resumed target's edge is written and read back durably `Open`; if reopening fails, shut down the newly resumed subtree and leave or restore/read back the edge `Closed`; any incomplete shutdown is likewise repairable by a later close. Preserve the existing model-facing `AgentControl::close_agent` behavior for live-only/ephemeral agents: the bridge rejects them before calling the persisted-edge path, while a shared internal shutdown traversal may be reused. Cover target failure, unloaded-intermediate descendants, acknowledged-no-op persistence, compensation failure, retry, and the unchanged live-only model-tool close.
 - `agent/control` has no outer request serialization. Parse both IDs before any gate access and key one in-flight entry by canonical `(ThreadId, ThreadId)`, never by client strings; UUID spelling aliases must join the same operation rather than bypass coalescing. An identical full request, including follow-up text, joins one spawned operation/result; a different action or different follow-up text returns `RequestAlreadyPending`. Use the smallest local gate: a short `std::sync::Mutex` map, a monotonically unique entry generation, and a generation-checked RAII removal guard held by the spawned owner. The owner holds the only result sender. Success, error, abort, panic, or future drop removes only its own generation; sender drop maps for waiters to fixed `CoreOperationFailed`. Dropping any waiter cannot cancel or leak the operation. Unrelated typed targets remain concurrent.
+- Wire IDs have one fixed fail-closed mapping before state or gate access: an unparseable root is `RootNotFound`, an unparseable target is `TargetNotFound`, and `target_thread_id` is present in a rejection only when that target parsed and was reserialized canonically. Do not add another invalid-ID error vocabulary or echo an untrusted wire spelling.
 - `interrupt` and `close` require a TUI confirmation naming the target agent. `follow_up` and `resume` do not. The request runs after confirmation, not when the menu opens.
 - For this slice every graph-owned worker control that reaches the server is rejected with typed code `GraphOwnedWorkerReadOnly`; it does not call the core bridge and does not mutate the graph. Ownership is durable historical `task_started` assignment under the claimed root, including a terminal task whose current `assigned_thread_id` was cleared. A fully readable root history with no matching assignment returns false. Any malformed relevant `task_started` payload, invalid thread ID, query/read error, or unavailable store fails closed with `GraphOwnershipUnavailable`. Atomic task cancellation/blocking is deferred.
 - The Agents view needs no ownership RPC, but it does need a new nonblocking inventory path. The current `/agent` path is blocking `thread/loaded/list` plus per-thread reads; replace it with paginated background `thread/list` using canonical `ancestorThreadId = root`, `sourceKinds = [SubAgentThreadSpawn]`, `useStateDbOnly = true`, and non-archived rows. The relationship filter already forces the state DB and bounds the query to the root's persisted descendants, so it must never issue an unscoped request or trigger rollout scan-and-repair. Classify only after the final page: ordinary persisted rows require canonical IDs, matching `Thread.parent_thread_id` and ThreadSpawn source parent at every hop, and an acyclic complete chain to the active root. Do not compare `Thread.session_id`: persisted `thread/list` currently sets it to each thread's own ID, so it is not a shared-tree discriminator. The immediate cached-navigation view may retain a currently observed live-only row as a control-free candidate; only a successful server `agent/status` validation may give it follow-up/interrupt capabilities, and a rejection leaves it control-free. Work-graph `SubAgent::Other` threads are deliberately absent from Agents inventory; represent assigned workers only through sanitized `workGraph/list` task data in the Experimental read-only mode. The server still performs durable historical ownership for every status/control request; inventory text never grants authority.
@@ -714,7 +715,7 @@ pub struct WorkGraphEventSummary {
 
 - [ ] **Step 1: Write fail-first routing, ownership, coalescing, cancellation, and privacy tests.**
 
-  Register locked app-server tests under agent_status_ and agent_control_. Prove exact status/control dispatch and `serialization: None`; malformed IDs are rejected before the mutation gate; status is read-only, uses no mutation-gate entry, repeats graph ownership/root checks, and returns the exact B1 capability matrix without loading a target. Canonical, uppercase, and braced UUID aliases for the same root/target join one control call/result; every graph-owned status/control request fails closed before core; unavailable state and malformed/read-failed ownership become `GraphOwnershipUnavailable`; identical full control requests make one core call/result; a different action or different follow-up for the same canonical root/target gets `RequestAlreadyPending`; unrelated targets proceed concurrently; and dropping the first waiter neither cancels nor leaks the operation. Separately abort and panic the spawned owner, then prove the generation guard removes its entry, all waiters receive fixed `CoreOperationFailed`, and a retry proceeds. Also prove every ordinary applied/rejected/core-error completion removes the gate. Plant a follow-up sentinel and prove it is absent from responses, errors, tracing, and the controlling/root transcript; assert only the target conversation records it after a successful send.
+  Register locked app-server tests under agent_status_ and agent_control_. Prove exact status/control dispatch and `serialization: None`; malformed root and target IDs map respectively to `RootNotFound` and `TargetNotFound` before state or gate access, and only a parsed target is returned in canonical form. Status is read-only, uses no mutation-gate entry, repeats graph ownership/root checks, and returns the exact B1 capability matrix without loading a target. Canonical, uppercase, and braced UUID aliases for the same root/target join one control call/result; every graph-owned status/control request fails closed before core; unavailable state and malformed/read-failed ownership become `GraphOwnershipUnavailable`; identical full control requests make one core call/result; a different action or different follow-up for the same canonical root/target gets `RequestAlreadyPending`; unrelated targets proceed concurrently; and dropping the first waiter neither cancels nor leaks the operation. Separately abort and panic the spawned owner, then prove the generation guard removes its entry, all waiters receive fixed `CoreOperationFailed`, and a retry proceeds. Also prove every ordinary applied/rejected/core-error completion removes the gate. Plant a follow-up sentinel and prove it is absent from responses, errors, tracing, and the controlling/root transcript; assert only the target conversation records it after a successful send.
 
 - [ ] **Step 2: Record the fail-first checks without running Rust.**
 
@@ -729,7 +730,7 @@ pub struct WorkGraphEventSummary {
 
 - [ ] **Step 3: Register the additive RPC without outer serialization.**
 
-  Add AgentStatus => "agent/status" and AgentControl => "agent/control" through the existing ClientRequest mechanism with serialization: None. Parse both wire ID strings into `ThreadId` before ownership lookup or gate access; malformed IDs receive the typed rejection without entering the map. Status performs ownership/root/core inspection inline or on a normal background task but never enters the mutation gate. Existing clients and workGraph/list stay unchanged.
+  Add AgentStatus => "agent/status" and AgentControl => "agent/control" through the existing ClientRequest mechanism with serialization: None. Parse both wire ID strings into `ThreadId` before ownership lookup or gate access; apply the fixed malformed-ID mapping above without entering the map. Status performs ownership/root/core inspection inline or on a normal background task but never enters the mutation gate. Existing clients and workGraph/list stay unchanged.
 
 - [ ] **Step 4: Add the smallest cancellation-safe per-target gate.**
 
@@ -750,7 +751,6 @@ pub struct WorkGraphEventSummary {
 
 - Create: codex-rs/tui/src/bottom_pane/agent_view.rs
 - Modify: codex-rs/tui/src/bottom_pane/mod.rs
-- Modify: codex-rs/tui/src/chatwidget/interaction.rs
 - Modify: codex-rs/tui/src/app.rs
 - Modify: codex-rs/tui/src/app_event.rs
 - Modify: codex-rs/tui/src/app/background_requests.rs
@@ -796,7 +796,7 @@ pub struct WorkGraphEventSummary {
   Deferred commit:
 
   ~~~bash
-  git add codex-rs/tui/src/bottom_pane/agent_view.rs codex-rs/tui/src/bottom_pane/mod.rs codex-rs/tui/src/chatwidget/interaction.rs codex-rs/tui/src/app.rs codex-rs/tui/src/app_event.rs codex-rs/tui/src/app/background_requests.rs codex-rs/tui/src/app/event_dispatch.rs codex-rs/tui/src/app/session_lifecycle.rs codex-rs/tui/src/app/tests.rs codex-rs/tui/src/app_server_session.rs codex-rs/tui/src/multi_agents.rs codex-rs/tui/src/app/agent_status_feed.rs codex-rs/tui/src/app/agent_status_feed_tests.rs
+  git add codex-rs/tui/src/bottom_pane/agent_view.rs codex-rs/tui/src/bottom_pane/mod.rs codex-rs/tui/src/app.rs codex-rs/tui/src/app_event.rs codex-rs/tui/src/app/background_requests.rs codex-rs/tui/src/app/event_dispatch.rs codex-rs/tui/src/app/session_lifecycle.rs codex-rs/tui/src/app/tests.rs codex-rs/tui/src/app_server_session.rs codex-rs/tui/src/multi_agents.rs codex-rs/tui/src/app/agent_status_feed.rs codex-rs/tui/src/app/agent_status_feed_tests.rs
   git commit -m "feat: add nonblocking agent control view"
   ~~~
 
@@ -888,7 +888,13 @@ pub struct WorkGraphEventSummary {
 
 - [ ] **Step 3: Prove the selector using only the fake-Cargo harness.**
 
-  Assert exact argv for every command—including both `agent_status_` protocol/app-server filters and `agent_status_bridge_` core filter—every representative path union, mixed-signature/full fallback, manifest/test-script fallback to full, and zero-pass rejection. Shell parsing and ShellCheck are permitted now; all Cargo/Rust commands remain deferred.
+  Assert exact argv for every command—including both `agent_status_` protocol/app-server filters and `agent_status_bridge_` core filter—every representative path union, mixed-signature/full fallback, manifest/test-script fallback to full, and zero-pass rejection. Run only these non-Rust checks now; the harness supplies fake Cargo and verifies the throttle environment rather than compiling:
+
+  ~~~bash
+  bash -n scripts/verify-elpis tests/verify-elpis/test_verify_elpis.sh
+  shellcheck scripts/verify-elpis tests/verify-elpis/test_verify_elpis.sh
+  bash tests/verify-elpis/test_verify_elpis.sh
+  ~~~
 
 - [ ] **Step 4: Replace obsolete documentation.**
 
@@ -896,7 +902,16 @@ pub struct WorkGraphEventSummary {
 
 - [ ] **Step 5: Independent review and later execution gate.**
 
-  Obtain independent source review for each implementation task and one final cross-slice privacy/authority/lifecycle review. Only after every broader functional slice closes may the coordinator run repository-selected Rust checks under docs/LOCAL_BUILD_RULES.md. Do not install, release, or claim manual acceptance.
+  Obtain independent source review for each implementation task and one final cross-slice privacy/authority/lifecycle review. Only after every broader functional slice closes, inspect the selected shared target as required by `docs/LOCAL_BUILD_RULES.md`, then let the coordinator run exactly these repository-selected, throttled Rust gates from the repository root:
+
+  ~~~bash
+  elpis_shared_target="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/codex-rs/target"
+  du -sh "$elpis_shared_target"
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --surface agents-work-graph
+  CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --surface full
+  ~~~
+
+  The selector itself supplies `CODEX_SKIP_BWRAP_BUILD=1`, `CARGO_TARGET_DIR`, and `nice -n 10` to every Cargo child. Do not install, release, or claim manual acceptance.
 
 - [ ] **Step 6: Commit verifier/docs after evidence is truthful.**
 
