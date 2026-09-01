@@ -29,6 +29,8 @@ use codex_protocol::protocol::TokenUsage;
 /// Metadata about the currently running turn.
 pub(crate) struct ActiveTurn {
     pub(crate) task: Option<RunningTask>,
+    pub(crate) task_completion: Option<Arc<TaskCompletion>>,
+    pub(crate) task_turn_context: Option<Arc<TurnContext>>,
     pub(crate) turn_state: Arc<Mutex<TurnState>>,
 }
 
@@ -57,8 +59,18 @@ impl Default for ActiveTurn {
     fn default() -> Self {
         Self {
             task: None,
+            task_completion: None,
+            task_turn_context: None,
             turn_state: Arc::new(Mutex::new(TurnState::default())),
         }
+    }
+}
+
+impl ActiveTurn {
+    pub(crate) fn set_task(&mut self, task: RunningTask) {
+        self.task_completion = Some(Arc::clone(&task.completion));
+        self.task_turn_context = Some(Arc::clone(&task.turn_context));
+        self.task = Some(task);
     }
 }
 

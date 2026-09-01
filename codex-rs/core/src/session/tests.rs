@@ -80,6 +80,8 @@ use crate::state::TaskKind;
 use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
 use crate::tasks::SessionTaskResult;
+use crate::tasks::TaskCancellationBoundary;
+use crate::tasks::TaskCompletionOutcome;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::execute_user_shell_command;
 use crate::tools::ToolRouter;
@@ -9083,6 +9085,46 @@ impl SessionTask for CompletingTask {
     }
 }
 
+struct PanickingBoundaryTask {
+    boundary: TaskCancellationBoundary,
+    started: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+impl SessionTask for PanickingBoundaryTask {
+    fn kind(&self) -> TaskKind {
+        TaskKind::Regular
+    }
+
+    fn span_name(&self) -> &'static str {
+        "session_task.panicking_boundary"
+    }
+
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary> {
+        Some(self.boundary.clone())
+    }
+
+    async fn run(
+        self: Arc<Self>,
+        _session: Arc<SessionTaskContext>,
+        _ctx: Arc<TurnContext>,
+        _input: Vec<TurnInput>,
+        _cancellation_token: CancellationToken,
+    ) -> SessionTaskResult {
+        if let Some(started) = self.started.lock().expect("started gate lock").take() {
+            let _ = started.send(());
+        }
+        let release = self
+            .release
+            .lock()
+            .await
+            .take()
+            .expect("release gate receiver");
+        let _ = release.await;
+        panic!("deterministic abnormal task completion");
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TerminalEventKind {
     TurnComplete,
@@ -9161,6 +9203,61 @@ async fn recv_terminal_event(
     })
     .await
     .expect("terminal event should be delivered")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn interrupt_recovers_latched_abnormal_task_without_turn_aborted() {
+    let (sess, tc, rx) = make_session_and_context_with_rx().await;
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    sess.spawn_task(
+        Arc::clone(&tc),
+        Vec::new(),
+        PanickingBoundaryTask {
+            boundary: TaskCancellationBoundary::default(),
+            started: std::sync::Mutex::new(Some(started_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        },
+    )
+    .await;
+    timeout(StdDuration::from_secs(2), started_rx)
+        .await
+        .expect("panicking task should start")
+        .expect("started gate sender");
+
+    let completion = {
+        let active = sess.active_turn.lock().await;
+        Arc::clone(
+            &active
+                .as_ref()
+                .and_then(|active_turn| active_turn.task.as_ref())
+                .expect("panicking task should be active")
+                .completion,
+        )
+    };
+    let _ = release_tx.send(());
+    assert_eq!(
+        timeout(StdDuration::from_secs(2), completion.wait())
+            .await
+            .expect("abnormal completion should be latched"),
+        TaskCompletionOutcome::Abnormal
+    );
+
+    timeout(
+        StdDuration::from_secs(2),
+        sess.abort_all_tasks(TurnAbortReason::Interrupted),
+    )
+    .await
+    .expect("interrupt should recover the abnormal active task");
+
+    assert_eq!(completion.wait().await, TaskCompletionOutcome::Abnormal);
+    assert!(sess.active_turn.lock().await.is_none());
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event.msg, EventMsg::TurnAborted(_)),
+            "an already-abnormal task must not be reported as a user abort"
+        );
+    }
 }
 
 #[derive(Clone, Copy)]

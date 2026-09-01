@@ -1,4 +1,5 @@
 use super::TASK_COMPACT_METRIC;
+use super::TaskAbortRequest;
 use super::TaskCancellationBoundary;
 use super::TaskCompletion;
 use super::TaskCompletionOutcome;
@@ -180,6 +181,7 @@ async fn abnormal_task_completion_is_latched_for_late_waiters() {
 
     drop(guard);
 
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Abnormal);
     assert_eq!(completion.wait().await, TaskCompletionOutcome::Abnormal);
 }
 
@@ -188,8 +190,39 @@ async fn requested_task_abort_is_not_misclassified_as_abnormal() {
     let completion = Arc::new(TaskCompletion::default());
     let guard = completion.guard();
 
+    assert_eq!(
+        completion.request_abort(),
+        TaskAbortRequest::Requested
+    );
     drop(guard);
-    completion.request_abort();
+
+    assert_eq!(
+        completion.wait().await,
+        TaskCompletionOutcome::IntentionalAbort
+    );
+}
+
+#[tokio::test]
+async fn clean_task_completion_wins_a_late_abort_request() {
+    let completion = Arc::new(TaskCompletion::default());
+    let guard = completion.guard();
+
+    guard.finish();
+
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Finished);
+    assert_eq!(completion.wait().await, TaskCompletionOutcome::Normal);
+}
+
+#[tokio::test]
+async fn clean_exit_after_an_abort_request_is_intentional_abort() {
+    let completion = Arc::new(TaskCompletion::default());
+    let guard = completion.guard();
+
+    assert_eq!(
+        completion.request_abort(),
+        TaskAbortRequest::Requested
+    );
+    guard.finish();
 
     assert_eq!(
         completion.wait().await,
