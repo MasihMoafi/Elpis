@@ -15,6 +15,7 @@ This is deliberately split into two independently reviewable plans with no code 
 - Plan A adds only a path-free scalar manual-memory projection to the dashboard because the product spec requires the Ledger and dashboard to agree. Memory body text and configured paths never enter dashboard state. Plan B adds no graph data or controls to the dashboard.
 - The implementer must first read `AGENTS.md`, `docs/GUIDE.md`, `docs/context.md`, `docs/sessions.md`, `docs/WORK_GRAPHS.md`, `docs/SHIPPING_RULES.md`, and `docs/LOCAL_BUILD_RULES.md`, then verify the worktree is clean apart from this plan’s own changes.
 - Do not run Cargo, Rust tests, `rustfmt`, builds, installation, tmux, browser/editor/process/config changes, or network actions while drafting or implementing this daily-driver stage. The commands in the final verification sections are deferred commands, not commands to run now.
+- Every deferred Cargo command runs from `codex-rs` with the exact `CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo ... --locked` wrapper. Never remove or raise the throttle.
 
 ## Genuine source blocker: memory editing
 
@@ -209,7 +210,7 @@ pub fn instruction_source_admitted(
 
 - [ ] **Step 2: Record the required fail-first command without running it.**
 
-  Deferred command: `cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core --lib --locked elpis_context`
+  Deferred command: `cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core --lib --locked elpis_context`
 
   Expected initial result: compilation failure because the status type/helpers do not exist. Do not execute it in this stage.
 
@@ -266,7 +267,7 @@ pub fn instruction_source_admitted(
 
 - [ ] **Step 2: Record the fail-first request command without running it.**
 
-  Deferred command: `cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server --test all --locked memory_recall`
+  Deferred command: `cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server --test all --locked memory_recall`
 
   Expected initial result: the create/status/truncation assertions fail before Task A1/A2 implementation is complete. Do not execute it now.
 
@@ -344,7 +345,7 @@ pub fn instruction_source_admitted(
 
 - [ ] **Step 2: Record the fail-first TUI command without running it.**
 
-  Deferred command: `cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked manual_memory_`
+  Deferred command: `cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked manual_memory_`
 
   Expected initial result: the status request/result events, cache, epoch, and stale-result behavior are absent. Do not execute it now.
 
@@ -417,10 +418,10 @@ pub fn instruction_source_admitted(
   Deferred commands:
 
   ```bash
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked manual_memory_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked context_ledger
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked context_usage
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked dashboard
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked manual_memory_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked context_ledger
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked context_usage
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked dashboard
   ```
 
   Expected initial result: status text, guarded controls, clipboard-lease behavior, and dashboard scalar projection are absent. Do not execute them now.
@@ -450,14 +451,14 @@ pub fn instruction_source_admitted(
   At functional close only, defer these exact commands through the future verification manifest’s `memory` surface:
 
   ```bash
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core --lib --locked elpis_context
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core --lib --locked memory_dir_is_readable_without_creating_or_widening_writes
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core --lib --locked permission_profile_override_keeps_memories_root_out_of_legacy_projection
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server --test all --locked memory_recall
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked manual_memory_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked context_ledger
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked dashboard
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked context_usage
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core --lib --locked elpis_context
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core --lib --locked memory_dir_is_readable_without_creating_or_widening_writes
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core --lib --locked permission_profile_override_keeps_memories_root_out_of_legacy_projection
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server --test all --locked memory_recall
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked manual_memory_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked context_ledger
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked dashboard
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked context_usage
   ```
 
   Expected final evidence: core/request/TUI `/usage`/Ledger/dashboard agree on missing/create/admit/withdraw/truncate/unavailable behavior, async results are epoch-safe, and any unavailable local check remains explicitly unexecuted. Commit with:
@@ -658,11 +659,11 @@ pub struct WorkGraphEventSummary {
   Deferred checks:
 
   ~~~bash
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server-protocol --lib --locked agent_status_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server-protocol --lib --locked agent_control_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core --lib --locked agent_status_bridge_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-core --lib --locked agent_control_bridge_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-state --lib --locked work_graph_worker_ownership_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server-protocol --lib --locked agent_status_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server-protocol --lib --locked agent_control_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core --lib --locked agent_status_bridge_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-core --lib --locked agent_control_bridge_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-state --lib --locked work_graph_worker_ownership_
   ~~~
 
   Expected initial result: the new types, bridge, and ownership query do not exist. Do not execute now.
@@ -720,10 +721,10 @@ pub struct WorkGraphEventSummary {
   Deferred checks:
 
   ~~~bash
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server-protocol --lib --locked agent_status_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server-protocol --lib --locked agent_control_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server --lib --locked agent_status_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server --lib --locked agent_control_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server-protocol --lib --locked agent_status_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server-protocol --lib --locked agent_control_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server --lib --locked agent_status_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server --lib --locked agent_control_
   ~~~
 
 - [ ] **Step 3: Register the additive RPC without outer serialization.**
@@ -773,7 +774,7 @@ pub struct WorkGraphEventSummary {
   Deferred check:
 
   ~~~bash
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked agent_view_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked agent_view_
   ~~~
 
 - [ ] **Step 3: Open a dedicated view from cached state before refreshing.**
@@ -826,10 +827,10 @@ pub struct WorkGraphEventSummary {
   Deferred checks:
 
   ~~~bash
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-features --lib --locked work_graph_inspector_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server-protocol --lib --locked work_graph_list_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-app-server --lib --locked work_graph_list_
-  cd codex-rs && CODEX_SKIP_BWRAP_BUILD=1 cargo test -p codex-tui --lib --locked work_graph_view_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-features --lib --locked work_graph_inspector_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server-protocol --lib --locked work_graph_list_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-app-server --lib --locked work_graph_list_
+  cd codex-rs && CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo test -p codex-tui --lib --locked work_graph_view_
   ~~~
 
 - [ ] **Step 3: Add one existing-style experimental feature.**
