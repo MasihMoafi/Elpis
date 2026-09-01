@@ -25,11 +25,14 @@ This file records what Masih asked Elpis to become. It is deliberately separate 
 | U10 | **One integrated local candidate, not a premature release.** Audit Elpis worktrees, integrate distinct correct compatible work into local `main`, preserve unrelated/auth/context/memory changes, build and atomically install one optimized `elpis` only after functional issues close, and prove artifact/installed hashes match. Do not push, tag, publish, or call it a release. | In progress | Masih runs the installed candidate and performs the final checklist; only then may it be called verified. |
 | U11 | **Side-by-side Codex regression check.** Compare Elpis with current Codex for startup, interaction, Ctrl+C/exit latency, compaction, model/reasoning selection, and other important daily-driver behavior before acceptance. | Planned | Review recorded comparison evidence and personally test the important differences. |
 | U12 | **Durable, current documentation.** Keep product behavior, user-requested outcomes, engineering execution, worktree integration, deferred checks, and manual acceptance clearly separated and regularly updated. | In progress | A fresh agent and Masih can each find the current truth without reconstructing it from chat history. |
+| U13 | **Plugins are strictly user-added.** Elpis must not install, enable, load, or inject a plugin merely because it is bundled, listed by a marketplace, or enabled upstream. A plugin participates only after Masih explicitly adds or enables it. | Requested | Start from a clean Elpis profile, inspect the plugin and prompt/context surfaces, and verify that only explicitly added plugins participate. |
 
 ## Standing boundaries
 
 - Linux is the current platform priority; macOS and Windows are deferred.
 - Functional work precedes the visual-identity pass.
+- Skills and plugins are opt-in user choices: only the curated skill allowlist and explicitly added
+  plugins may participate.
 - No local Rust build/test occurs before the functional source issues close.
 - Any eventual local Rust verification follows `docs/LOCAL_BUILD_RULES.md`; never use all
   cores or maximum-frequency load.
