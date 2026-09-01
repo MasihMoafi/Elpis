@@ -343,14 +343,14 @@ git commit -m "feat(dashboard): render truthful activity facts"
 
 **Files:**
 
-- Inspect: only files changed in Tasks 1–5
+- Inspect: only files changed in Tasks 1–5b
 - Update: coordinator-owned integration ledger only if the coordinator authorizes it; workers must not edit `TASKS.md`
 
-**Consumes:** committed Tasks 1–5.
+**Consumes:** committed Tasks 1–5b.
 
 **Produces:** deferred focused automated evidence and a manual acceptance checklist; it makes no runtime-success claim.
 
-- [ ] **Step 1: Review boundaries and source assertions.** Run `git status --short` and `git diff --check`; inspect every changed file. Confirm no Cargo lock/dependency/config file, telemetry exporter gate, cost polling interval, installed binary, durable `v2::Turn`/thread-history/rollout profile field, prompt/message/tool capture, absolute path, account field, visual identity, or pruning setting changed. Confirm existing terminal structs remain unchanged, the transient `TurnProfileEvent` is absent from rollout output and replay buffers, and replay cannot repopulate Activity.
+- [ ] **Step 1: Review boundaries and source assertions.** Run `git status --short` and `git diff --check`; inspect every changed file. Confirm no Cargo lock/dependency/config file, telemetry exporter gate, cost polling interval, installed binary, durable `v2::Turn`/thread-history/rollout profile field, prompt/message/tool capture, absolute path, account field, or pruning setting changed. Confirm the Task 5b visual diff is limited to the approved Elpis Observatory identity and its tests. Confirm existing terminal structs remain unchanged, the transient `TurnProfileEvent` is absent from rollout output and replay buffers, and replay cannot repopulate Activity.
 
 - [ ] **Step 2: Run focused green checks.** Defer until implementation; execute only:
 
@@ -386,11 +386,11 @@ Expected: every listed test filter produces at least one positive libtest summar
 2. Review Task 2 before Task 3: TUI cost behavior must not invent reasons or silently alter polling.
 3. Review Task 3 before Task 4: only the TUI owns session-bounded activity and private turn-id correlation.
 4. Review Task 4 before Task 5: the page consumes a stable, safe envelope; browser markup must not define product truth.
-5. Defer the daily-driver visual direction, Continuity Spine, Activity token/cached-input additions not already available as typed per-turn facts, Agents, Work graph, Continuity, dashboard controls beyond the required pause/resume/refresh/freshness behavior, and any network/runtime evidence to their explicitly approved owners.
+5. The daily-driver visual direction and Continuity Spine landed in Task 5b. Defer only Activity token/cached-input additions not already available as typed per-turn facts, Agents, Work graph, Continuity, dashboard controls beyond the required pause/resume/refresh/freshness behavior, and any network/runtime evidence to their explicitly approved owners.
 
 ## Self-review
 
-- **Spec coverage:** Tasks 1–3 cover typed measured timing, live-only profiles, existing TTFT, complete/abort, serialization/replay omission, typed cost states, dynamic subscription wording, no default polling, validated bounded late price, process-session retention/reset, eviction, routing, and automatic-pruning fact carriage. Tasks 4–5 cover revision/heartbeat, live best-effort publishing, loopback-only read-only serving, Host/security headers, no dynamic HTML, Activity/empty states, pause/resume/refresh/freshness, keyboard/responsive/reduced-motion behavior, and frozen fixtures. Task 6 covers the required source/unit/regression and manual acceptance boundary.
+- **Spec coverage:** Tasks 1–3 cover typed measured timing, live-only profiles, existing TTFT, complete/abort, serialization/replay omission, typed cost states, dynamic subscription wording, no default polling, validated bounded late price, process-session retention/reset, eviction, routing, and automatic-pruning fact carriage. Tasks 4–5 cover revision/heartbeat, live best-effort publishing, loopback-only read-only serving, Host/security headers, no dynamic HTML, Activity/empty states, pause/resume/refresh/freshness, keyboard/responsive/reduced-motion behavior, and frozen fixtures. Task 5b covers the approved Elpis Observatory identity and Continuity Spine. Task 6 covers the required source/unit/regression and manual acceptance boundary.
 - **Truth boundary:** No task reads OTLP, rendered terminal output, model/token metadata, rollout files, browser state, or prices inferred locally. No unavailable path maps to zero.
 - **Privacy boundary:** The dashboard projection intentionally omits all messages, tools, command output, account/credential/trace/path values; tests include forbidden samples.
 - **Plan boundary:** This plan is derived from source inspection only. It contains deferred commands and no claim that a binary, server, browser, or visual result has been run.
