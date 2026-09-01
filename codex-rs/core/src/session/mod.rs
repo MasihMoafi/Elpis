@@ -1253,17 +1253,8 @@ impl Session {
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
-                let restored_info = Self::last_token_info_from_rollout(&rollout_items);
-                let restored_smart_prune = Self::last_smart_prune_from_rollout(&rollout_items);
-                if restored_info.is_some() || restored_smart_prune.is_some() {
-                    let mut state = self.state.lock().await;
-                    if let Some(info) = restored_info {
-                        state.set_token_info(Some(info));
-                    }
-                    if let Some(snapshot) = restored_smart_prune {
-                        state.smart_prune = snapshot;
-                    }
-                }
+                self.restore_token_count_state_from_rollout(&rollout_items)
+                    .await;
 
                 // Defer seeding the session's initial context until the first turn starts so
                 // turn/start overrides can be merged before we write to the rollout.
@@ -1285,17 +1276,8 @@ impl Session {
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
-                let restored_info = Self::last_token_info_from_rollout(&rollout_items);
-                let restored_smart_prune = Self::last_smart_prune_from_rollout(&rollout_items);
-                if restored_info.is_some() || restored_smart_prune.is_some() {
-                    let mut state = self.state.lock().await;
-                    if let Some(info) = restored_info {
-                        state.set_token_info(Some(info));
-                    }
-                    if let Some(snapshot) = restored_smart_prune {
-                        state.smart_prune = snapshot;
-                    }
-                }
+                self.restore_token_count_state_from_rollout(&rollout_items)
+                    .await;
 
                 // If persisting, persist all rollout items as-is (the store filters).
                 if !rollout_items.is_empty() {
@@ -1410,6 +1392,21 @@ impl Session {
             RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => Some(ev.smart_prune.clone()),
             _ => None,
         })
+    }
+
+    async fn restore_token_count_state_from_rollout(&self, rollout_items: &[RolloutItem]) {
+        let restored_info = Self::last_token_info_from_rollout(rollout_items);
+        let restored_smart_prune = Self::last_smart_prune_from_rollout(rollout_items);
+        if restored_info.is_none() && restored_smart_prune.is_none() {
+            return;
+        }
+        let mut state = self.state.lock().await;
+        if let Some(info) = restored_info {
+            state.set_token_info(Some(info));
+        }
+        if let Some(snapshot) = restored_smart_prune {
+            state.smart_prune = snapshot;
+        }
     }
 
     async fn previous_turn_settings(&self) -> Option<PreviousTurnSettings> {

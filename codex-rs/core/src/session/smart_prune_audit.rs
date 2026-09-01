@@ -110,8 +110,7 @@ struct ResponseLinkage<'a> {
 
 pub(super) fn response_item_sha256(item: &ResponseItem) -> Result<String> {
     let bytes = serde_json::to_vec(item).context("failed to serialize Smart Prune source")?;
-    let digest = Sha256::digest(bytes);
-    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+    Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
 pub(super) fn write_admission(

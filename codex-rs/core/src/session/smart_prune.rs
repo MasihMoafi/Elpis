@@ -370,11 +370,7 @@ impl Session {
                 return None;
             }
         };
-        let digest = Sha256::digest(bytes);
-        let hash = digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        let hash = format!("{:x}", Sha256::digest(bytes));
         let pending = {
             let mut state = self.state.lock().await;
             state.smart_prune.main_request_sequence =

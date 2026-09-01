@@ -106,10 +106,6 @@ async fn await_or_cancelled<T>(
     }
 }
 
-pub(crate) async fn run_manual_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_manual_context_prune_with_target(sess, turn_context, None, None, None).await;
-}
-
 pub(crate) async fn run_manual_context_prune_with_target(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
