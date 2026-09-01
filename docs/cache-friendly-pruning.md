@@ -43,9 +43,16 @@ these establish that Smart Prune does not introduce a later history rewrite. The
 by themselves, prove a provider's billed cache savings: that requires matched live runs and
 provider-reported cache reads/writes.
 
+A [2026-09-01 live pilot](evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md)
+then observed provider cache reuse at both applied-admission boundaries: 98.96% and 98.89%
+cached input on the linked first main responses, with 95.85% cached input overall. This is
+live reuse evidence, not a comparative savings result.
+
 Smart Prune fails open. A timeout, provider error, malformed/incomplete all-ids manifest,
 audit failure, ineligible result, or proposed body below the savings floor admits the exact
-original result. Automatic admission never deletes a whole tool event.
+original result. After the first non-cancellation failure in a user turn, later eligible
+outputs in that turn bypass the optimizer unchanged; a new user turn may try again.
+Automatic admission never deletes a whole tool event.
 
 The optimizer is not free. Elpis accounts for its request count, cumulative wait, and
 provider-reported usage separately from the main thread. The dashboard labels the estimated
@@ -199,7 +206,8 @@ request now falls back to instead of the initial prefix.
 - **Marker accumulation.** One ~40-token message per applied pass, never removed (removing
   one would rewrite the prefix it exists to protect). Negligible under hysteresis; a long
   `/prune` sweep can add up to 12 in one go.
-- **Provider benefit remains empirical.** The dashboard reports mechanism evidence,
-  response linkage, optimizer overhead, and provider token fields without treating a missing
-  cache-write field as zero. Actual hit-rate, latency, and cost changes require matched live
-  runs.
+- **Live reuse is observed; comparative benefit remains open.** The pilot had no private
+  full-request trace or matched OFF arm, so it does not establish later live logical-prefix
+  stability or a causal cache-rate, cost, or latency change. The dashboard reports mechanism
+  evidence, response linkage, optimizer overhead, and provider token fields without treating
+  a missing cache-write field as zero.

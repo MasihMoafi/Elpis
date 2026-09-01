@@ -35,7 +35,7 @@
 - [Evaluation status](#evaluation-status)
   - [RQ1: Context Reduction & Operating Hygiene](#rq1-context-reduction--operating-hygiene)
   - [RQ2 & RQ3: Target Retention & Task Quality](#rq2--rq3-target-retention--task-quality)
-  - [RQ4: Pruning Overhead & Token Economics](#rq4-pruning-overhead--token-economics)
+  - [RQ4: Cache Preservation & Token Economics](#rq4-cache-preservation--token-economics)
   - [RQ5: Forensic Auditability](#rq5-forensic-auditability)
 - [Documentation](#documentation)
 - [License](#license)
@@ -282,9 +282,9 @@ Across those configured historical requests, Elpis spent over 95% of its operati
 - **RQ2 (Information Retention)**: In benchmark audits testing recall of key file paths, schemas, and error signatures after pruning, **100% of tested targets (6/6)** were retained intact in active context.
 - **RQ3 (Task Performance)**: **Not established.** The executed runs are incomplete and unreplicated, so they do not support a comparative correctness claim in either direction. No per-arm score is reported, and there is no evidence that pruning improves task completion or output quality.
 
-### RQ4: Pruning Overhead & Token Economics
+### RQ4: Cache Preservation & Token Economics
 
-Pruning adds an auxiliary model call sequenced against the main agent, and rewriting history invalidates the provider's cached prefix. Both costs are real. The figures below are configured historical runs with automatic pruning enabled under the superseded high-frequency setup; they bound that configuration's penalty rather than describe the current default: 730,810 auxiliary tokens spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token).
+Smart Prune now optimizes a fresh tool result before first main-model exposure, so its automatic path does not rewrite already-sent history. One normal-work ON session reported 95.85% cached input overall; the first responses linked to two admissions reported 98.96% and 98.89%. Encoded-request tests separately establish stable prefix and cache-key construction on the tested path. This supports the cache-preserving mechanism, not a complete RQ4 result: there was no matched OFF arm or private full-request trace, and the pilot exposed a 45-second-timeout retry storm. The chart below is the 41-pass cost breakdown from the superseded 42-pass retrospective run, not current Smart Prune economics. See the [2026-09-01 live pilot](docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 
@@ -297,7 +297,7 @@ Every pruning event produces an immutable audit record on disk under `~/.elpis/l
 | **RQ1 — Context Efficiency** | Historical superseded high-frequency setup: peak reduction of 47–65%; median context stabilized at 26.6–27.1% of the 258k window. |
 | **RQ2 — Information Retention** | 6/6 tested post-prune targets preserved intact (100% retention). |
 | **RQ3 — Task Performance** | Not established. The available runs do not support a comparative correctness claim. |
-| **RQ4 — Pruning Economics** | Penalty established, current magnitude open. The measured figures describe a superseded high-frequency configuration. |
+| **RQ4 — Overhead and Cache** | Cache-preserving mechanism supported; comparative cost and latency remain open. |
 | **RQ5 — Forensic Auditability** | 7/9 properties fully recoverable from local rollout evidence; 0 lost records. |
 
 ## Documentation

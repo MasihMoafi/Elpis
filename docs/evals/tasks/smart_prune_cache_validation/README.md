@@ -17,6 +17,8 @@ reduced live trace proves normalized logical-history stability, not encoded wire
 identity. No result from this protocol alone proves lower subscription cost or a
 universal provider cache-hit rate.
 
+Recorded observation: [2026-09-01 live pilot](2026-09-01-live-pilot.md).
+
 ## Claims and verdicts
 
 | Question | Required evidence | Allowed verdict |

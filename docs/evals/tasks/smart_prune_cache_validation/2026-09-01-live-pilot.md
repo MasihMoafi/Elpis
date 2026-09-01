@@ -23,6 +23,10 @@ Rollout:
 
 `~/.elpis/sessions/2026/09/01/rollout-2026-09-01T11-10-44-01a05be9-cda6-7f21-9681-6b387bb0f151.jsonl`
 
+Runtime trace database:
+
+`~/.elpis/logs_2.sqlite`
+
 Admission manifests:
 
 - `~/.elpis/logs/smart-prune/admissions/01a05bf3-3d59-7a53-a4bd-e7634f77c7c9/manifest.json`
@@ -64,12 +68,16 @@ persisted admission/linkage files are the durable evidence available for this se
 ## Runtime defect and fix
 
 All 20 optimizer attempts belonged to user turn
-`01a05bea-37e8-7192-a8ce-e414d33ca318`. Attempt 1 failed after 45,000 ms. The old code
-then retried on every later eligible batch in the same turn.
+`01a05bea-37e8-7192-a8ce-e414d33ca318`. The local trace database records exactly 18
+`Smart Prune model pass timed out; preserving tool output` warnings. Those failures used
+810,018 ms; the two successful calls used 20,972 ms and 29,742 ms, producing the recorded
+860,732 ms total. The source imposes a 45-second admission deadline and returns the
+original output when it expires. The old code then retried on every later eligible batch
+in the same turn.
 
-The telemetry labels attempt 1 only as a failure, not explicitly as a timeout. Treating
-it as a non-cancellation failure is an inference supported by the exact 45-second
-duration, the absence of a cancellation/interrupt event, and normal task continuation.
+The provider-side reason the 18 calls exceeded that deadline was not captured. Luna at
+maximal reasoning effort may have contributed, but the available evidence does not prove
+that explanation. Usage for the timed-out calls is also unknown.
 
 The candidate fix records the failed turn ID and passes later eligible outputs through
 unchanged for that turn. A new user turn may try Smart Prune again. It changes neither

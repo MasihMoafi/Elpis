@@ -182,6 +182,15 @@ near the end of each prompt. The epoch breakpoint is what makes that region an e
 This historical run explains why automatic retrospective rewriting was removed. It is not
 evidence that Smart Prune improves cost or task quality. See "What to inspect" below.
 
+### First Smart Prune live observation
+
+A [2026-09-01 normal-work pilot](evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md)
+reported 95.85% cached input overall. The first main responses linked to its two applied
+admissions reported 98.96% and 98.89% cached input; both preceded a later compaction. This
+observes provider reuse at the admission boundaries. Without a private full-request trace
+or matched OFF arm, it does not establish the full live sequence or a causal cost, latency,
+or quality change.
+
 ## What to inspect
 
 Per request, from the rollout `token_count` records:
