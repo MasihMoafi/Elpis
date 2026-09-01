@@ -1171,46 +1171,10 @@ fn collect_context_files(dir: &Path, files: &mut Vec<PathBuf>) -> std::io::Resul
 
 fn path_refers_to_manual_memory(candidate: &Path, memory: &Path) -> std::io::Result<bool> {
     match std::fs::metadata(memory) {
-        Ok(_) => paths_refer_to_same_file(candidate, memory),
+        Ok(_) => same_file::is_same_file(candidate, memory),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
-}
-
-#[cfg(unix)]
-fn paths_refer_to_same_file(left: &Path, right: &Path) -> std::io::Result<bool> {
-    use std::os::unix::fs::MetadataExt;
-
-    let left = std::fs::metadata(left)?;
-    let right = std::fs::metadata(right)?;
-    Ok(left.dev() == right.dev() && left.ino() == right.ino())
-}
-
-#[cfg(windows)]
-fn paths_refer_to_same_file(left: &Path, right: &Path) -> std::io::Result<bool> {
-    use std::os::windows::fs::MetadataExt;
-
-    let left = std::fs::metadata(left)?;
-    let right = std::fs::metadata(right)?;
-    match (
-        left.volume_serial_number(),
-        left.file_index(),
-        right.volume_serial_number(),
-        right.file_index(),
-    ) {
-        (Some(left_volume), Some(left_index), Some(right_volume), Some(right_index)) => {
-            Ok(left_volume == right_volume && left_index == right_index)
-        }
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "file identity is unavailable",
-        )),
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-fn paths_refer_to_same_file(left: &Path, right: &Path) -> std::io::Result<bool> {
-    Ok(left.canonicalize()? == right.canonicalize()?)
 }
 
 fn write_admission(workspace_dir: &Path, selection: &ContinuityAdmission) -> std::io::Result<()> {
