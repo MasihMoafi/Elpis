@@ -27,12 +27,13 @@ impl SessionTask for PruneTask {
         session: Arc<SessionTaskContext>,
         ctx: Arc<TurnContext>,
         _input: Vec<TurnInput>,
-        _cancellation_token: CancellationToken,
+        cancellation_token: CancellationToken,
     ) -> SessionTaskResult {
         crate::session::context_prune::run_manual_context_prune_with_target(
             &session.clone_session(),
             &ctx,
             self.target_pct,
+            Some(&cancellation_token),
         )
         .await;
         Ok(None)

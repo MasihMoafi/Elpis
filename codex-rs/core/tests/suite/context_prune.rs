@@ -1,7 +1,9 @@
 use anyhow::Result;
 use codex_features::Feature;
+use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::RolloutItem;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed_with_tokens;
@@ -10,11 +12,17 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_host_windows;
+use core_test_support::streaming_sse::StreamingSseChunk;
+use core_test_support::streaming_sse::start_streaming_sse_server;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::test_codex;
+use core_test_support::wait_for_event;
 use serde_json::json;
+use serial_test::serial;
 use std::sync::Arc;
+use std::time::Duration;
 use tempfile::TempDir;
+use tokio::sync::oneshot;
 
 const CONTEXT_WINDOW: i64 = 10_000;
 const MAIN_MODEL: &str = "gpt-5.4";
@@ -78,7 +86,18 @@ fn final_response() -> String {
     ])
 }
 
+fn context_prune_checkpoints(items: Vec<RolloutItem>) -> Vec<CompactedItem> {
+    items
+        .into_iter()
+        .filter_map(|item| match item {
+            RolloutItem::Compacted(item) if item.is_context_prune_checkpoint() => Some(item),
+            _ => None,
+        })
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn automatic_prune_is_disabled_by_default() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -116,6 +135,7 @@ async fn automatic_prune_is_disabled_by_default() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn pressure_prune_runs_at_thirty_percent_and_rewrites_next_request() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -175,6 +195,7 @@ async fn pressure_prune_runs_at_thirty_percent_and_rewrites_next_request() -> Re
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_survives_session_resume() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -248,6 +269,7 @@ async fn manual_prune_survives_session_resume() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -371,6 +393,7 @@ async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn pressure_prune_does_not_run_below_thirty_percent() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -399,6 +422,7 @@ async fn pressure_prune_does_not_run_below_thirty_percent() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_rewrites_completed_tool_output_without_compacting_messages() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -461,6 +485,190 @@ async fn manual_prune_rewrites_completed_tool_output_without_compacting_messages
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
+async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint(
+) -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+
+    let (release_prune_tx, release_prune_rx) = oneshot::channel();
+    let cancelled_prune = vec![
+        StreamingSseChunk {
+            gate: None,
+            body: sse(vec![ev_assistant_message(
+                "cancelled-prune-result",
+                &format!("{OLD_CALL_ID}: command output was generated and inspected"),
+            )]),
+        },
+        StreamingSseChunk {
+            gate: Some(release_prune_rx),
+            body: sse(vec![ev_completed_with_tokens(
+                "cancelled-prune-result",
+                /*total_tokens*/ 100,
+            )]),
+        },
+    ];
+    let retry_prune = vec![StreamingSseChunk {
+        gate: None,
+        body: sse(vec![
+            ev_assistant_message(
+                "retry-prune-result",
+                &format!("{OLD_CALL_ID}: command output was generated and inspected"),
+            ),
+            ev_completed_with_tokens("retry-prune-result", /*total_tokens*/ 100),
+        ]),
+    }];
+    let (server, _) = start_streaming_sse_server(vec![
+        vec![StreamingSseChunk {
+            gate: None,
+            body: main_tool_response(
+                OLD_CALL_ID,
+                /*total_tokens*/ 1_000,
+                "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
+            ),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: final_response(),
+        }],
+        cancelled_prune,
+        retry_prune,
+    ])
+    .await;
+    let mut builder = test_codex()
+        .with_model(MAIN_MODEL)
+        .with_config(|config| {
+            config.model_context_window = Some(CONTEXT_WINDOW);
+            // The generic interruption marker is unrelated to pruning. Disable it so
+            // identical retry input proves that pruning itself left working history and
+            // covered-call selection byte-for-byte unchanged.
+            config.agent_interrupt_message_enabled = false;
+        });
+    let test = builder.build_with_streaming_server(&server).await?;
+    let codex = Arc::clone(&test.codex);
+
+    test.submit_turn("generate an old diagnostic output").await?;
+    codex.flush_rollout().await?;
+
+    let logs_dir = test.home.path().join("logs");
+    let pruning_dir = logs_dir.join("pruning");
+    let passes_dir = pruning_dir.join("passes");
+    let failed_dir = pruning_dir.join("failed_attempts");
+    std::fs::create_dir_all(&passes_dir)?;
+    std::fs::create_dir_all(&failed_dir)?;
+    let attempts_path = pruning_dir.join("attempts.jsonl");
+    let debug_path = logs_dir.join("prune_debug.log");
+    let report_path = logs_dir.join("prune_report.md");
+    let attempts_before: &[u8] = b"pre-existing attempt log\n";
+    let debug_before: &[u8] = b"pre-existing debug log\n";
+    let report_before: &[u8] = b"pre-existing latest report\n";
+    std::fs::write(&attempts_path, attempts_before)?;
+    std::fs::write(&debug_path, debug_before)?;
+    std::fs::write(&report_path, report_before)?;
+
+    let saved_tokens_before = codex.context_prune_saved_tokens().await;
+    let applied_passes_before = codex_core::context_pruner::pass_count();
+    let saved_chars_before = codex_core::context_pruner::saved_chars();
+    let checkpoints_before = context_prune_checkpoints(
+        codex
+            .load_history(/*include_archived*/ false)
+            .await?
+            .items,
+    );
+
+    codex.submit(Op::Prune { target_pct: None }).await?;
+    server.wait_for_request_count(3).await;
+    let requests = server.requests().await;
+    let first_prune_body: serde_json::Value =
+        serde_json::from_slice(&requests[2]).expect("parse first prune request");
+    assert_eq!(first_prune_body["model"], PRUNE_MODEL);
+    assert!(first_prune_body["input"].to_string().contains("<evidence_batch>"));
+    assert!(first_prune_body["input"].to_string().contains(OLD_CALL_ID));
+    let first_prune_input = first_prune_body["input"].clone();
+
+    codex.submit(Op::Interrupt).await?;
+    // Give the submission loop time to cancel the task before allowing the valid
+    // response to finish. This stays well inside the task runner's 100 ms grace period,
+    // so the pre-fix code can still consume the late response and expose the mutation.
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let _ = release_prune_tx.send(());
+    let terminal = wait_for_event(&codex, |event| {
+        matches!(event, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert!(
+        matches!(terminal, EventMsg::TurnAborted(_)),
+        "manual prune completed instead of observing cancellation: {terminal:?}"
+    );
+    codex.flush_rollout().await?;
+
+    assert_eq!(
+        server.requests().await.len(),
+        3,
+        "cancellation must not issue a fallback pruning-model request"
+    );
+    assert_eq!(
+        codex.context_prune_saved_tokens().await,
+        saved_tokens_before,
+        "cancelled pruning must not change saved-token accounting"
+    );
+    assert_eq!(
+        codex_core::context_pruner::pass_count(),
+        applied_passes_before,
+        "cancelled pruning must not change applied-pass accounting"
+    );
+    assert_eq!(
+        codex_core::context_pruner::saved_chars(),
+        saved_chars_before,
+        "cancelled pruning must not change removed-character accounting"
+    );
+    assert_eq!(std::fs::read(&report_path)?, report_before);
+    assert_eq!(std::fs::read(&attempts_path)?, attempts_before);
+    assert_eq!(std::fs::read(&debug_path)?, debug_before);
+    assert_eq!(
+        std::fs::read_dir(&passes_dir)?.count(),
+        0,
+        "cancelled pruning must not record applied-pass accounting"
+    );
+    assert_eq!(
+        std::fs::read_dir(&failed_dir)?.count(),
+        0,
+        "user cancellation must not be recorded as a failed pruning attempt"
+    );
+
+    let checkpoints_after = context_prune_checkpoints(
+        codex
+            .load_history(/*include_archived*/ false)
+            .await?
+            .items,
+    );
+    assert_eq!(
+        checkpoints_after, checkpoints_before,
+        "cancelled pruning must not persist a replacement checkpoint"
+    );
+
+    // Retrying the same manual prune must select the exact same prompt input. This
+    // checks both the byte-for-byte working history and the covered-call set without
+    // adding a test-only state accessor to production code.
+    let retry_id = codex.submit(Op::Prune { target_pct: None }).await?;
+    loop {
+        let event = codex.next_event().await?;
+        if event.id == retry_id && matches!(event.msg, EventMsg::TurnComplete(_)) {
+            break;
+        }
+    }
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 4);
+    let retry_body: serde_json::Value =
+        serde_json::from_slice(&requests[3]).expect("parse retry prune request");
+    assert_eq!(retry_body["model"], PRUNE_MODEL);
+    assert_eq!(retry_body["input"], first_prune_input);
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_without_completed_tool_output_makes_no_model_request() -> Result<()> {
     let harness = pressure_harness().await?;
     let requests =
