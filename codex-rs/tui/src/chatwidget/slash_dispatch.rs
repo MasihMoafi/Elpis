@@ -466,7 +466,7 @@ impl ChatWidget {
                 }
             }
             SlashCommand::Context => {
-                self.app_event_tx.send(AppEvent::RequestContextUsageReport);
+                self.request_fresh_context_usage_report();
             }
             SlashCommand::Dashboard => {
                 self.app_event_tx.send(AppEvent::OpenContextDashboard);
@@ -665,6 +665,7 @@ impl ChatWidget {
                         self.add_error_message(format!("Could not add context source: {error}"))
                     }
                 }
+                self.request_manual_memory_status_refresh();
             }
             SlashCommand::Usage => {
                 self.add_status_output(
@@ -672,7 +673,7 @@ impl ChatWidget {
                 );
             }
             SlashCommand::Context => {
-                self.app_event_tx.send(AppEvent::RequestContextUsageReport);
+                self.request_fresh_context_usage_report();
             }
             SlashCommand::Dashboard => {
                 self.app_event_tx.send(AppEvent::OpenContextDashboard);

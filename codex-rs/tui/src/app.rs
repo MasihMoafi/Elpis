@@ -10,6 +10,11 @@ use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event::HistoryLookupResponse;
+use crate::app_event::ManualMemoryRequestTarget;
+use crate::app_event::ManualMemoryStatusCompletion;
+use crate::app_event::ManualMemoryStorageTarget;
+use crate::app_event::ManualMemoryUnavailableReason;
+use crate::app_event::ManualMemoryViewKey;
 use crate::app_event::PermissionProfileSelection;
 use crate::app_event::PluginLocation;
 use crate::app_event::PluginRemoteSectionError;
@@ -498,6 +503,12 @@ struct InitialHistoryReplayBuffer {
     render_from_transcript_tail: bool,
 }
 
+#[derive(Debug, Default)]
+struct ManualMemoryStatusCoordinator {
+    epoch: u64,
+    in_flight: Option<ManualMemoryRequestTarget>,
+}
+
 pub(crate) struct App {
     model_catalog: Arc<ModelCatalog>,
     pub(crate) session_telemetry: SessionTelemetry,
@@ -579,6 +590,7 @@ pub(crate) struct App {
     pending_primary_events: VecDeque<ThreadBufferedEvent>,
     pending_app_server_requests: PendingAppServerRequests,
     pending_startup_thread_start: bool,
+    manual_memory_status: ManualMemoryStatusCoordinator,
     /// Invalidates in-flight full rate-limit reads when a newer rolling hard stop arrives.
     rate_limit_hard_stop_generation: u64,
     // Serialize plugin enablement writes per plugin so stale completions cannot
@@ -1063,6 +1075,7 @@ See the Elpis keymap documentation for supported actions and examples."
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_startup_thread_start,
+            manual_memory_status: ManualMemoryStatusCoordinator::default(),
             rate_limit_hard_stop_generation: 0,
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),

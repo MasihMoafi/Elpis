@@ -68,6 +68,7 @@ fn configure_ledger_sources(
         codex_utils_path_uri::PathUri::from_abs_path(&cwd.join("AGENTS.md").abs()),
     ];
     chat.last_rendered_width.set(Some(120));
+    seed_manual_memory_cache_from_disk(chat)?;
     Ok((memories, cwd))
 }
 
@@ -141,6 +142,7 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
         codex_utils_path_uri::PathUri::from_abs_path(&project.abs()),
     ];
     chat.last_rendered_width.set(Some(120));
+    seed_manual_memory_cache_from_disk(&mut chat)?;
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down)));
@@ -181,29 +183,244 @@ async fn ledger_file_rows_emit_real_file_hyperlinks() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyhow::Result<()> {
+async fn manual_memory_ledger_render_stays_on_cached_sources_after_disk_changes(
+) -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let (_memories, _cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let (memories, _cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let before = render_ledger(&chat, 80);
+
+    std::fs::write(memories.join("MEMORY.md"), "changed memory".repeat(400))?;
+    std::fs::write(
+        root.path().join("projects/skills/dev/SKILL.md"),
+        "changed development rules".repeat(400),
+    )?;
+
+    assert_eq!(render_ledger(&chat, 80), before);
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let custom_memory_source = memories.join("custom-context.md");
+    std::fs::write(&custom_memory_source, "custom context inside the memory directory")?;
+    crate::legacy_core::elpis_context::add_continuity_source(
+        Some(&memories),
+        &cwd,
+        &custom_memory_source,
+    )?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    let manual_memory_path = chat
+        .manual_memory_bound_target()
+        .expect("manual-memory target")
+        .view
+        .memory_path
+        .clone();
+    let custom_memory_source = custom_memory_source.canonicalize()?;
+    assert!(chat.continuity_sources().iter().any(|source| {
+        source.path == custom_memory_source
+            && source.category
+                == crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
+    }));
+    let manual_memory_admitted = chat
+        .continuity_sources()
+        .iter()
+        .find(|source| source.path == manual_memory_path)
+        .expect("manual-memory row")
+        .admitted;
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
 
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('e')));
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryStatusRefreshRequested(_))
+    ));
+    assert!(rx.try_recv().is_err(), "bulk exclude must refresh exactly once");
+    seed_manual_memory_cache_from_disk(&mut chat)?;
     assert!(
         chat.continuity_sources()
-        .iter()
-        .filter(|source| source.selectable)
-        .all(|source| !source.admitted)
+            .iter()
+            .filter(|source| source.selectable && source.path != manual_memory_path)
+            .all(|source| !source.admitted)
     );
 
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryStatusRefreshRequested(_))
+    ));
+    assert!(rx.try_recv().is_err(), "bulk include must refresh exactly once");
+    seed_manual_memory_cache_from_disk(&mut chat)?;
     assert!(
         chat.continuity_sources()
+            .iter()
+            .filter(|source| source.selectable && source.path != manual_memory_path)
+            .all(|source| source.admitted)
+    );
+
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryStatusRefreshRequested(_))
+    ));
+    assert!(rx.try_recv().is_err(), "i must refresh exactly once");
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    assert!(
+        chat.continuity_sources()
+            .iter()
+            .filter(|source| source.selectable && source.path != manual_memory_path)
+            .all(|source| !source.admitted),
+        "i must exclude actionable rows even when the canonical Memory row is not admitted"
+    );
+
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryStatusRefreshRequested(_))
+    ));
+    assert!(rx.try_recv().is_err(), "i must refresh exactly once");
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryStatusRefreshRequested(_))
+    ));
+    assert!(rx.try_recv().is_err(), "g i must refresh exactly once");
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    assert!(
+        chat.continuity_sources()
+            .iter()
+            .filter(|source| source.selectable && source.path != manual_memory_path)
+            .all(|source| !source.admitted),
+        "g i must use the same actionable rows as the bulk writer"
+    );
+    assert_eq!(
+        chat.continuity_sources()
+            .iter()
+            .find(|source| source.path == manual_memory_path)
+            .expect("manual-memory row")
+            .admitted,
+        manual_memory_admitted,
+        "bulk actions must leave only the canonical Memory row untouched"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn manual_memory_bulk_first_error_invalidates_once() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let workspace = crate::legacy_core::elpis_context::workspace_context_dir(
+        Some(&memories),
+        &cwd,
+    )
+    .expect("workspace context directory");
+    std::fs::write(workspace.join("admission.toml"), "not valid = [")?;
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
+
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('e')));
+
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)))
+            .count(),
+        1,
+        "a first-row bulk error must still request exactly one refresh"
+    );
+    assert!(events.iter().any(|event| matches!(event, AppEvent::InsertHistoryCell(_))));
+    Ok(())
+}
+
+#[tokio::test]
+async fn manual_memory_remove_refreshes_for_custom_memory_dir_source_but_not_discovered_row(
+) -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let custom = memories.join("removable-context.md");
+    std::fs::write(&custom, "removable custom context")?;
+    crate::legacy_core::elpis_context::add_continuity_source(Some(&memories), &cwd, &custom)?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    let custom = custom.canonicalize()?;
+    let selectable_count = chat
+        .continuity_sources()
         .iter()
         .filter(|source| source.selectable)
-        .all(|source| source.admitted)
+        .count();
+    assert!(chat.continuity_sources().iter().any(|source| {
+        source.path == custom
+            && source.category
+                == crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
+    }));
+
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
+    for _ in 1..selectable_count {
+        chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Delete));
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryStatusRefreshRequested(_))
+    ));
+    assert!(rx.try_recv().is_err());
+
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    assert!(!chat
+        .continuity_sources()
+        .iter()
+        .any(|source| source.path == custom));
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Delete));
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Ready);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok()).all(|event| !matches!(
+            event,
+            AppEvent::ManualMemoryStatusRefreshRequested(_)
+        )),
+        "remove Ok(false) must not invalidate the cache"
     );
+
+    std::fs::write(&custom, "removable custom context")?;
+    crate::legacy_core::elpis_context::add_continuity_source(Some(&memories), &cwd, &custom)?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    let selectable_count = chat
+        .continuity_sources()
+        .iter()
+        .filter(|source| source.selectable)
+        .count();
+    for _ in 1..selectable_count {
+        chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    let workspace = crate::legacy_core::elpis_context::workspace_context_dir(
+        Some(&memories),
+        &cwd,
+    )
+    .expect("workspace context directory");
+    std::fs::write(workspace.join("admission.toml"), "not valid = [")?;
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Delete));
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)))
+            .count(),
+        1,
+        "remove error must request exactly one refresh"
+    );
+    assert!(events.iter().any(|event| matches!(event, AppEvent::InsertHistoryCell(_))));
     Ok(())
 }
 
@@ -215,6 +432,7 @@ async fn ledger_dedupes_manually_added_file_that_is_already_a_rule() -> anyhow::
 
     let dev_rule = root.path().join("projects/skills/dev/SKILL.md");
     crate::legacy_core::elpis_context::add_continuity_source(Some(&memories), &cwd, &dev_rule)?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
 
     let sources = chat.continuity_sources();
     let rows = sources

@@ -298,6 +298,19 @@ pub fn workspace_context_dir(memories_root: Option<&Path>, cwd: &Path) -> Option
     )
 }
 
+/// Returns the two stable paths that identify manual-memory storage for a workspace.
+/// Neither path has to exist yet.
+pub fn manual_memory_storage_paths(
+    memories_root: Option<&Path>,
+    cwd: &Path,
+) -> Option<(PathBuf, PathBuf)> {
+    let memories_root = memories_root?;
+    Some((
+        workspace_context_dir(Some(memories_root), cwd)?.join(ADMISSION_FILE),
+        memories_root.join(MANUAL_MEMORY_FILE),
+    ))
+}
+
 pub fn manual_memory_status(
     memories_root: Option<&Path>,
     cwd: &Path,

@@ -195,7 +195,7 @@ pub(crate) fn new_status_output_with_rate_limits(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
-        /*instruction_source_paths*/ &[],
+        /*continuity_sources*/ &[],
         refreshing_rate_limits,
         /*context_pruner_passes*/ 0,
         /*context_pruner_saved_chars*/ 0,
@@ -220,7 +220,7 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     model_name: &str,
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
-    instruction_source_paths: &[std::path::PathBuf],
+    continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
     refreshing_rate_limits: bool,
     context_pruner_passes: usize,
     context_pruner_saved_chars: usize,
@@ -242,7 +242,7 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
-        instruction_source_paths,
+        continuity_sources,
         refreshing_rate_limits,
         context_pruner_passes,
         context_pruner_saved_chars,
@@ -272,7 +272,7 @@ impl StatusHistoryCell {
         model_name: &str,
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
-        instruction_source_paths: &[std::path::PathBuf],
+        continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
         refreshing_rate_limits: bool,
         context_pruner_passes: usize,
         context_pruner_saved_chars: usize,
@@ -361,16 +361,6 @@ impl StatusHistoryCell {
             rate_limits,
             refreshing_rate_limits,
         }));
-        let continuity_sources = crate::legacy_core::elpis_context::continuity_sources_with_dev_rule_roots(
-            Some(config.memory_dir.as_path()),
-            config.cwd.as_path(),
-            instruction_source_paths,
-            &config.dev_rule_roots(),
-        )
-        // ponytail: temporary fail-closed bridge; Memory A3 replaces live reads
-        // with cached Unavailable state.
-        .unwrap_or_default();
-
         (
             Self {
                 model_name,
@@ -385,7 +375,7 @@ impl StatusHistoryCell {
                 session_id,
                 forked_from,
                 token_usage,
-                continuity_sources,
+                continuity_sources: continuity_sources.to_vec(),
                 rate_limit_state: rate_limit_state.clone(),
                 context_pruner_passes,
                 context_pruner_saved_chars,

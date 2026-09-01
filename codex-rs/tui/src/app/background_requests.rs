@@ -36,6 +36,172 @@ const WORKSPACE_HEADLINE_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_millis(/*millis*/ 2000);
 
 impl App {
+    pub(super) fn current_manual_memory_target(
+        &self,
+        epoch: u64,
+    ) -> Option<ManualMemoryRequestTarget> {
+        let primary_root_thread_id = self.primary_thread_id?;
+        let displayed_thread_id = self.current_displayed_thread_id()?;
+        let config = self.chat_widget.config_ref();
+        let (admission_path, memory_path) =
+            crate::legacy_core::elpis_context::manual_memory_storage_paths(
+                Some(config.memory_dir.as_path()),
+                config.cwd.as_path(),
+            )?;
+        Some(ManualMemoryRequestTarget {
+            view: ManualMemoryViewKey {
+                epoch,
+                primary_root_thread_id,
+                displayed_thread_id,
+                cwd: config.cwd.to_path_buf(),
+                memory_path: memory_path.clone(),
+            },
+            storage: ManualMemoryStorageTarget {
+                admission_path,
+                memory_path,
+            },
+        })
+    }
+
+    pub(super) fn next_manual_memory_target(&mut self) -> Option<ManualMemoryRequestTarget> {
+        let Some(epoch) = self.manual_memory_status.epoch.checked_add(1) else {
+            tracing::error!("manual-memory view epoch exhausted");
+            return None;
+        };
+        self.manual_memory_status.epoch = epoch;
+        self.current_manual_memory_target(epoch)
+    }
+
+    pub(super) fn activate_manual_memory_view(&mut self) -> bool {
+        let Some(target) = self.next_manual_memory_target() else {
+            return false;
+        };
+        self.chat_widget
+            .bind_manual_memory_loading(target.clone(), /*pending_context_report*/ false);
+        self.publish_current_dashboard_snapshot();
+        self.launch_manual_memory_status(target)
+    }
+
+    pub(super) fn activate_manual_memory_view_if_changed(&mut self) -> bool {
+        let Some(bound) = self.chat_widget.manual_memory_bound_target() else {
+            return self.activate_manual_memory_view();
+        };
+        let Some(current) = self.current_manual_memory_target(bound.view.epoch) else {
+            return false;
+        };
+        if current == *bound {
+            return false;
+        }
+        self.activate_manual_memory_view()
+    }
+
+    pub(super) fn publish_current_dashboard_snapshot(&self) {
+        let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+        self.chat_widget.publish_dashboard_snapshot(&totals);
+    }
+
+    pub(super) fn request_manual_memory_refresh_for_paths(
+        &mut self,
+        memories_root: &Path,
+        cwd: &Path,
+    ) -> bool {
+        let Some((admission_path, memory_path)) =
+            crate::legacy_core::elpis_context::manual_memory_storage_paths(
+                Some(memories_root),
+                cwd,
+            )
+        else {
+            return false;
+        };
+        let storage = ManualMemoryStorageTarget {
+            admission_path,
+            memory_path,
+        };
+        if self
+            .chat_widget
+            .manual_memory_bound_target()
+            .is_none_or(|target| target.storage != storage)
+        {
+            return false;
+        }
+        self.chat_widget.request_manual_memory_status_refresh();
+        true
+    }
+
+    pub(super) fn launch_manual_memory_status(
+        &mut self,
+        target: ManualMemoryRequestTarget,
+    ) -> bool {
+        if self.manual_memory_status.in_flight.as_ref() == Some(&target) {
+            return false;
+        }
+        self.manual_memory_status.in_flight = Some(target.clone());
+
+        let instruction_source_paths = self.chat_widget.instruction_source_paths_as_path_bufs();
+        let dev_rule_roots = self.chat_widget.config_ref().dev_rule_roots();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let worker_target = target.clone();
+            let completion = match tokio::task::spawn_blocking(move || {
+                Self::load_manual_memory_status(
+                    &worker_target,
+                    &instruction_source_paths,
+                    &dev_rule_roots,
+                )
+            })
+            .await
+            {
+                Ok(completion) => completion,
+                Err(_) => {
+                    tracing::warn!("manual-memory status worker failed");
+                    ManualMemoryStatusCompletion::Unavailable(
+                        ManualMemoryUnavailableReason::WorkerFailed,
+                    )
+                }
+            };
+            app_event_tx.send(AppEvent::ManualMemoryStatusLoaded(target, completion));
+        });
+        true
+    }
+
+    pub(super) fn load_manual_memory_status(
+        target: &ManualMemoryRequestTarget,
+        instruction_source_paths: &[PathBuf],
+        dev_rule_roots: &[AbsolutePathBuf],
+    ) -> ManualMemoryStatusCompletion {
+        let Some(memories_root) = target.storage.memory_path.parent() else {
+            return ManualMemoryStatusCompletion::Unavailable(
+                ManualMemoryUnavailableReason::AdmissionUnavailable,
+            );
+        };
+        let status = match crate::legacy_core::elpis_context::manual_memory_status(
+            Some(memories_root),
+            &target.view.cwd,
+        ) {
+            Ok(Some(status)) => status,
+            Ok(None) => {
+                return ManualMemoryStatusCompletion::Unavailable(
+                    ManualMemoryUnavailableReason::AdmissionUnavailable,
+                );
+            }
+            Err(error) => {
+                return ManualMemoryStatusCompletion::Unavailable(error.reason.into());
+            }
+        };
+        match crate::legacy_core::elpis_context::continuity_sources_from_manual_memory_status(
+            Some(memories_root),
+            &target.view.cwd,
+            instruction_source_paths,
+            dev_rule_roots,
+            Some(&status),
+        ) {
+            Ok(sources) => ManualMemoryStatusCompletion::Ready { status, sources },
+            Err(_) => ManualMemoryStatusCompletion::Unavailable(
+                ManualMemoryUnavailableReason::SourcesUnavailable,
+            ),
+        }
+    }
+
     pub(super) fn fetch_mcp_inventory(
         &mut self,
         app_server: &AppServerSession,

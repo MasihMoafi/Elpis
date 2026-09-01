@@ -16,6 +16,43 @@ use codex_config::types::WindowsSandboxModeToml;
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
 impl App {
+    pub(super) fn begin_manual_memory_refresh(
+        &mut self,
+        origin: &ManualMemoryRequestTarget,
+    ) -> bool {
+        if self.chat_widget.manual_memory_bound_target() != Some(origin)
+            || !self.chat_widget.manual_memory_refresh_requested()
+        {
+            return false;
+        }
+        let pending_context_report = self.chat_widget.manual_memory_context_report_pending();
+        let Some(target) = self.next_manual_memory_target() else {
+            return false;
+        };
+        self.chat_widget
+            .bind_manual_memory_loading(target.clone(), pending_context_report);
+        self.publish_current_dashboard_snapshot();
+        self.launch_manual_memory_status(target);
+        true
+    }
+
+    pub(super) fn finish_manual_memory_status(
+        &mut self,
+        target: &ManualMemoryRequestTarget,
+        completion: ManualMemoryStatusCompletion,
+    ) -> Option<bool> {
+        if self.manual_memory_status.in_flight.as_ref() != Some(target)
+            || !self
+                .chat_widget
+                .apply_manual_memory_status_completion(target, completion)
+        {
+            return None;
+        }
+        self.manual_memory_status.in_flight = None;
+        self.publish_current_dashboard_snapshot();
+        Some(self.chat_widget.take_pending_context_report())
+    }
+
     pub(super) async fn handle_event(
         &mut self,
         tui: &mut tui::Tui,
@@ -139,10 +176,18 @@ impl App {
                 }
                 tui.frame_requester().schedule_frame();
             }
-            AppEvent::RequestContextUsageReport => {
-                let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
-                self.chat_widget.publish_dashboard_snapshot(&totals);
-                self.chat_widget.add_context_usage_output(totals);
+            AppEvent::RequestContextUsageReport(origin)
+            | AppEvent::ManualMemoryStatusRefreshRequested(origin) => {
+                if self.begin_manual_memory_refresh(&origin) {
+                    tui.frame_requester().schedule_frame();
+                }
+            }
+            AppEvent::ManualMemoryStatusLoaded(target, completion) => {
+                if self.finish_manual_memory_status(&target, completion) == Some(true) {
+                    let totals =
+                        crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                    self.chat_widget.add_context_usage_output(totals);
+                }
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenContextDashboard => {

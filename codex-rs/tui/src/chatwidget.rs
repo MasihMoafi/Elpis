@@ -45,6 +45,9 @@ use std::time::Instant;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
+use crate::app_event::ManualMemoryRequestTarget;
+use crate::app_event::ManualMemoryStatusCompletion;
+use crate::app_event::ManualMemoryUnavailableReason;
 use crate::app_server_approval_conversions::file_update_changes_to_display;
 use crate::approval_events::ApplyPatchApprovalRequestEvent;
 use crate::approval_events::ExecApprovalRequestEvent;
@@ -507,6 +510,26 @@ pub(crate) enum ExternalEditorState {
     Active,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum ManualMemoryPhase {
+    #[default]
+    Loading,
+    Ready,
+    Creating,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ManualMemoryCache {
+    bound_target: Option<ManualMemoryRequestTarget>,
+    phase: ManualMemoryPhase,
+    status: Option<crate::legacy_core::elpis_context::ManualMemoryStatus>,
+    sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
+    unavailable_reason: Option<ManualMemoryUnavailableReason>,
+    refresh_requested: bool,
+    pending_context_report: bool,
+}
+
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///
 /// `ChatWidget` owns the state derived from the protocol event stream (history cells, streaming
@@ -524,6 +547,7 @@ pub(crate) struct ChatWidget {
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
     context_ledger: ContextLedgerState,
+    manual_memory_cache: ManualMemoryCache,
     transcript: TranscriptState,
     config: Config,
     raw_output_mode: bool,

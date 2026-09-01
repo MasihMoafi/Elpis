@@ -1175,6 +1175,7 @@ impl App {
                 self.chat_widget.handle_prompt_edit_thread_session(session);
             }
         }
+        self.activate_manual_memory_view();
         let should_buffer_initial_replay = !turns.is_empty();
         if should_buffer_initial_replay {
             self.app_event_tx
@@ -1415,6 +1416,7 @@ impl App {
         if resume_restored_queue {
             self.chat_widget.maybe_send_next_queued_input();
         }
+        self.activate_manual_memory_view();
         self.refresh_status_line();
     }
 
@@ -1464,6 +1466,10 @@ impl App {
             ThreadBufferedEvent::Notification(ServerNotification::TurnStarted(_))
                 | ThreadBufferedEvent::Notification(ServerNotification::ThreadTokenUsageUpdated(_))
         );
+        let may_change_manual_memory_view = matches!(
+            &event,
+            ThreadBufferedEvent::Notification(ServerNotification::ThreadSettingsUpdated(_))
+        );
         match event {
             ThreadBufferedEvent::Notification(notification) => {
                 self.cache_collab_receiver_threads_for_notification(&notification);
@@ -1485,6 +1491,9 @@ impl App {
         }
         if needs_refresh {
             self.refresh_status_line();
+        }
+        if may_change_manual_memory_view {
+            self.activate_manual_memory_view_if_changed();
         }
     }
 
