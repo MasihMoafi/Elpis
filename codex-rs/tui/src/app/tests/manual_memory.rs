@@ -36,7 +36,10 @@ async fn manual_memory_view_activation_advances_epoch_and_replaces_the_old_read(
     assert_eq!(first.view.epoch, 1);
     assert_eq!(first.view.primary_root_thread_id, thread_id);
     assert_eq!(first.view.displayed_thread_id, thread_id);
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Loading
+    );
     assert_eq!(app.manual_memory_status.in_flight, Some(first.clone()));
     assert!(!app.launch_manual_memory_status(first));
 
@@ -85,14 +88,20 @@ async fn manual_memory_status_rejects_stale_targets_and_local_refresh_markers() 
 
     app.chat_widget.request_manual_memory_status_refresh();
     assert!(app.chat_widget.manual_memory_refresh_requested());
-    assert_eq!(app.finish_manual_memory_status(&target, ready.clone()), None);
+    assert_eq!(
+        app.finish_manual_memory_status(&target, ready.clone()),
+        None
+    );
     assert!(app.chat_widget.manual_memory_status().is_none());
 
     app.chat_widget
         .bind_manual_memory_loading(target.clone(), /*pending_context_report*/ false);
     app.manual_memory_status.in_flight = Some(target.clone());
     assert_eq!(app.finish_manual_memory_status(&target, ready), Some(false));
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Ready);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Ready
+    );
 
     app.chat_widget
         .bind_manual_memory_loading(target.clone(), /*pending_context_report*/ false);
@@ -119,8 +128,8 @@ async fn manual_memory_status_rejects_stale_targets_and_local_refresh_markers() 
 }
 
 #[tokio::test]
-async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rereads(
-) -> anyhow::Result<()> {
+async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rereads()
+-> anyhow::Result<()> {
     const BODY: &str = "PLANTED_MANUAL_MEMORY_BODY";
     let mut app = make_test_app().await;
     configured_app_ids(&mut app);
@@ -132,11 +141,8 @@ async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rere
         .current_manual_memory_target(9)
         .expect("manual-memory target");
     std::fs::write(&target.storage.memory_path, BODY)?;
-    let completion = App::load_manual_memory_status(
-        &target,
-        &instruction_source_paths,
-        &dev_rule_roots,
-    );
+    let completion =
+        App::load_manual_memory_status(&target, &instruction_source_paths, &dev_rule_roots);
     assert!(
         !format!("{completion:?}").contains(BODY),
         "status events must not contain manual-memory body bytes"
@@ -162,7 +168,10 @@ async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rere
 
     std::fs::write(&target.storage.memory_path, "changed after cache fill")?;
     assert_eq!(app.chat_widget.continuity_sources(), cached_sources);
-    assert_eq!(app.chat_widget.manual_memory_status(), cached_status.as_ref());
+    assert_eq!(
+        app.chat_widget.manual_memory_status(),
+        cached_status.as_ref()
+    );
     Ok(())
 }
 
@@ -256,14 +265,17 @@ async fn manual_memory_thread_settings_cwd_transition_rebinds_and_clears_the_cac
     assert_eq!(rebound.view.epoch, old_target.view.epoch + 1);
     assert_eq!(rebound.view.cwd, new_cwd);
     assert_ne!(rebound, &old_target);
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Loading
+    );
     assert!(app.chat_widget.manual_memory_status().is_none());
     assert_eq!(app.manual_memory_status.in_flight.as_ref(), Some(rebound));
 }
 
 #[tokio::test]
-async fn manual_memory_successful_goal_and_checkpoint_writes_request_refresh(
-) -> anyhow::Result<()> {
+async fn manual_memory_successful_goal_and_checkpoint_writes_request_refresh() -> anyhow::Result<()>
+{
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let thread_id = configured_app_ids(&mut app);
 

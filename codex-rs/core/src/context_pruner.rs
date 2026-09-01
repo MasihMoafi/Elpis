@@ -469,10 +469,9 @@ fn completed_turn_end(input: &[ResponseItem]) -> usize {
 /// Index one past the oldest item that still fits inside the keep-recent budget: the
 /// newest items totalling `PRESSURE_KEEP_RECENT_PERCENT` of the window stay verbatim.
 fn recency_cut(input: &[ResponseItem], context_window: i64) -> usize {
-    let keep_budget = usize::try_from(
-        context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100,
-    )
-    .unwrap_or(usize::MAX);
+    let keep_budget =
+        usize::try_from(context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100)
+            .unwrap_or(usize::MAX);
 
     let mut kept = 0usize;
     for (index, item) in input.iter().enumerate().rev() {
@@ -719,7 +718,11 @@ pub(crate) fn apply_prune_record_untracked(
     if record.is_empty() {
         return 0;
     }
-    let epoch = input.iter().filter(|item| is_prune_epoch_marker(item)).count() as u64 + 1;
+    let epoch = input
+        .iter()
+        .filter(|item| is_prune_epoch_marker(item))
+        .count() as u64
+        + 1;
     let covered: HashSet<&str> = record.covered_call_ids.iter().map(String::as_str).collect();
     let conclusions = conclusions_by_call_id(&record.text);
     let mut saved = 0usize;
@@ -989,7 +992,10 @@ mod tests {
         let window = 1_000_000;
         let used = 300_000;
         let reclaim = reclaim_target_tokens(used, window, AUTO_PRUNE_TARGET_PERCENT);
-        assert_eq!(used - reclaim as i64, window * AUTO_PRUNE_TARGET_PERCENT / 100);
+        assert_eq!(
+            used - reclaim as i64,
+            window * AUTO_PRUNE_TARGET_PERCENT / 100
+        );
         assert_eq!(AUTO_PRUNE_TARGET_PERCENT, 20);
     }
 
@@ -1037,7 +1043,10 @@ mod tests {
             tool_output("newest", &"x".repeat(8_000)),
         ];
 
-        assert_eq!(uncovered_pressure_tokens(&input, &HashSet::new(), window), 0);
+        assert_eq!(
+            uncovered_pressure_tokens(&input, &HashSet::new(), window),
+            0
+        );
     }
 
     #[test]
@@ -1487,7 +1496,10 @@ mod tests {
         assert_eq!(input[..first_frozen], epoch_one[..]);
         assert!(frozen_prefix_len(&input) > first_frozen);
         assert_eq!(
-            input.iter().filter(|item| is_prune_epoch_marker(item)).count(),
+            input
+                .iter()
+                .filter(|item| is_prune_epoch_marker(item))
+                .count(),
             2,
             "each pass seals exactly one epoch"
         );

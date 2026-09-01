@@ -184,8 +184,7 @@ impl App {
             }
             AppEvent::ManualMemoryStatusLoaded(target, completion) => {
                 if self.finish_manual_memory_status(&target, completion) == Some(true) {
-                    let totals =
-                        crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                    let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
                     self.chat_widget.add_context_usage_output(totals);
                 }
                 tui.frame_requester().schedule_frame();

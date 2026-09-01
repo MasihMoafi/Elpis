@@ -207,9 +207,7 @@ impl Session {
                     // reinjection on the next turn. Close the segment out here, the same way a
                     // real `TurnStarted` would, so the preceding real turn starts its own fresh
                     // segment.
-                    if is_context_prune
-                        && let Some(active_segment) = active_segment.take()
-                    {
+                    if is_context_prune && let Some(active_segment) = active_segment.take() {
                         finalize_active_segment(
                             active_segment,
                             &mut base_replacement_history,

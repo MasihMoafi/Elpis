@@ -219,14 +219,13 @@ pub(super) fn seed_manual_memory_cache_from_disk(
         cwd.as_path(),
     )?
     .ok_or_else(|| anyhow::anyhow!("manual-memory test status is unavailable"))?;
-    let sources =
-        crate::legacy_core::elpis_context::continuity_sources_from_manual_memory_status(
-            Some(memories_root.as_path()),
-            cwd.as_path(),
-            &chat.instruction_source_paths_as_path_bufs(),
-            &dev_rule_roots,
-            Some(&status),
-        )?;
+    let sources = crate::legacy_core::elpis_context::continuity_sources_from_manual_memory_status(
+        Some(memories_root.as_path()),
+        cwd.as_path(),
+        &chat.instruction_source_paths_as_path_bufs(),
+        &dev_rule_roots,
+        Some(&status),
+    )?;
     chat.bind_manual_memory_loading(target.clone(), /*pending_context_report*/ false);
     if !chat.apply_manual_memory_status_completion(
         &target,

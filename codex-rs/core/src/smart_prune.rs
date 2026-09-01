@@ -154,8 +154,7 @@ pub(crate) fn transform_tool_output(
     let admitted_tokens = approx_token_count(&admitted_text);
     let saved_tokens = source_tokens.saturating_sub(admitted_tokens);
     if saved_tokens < MIN_SAVED_TOKENS
-        || saved_tokens.saturating_mul(100)
-            < source_tokens.saturating_mul(MIN_SAVINGS_PERCENT)
+        || saved_tokens.saturating_mul(100) < source_tokens.saturating_mul(MIN_SAVINGS_PERCENT)
     {
         return None;
     }

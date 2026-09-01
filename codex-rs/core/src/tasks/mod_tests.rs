@@ -190,10 +190,7 @@ async fn requested_task_abort_is_not_misclassified_as_abnormal() {
     let completion = Arc::new(TaskCompletion::default());
     let guard = completion.guard();
 
-    assert_eq!(
-        completion.request_abort(),
-        TaskAbortRequest::Requested
-    );
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Requested);
     drop(guard);
 
     assert_eq!(
@@ -218,10 +215,7 @@ async fn clean_exit_after_an_abort_request_is_intentional_abort() {
     let completion = Arc::new(TaskCompletion::default());
     let guard = completion.guard();
 
-    assert_eq!(
-        completion.request_abort(),
-        TaskAbortRequest::Requested
-    );
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Requested);
     guard.finish();
 
     assert_eq!(

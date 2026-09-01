@@ -185,10 +185,8 @@ impl ChatWidget {
                         .bound_target
                         .as_ref()
                         .map(|target| target.view.memory_path.clone());
-                    let all_admitted = all_bulk_context_sources_admitted(
-                        &sources,
-                        manual_memory_path.as_deref(),
-                    );
+                    let all_admitted =
+                        all_bulk_context_sources_admitted(&sources, manual_memory_path.as_deref());
                     self.set_all_context_sources_admitted(&sources, !all_admitted);
                     self.request_redraw();
                     return true;
@@ -212,10 +210,8 @@ impl ChatWidget {
                     .bound_target
                     .as_ref()
                     .map(|target| target.view.memory_path.clone());
-                let all_admitted = all_bulk_context_sources_admitted(
-                    &sources,
-                    manual_memory_path.as_deref(),
-                );
+                let all_admitted =
+                    all_bulk_context_sources_admitted(&sources, manual_memory_path.as_deref());
                 self.set_all_context_sources_admitted(&sources, !all_admitted);
             }
             KeyCode::Char('g') => {
@@ -780,9 +776,7 @@ impl ChatWidget {
         self.manual_memory_cache.status.as_ref()
     }
 
-    pub(crate) fn manual_memory_unavailable_reason(
-        &self,
-    ) -> Option<ManualMemoryUnavailableReason> {
+    pub(crate) fn manual_memory_unavailable_reason(&self) -> Option<ManualMemoryUnavailableReason> {
         self.manual_memory_cache.unavailable_reason
     }
 
