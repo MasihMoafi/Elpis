@@ -18,6 +18,7 @@ const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
 const MANUAL_MEMORY_TEMPLATE: &str = "# Elpis Memory\n";
 const MANUAL_MEMORY_ADD_GUIDANCE: &str =
     "MEMORY.md is managed by the Memory row; use the Memory row";
+const INVALID_ADMISSION_MESSAGE: &str = "admission record is invalid";
 
 const GLOBAL_RULES: &str = "Global AGENTS.md";
 const PROJECT_RULES: &str = "Project AGENTS.md";
@@ -784,6 +785,9 @@ fn continuity_sources_with_state(
             .iter()
             .filter_map(|(path, admitted)| {
                 let path = PathBuf::from(path);
+                if paths_refer_to_same_file(&path, &memory_path).unwrap_or(false) {
+                    return None;
+                }
                 let canonical_path = path.canonicalize();
                 if let Ok(canonical) = &canonical_path
                     && canonical_paths.contains(canonical)
@@ -1075,11 +1079,9 @@ pub fn add_continuity_sources(
     };
     let path = path.canonicalize()?;
     let metadata = std::fs::metadata(&path)?;
-    let canonical_memory = memories_root
-        .join(MANUAL_MEMORY_FILE)
-        .canonicalize()
-        .ok();
-    if canonical_memory.as_ref() == Some(&path) {
+    let memory_path = memories_root.join(MANUAL_MEMORY_FILE);
+    let canonical_memory = memory_path.canonicalize().ok();
+    if paths_refer_to_same_file(&path, &memory_path).unwrap_or(false) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             MANUAL_MEMORY_ADD_GUIDANCE,
@@ -1089,17 +1091,22 @@ pub fn add_continuity_sources(
     if metadata.is_dir() {
         collect_context_files(&path, &mut files)?;
         files.sort();
-        let file_count_before_memory_exclusion = files.len();
-        files.retain(|file| {
-            canonical_memory.as_ref().is_none_or(|memory| {
-                file.canonicalize()
-                    .map_or(true, |candidate| candidate != *memory)
-            })
-        });
-        let excluded_memory = files.len() != file_count_before_memory_exclusion
-            || canonical_memory
-                .as_ref()
-                .is_some_and(|memory| memory.starts_with(&path));
+        let mut excluded_memory = false;
+        let mut eligible_files = Vec::with_capacity(files.len());
+        for file in files {
+            if paths_refer_to_same_file(&file, &memory_path).unwrap_or(false) {
+                excluded_memory = true;
+                continue;
+            }
+            let metadata = std::fs::metadata(&file)?;
+            if metadata.is_file() && metadata.len() > 0 {
+                eligible_files.push(file);
+            }
+        }
+        files = eligible_files;
+        excluded_memory |= canonical_memory
+            .as_ref()
+            .is_some_and(|memory| memory.starts_with(&path));
         if files.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -1145,17 +1152,34 @@ fn collect_context_files(dir: &Path, files: &mut Vec<PathBuf>) -> std::io::Resul
         if name.starts_with('.') {
             continue;
         }
-        let metadata = entry.metadata()?;
-        if metadata.is_dir() {
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
             if matches!(name.as_ref(), "node_modules" | "target" | "__pycache__") {
                 continue;
             }
             collect_context_files(&entry.path(), files)?;
-        } else if metadata.is_file() && metadata.len() > 0 {
+        } else if file_type.is_file()
+            || (file_type.is_symlink()
+                && std::fs::metadata(entry.path()).is_ok_and(|metadata| metadata.is_file()))
+        {
             files.push(entry.path());
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn paths_refer_to_same_file(left: &Path, right: &Path) -> std::io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+
+    let left = std::fs::metadata(left)?;
+    let right = std::fs::metadata(right)?;
+    Ok(left.dev() == right.dev() && left.ino() == right.ino())
+}
+
+#[cfg(not(unix))]
+fn paths_refer_to_same_file(left: &Path, right: &Path) -> std::io::Result<bool> {
+    Ok(left.canonicalize()? == right.canonicalize()?)
 }
 
 fn write_admission(workspace_dir: &Path, selection: &ContinuityAdmission) -> std::io::Result<()> {
@@ -1191,7 +1215,10 @@ fn read_admission(workspace_dir: &Path) -> std::io::Result<ContinuityAdmission> 
         Err(error) => return Err(error),
     };
     if !metadata.is_file() {
-        return Err(invalid_admission("admission path is not a regular file"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "admission path is not a regular file",
+        ));
     }
     parse_admission(&std::fs::read_to_string(path)?)
 }
@@ -1199,9 +1226,14 @@ fn read_admission(workspace_dir: &Path) -> std::io::Result<ContinuityAdmission> 
 fn parse_admission(content: &str) -> std::io::Result<ContinuityAdmission> {
     let mut canonical = String::with_capacity(content.len());
     let mut legacy = LegacyContinuityAdmission::default();
+    let mut at_root = true;
     for line in content.split_inclusive('\n') {
         let trimmed = line.trim();
-        if !trimmed.starts_with('#')
+        if !trimmed.starts_with('#') && trimmed.starts_with('[') {
+            at_root = false;
+        }
+        if at_root
+            && !trimmed.starts_with('#')
             && let Some((key, value)) = trimmed.split_once('=')
         {
             let key = key.trim();
@@ -1213,7 +1245,7 @@ fn parse_admission(content: &str) -> std::io::Result<ContinuityAdmission> {
                 let admitted = match value {
                     "true" => true,
                     "false" => false,
-                    _ => return Err(invalid_admission("legacy admission value must be boolean")),
+                    _ => return Err(invalid_admission()),
                 };
                 set_legacy_admission(&mut legacy, key, admitted)?;
                 if line.ends_with('\n') {
@@ -1229,7 +1261,7 @@ fn parse_admission(content: &str) -> std::io::Result<ContinuityAdmission> {
         StoredContinuityAdmission::default()
     } else {
         toml::from_str::<StoredContinuityAdmission>(&canonical)
-            .map_err(|error| invalid_admission(error.to_string()))?
+            .map_err(|_| invalid_admission())?
     };
     let defaults = ContinuityAdmission::default();
     let mut dev_sources = stored.dev_sources.unwrap_or_default();
@@ -1283,7 +1315,7 @@ fn set_legacy_admission(
     };
     if let Some(slot) = slot {
         if slot.replace(admitted).is_some() {
-            return Err(invalid_admission("duplicate legacy admission key"));
+            return Err(invalid_admission());
         }
         return Ok(());
     }
@@ -1291,19 +1323,19 @@ fn set_legacy_admission(
     let name = key
         .strip_prefix(DEV_SOURCE_PREFIX)
         .filter(|name| !name.is_empty())
-        .ok_or_else(|| invalid_admission("unrecognized legacy admission key"))?;
+        .ok_or_else(invalid_admission)?;
     if legacy
         .dev_sources
         .insert(name.to_string(), admitted)
         .is_some()
     {
-        return Err(invalid_admission("duplicate legacy admission key"));
+        return Err(invalid_admission());
     }
     Ok(())
 }
 
-fn invalid_admission(message: impl Into<String>) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
+fn invalid_admission() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, INVALID_ADMISSION_MESSAGE)
 }
 
 fn source_char_limit(name: &str) -> usize {
@@ -1736,6 +1768,133 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn nested_legacy_shaped_keys_are_rejected_without_rewrite_or_prompt()
+    -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let workspace = workspace_context_dir(Some(&memories), &cwd).expect("workspace");
+        let dev = home.path().join(".elpis/skills/dev");
+        std::fs::create_dir_all(&memories)?;
+        std::fs::create_dir_all(&cwd)?;
+        std::fs::create_dir_all(&workspace)?;
+        std::fs::create_dir_all(&dev)?;
+        std::fs::write(memories.join(MANUAL_MEMORY_FILE), "PLANTED_MEMORY_BODY")?;
+        std::fs::write(workspace.join("GOAL.md"), "PLANTED_GOAL_BODY")?;
+        std::fs::write(dev.join("AGENTS.md"), "PLANTED_DEV_BODY")?;
+
+        for fixture in [
+            "[custom_sources]\nMEMORY.md = true\n",
+            "[dev_sources]\nGOAL.md = true\n",
+            "[custom_sources]\ndev/AGENTS.md = true\n",
+        ] {
+            let path = write_admission_fixture(memories.as_path(), &cwd, fixture.as_bytes())?;
+            assert_eq!(
+                read_admission(path.parent().expect("workspace"))
+                    .expect_err("nested legacy-shaped key must be ambiguous")
+                    .to_string(),
+                "admission record is invalid"
+            );
+            assert!(
+                set_continuity_source_admitted(
+                    Some(memories.as_path()),
+                    &cwd,
+                    PROJECT_RULES,
+                    true,
+                )
+                .is_err()
+            );
+            assert_eq!(std::fs::read(&path)?, fixture.as_bytes());
+
+            let prompt = build_continuity_prompt(Some(memories.as_path()), &cwd)
+                .await
+                .unwrap_or_default();
+            assert!(prompt.is_empty());
+            for planted in [
+                "PLANTED_MEMORY_BODY",
+                "PLANTED_GOAL_BODY",
+                "PLANTED_DEV_BODY",
+            ] {
+                assert!(!prompt.contains(planted));
+            }
+            assert_eq!(std::fs::read(&path)?, fixture.as_bytes());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_admission_errors_are_fixed_and_do_not_expose_content_or_paths()
+    -> anyhow::Result<()> {
+        let memories = tempdir()?;
+        let cwd = tempdir()?;
+        let custom = cwd.path().join("notes.md");
+        let planted_secret = "PLANTED_ADMISSION_SECRET_7f04";
+        let planted_path = "/private/planted/admission/path";
+        let fixture = format!("memory = [\"{planted_secret}\", \"{planted_path}\"\n");
+        std::fs::write(memories.path().join(MANUAL_MEMORY_FILE), "memory")?;
+        std::fs::write(&custom, "notes")?;
+        let admission =
+            write_admission_fixture(memories.path(), cwd.path(), fixture.as_bytes())?;
+        let workspace = admission.parent().expect("workspace");
+
+        let mut exposed = vec![
+            parse_admission(&fixture)
+                .expect_err("malformed TOML")
+                .to_string(),
+            read_admission(workspace)
+                .expect_err("malformed admission read")
+                .to_string(),
+            admission_fingerprint(Some(memories.path()), cwd.path())
+                .expect_err("malformed fingerprint")
+                .to_string(),
+            set_continuity_source_admitted(
+                Some(memories.path()),
+                cwd.path(),
+                PROJECT_RULES,
+                true,
+            )
+            .expect_err("malformed toggle")
+            .to_string(),
+            add_continuity_source(Some(memories.path()), cwd.path(), &custom)
+                .expect_err("malformed add")
+                .to_string(),
+            remove_continuity_source(
+                Some(memories.path()),
+                cwd.path(),
+                &custom.display().to_string(),
+            )
+            .expect_err("malformed remove")
+            .to_string(),
+        ];
+        assert_eq!(
+            manual_memory_status(Some(memories.path()), cwd.path())
+                .expect_err("malformed status")
+                .to_string(),
+            "manual memory admission is unavailable"
+        );
+        std::fs::remove_file(memories.path().join(MANUAL_MEMORY_FILE))?;
+        exposed.push(
+            create_manual_memory(Some(memories.path()), cwd.path())
+                .expect_err("malformed create")
+                .to_string(),
+        );
+
+        for message in &exposed[..exposed.len() - 1] {
+            assert_eq!(message.as_str(), "admission record is invalid");
+        }
+        assert_eq!(
+            exposed.last().expect("create error").as_str(),
+            "empty memory file reserved; no template written: admission record is invalid"
+        );
+        for message in exposed {
+            assert!(!message.contains(planted_secret));
+            assert!(!message.contains(planted_path));
+        }
+        assert_eq!(std::fs::read(&admission)?, fixture.as_bytes());
+        Ok(())
+    }
+
     #[test]
     fn admission_invalid_utf8_and_nonfile_are_never_defaults() -> anyhow::Result<()> {
         let invalid_utf8 = tempdir()?;
@@ -2019,7 +2178,7 @@ mod tests {
         let cwd = tempdir()?;
         let memory = memories.path().join(MANUAL_MEMORY_FILE);
         let aliases = cwd.path().join("aliases");
-        std::fs::write(&memory, "memory")?;
+        std::fs::write(&memory, "")?;
         std::fs::create_dir(&aliases)?;
         let alias = aliases.join("memory-alias.md");
         std::os::unix::fs::symlink(&memory, &alias)?;
@@ -2031,6 +2190,128 @@ mod tests {
             .expect_err("a directory containing only a memory alias must fail");
         assert_eq!(directory.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
         assert!(!admission_path(memories.path(), cwd.path()).exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hard_link_memory_alias_cannot_be_added_directly_or_alone() -> anyhow::Result<()> {
+        let memories = tempdir()?;
+        let cwd = tempdir()?;
+        let memory = memories.path().join(MANUAL_MEMORY_FILE);
+        let aliases = cwd.path().join("aliases");
+        let alias = aliases.join("memory-hard-link.md");
+        std::fs::write(&memory, "memory")?;
+        std::fs::create_dir(&aliases)?;
+        std::fs::hard_link(&memory, &alias)?;
+
+        let direct = add_continuity_source(Some(memories.path()), cwd.path(), &alias)
+            .expect_err("a hard link to canonical memory must use the dedicated row");
+        assert_eq!(direct.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
+        assert!(!admission_path(memories.path(), cwd.path()).exists());
+
+        let directory = add_continuity_sources(Some(memories.path()), cwd.path(), &aliases)
+            .expect_err("a directory containing only a memory hard link must fail");
+        assert_eq!(directory.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
+        assert!(!admission_path(memories.path(), cwd.path()).exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_add_with_hard_link_admits_only_the_ordinary_file() -> anyhow::Result<()> {
+        let memories = tempdir()?;
+        let cwd = tempdir()?;
+        let memory = memories.path().join(MANUAL_MEMORY_FILE);
+        let candidates = cwd.path().join("candidates");
+        let alias = candidates.join("memory-hard-link.md");
+        let ordinary = candidates.join("notes.md");
+        std::fs::write(&memory, "memory")?;
+        std::fs::create_dir(&candidates)?;
+        std::fs::hard_link(&memory, &alias)?;
+        std::fs::write(&ordinary, "ordinary notes")?;
+
+        assert_eq!(
+            add_continuity_sources(Some(memories.path()), cwd.path(), &candidates)?,
+            vec![ordinary.canonicalize()?]
+        );
+        let admission = read_admission(
+            admission_path(memories.path(), cwd.path())
+                .parent()
+                .expect("workspace"),
+        )?;
+        assert_eq!(admission.custom_sources.len(), 1);
+        assert_eq!(
+            admission
+                .custom_sources
+                .get(&ordinary.canonicalize()?.display().to_string()),
+            Some(&true)
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_add_with_symlink_alias_skips_linked_directories() -> anyhow::Result<()> {
+        let memories = tempdir()?;
+        let cwd = tempdir()?;
+        let memory = memories.path().join(MANUAL_MEMORY_FILE);
+        let candidates = cwd.path().join("candidates");
+        let outside = cwd.path().join("outside");
+        let alias = candidates.join("memory-symlink.md");
+        let ordinary = candidates.join("notes.md");
+        let linked_directory = candidates.join("linked-directory");
+        std::fs::write(&memory, "memory")?;
+        std::fs::create_dir(&candidates)?;
+        std::fs::create_dir(&outside)?;
+        std::fs::write(&ordinary, "ordinary notes")?;
+        std::fs::write(outside.join("must-not-be-added.md"), "outside")?;
+        std::os::unix::fs::symlink(&memory, &alias)?;
+        std::os::unix::fs::symlink(&outside, &linked_directory)?;
+
+        assert_eq!(
+            add_continuity_sources(Some(memories.path()), cwd.path(), &candidates)?,
+            vec![ordinary.canonicalize()?]
+        );
+        let admission = read_admission(
+            admission_path(memories.path(), cwd.path())
+                .parent()
+                .expect("workspace"),
+        )?;
+        assert_eq!(admission.custom_sources.len(), 1);
+        assert_eq!(
+            admission
+                .custom_sources
+                .get(&ordinary.canonicalize()?.display().to_string()),
+            Some(&true)
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn persisted_hard_link_alias_never_projects_or_enters_the_prompt()
+    -> anyhow::Result<()> {
+        let memories = tempdir()?;
+        let cwd = tempdir()?;
+        let memory = memories.path().join(MANUAL_MEMORY_FILE);
+        let alias = cwd.path().join("persisted-memory-hard-link.md");
+        let planted_body = "PLANTED_HARD_LINK_MEMORY_BODY";
+        std::fs::write(&memory, planted_body)?;
+        std::fs::hard_link(&memory, &alias)?;
+        let alias = alias.canonicalize()?;
+        let fixture = format!(
+            "memory = false\n[custom_sources]\n\"{}\" = true\n",
+            alias.display()
+        );
+        write_admission_fixture(memories.path(), cwd.path(), fixture.as_bytes())?;
+
+        let sources = continuity_sources(Some(memories.path()), cwd.path(), &[])?;
+        assert!(sources.iter().all(|source| source.path != alias));
+        let prompt = build_continuity_prompt(Some(memories.path()), cwd.path())
+            .await
+            .unwrap_or_default();
+        assert!(!prompt.contains(planted_body));
         Ok(())
     }
 

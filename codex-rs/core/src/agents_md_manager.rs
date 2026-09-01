@@ -159,6 +159,14 @@ mod tests {
         .join("admission.toml");
         std::fs::write(&admission, "global_rules = true # changed fingerprint\n")
             .expect("changed valid admission");
+        assert!(
+            elpis_context::admission_fingerprint(
+                Some(config.memory_dir.as_path()),
+                config.cwd.as_path(),
+            )
+            .expect("fingerprint read succeeds")
+            .is_some()
+        );
         {
             let _guard = elpis_context::inject_admission_read_failure();
             manager.refresh(&config, &environments).await;
@@ -169,10 +177,13 @@ mod tests {
         );
         assert!(manager.get_admitted().await.is_none());
 
-        std::fs::write(&admission, "global_rules = true\n").expect("repair read failure");
         manager.refresh(&config, &environments).await;
         assert_eq!(
-            manager.get_admitted().await.expect("read retry recovered").text(),
+            manager
+                .get_admitted()
+                .await
+                .expect("same-fingerprint read retry recovered")
+                .text(),
             "optional instruction"
         );
 
