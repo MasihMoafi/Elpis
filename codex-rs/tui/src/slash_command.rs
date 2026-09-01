@@ -269,6 +269,7 @@ impl SlashCommand {
             | SlashCommand::Goal
             | SlashCommand::Rename
             | SlashCommand::Copy
+            | SlashCommand::Experimental
             // Inherited Codex features being re-evaluated for the Elpis contract:
             // multi-agent threads (I6 /multi-task), IDE context, and Plan mode
             // (evaluated against I5 structured interactive clarification).
@@ -284,7 +285,6 @@ impl SlashCommand {
             | SlashCommand::Logout
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
-            | SlashCommand::Experimental
             | SlashCommand::AutoReview
             | SlashCommand::Import
             | SlashCommand::Archive
@@ -365,7 +365,6 @@ mod tests {
             "plugins",
             "raw",
             "review",
-            "settings",
             "status",
             "statusline",
             "title",
@@ -375,6 +374,7 @@ mod tests {
         }
         assert!(visible.contains(&"add"));
         assert!(visible.contains(&"usage"));
+        assert!(visible.contains(&"settings"));
         assert!(visible.contains(&"fork"));
         assert!(visible.contains(&"goal"));
         assert!(visible.contains(&"hooks"));

@@ -11,6 +11,7 @@
 //! estimates only: they are scaled to that measured total, and any unaccounted
 //! remainder is shown explicitly as "Other (overhead)".
 
+use codex_features::Feature;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
@@ -345,6 +346,10 @@ impl ChatWidget {
             backtrack_points: snapshot.backtrack_points,
             session_total,
             last_turn,
+            automatic_pruning_configured_for_next_conversation: self
+                .config
+                .features
+                .enabled(Feature::AutomaticContextPruning),
         });
     }
 

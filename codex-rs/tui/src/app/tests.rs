@@ -1892,6 +1892,72 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
 }
 
 #[tokio::test]
+async fn update_feature_flags_persists_automatic_pruning_for_next_conversation() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let codex_home = tempdir()?;
+    let cwd = codex_home.path().to_path_buf();
+    let default_config = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(cwd.clone()))
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert!(
+        !default_config
+            .features
+            .enabled(Feature::AutomaticContextPruning)
+    );
+
+    app.config.codex_home = codex_home.path().to_path_buf().abs();
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+
+    app.chat_widget.open_experimental_popup();
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Down));
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let updates = match app_event_rx.try_recv() {
+        Ok(AppEvent::UpdateFeatureFlags { updates }) => updates,
+        other => panic!("expected automatic pruning enable update, got {other:?}"),
+    };
+    assert_eq!(updates, vec![(Feature::AutomaticContextPruning, true)]);
+    app.update_feature_flags(&mut app_server, updates).await;
+
+    let config_path = codex_home.path().join("config.toml");
+    let enabled_config = std::fs::read_to_string(&config_path)?;
+    assert!(enabled_config.contains("automatic_context_pruning = true"));
+
+    app.chat_widget.open_experimental_popup();
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Down));
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let updates = match app_event_rx.try_recv() {
+        Ok(AppEvent::UpdateFeatureFlags { updates }) => updates,
+        other => panic!("expected automatic pruning disable update, got {other:?}"),
+    };
+    assert_eq!(updates, vec![(Feature::AutomaticContextPruning, false)]);
+    app.update_feature_flags(&mut app_server, updates).await;
+
+    let disabled_config = std::fs::read_to_string(&config_path)?;
+    assert!(!disabled_config.contains("automatic_context_pruning"));
+    let reloaded = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(cwd))
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert!(!reloaded.features.enabled(Feature::AutomaticContextPruning));
+
+    app_server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restores_default()
 -> Result<()> {
     let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;

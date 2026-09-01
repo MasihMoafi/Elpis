@@ -949,8 +949,9 @@ impl Session {
             .iter()
             .filter_map(|spec| {
                 let advertise_in_model_client_header =
-                    spec.stage.experimental_menu_description().is_some()
-                        || spec.id == Feature::RemoteCompactionV2;
+                    spec.id != Feature::AutomaticContextPruning
+                        && (spec.stage.experimental_menu_description().is_some()
+                            || spec.id == Feature::RemoteCompactionV2);
                 if advertise_in_model_client_header && config.features.enabled(spec.id) {
                     Some(spec.key)
                 } else {

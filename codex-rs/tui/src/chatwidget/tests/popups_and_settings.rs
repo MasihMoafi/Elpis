@@ -2894,17 +2894,25 @@ async fn experimental_features_popup_snapshot() {
 }
 
 #[tokio::test]
-async fn experimental_features_toggle_saves_on_exit() {
+async fn experimental_features_accept_emits_only_changed_rows() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     let expected_feature = Feature::JsRepl;
     let view = ExperimentalFeaturesView::new(
-        vec![ExperimentalFeatureItem {
-            feature: expected_feature,
-            name: "JavaScript REPL".to_string(),
-            description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities.".to_string(),
-            enabled: false,
-        }],
+        vec![
+            ExperimentalFeatureItem {
+                feature: expected_feature,
+                name: "JavaScript REPL".to_string(),
+                description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities.".to_string(),
+                enabled: false,
+            },
+            ExperimentalFeatureItem {
+                feature: Feature::ShellTool,
+                name: "Shell tool".to_string(),
+                description: "Allow the model to run shell commands.".to_string(),
+                enabled: false,
+            },
+        ],
         chat.app_event_tx.clone(),
         crate::keymap::RuntimeKeymap::defaults().list,
     );
@@ -2935,7 +2943,39 @@ async fn experimental_features_toggle_saves_on_exit() {
 }
 
 #[tokio::test]
-async fn experimental_popup_omits_stable_guardian_approval() {
+async fn experimental_features_cancel_and_unchanged_accept_emit_no_updates() {
+    for (case, key_event) in [
+        ("escape", KeyEvent::from(KeyCode::Esc)),
+        (
+            "ctrl-c",
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        ),
+        ("unchanged accept", KeyEvent::from(KeyCode::Enter)),
+    ] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        let view = ExperimentalFeaturesView::new(
+            vec![ExperimentalFeatureItem {
+                feature: Feature::JsRepl,
+                name: "JavaScript REPL".to_string(),
+                description: "Enable JavaScript REPL.".to_string(),
+                enabled: false,
+            }],
+            chat.app_event_tx.clone(),
+            crate::keymap::RuntimeKeymap::defaults().list,
+        );
+        chat.bottom_pane.show_view(Box::new(view));
+
+        chat.handle_key_event(key_event);
+
+        assert!(
+            rx.try_recv().is_err(),
+            "{case} must not emit a feature update"
+        );
+    }
+}
+
+#[tokio::test]
+async fn settings_popup_shows_only_selected_features() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let guardian_stage = FEATURES
         .iter()
@@ -2947,7 +2987,13 @@ async fn experimental_popup_omits_stable_guardian_approval() {
 
     chat.open_experimental_popup();
 
-    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let popup = render_bottom_popup(&chat, /*width*/ 240);
+    assert!(popup.contains("Keep computer awake"));
+    assert!(popup.contains("Automatic pruning — Experimental"));
+    assert!(popup.contains(
+        "Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail."
+    ));
+    assert!(!popup.contains("Network proxy"));
     assert!(
         !popup.contains("Auto-review"),
         "expected stable auto-review feature to be omitted from experimental popup, got:\n{popup}"

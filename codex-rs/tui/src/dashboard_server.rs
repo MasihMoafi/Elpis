@@ -23,6 +23,7 @@ pub(crate) struct DashboardSnapshot {
     pub(crate) backtrack_points: usize,
     pub(crate) session_total: DashboardTokenTotals,
     pub(crate) last_turn: DashboardTokenTotals,
+    pub(crate) automatic_pruning_configured_for_next_conversation: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -100,5 +101,29 @@ fn serve(listener: tiny_http::Server) {
             .with_status_code(status)
             .with_header(header);
         let _ = request.respond(response);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashboard_snapshot_serializes_automatic_pruning_configuration() {
+        let disabled = serde_json::to_value(DashboardSnapshot::default()).expect("serialize");
+        assert_eq!(
+            disabled["automatic_pruning_configured_for_next_conversation"],
+            serde_json::Value::Bool(false)
+        );
+
+        let enabled = serde_json::to_value(DashboardSnapshot {
+            automatic_pruning_configured_for_next_conversation: true,
+            ..Default::default()
+        })
+        .expect("serialize");
+        assert_eq!(
+            enabled["automatic_pruning_configured_for_next_conversation"],
+            serde_json::Value::Bool(true)
+        );
     }
 }

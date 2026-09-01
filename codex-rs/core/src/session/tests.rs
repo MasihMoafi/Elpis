@@ -226,6 +226,20 @@ fn user_message(text: &str) -> ResponseItem {
     }
 }
 
+#[tokio::test]
+async fn automatic_context_pruning_is_local_only_in_beta_header() {
+    let mut config = test_config().await;
+    config.features.enable(Feature::AutomaticContextPruning);
+    config.features.enable(Feature::RemoteCompactionV2);
+
+    let header = Session::build_model_client_beta_features_header(&config)
+        .expect("remote compaction should remain advertised");
+    let advertised = header.split(',').collect::<Vec<_>>();
+
+    assert!(!advertised.contains(&Feature::AutomaticContextPruning.key()));
+    assert!(advertised.contains(&Feature::RemoteCompactionV2.key()));
+}
+
 #[test]
 fn assign_missing_response_item_ids_assigns_agent_message_ids() {
     let items = Cow::Owned(vec![

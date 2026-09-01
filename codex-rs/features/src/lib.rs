@@ -1264,7 +1264,11 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::AutomaticContextPruning,
         key: "automatic_context_pruning",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Experimental {
+            name: "Automatic pruning — Experimental",
+            menu_description: "Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.",
+            announcement: "",
+        },
         default_enabled: false,
     },
     FeatureSpec {
