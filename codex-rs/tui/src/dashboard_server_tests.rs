@@ -14,6 +14,7 @@ use tiny_http::Request;
 use tiny_http::TestRequest;
 
 const PORT: u16 = 43123;
+const ACTIVITY_FIXTURE: &str = include_str!("dashboard_assets/fixtures/activity-state.json");
 
 fn context() -> DashboardContext {
     DashboardContext {
@@ -579,15 +580,153 @@ fn response_heartbeat_changes_without_revision_churn() {
 
 #[test]
 fn envelope_and_nested_wire_dtos_deserialize_for_frozen_fixtures() {
-    let envelope = DashboardEnvelope {
-        state: state(),
-        heartbeat_at: 2_000,
-    };
-    let encoded = serde_json::to_value(&envelope).expect("serialize envelope");
-    let decoded: DashboardEnvelope =
-        serde_json::from_value(encoded).expect("deserialize envelope fixture");
+    let envelope: DashboardEnvelope =
+        serde_json::from_str(ACTIVITY_FIXTURE).expect("deserialize literal dashboard fixture");
 
-    assert_eq!(decoded, envelope);
+    assert_eq!(envelope.heartbeat_at, 1_770_000_000_500);
+    assert_eq!(
+        envelope.state.activity.current.as_ref().map(|turn| turn.status),
+        Some(super::DashboardActivityStatus::Running)
+    );
+    assert_eq!(envelope.state.activity.recent.len(), 2);
+    assert_eq!(
+        envelope.state.activity.recent[0].cost,
+        Some(DashboardCostState::Priced {
+            backend_total_usd: "1.250000".to_string(),
+        })
+    );
+    assert_eq!(
+        envelope.state.activity.recent[0]
+            .profile
+            .as_ref()
+            .map(|profile| profile.sampling_retry_count),
+        Some(1)
+    );
+    assert_eq!(
+        envelope.state.activity.recent[1].cost,
+        Some(DashboardCostState::Unavailable {
+            reason: DashboardCostAvailability::SubscriptionAuthentication,
+        })
+    );
+    assert_eq!(
+        envelope
+            .state
+            .tokens
+            .session_total
+            .as_ref()
+            .expect("session totals")
+            .cache_write,
+        None
+    );
+    assert_eq!(
+        envelope
+            .state
+            .tokens
+            .last_turn
+            .as_ref()
+            .expect("last-turn totals")
+            .cache_write,
+        Some(0)
+    );
+    assert_eq!(
+        envelope
+            .state
+            .smart_prune
+            .latest
+            .as_ref()
+            .and_then(|latest| latest.response_usage.as_ref()),
+        None
+    );
+
+    let serialized = serde_json::to_string(&envelope).expect("reserialize dashboard fixture");
+    assert!(!serialized.contains("hostile_html"));
+    assert!(!serialized.contains("onerror"));
+}
+
+#[test]
+fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
+    for required in [
+        "id=\"tab-activity\"",
+        "data-tab=\"activity\"",
+        "class=\"tab active\" id=\"tab-activity\" type=\"button\" role=\"tab\" aria-selected=\"true\"",
+        "envelope.state",
+        "envelope.heartbeat_at",
+        "nextState.revision !== lastValidState.revision",
+        "value.schema_version === 1",
+        "aria-label=\"Estimated token usage by category\"",
+        "id=\"poll-toggle\"",
+        "id=\"refresh-now\"",
+        "setText('poll-toggle', 'Resume')",
+        "Idle",
+        "#493235",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+        "tab.tabIndex",
+        "Automatic pruning — Experimental",
+        "configured_enabled",
+        "current_thread_next_turn_enabled",
+        "prefers-reduced-motion: reduce",
+        "CATEGORY_COLORS",
+        "#3b82f6",
+        "#22c55e",
+        "#eab308",
+        "#d946ef",
+        "#06b6d4",
+        "#6b635a",
+        "CATEGORY_COLORS[value] || CATEGORY_COLOR_FALLBACK",
+        "if (inFlight || (paused && !force)) return;",
+        "setTimeout(() => { void poll(); }, delay)",
+        "subscription_authentication",
+        "awaiting_backend_price",
+        "Timing breakdown unavailable for this turn",
+        "Measured request total with estimated category and pruning breakdowns.",
+        "Approx. saved",
+        "Estimated token usage by category",
+    ] {
+        assert!(INDEX_HTML.contains(required), "missing dashboard contract: {required}");
+    }
+}
+
+#[test]
+fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields() {
+    for forbidden in [
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "eval(",
+        "admission_id",
+        "Admission ID",
+        "admission-id",
+        "audit_path",
+        "Audit record",
+        "audit-path",
+        "main_request_sequence",
+        "Main request sequence",
+        "request_sequence",
+        "request-sequence",
+        "request_input_sha256",
+        "Local request SHA-256",
+        "request-hash",
+        "response_id",
+        "Response ID",
+        "response-id",
+        "tool_output",
+        "tool_contents",
+        "metadata and hashes",
+        "smart.enabled",
+        "style.background = category.color",
+        "setInterval(refresh",
+        "setInterval(poll",
+        "<script src=",
+        "rel=\"stylesheet\"",
+        "http://",
+        "https://",
+    ] {
+        assert!(!INDEX_HTML.contains(forbidden), "unsafe dashboard source: {forbidden}");
+    }
 }
 
 #[test]
