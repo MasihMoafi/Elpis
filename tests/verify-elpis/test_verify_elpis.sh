@@ -34,6 +34,9 @@ new_fixture() {
     printf '%s\n' \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
+        '[[ ${CARGO_BUILD_JOBS-} == 2 ]] || { printf "unsafe CARGO_BUILD_JOBS=%s\n" "${CARGO_BUILD_JOBS-}" >&2; exit 91; }' \
+        '[[ ${RUST_TEST_THREADS-} == 2 ]] || { printf "unsafe RUST_TEST_THREADS=%s\n" "${RUST_TEST_THREADS-}" >&2; exit 92; }' \
+        '[[ ${FAKE_NICE_LEVEL-} == 10 ]] || { printf "unsafe nice level=%s\n" "${FAKE_NICE_LEVEL-}" >&2; exit 93; }' \
         '{' \
         '    printf "BEGIN\\0%s\\0%s\\0%s\\0%s\\0" "$PWD" "${CODEX_SKIP_BWRAP_BUILD-}" "${CARGO_TARGET_DIR-}" "$#"' \
         '    printf "%s\\0" "$@"' \
@@ -48,6 +51,15 @@ new_fixture() {
         'exit 0' \
         > "$FIXTURE/bin/cargo"
     chmod +x "$FIXTURE/bin/cargo"
+    printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'set -euo pipefail' \
+        '[[ ${1-} == -n && ${2-} == 10 ]] || { printf "unsafe nice invocation: %q %q\n" "${1-}" "${2-}" >&2; exit 94; }' \
+        'shift 2' \
+        'export FAKE_NICE_LEVEL=10' \
+        'exec "$@"' \
+        > "$FIXTURE/bin/nice"
+    chmod +x "$FIXTURE/bin/nice"
     : > "$FAKE_CARGO_LOG"
     SELECTOR_ENV=()
 }
@@ -693,29 +705,30 @@ def squash(text: str) -> str:
 
 local = Path(sys.argv[1]).read_text()
 shipping = Path(sys.argv[2]).read_text()
-local_selector = section(local, "## 6. Checked verification selector")
+local_selector = section(local, "## 7. Checked verification selector")
 shipping_boundary = section(shipping, "## 7. Selector evidence is not shipping evidence")
 
 expected_examples = [
-    "scripts/verify-elpis --changed codex-rs/tui/src/dashboard_server.rs",
-    "scripts/verify-elpis --surface full",
-    "ELPIS_CARGO_TARGET_DIR=/absolute/shared/target scripts/verify-elpis --surface tui",
+    "CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --changed codex-rs/tui/src/dashboard_server.rs",
+    "CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --surface full",
+    "CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 ELPIS_CARGO_TARGET_DIR=/absolute/shared/target nice -n 10 scripts/verify-elpis --surface tui",
 ]
 code_blocks = re.findall(r"```bash\n(.*?)\n```", local_selector, flags=re.DOTALL)
 require(code_blocks == ["\n".join(expected_examples)], "local selector examples must be one exact Bash block")
 require("from the repository root" in local_selector, "selector examples must state their working directory")
 for index, example in enumerate(expected_examples):
     argv = shlex.split(example)
-    selector_index = 1 if index == 2 else 0
+    selector_index = 6 if index == 2 else 5
     require(argv[selector_index] == "scripts/verify-elpis", f"example does not call the selector: {example}")
 
 local_contract = squash(local_selector)
 for clause in (
-    "The selector sets `CODEX_SKIP_BWRAP_BUILD=1` for every Cargo child.",
+    "The selector itself forces `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`, `CODEX_SKIP_BWRAP_BUILD=1`, and `CARGO_TARGET_DIR=<selected target>` for every Cargo child, invoking it through `nice -n 10`.",
+    "The wrapper in the examples keeps that hardware policy visible at the call site too.",
     "Without an override, it runs `git rev-parse --path-format=absolute --git-common-dir`, takes the common directory's parent, and uses `<parent>/codex-rs/target`.",
     "`ELPIS_CARGO_TARGET_DIR` is accepted only when the value is absolute and the target is writable.",
     "It may create the target directory, but it never deletes targets or caches and never runs `cargo clean`.",
-    "`cargo fmt --all --check` is the one narrow check-only exception to section 5: it checks the whole workspace without rewriting source.",
+    "`cargo fmt --all --check` is the one narrow check-only exception to section 6: it checks the whole workspace without rewriting source.",
     "Plain `cargo fmt --all` remains prohibited.",
 ):
     require(clause in local_contract, f"local selector contract missing: {clause}")

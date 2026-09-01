@@ -481,7 +481,8 @@ for command_name in "${selected_commands[@]}"; do
     elif [[ $mode == check ]]; then
         (
             cd "$REPO_ROOT/codex-rs"
-            CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR="$target_dir" cargo "${argv[@]}"
+            CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
+                CARGO_TARGET_DIR="$target_dir" nice -n 10 cargo "${argv[@]}"
         ) || die "command failed: $command_name"
     else
         test_output=$(mktemp "${TMPDIR:-/tmp}/elpis-verify-test-output.XXXXXX") ||
@@ -489,7 +490,8 @@ for command_name in "${selected_commands[@]}"; do
         set +e
         (
             cd "$REPO_ROOT/codex-rs"
-            CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR="$target_dir" cargo "${argv[@]}"
+            CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
+                CARGO_TARGET_DIR="$target_dir" nice -n 10 cargo "${argv[@]}"
         ) 2>&1 | tee "$test_output"
         cargo_status=${PIPESTATUS[0]}
         set -e

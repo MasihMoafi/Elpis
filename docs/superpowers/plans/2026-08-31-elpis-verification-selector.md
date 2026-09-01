@@ -4,7 +4,7 @@
 
 **Goal:** Add one checked verification-surface manifest and one portable scripts/verify-elpis command that selects conservative local/Linux checks without deleting caches, then make the Linux workflows reuse it.
 
-**Architecture:** tools/verify-elpis/surfaces.toml is the single checked source for command rows, surface membership, and path ownership. scripts/verify-elpis parses only that manifest, chooses a stable deduplicated union, prints it, and executes it with the required Cargo environment. A fake-Cargo shell harness proves selection and failure behavior without invoking Rust; CI/local Rust checks remain separate evidence.
+**Architecture:** tools/verify-elpis/surfaces.toml is the single checked source for command rows, surface membership, and path ownership. scripts/verify-elpis parses only that manifest, chooses a stable deduplicated union, prints it, and executes it with the forced Cargo environment and `nice` wrapper below. A fake-Cargo shell harness proves selection and failure behavior without invoking Rust; CI/local Rust checks remain separate evidence.
 
 **Tech Stack:** Bash arrays, Git, Python 3.11+ standard-library tomllib, TOML, Cargo, GitHub Actions, Linux.
 
@@ -12,10 +12,10 @@
 
 ## Global Constraints
 
-- Linux only; always export CODEX_SKIP_BWRAP_BUILD=1. No macOS work or gate.
+- Linux only; no macOS work or gate.
 - The selector accepts repeatable --changed PATH, --paths-file FILE, and --surface NAME; it never accepts raw Cargo arguments. Reject no input, unknown surface/command, malformed manifest, unreadable or empty path file before Cargo.
 - Default target: absolute Git common dir from git rev-parse --path-format=absolute --git-common-dir, take its parent, then codex-rs/target. Accept ELPIS_CARGO_TARGET_DIR only when absolute and writable; print it. mkdir -p may create that target, but no cargo clean, rm, cache pruning/deletion, build/install/package/launch is allowed.
-- Every Cargo child gets CODEX_SKIP_BWRAP_BUILD=1 and CARGO_TARGET_DIR=<selected>; execute Cargo from codex-rs.
+- Every Cargo child gets `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`, `CODEX_SKIP_BWRAP_BUILD=1`, and `CARGO_TARGET_DIR=<selected>`; invoke it through `nice -n 10` from codex-rs.
 - Formatting is exactly cargo fmt --all --check; it must never write.
 - Path records preserve spaces. A --paths-file containing NUL is NUL-delimited; otherwise it is newline-delimited. Preserve all non-delimiter bytes, reject empty records, and never word-split, eval, or interpolate a path/manifest argv.
 - Union/dedupe uses manifest declaration order. For changed paths, the first matching path rule owns each path. Two or more changed paths are "mixed" only when their resolved non-full surface lists differ; that condition selects full. Repeated paths resolving to the same list stay focused. Explicit --surface values are a deliberate union applied after path classification and do not trigger the mixed-path fallback. Any unmatched, shared-foundation, selector/workflow, Cargo manifest/lock, .cargo/**, or installer change selects full.
@@ -81,7 +81,7 @@ Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage
 
 - [ ] **Step 1: Write the failing isolated shell harness.**
 
-Use Bash set -euo pipefail, mktemp -d, and a cleanup trap. It creates a temporary Git repository with codex-rs/, copies the future selector/manifest, puts a fake cargo first on PATH, and writes NUL-delimited argv/environment records. The fake only prints controlled harness summaries; it never invokes Rust.
+Use Bash set -euo pipefail, mktemp -d, and a cleanup trap. It creates a temporary Git repository with codex-rs/, copies the future selector/manifest, puts fake cargo and nice commands first on PATH, and writes NUL-delimited argv/environment records. The harness rejects any Cargo child missing a forced value or the exact `nice -n 10` invocation. The fake only prints controlled harness summaries; it never invokes Rust.
 
 Start RED with:
 
@@ -90,7 +90,11 @@ run_selector --changed codex-rs/tui/src/dashboard_server.rs
 assert_status 0
 assert_output 'Elpis verification: surfaces=dashboard'
 assert_output 'Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage'
+assert_cargo_env 'CARGO_BUILD_JOBS=2'
+assert_cargo_env 'RUST_TEST_THREADS=2'
 assert_cargo_env 'CODEX_SKIP_BWRAP_BUILD=1'
+assert_cargo_env 'CARGO_TARGET_DIR=<selected>'
+assert_nice_argv '-n' '10'
 assert_cargo_argv 'fmt' '--all' '--check'
 assert_cargo_argv 'test' '-p' 'codex-tui' '--lib' '--locked' 'dashboard'
 ~~~
@@ -109,20 +113,20 @@ Expected: non-zero because scripts/verify-elpis cannot meet the first contract c
 
 Use embedded python3 only to import tomllib, parse/validate the TOML closed schema and command allowlist above, and emit NUL-delimited values. This adds no package: both relevant workflows already invoke python3, local Python is 3.13, and Ubuntu 24.04 has Python 3.12. If tomllib is unavailable, fail before Cargo with a Python-3.11 requirement; do not add pip, a vendored parser, or a Cargo/Rust parser.
 
-Collect --changed literally; for --paths-file, read NUL records when a NUL exists and otherwise newline records; reject empty/missing input. Apply safe shell glob matching without eval and use the first matching path rule. If changed paths resolve to different non-full surface lists, replace their union with full; then add explicit surfaces normally. Union commands with associative-array membership but emit manifest order. Print the four header lines before execution. For Cargo rows, run cargo with the array argv in codex-rs. For diff-check, use the one allowed literal shell argv only at the repository root. Capture each `mode = "test"` row to a temporary file, tee normal output, require a positive successful harness summary, then remove only that temporary file.
+Collect --changed literally; for --paths-file, read NUL records when a NUL exists and otherwise newline records; reject empty/missing input. Apply safe shell glob matching without eval and use the first matching path rule. If changed paths resolve to different non-full surface lists, replace their union with full; then add explicit surfaces normally. Union commands with associative-array membership but emit manifest order. Print the four header lines before execution. For Cargo rows, use the forced four-value environment and invoke the array argv through `nice -n 10` from codex-rs. For diff-check, use the one allowed literal shell argv only at the repository root. Capture each `mode = "test"` row to a temporary file, tee normal output, require a positive successful harness summary, then remove only that temporary file.
 
 - [ ] **Step 4: Make all harness cases green.**
 
 Add and run these exact cases:
 
-1. Dashboard path selects dashboard, exports both variables, and runs only declared rows in manifest order.
+1. Dashboard path selects dashboard, forces all four Cargo values plus `nice -n 10`, and runs only declared rows in manifest order.
 2. Repeated/explicit surfaces and path-plus-surface are a stable deduplicated union.
 3. Unknown, shared-foundation, and unclassified paths select full. Two changed paths resolving to different focused surface lists select full; repeated paths resolving to the same list remain focused; explicit multiple surfaces and path-plus-surface remain a stable union rather than triggering the mixed-path fallback.
 4. First-match precedence is proven in both directions for every broad-family exception: dashboard and context/ledger before remaining TUI; TUI work-graph before remaining TUI; app-server turn-cost before remaining app-server; app-server memory recall before remaining app-server; and command-bearing docs before ordinary docs.
 5. Newline files preserve spaces; NUL files preserve an embedded newline; empty/missing list fails before fake Cargo.
 6. Only zero-pass summaries fail; multiple summaries pass only when one has a positive passed count; fake Cargo non-zero fails.
 7. Unknown surface/reference, malformed TOML, non-absolute override, unwritable override, arbitrary shell argv, `cargo clean`, unsupported Cargo subcommands, release/profile/target-dir flags, and a `test --no-run` row mislabeled as `mode = "test"` fail before fake Cargo or shell execution.
-8. Every format call contains --check; logs contain no clean, rm, write-mode fmt, install, release build, or executable launch.
+8. Every Cargo child has all four forced values and exact `nice -n 10`; every format call contains --check; logs contain no clean, rm, write-mode fmt, install, release build, or executable launch.
 
 Run:
 
@@ -222,12 +226,12 @@ Expected: new doc assertions fail only.
 Add to docs/LOCAL_BUILD_RULES.md:
 
 ~~~bash
-scripts/verify-elpis --changed codex-rs/tui/src/dashboard_server.rs
-scripts/verify-elpis --surface full
-ELPIS_CARGO_TARGET_DIR=/absolute/shared/target scripts/verify-elpis --surface tui
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --changed codex-rs/tui/src/dashboard_server.rs
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --surface full
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 ELPIS_CARGO_TARGET_DIR=/absolute/shared/target nice -n 10 scripts/verify-elpis --surface tui
 ~~~
 
-State the selector sets bwrap, derives CARGO_TARGET_DIR portably unless overridden, never deletes targets/caches, and has the read-only cargo fmt --all --check exception to the no-whole-repo-format warning. In shipping rules, state proportional selector evidence does not replace release/clean-machine/tag/manual acceptance. Do not change release mechanics.
+State the selector forces the four-value Cargo environment and `nice -n 10`, derives CARGO_TARGET_DIR portably unless overridden, never deletes targets/caches, and has the read-only cargo fmt --all --check exception to the no-whole-repo-format warning. In shipping rules, state proportional selector evidence does not replace release/clean-machine/tag/manual acceptance. Do not change release mechanics.
 
 - [ ] **Step 4: Verify and commit.**
 
@@ -255,7 +259,7 @@ git commit -m "docs: explain Elpis verification selector"
 bash tests/verify-elpis/test_verify_elpis.sh
 ~~~
 
-Expected: proves selection, environment, delimiter handling, zero-match failure, docs, and workflow source wiring only.
+Expected: proves selection, the four forced Cargo values plus `nice -n 10`, delimiter handling, zero-match failure, docs, and workflow source wiring only.
 
 - [ ] **Step 2: Run local Rust evidence only at functional close.**
 
@@ -263,8 +267,8 @@ Follow docs/LOCAL_BUILD_RULES.md: inspect disk and preserve caches, then execute
 
 ~~~bash
 du -sh codex-rs/target
-scripts/verify-elpis --changed <actual-changed-path>
-scripts/verify-elpis --surface full
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --changed <actual-changed-path>
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --surface full
 ~~~
 
 Expected: selector prints commands before each run. Record focused/full Rust results separately. Do not release-build/install/launch, push, tag, run macOS, or delete a cache in this task.
@@ -278,7 +282,7 @@ State shell evidence as pass/fail, local focused/full Rust evidence as pass/fail
 | Requirement | Plan coverage |
 | --- | --- |
 | One manifest + one command | Task 1 |
-| Portable target + mandatory bwrap | Task 1 |
+| Portable target + mandatory bwrap/throttling | Task 1 |
 | Stable union/dedupe and conservative full | Task 1 |
 | NUL/newline paths + zero-match failure | Task 1 |
 | Check-only/no deletion/release action | Tasks 1 and 3 |
