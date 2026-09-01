@@ -42,14 +42,17 @@ async fn manual_memory_create_claim_is_synchronous_and_completion_forces_a_new_e
         /*pending_context_report*/ false,
         /*pending_mutation*/ None,
     );
-    assert!(app.chat_widget.apply_manual_memory_status_completion(
-        &origin,
-        ready_without_sources(),
-    ));
+    assert!(
+        app.chat_widget
+            .apply_manual_memory_status_completion(&origin, ready_without_sources(),)
+    );
 
     assert!(app.chat_widget.begin_manual_memory_create());
     assert!(!app.chat_widget.begin_manual_memory_create());
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Creating);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Creating
+    );
     assert_eq!(
         app.chat_widget.manual_memory_pending_mutation(),
         Some(ManualMemoryMutation::Create)
@@ -67,17 +70,21 @@ async fn manual_memory_create_claim_is_synchronous_and_completion_forces_a_new_e
         .cloned()
         .expect("mutation launch target");
     assert_eq!(launched.view.epoch, origin.view.epoch + 1);
-    assert!(app
-        .manual_memory_status
-        .mutations
-        .contains_key(&origin.storage));
+    assert!(
+        app.manual_memory_status
+            .mutations
+            .contains_key(&origin.storage)
+    );
     app.manual_memory_status.in_flight = Some(launched.clone());
     assert_eq!(
         app.finish_manual_memory_status(&launched, ready_without_sources()),
         None
     );
     assert!(app.chat_widget.manual_memory_status().is_none());
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Creating);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Creating
+    );
 
     let disposition = app.record_manual_memory_mutation_completion(
         &origin,
@@ -89,7 +96,10 @@ async fn manual_memory_create_claim_is_synchronous_and_completion_forces_a_new_e
     };
     assert_eq!(fresh.view.epoch, launched.view.epoch + 1);
     assert_eq!(app.chat_widget.manual_memory_bound_target(), Some(&fresh));
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Creating);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Creating
+    );
 
     app.manual_memory_status.in_flight = Some(fresh.clone());
     assert_eq!(
@@ -101,12 +111,16 @@ async fn manual_memory_create_claim_is_synchronous_and_completion_forces_a_new_e
         ),
         Some(false)
     );
-    assert!(!app
-        .manual_memory_status
-        .mutations
-        .contains_key(&origin.storage));
+    assert!(
+        !app.manual_memory_status
+            .mutations
+            .contains_key(&origin.storage)
+    );
     assert_eq!(app.chat_widget.manual_memory_pending_mutation(), None);
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Ready);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Ready
+    );
 }
 
 #[tokio::test]
@@ -150,9 +164,7 @@ async fn manual_memory_mutation_and_status_failures_restore_without_sending() {
     let disposition = app.record_manual_memory_mutation_completion(
         &requested,
         ManualMemoryMutation::Admission { admitted: true },
-        ManualMemoryMutationCompletion::Failed(
-            ManualMemoryMutationFailure::PersistenceFailed,
-        ),
+        ManualMemoryMutationCompletion::Failed(ManualMemoryMutationFailure::PersistenceFailed),
     );
     let ManualMemoryCompletionDisposition::Refresh(fresh) = disposition else {
         panic!("admission failure must still force a status read");
@@ -246,7 +258,9 @@ async fn manual_memory_admission_success_drains_only_after_matching_fresh_ready_
         other => panic!("expected admission request, got {other:?}"),
     };
     app.chat_widget
-        .queue_user_message(crate::chatwidget::UserMessage::from("send after durable status"));
+        .queue_user_message(crate::chatwidget::UserMessage::from(
+            "send after durable status",
+        ));
     assert!(app.claim_manual_memory_mutation(
         &requested,
         ManualMemoryMutation::Admission { admitted: true },
@@ -354,17 +368,22 @@ async fn manual_memory_same_target_switch_keeps_barrier_but_disables_late_autose
         ),
         Some(false)
     );
-    assert!(op_rx.try_recv().is_err(), "late completion must not auto-send A's restored draft");
+    assert!(
+        op_rx.try_recv().is_err(),
+        "late completion must not auto-send A's restored draft"
+    );
     assert_eq!(app.chat_widget.manual_memory_pending_mutation(), None);
 }
 
 #[tokio::test]
-async fn manual_memory_closed_side_failover_restores_blocked_input_without_autosend(
-) -> Result<()> {
+async fn manual_memory_closed_side_failover_restores_blocked_input_without_autosend() -> Result<()>
+{
     let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
     let mut app_server =
         crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
-    let started = app_server.start_thread(app.chat_widget.config_ref()).await?;
+    let started = app_server
+        .start_thread(app.chat_widget.config_ref())
+        .await?;
     let primary_thread_id = started.session.thread_id;
     app.enqueue_primary_thread_session(started.session, started.turns)
         .await?;
@@ -383,10 +402,8 @@ async fn manual_memory_closed_side_failover_restores_blocked_input_without_autos
 
     let side_thread_id = ThreadId::new();
     let cwd = app.chat_widget.config_ref().cwd.to_path_buf();
-    app.side_threads.insert(
-        side_thread_id,
-        SideThreadState::new(primary_thread_id),
-    );
+    app.side_threads
+        .insert(side_thread_id, SideThreadState::new(primary_thread_id));
     app.ensure_thread_channel(side_thread_id);
     app.activate_thread_channel(side_thread_id).await;
     app.chat_widget
@@ -437,9 +454,10 @@ async fn manual_memory_closed_side_failover_restores_blocked_input_without_autos
     );
     assert!(app.chat_widget.queued_user_message_texts().is_empty());
     assert!(op_rx.try_recv().is_err());
-    assert!(std::iter::from_fn(|| app_event_rx.try_recv().ok()).all(|event| {
-        !matches!(event, AppEvent::CodexOp(Op::UserTurn { .. }))
-    }));
+    assert!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .all(|event| { !matches!(event, AppEvent::CodexOp(Op::UserTurn { .. })) })
+    );
     app_server.shutdown().await?;
     Ok(())
 }
@@ -482,16 +500,20 @@ async fn manual_memory_completion_on_a_different_storage_target_detaches_without
         ),
         ManualMemoryCompletionDisposition::Detached
     );
-    assert_eq!(app.chat_widget.manual_memory_bound_target(), Some(&b_target));
-    assert!(!app
-        .manual_memory_status
-        .mutations
-        .contains_key(&origin.storage));
+    assert_eq!(
+        app.chat_widget.manual_memory_bound_target(),
+        Some(&b_target)
+    );
+    assert!(
+        !app.manual_memory_status
+            .mutations
+            .contains_key(&origin.storage)
+    );
 }
 
 #[tokio::test]
-async fn manual_memory_workers_map_collision_and_missing_file_without_payload_bytes(
-) -> anyhow::Result<()> {
+async fn manual_memory_workers_map_collision_and_missing_file_without_payload_bytes()
+-> anyhow::Result<()> {
     const BODY: &str = "PRIVATE_MEMORY_BODY_MUST_NOT_CROSS_THE_EVENT";
     let mut app = make_test_app().await;
     configured_app_ids(&mut app);
@@ -515,9 +537,7 @@ async fn manual_memory_workers_map_collision_and_missing_file_without_payload_by
     mismatched_target.view.memory_path = memories.join("different-memory.md");
     assert_eq!(
         App::perform_manual_memory_create(&mismatched_target),
-        ManualMemoryMutationCompletion::Failed(
-            ManualMemoryMutationFailure::StorageUnavailable,
-        )
+        ManualMemoryMutationCompletion::Failed(ManualMemoryMutationFailure::StorageUnavailable,)
     );
 
     std::fs::remove_file(&target.storage.memory_path)?;
@@ -543,7 +563,10 @@ async fn manual_memory_view_activation_advances_epoch_and_replaces_the_old_read(
     assert_eq!(first.view.epoch, 1);
     assert_eq!(first.view.primary_root_thread_id, thread_id);
     assert_eq!(first.view.displayed_thread_id, thread_id);
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Loading
+    );
     assert_eq!(app.manual_memory_status.in_flight, Some(first.clone()));
     assert!(!app.launch_manual_memory_status(first));
 
@@ -565,12 +588,11 @@ async fn manual_memory_status_rejects_stale_targets_and_local_refresh_markers() 
         .current_manual_memory_target(4)
         .expect("manual-memory target");
     let ready = ready_without_sources();
-    app.chat_widget
-        .bind_manual_memory_loading(
-            target.clone(),
-            /*pending_context_report*/ false,
-            /*pending_mutation*/ None,
-        );
+    app.chat_widget.bind_manual_memory_loading(
+        target.clone(),
+        /*pending_context_report*/ false,
+        /*pending_mutation*/ None,
+    );
     app.manual_memory_status.in_flight = Some(target.clone());
 
     let mut stale_targets = Vec::new();
@@ -596,25 +618,29 @@ async fn manual_memory_status_rejects_stale_targets_and_local_refresh_markers() 
 
     app.chat_widget.request_manual_memory_status_refresh();
     assert!(app.chat_widget.manual_memory_refresh_requested());
-    assert_eq!(app.finish_manual_memory_status(&target, ready.clone()), None);
+    assert_eq!(
+        app.finish_manual_memory_status(&target, ready.clone()),
+        None
+    );
     assert!(app.chat_widget.manual_memory_status().is_none());
 
-    app.chat_widget
-        .bind_manual_memory_loading(
-            target.clone(),
-            /*pending_context_report*/ false,
-            /*pending_mutation*/ None,
-        );
+    app.chat_widget.bind_manual_memory_loading(
+        target.clone(),
+        /*pending_context_report*/ false,
+        /*pending_mutation*/ None,
+    );
     app.manual_memory_status.in_flight = Some(target.clone());
     assert_eq!(app.finish_manual_memory_status(&target, ready), Some(false));
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Ready);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Ready
+    );
 
-    app.chat_widget
-        .bind_manual_memory_loading(
-            target.clone(),
-            /*pending_context_report*/ false,
-            /*pending_mutation*/ None,
-        );
+    app.chat_widget.bind_manual_memory_loading(
+        target.clone(),
+        /*pending_context_report*/ false,
+        /*pending_mutation*/ None,
+    );
     app.manual_memory_status.in_flight = Some(target.clone());
     assert_eq!(
         app.finish_manual_memory_status(
@@ -638,8 +664,8 @@ async fn manual_memory_status_rejects_stale_targets_and_local_refresh_markers() 
 }
 
 #[tokio::test]
-async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rereads(
-) -> anyhow::Result<()> {
+async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rereads()
+-> anyhow::Result<()> {
     const BODY: &str = "PLANTED_MANUAL_MEMORY_BODY";
     let mut app = make_test_app().await;
     configured_app_ids(&mut app);
@@ -651,11 +677,8 @@ async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rere
         .current_manual_memory_target(9)
         .expect("manual-memory target");
     std::fs::write(&target.storage.memory_path, BODY)?;
-    let completion = App::load_manual_memory_status(
-        &target,
-        &instruction_source_paths,
-        &dev_rule_roots,
-    );
+    let completion =
+        App::load_manual_memory_status(&target, &instruction_source_paths, &dev_rule_roots);
     assert!(
         !format!("{completion:?}").contains(BODY),
         "status events must not contain manual-memory body bytes"
@@ -669,12 +692,11 @@ async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rere
         "the AppEvent payload must not contain manual-memory body bytes"
     );
 
-    app.chat_widget
-        .bind_manual_memory_loading(
-            target.clone(),
-            /*pending_context_report*/ false,
-            /*pending_mutation*/ None,
-        );
+    app.chat_widget.bind_manual_memory_loading(
+        target.clone(),
+        /*pending_context_report*/ false,
+        /*pending_mutation*/ None,
+    );
     app.manual_memory_status.in_flight = Some(target.clone());
     assert_eq!(
         app.finish_manual_memory_status(&target, completion),
@@ -685,7 +707,10 @@ async fn manual_memory_completion_caches_scalars_without_body_bytes_or_live_rere
 
     std::fs::write(&target.storage.memory_path, "changed after cache fill")?;
     assert_eq!(app.chat_widget.continuity_sources(), cached_sources);
-    assert_eq!(app.chat_widget.manual_memory_status(), cached_status.as_ref());
+    assert_eq!(
+        app.chat_widget.manual_memory_status(),
+        cached_status.as_ref()
+    );
     Ok(())
 }
 
@@ -697,12 +722,11 @@ async fn manual_memory_context_request_forces_a_new_epoch_before_it_can_settle()
         .current_manual_memory_target(12)
         .expect("manual-memory target");
     app.manual_memory_status.epoch = old.view.epoch;
-    app.chat_widget
-        .bind_manual_memory_loading(
-            old.clone(),
-            /*pending_context_report*/ true,
-            /*pending_mutation*/ None,
-        );
+    app.chat_widget.bind_manual_memory_loading(
+        old.clone(),
+        /*pending_context_report*/ true,
+        /*pending_mutation*/ None,
+    );
     app.chat_widget.request_manual_memory_status_refresh();
 
     assert!(app.begin_manual_memory_refresh(&old));
@@ -783,26 +807,28 @@ async fn manual_memory_thread_settings_cwd_transition_rebinds_and_clears_the_cac
     assert_eq!(rebound.view.epoch, old_target.view.epoch + 1);
     assert_eq!(rebound.view.cwd, new_cwd);
     assert_ne!(rebound, &old_target);
-    assert_eq!(app.chat_widget.manual_memory_phase(), ManualMemoryPhase::Loading);
+    assert_eq!(
+        app.chat_widget.manual_memory_phase(),
+        ManualMemoryPhase::Loading
+    );
     assert!(app.chat_widget.manual_memory_status().is_none());
     assert_eq!(app.manual_memory_status.in_flight.as_ref(), Some(rebound));
 }
 
 #[tokio::test]
-async fn manual_memory_successful_goal_and_checkpoint_writes_request_refresh(
-) -> anyhow::Result<()> {
+async fn manual_memory_successful_goal_and_checkpoint_writes_request_refresh() -> anyhow::Result<()>
+{
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let thread_id = configured_app_ids(&mut app);
 
     let goal_target = app
         .current_manual_memory_target(21)
         .expect("goal manual-memory target");
-    app.chat_widget
-        .bind_manual_memory_loading(
-            goal_target.clone(),
-            /*pending_context_report*/ false,
-            /*pending_mutation*/ None,
-        );
+    app.chat_widget.bind_manual_memory_loading(
+        goal_target.clone(),
+        /*pending_context_report*/ false,
+        /*pending_mutation*/ None,
+    );
     app.mirror_elpis_context_notification(&ServerNotification::ThreadGoalUpdated(
         codex_app_server_protocol::ThreadGoalUpdatedNotification {
             thread_id: thread_id.to_string(),

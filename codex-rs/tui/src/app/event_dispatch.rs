@@ -74,11 +74,8 @@ impl App {
             origin.storage.clone(),
             ManualMemoryOwnedMutation::running(origin.clone(), mutation),
         );
-        self.chat_widget.bind_manual_memory_loading(
-            target,
-            pending_context_report,
-            Some(mutation),
-        );
+        self.chat_widget
+            .bind_manual_memory_loading(target, pending_context_report, Some(mutation));
         self.publish_current_dashboard_snapshot();
         true
     }
@@ -182,12 +179,9 @@ impl App {
                     self.chat_widget.clear_manual_memory_pending_mutation();
                 }
                 ManualMemoryMutation::Admission { .. } => {
-                    let same_view = manual_memory_same_view_ignoring_epoch(
-                        &owner.origin.view,
-                        &target.view,
-                    );
-                    let may_send = mutation_completion
-                        == ManualMemoryMutationCompletion::Succeeded
+                    let same_view =
+                        manual_memory_same_view_ignoring_epoch(&owner.origin.view, &target.view);
+                    let may_send = mutation_completion == ManualMemoryMutationCompletion::Succeeded
                         && status_confirms_admission
                         && owner.allow_same_view_autosend
                         && same_view;
@@ -379,8 +373,7 @@ impl App {
             }
             AppEvent::ManualMemoryStatusLoaded(target, completion) => {
                 if self.finish_manual_memory_status(&target, completion) == Some(true) {
-                    let totals =
-                        crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                    let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
                     self.chat_widget.add_context_usage_output(totals);
                 }
                 tui.frame_requester().schedule_frame();
@@ -415,11 +408,8 @@ impl App {
             }
             AppEvent::ManualMemoryAdmissionFinished(target, admitted, completion) => {
                 let mutation = ManualMemoryMutation::Admission { admitted };
-                let disposition = self.record_manual_memory_mutation_completion(
-                    &target,
-                    mutation,
-                    completion,
-                );
+                let disposition =
+                    self.record_manual_memory_mutation_completion(&target, mutation, completion);
                 if let ManualMemoryCompletionDisposition::Refresh(fresh) = disposition {
                     self.present_manual_memory_mutation_completion(mutation, completion);
                     self.launch_manual_memory_status(fresh);

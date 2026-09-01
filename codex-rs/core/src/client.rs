@@ -473,7 +473,8 @@ impl ModelClient {
     /// settings and dropping transport state that only makes sense for the old
     /// endpoint (cached websocket session, websocket fallback, auth fallback).
     pub(crate) fn with_provider(&self, provider_info: ModelProviderInfo) -> Self {
-        let model_provider = create_model_provider(provider_info, self.state.provider.auth_manager());
+        let model_provider =
+            create_model_provider(provider_info, self.state.provider.auth_manager());
         let include_attestation = model_provider.supports_attestation();
         Self {
             state: Arc::new(ModelClientState {

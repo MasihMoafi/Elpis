@@ -94,7 +94,10 @@ pub async fn interrupt_active_prune_and_wait_for_cancellation(
 }
 
 pub async fn wait_for_active_prune_commit(thread: &CodexThread) {
-    let decision = active_prune_boundary(thread).await.wait_for_decision().await;
+    let decision = active_prune_boundary(thread)
+        .await
+        .wait_for_decision()
+        .await;
     assert_eq!(
         decision,
         crate::tasks::TaskCancellationDecision::Committed,

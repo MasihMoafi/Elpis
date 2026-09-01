@@ -951,10 +951,9 @@ impl Session {
         let beta_features_header = FEATURES
             .iter()
             .filter_map(|spec| {
-                let advertise_in_model_client_header =
-                    spec.id != Feature::AutomaticContextPruning
-                        && (spec.stage.experimental_menu_description().is_some()
-                            || spec.id == Feature::RemoteCompactionV2);
+                let advertise_in_model_client_header = spec.id != Feature::AutomaticContextPruning
+                    && (spec.stage.experimental_menu_description().is_some()
+                        || spec.id == Feature::RemoteCompactionV2);
                 if advertise_in_model_client_header && config.features.enabled(spec.id) {
                     Some(spec.key)
                 } else {

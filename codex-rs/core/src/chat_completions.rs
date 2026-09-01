@@ -1546,7 +1546,9 @@ mod tests {
 
         let mut events = futures::stream::iter(vec![
             sse(r#"{"id":"gen-1","choices":[{"delta":{"content":"hi"}}]}"#),
-            sse(r#"{"id":"gen-1","choices":[{"delta":{"content":" there"},"finish_reason":"stop"}]}"#),
+            sse(
+                r#"{"id":"gen-1","choices":[{"delta":{"content":" there"},"finish_reason":"stop"}]}"#,
+            ),
             sse("[DONE]"),
         ]);
         let (tx, mut rx) = mpsc::channel(16);

@@ -314,13 +314,17 @@ async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() 
     let mut requested_context_report = false;
     while let Ok(event) = rx.try_recv() {
         match event {
-            AppEvent::InsertHistoryCell(cell) => completion_messages
-                .push(lines_to_single_string(&cell.display_lines(/*width*/ 80))),
+            AppEvent::InsertHistoryCell(cell) => {
+                completion_messages.push(lines_to_single_string(&cell.display_lines(/*width*/ 80)))
+            }
             AppEvent::RequestContextUsageReport(_) => requested_context_report = true,
             _ => {}
         }
     }
-    assert!(requested_context_report, "normal manual completion refreshes context usage");
+    assert!(
+        requested_context_report,
+        "normal manual completion refreshes context usage"
+    );
     assert_eq!(
         completion_messages,
         vec!["Manual pruning command finished\n"],
@@ -354,8 +358,8 @@ async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() 
 }
 
 #[tokio::test]
-async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
-) -> anyhow::Result<()> {
+async fn manual_memory_add_invalidates_cached_sources_after_success_or_error() -> anyhow::Result<()>
+{
     let root = tempdir()?;
     let cwd = root.path().join("workspace");
     let memories = root.path().join("memories");
@@ -369,16 +373,12 @@ async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
     chat.config.memory_dir = memories.abs();
     seed_manual_memory_cache_from_disk(&mut chat)?;
 
-    chat.dispatch_command_with_args(
-        SlashCommand::Add,
-        source.display().to_string(),
-        Vec::new(),
-    );
+    chat.dispatch_command_with_args(SlashCommand::Add, source.display().to_string(), Vec::new());
     assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
-    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
-        event,
-        AppEvent::ManualMemoryStatusRefreshRequested(_)
-    )));
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)))
+    );
 
     seed_manual_memory_cache_from_disk(&mut chat)?;
     chat.dispatch_command_with_args(
@@ -387,10 +387,10 @@ async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
         Vec::new(),
     );
     assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
-    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
-        event,
-        AppEvent::ManualMemoryStatusRefreshRequested(_)
-    )));
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)))
+    );
     Ok(())
 }
 

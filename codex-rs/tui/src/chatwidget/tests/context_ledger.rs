@@ -73,8 +73,8 @@ fn configure_ledger_sources(
 }
 
 #[tokio::test]
-async fn manual_memory_create_key_emits_once_and_blocks_same_loop_duplicates(
-) -> anyhow::Result<()> {
+async fn manual_memory_create_key_emits_once_and_blocks_same_loop_duplicates() -> anyhow::Result<()>
+{
     let root = tempdir()?;
     let memories = root.path().join("memories");
     let cwd = root.path().join("project");
@@ -90,17 +90,14 @@ async fn manual_memory_create_key_emits_once_and_blocks_same_loop_duplicates(
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('c'))));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('c'))));
     assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Creating);
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::ManualMemoryCreateRequested(_))
-    );
+    assert_matches!(rx.try_recv(), Ok(AppEvent::ManualMemoryCreateRequested(_)));
     assert!(rx.try_recv().is_err());
     Ok(())
 }
 
 #[tokio::test]
-async fn manual_memory_mutation_excludes_ordinary_and_add_writers_before_disk_io(
-) -> anyhow::Result<()> {
+async fn manual_memory_mutation_excludes_ordinary_and_add_writers_before_disk_io()
+-> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     configure_ledger_sources(&mut chat, root.path())?;
@@ -403,8 +400,8 @@ async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyh
 }
 
 #[tokio::test]
-async fn manual_memory_bulk_enqueues_memory_last_and_uses_its_mandatory_refresh(
-) -> anyhow::Result<()> {
+async fn manual_memory_bulk_enqueues_memory_last_and_uses_its_mandatory_refresh()
+-> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     configure_ledger_sources(&mut chat, root.path())?;
@@ -421,10 +418,11 @@ async fn manual_memory_bulk_enqueues_memory_last_and_uses_its_mandatory_refresh(
             .count(),
         1
     );
-    assert!(events.iter().all(|event| !matches!(
-        event,
-        AppEvent::ManualMemoryStatusRefreshRequested(_)
-    )));
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)))
+    );
     assert_eq!(
         chat.manual_memory_pending_mutation(),
         Some(ManualMemoryMutation::Admission { admitted: true })

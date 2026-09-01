@@ -3,8 +3,8 @@
 
 #[path = "tests/advanced_reasoning_tests.rs"]
 mod advanced_reasoning_tests;
-mod model_catalog;
 mod manual_memory;
+mod model_catalog;
 mod plugin_catalog;
 mod rate_limits;
 mod safety_buffering;

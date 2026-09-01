@@ -829,8 +829,7 @@ impl Session {
             ActiveTurnForAbort::Missing => {}
             ActiveTurnForAbort::WaitForCompletion(identity)
             | ActiveTurnForAbort::AbnormallyFinished(identity) => {
-                let recovered = identity.completion.wait().await
-                    == TaskCompletionOutcome::Abnormal
+                let recovered = identity.completion.wait().await == TaskCompletionOutcome::Abnormal
                     && self.recover_abnormally_finished_task(&identity).await;
                 if recovered && reason == TurnAbortReason::Interrupted {
                     self.maybe_start_turn_for_pending_work().await;
@@ -872,8 +871,7 @@ impl Session {
             ActiveTurnForAbort::Missing => return false,
             ActiveTurnForAbort::WaitForCompletion(identity)
             | ActiveTurnForAbort::AbnormallyFinished(identity) => {
-                let recovered = identity.completion.wait().await
-                    == TaskCompletionOutcome::Abnormal
+                let recovered = identity.completion.wait().await == TaskCompletionOutcome::Abnormal
                     && self.recover_abnormally_finished_task(&identity).await;
                 if recovered && reason == TurnAbortReason::Interrupted {
                     self.maybe_start_turn_for_pending_work().await;
@@ -1180,9 +1178,10 @@ impl Session {
             let mut active = self.active_turn.lock().await;
             let matches_failed_task = active.as_ref().is_some_and(|active_turn| {
                 Arc::ptr_eq(&active_turn.turn_state, &identity.turn_state)
-                    && active_turn.task_completion.as_ref().is_some_and(|completion| {
-                        Arc::ptr_eq(completion, &identity.completion)
-                    })
+                    && active_turn
+                        .task_completion
+                        .as_ref()
+                        .is_some_and(|completion| Arc::ptr_eq(completion, &identity.completion))
                     && active_turn
                         .task_turn_context
                         .as_ref()
