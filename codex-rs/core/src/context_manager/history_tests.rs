@@ -353,6 +353,25 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
         vec!["neighboring developer content", "extension after"]
     );
 
+    history.replace(vec![
+        developer_msg("neighboring developer content"),
+        developer_msg("extension before"),
+        developer_msg("extension after"),
+    ]);
+    let latest = extension_single_slot(Some("extension after"));
+    history.set_world_state_baseline(latest.snapshot());
+    let (fragments, rollout_item) = history.update_world_state(&latest);
+    assert!(
+        fragments.is_empty(),
+        "an unchanged restored slot must not re-render"
+    );
+    assert_eq!(rollout_item, None);
+    assert_eq!(
+        history_texts(&history),
+        vec!["neighboring developer content", "extension after"],
+        "only the newest restored slot copy may remain"
+    );
+
     assert_eq!(
         apply_world_state(&mut history, &extension_single_slot(None)),
         0

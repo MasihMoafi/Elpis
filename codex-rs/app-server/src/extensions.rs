@@ -114,7 +114,6 @@ where
 struct ElpisContinuityExtension;
 
 const ELPIS_CONTINUITY_WORLD_STATE_ID: &str = "elpis_continuity";
-const ELPIS_CONTINUITY_HEADER: &str = "## Elpis Admitted Context\n\n";
 const GUARDIAN_REVIEWER_NAME: &str = "guardian";
 
 #[derive(Clone)]
@@ -132,6 +131,21 @@ fn guardian_reviewer_sessions_are_ineligible_for_elpis_continuity() {
     assert!(!elpis_continuity_is_eligible(&SessionSource::SubAgent(
         SubAgentSource::Other(GUARDIAN_REVIEWER_NAME.to_string())
     )));
+}
+
+#[cfg(test)]
+#[test]
+fn elpis_continuity_matcher_requires_the_complete_generator_prefix() {
+    let generated = format!(
+        "{}[MEMORY.md (/tmp/MEMORY.md)]\n\naccepted memory",
+        codex_core::elpis_context::ELPIS_CONTINUITY_PROMPT_PREFIX
+    );
+    assert!(is_elpis_continuity_fragment("developer", &generated));
+    assert!(!is_elpis_continuity_fragment(
+        "developer",
+        "## Elpis Admitted Context\n\nneighboring developer content"
+    ));
+    assert!(!is_elpis_continuity_fragment("user", &generated));
 }
 
 impl ElpisContinuityConfig {
@@ -188,7 +202,7 @@ impl ContextContributor for ElpisContinuityExtension {
                     },
                 )
                 .with_retained_fragment_matcher(|role, text| {
-                    role == "developer" && text.starts_with(ELPIS_CONTINUITY_HEADER)
+                    is_elpis_continuity_fragment(role, text)
                 })
                 .with_single_history_slot(has_model_visible_content),
             ]
@@ -233,6 +247,11 @@ fn elpis_continuity_is_eligible(session_source: &SessionSource) -> bool {
         session_source,
         SessionSource::SubAgent(SubAgentSource::Other(name)) if name == GUARDIAN_REVIEWER_NAME
     )
+}
+
+fn is_elpis_continuity_fragment(role: &str, text: &str) -> bool {
+    role == "developer"
+        && text.starts_with(codex_core::elpis_context::ELPIS_CONTINUITY_PROMPT_PREFIX)
 }
 
 fn install_elpis_continuity(builder: &mut ExtensionRegistryBuilder<Config>) {

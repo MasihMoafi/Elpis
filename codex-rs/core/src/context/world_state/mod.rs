@@ -424,8 +424,9 @@ impl WorldState {
         })
     }
 
-    /// Empties the history slot of every single-slot section that is about to refill it or
-    /// no longer has anything to say. Returns whether any item was changed.
+    /// Reconciles every single-slot section against retained history. A refilled or empty slot
+    /// loses every old copy; an unchanged visible slot retains only its newest copy. Returns
+    /// whether any item was changed.
     ///
     /// This is what keeps an admitted source to one effective copy and makes a withdrawn
     /// one actually disappear, instead of leaving earlier copies in the request and
@@ -435,35 +436,54 @@ impl WorldState {
         items: &mut Vec<ResponseItem>,
         refilled: &BTreeSet<&str>,
     ) -> bool {
-        let vacating = self
+        let single_slots = self
             .sections
             .iter()
-            .filter(|(id, section)| {
-                section.owns_single_history_slot()
-                    && (refilled.contains(*id) || !section.has_model_visible_content())
-            })
-            .map(|(_, section)| section.as_ref())
+            .filter(|(_, section)| section.owns_single_history_slot())
+            .map(|(id, section)| (*id, section.as_ref()))
             .collect::<Vec<_>>();
-        if vacating.is_empty() {
+        if single_slots.is_empty() {
             return false;
         }
 
         let mut changed = false;
-        items.retain_mut(|item| {
+        let mut newest_retained = BTreeSet::<&str>::new();
+        for item in items.iter_mut().rev() {
             let ResponseItem::Message { role, content, .. } = item else {
-                return true;
+                continue;
             };
             let before = content.len();
-            content.retain(|content| {
-                let ContentItem::InputText { text } = content else {
-                    return true;
+            let mut retained = Vec::with_capacity(before);
+            for content in std::mem::take(content).into_iter().rev() {
+                let ContentItem::InputText { text } = &content else {
+                    retained.push(content);
+                    continue;
                 };
-                !vacating
+                let matching = single_slots
                     .iter()
-                    .any(|section| section.matches_retained_fragment(role, text))
-            });
-            changed |= content.len() != before;
-            !content.is_empty()
+                    .filter(|(_, section)| section.matches_retained_fragment(role, text))
+                    .collect::<Vec<_>>();
+                let remove = matching.iter().any(|(id, section)| {
+                    refilled.contains(*id) || !section.has_model_visible_content()
+                }) || matching.iter().any(|(id, _)| newest_retained.contains(*id));
+                if remove {
+                    changed = true;
+                    continue;
+                }
+                for (id, _) in matching {
+                    newest_retained.insert(*id);
+                }
+                retained.push(content);
+            }
+            retained.reverse();
+            changed |= retained.len() != before;
+            *content = retained;
+        }
+        items.retain(|item| {
+            let keep =
+                !matches!(item, ResponseItem::Message { content, .. } if content.is_empty());
+            changed |= !keep;
+            keep
         });
         changed
     }

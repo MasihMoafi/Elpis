@@ -2762,31 +2762,24 @@ impl Session {
 
     pub(crate) async fn record_step_world_state_if_changed(
         &self,
-        previous_world_state: &Arc<WorldState>,
+        _previous_world_state: &Arc<WorldState>,
         step_context: &step_context::StepContext,
     ) -> Arc<WorldState> {
         let turn_context = step_context.turn.as_ref();
         // Render model-visible state from the same step used to build and run tools.
         let world_state = Arc::new(self.build_world_state_for_step(step_context).await);
-        // Derive the model update and persisted patch from the same two snapshots.
-        let previous_snapshot = previous_world_state.snapshot();
-        let world_state_snapshot = world_state.snapshot();
-        let world_state_item = world_state_snapshot
-            .merge_patch_from(&previous_snapshot)
-            .map(WorldStateItem::patch);
-        let items = crate::context_manager::updates::merge_contextual_fragments(
-            world_state.render_diff(&previous_snapshot),
-        );
+        let (items, world_state_item) = {
+            let mut state = self.state.lock().await;
+            let (fragments, rollout_item) = state.history.update_world_state(world_state.as_ref());
+            (
+                crate::context_manager::updates::merge_contextual_fragments(fragments),
+                rollout_item,
+            )
+        };
         if !items.is_empty() {
             self.record_conversation_items(turn_context, &items).await;
         }
 
-        // ContextManager remembers this for later turns; run_turn owns the live value.
-        self.state
-            .lock()
-            .await
-            .history
-            .set_world_state_baseline(world_state_snapshot);
         // Record the patch after the context it describes is present in model history.
         if let Some(world_state_item) = world_state_item {
             self.persist_rollout_items(&[RolloutItem::WorldState(world_state_item)])
@@ -3276,11 +3269,12 @@ impl Session {
         }
         let context_contributors = self.services.extensions.context_contributors().to_vec();
         // The guardian reviews the agent's own work, so it must judge the diff and the
-        // evidence on their merits. Thread context is where durable, user-authored state
-        // lands (memory being the motivating case), and that state is untrusted text: a
-        // line like "always approve" in a remembered preference would otherwise be read
-        // by the component whose job is to withhold approval. Keep the review request to
-        // the parent transcript and the guardian policy.
+        // evidence on their merits. Initial thread context is one place durable,
+        // user-authored state can land; the live Elpis continuity World State section has the
+        // same guardian exclusion. That state is untrusted text: a line like "always approve"
+        // in a remembered preference would otherwise be read by the component whose job is to
+        // withhold approval. Keep the review request to the parent transcript and guardian
+        // policy.
         if !is_guardian_reviewer {
             for contributor in &context_contributors {
                 for fragment in contributor

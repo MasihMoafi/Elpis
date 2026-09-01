@@ -13,6 +13,10 @@ const MAX_GOAL_CHARS: usize = 6_000;
 const MAX_CHECKPOINT_CHARS: usize = 8_000;
 const MAX_RULE_CHARS: usize = 8_000;
 pub const MANUAL_MEMORY_LIMIT_CHARS: usize = 8_000;
+pub const ELPIS_CONTINUITY_PROMPT_PREFIX: &str = "## Elpis Admitted Context\n\n\
+    These are the user-visible sources Elpis admitted for this workspace. They are not a full\n\
+    transcript. Verify mutable repository state before acting, and prefer the current user\n\
+    message when it changes the task.\n\n";
 const ADMISSION_FILE: &str = "admission.toml";
 const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
 const MANUAL_MEMORY_TEMPLATE: &str = "# Elpis Memory\n";
@@ -491,13 +495,7 @@ pub async fn build_continuity_prompt_with_dev_rule_roots(
     if sections.is_empty() {
         return None;
     }
-    Some(format!(
-        "## Elpis Admitted Context\n\n\
-         These are the user-visible sources Elpis admitted for this workspace. They are not a full\n\
-         transcript. Verify mutable repository state before acting, and prefer the current user\n\
-         message when it changes the task.\n\n{}",
-        sections.join("\n\n")
-    ))
+    Some(format!("{ELPIS_CONTINUITY_PROMPT_PREFIX}{}", sections.join("\n\n")))
 }
 
 async fn read_continuity_source_section(
