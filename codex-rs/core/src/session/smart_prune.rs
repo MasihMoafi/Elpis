@@ -85,9 +85,18 @@ pub(super) async fn optimize_pending_outputs(
     if !turn_context.smart_prune_enabled || cancellation_token.is_cancelled() {
         return pending;
     }
-
     let candidates = select_candidates(&pending);
     if candidates.is_empty() {
+        return pending;
+    }
+    if sess
+        .state
+        .lock()
+        .await
+        .smart_prune_failed_turn_id
+        .as_deref()
+        == Some(turn_context.sub_id.as_str())
+    {
         return pending;
     }
 
@@ -99,7 +108,7 @@ pub(super) async fn optimize_pending_outputs(
             tracing::warn!(
                 "Smart Prune input construction failed; preserving tool output: {err:#}"
             );
-            record_batch_failure(sess, candidates.len()).await;
+            record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
             return pending;
         }
     };
@@ -129,12 +138,12 @@ pub(super) async fn optimize_pending_outputs(
         Ok(Ok(admission)) => admission,
         Ok(Err(err)) => {
             tracing::warn!("Smart Prune model pass failed; preserving tool output: {err:#}");
-            record_batch_failure(sess, candidates.len()).await;
+            record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
             return pending;
         }
         Err(_) => {
             tracing::warn!("Smart Prune model pass timed out; preserving tool output");
-            record_batch_failure(sess, candidates.len()).await;
+            record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
             return pending;
         }
     };
@@ -145,7 +154,7 @@ pub(super) async fn optimize_pending_outputs(
         .collect::<Vec<_>>();
     let Some(decisions) = parse_decision_manifest(&admission.raw_response, &expected_ids) else {
         tracing::warn!("Smart Prune response was malformed; preserving tool output");
-        record_batch_failure(sess, candidates.len()).await;
+        record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
         return pending;
     };
 
@@ -160,7 +169,7 @@ pub(super) async fn optimize_pending_outputs(
             Ok(hash) => hash,
             Err(err) => {
                 tracing::warn!("Smart Prune source hashing failed; preserving batch: {err:#}");
-                record_batch_failure(sess, candidates.len()).await;
+                record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
                 return pending;
             }
         };
@@ -213,7 +222,7 @@ pub(super) async fn optimize_pending_outputs(
         },
     ) {
         tracing::warn!("Smart Prune audit failed; preserving tool output: {err:#}");
-        record_batch_failure(sess, candidates.len()).await;
+        record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
         return pending;
     }
 
@@ -240,8 +249,9 @@ pub(super) async fn optimize_pending_outputs(
     pending
 }
 
-async fn record_batch_failure(sess: &Session, examined: usize) {
+async fn record_batch_failure(sess: &Session, turn_id: &str, examined: usize) {
     let mut state = sess.state.lock().await;
+    state.smart_prune_failed_turn_id = Some(turn_id.to_string());
     state.smart_prune.examined_outputs = state
         .smart_prune
         .examined_outputs
@@ -654,12 +664,21 @@ mod tests {
     async fn failed_batch_counts_every_preserved_output_as_unchanged() {
         let (session, _) = crate::session::tests::make_session_and_context().await;
 
-        record_batch_failure(&session, 3).await;
+        record_batch_failure(&session, "failed-turn", 3).await;
 
         let snapshot = session.smart_prune_snapshot().await;
         assert_eq!(snapshot.examined_outputs, 3);
         assert_eq!(snapshot.unchanged_outputs, 3);
         assert_eq!(snapshot.failed_batches, 1);
+        assert_eq!(
+            session
+                .state
+                .lock()
+                .await
+                .smart_prune_failed_turn_id
+                .as_deref(),
+            Some("failed-turn")
+        );
     }
 
     #[tokio::test]

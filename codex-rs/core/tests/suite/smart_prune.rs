@@ -375,6 +375,9 @@ async fn interrupt_cancels_in_flight_smart_prune_without_waiting_for_timeout() -
 
     let snapshot = harness.test().codex.smart_prune_snapshot().await;
     assert_eq!(snapshot.optimizer_requests, 1);
+    assert_eq!(snapshot.failed_batches, 0);
+    assert_eq!(snapshot.examined_outputs, 0);
+    assert_eq!(snapshot.unchanged_outputs, 0);
     assert!(
         !harness
             .test()
@@ -419,6 +422,80 @@ async fn smart_prune_malformed_reply_fails_open() -> Result<()> {
     assert_eq!(snapshot.optimizer_usage_reports, 1);
     assert_eq!(snapshot.optimizer_usage.input_tokens, 25);
     assert_eq!(snapshot.optimizer_usage.cache_write_tokens, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_optimizer_skips_later_batches_in_same_turn() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    let harness = harness(true).await?;
+    let requests = mount_response_sequence(
+        harness.server(),
+        vec![
+            sse_response(tool_response(CALL_A, 90)),
+            sse_response(admission_response(CALL_A, COMPACT_A)).set_delay(Duration::from_secs(60)),
+            sse_response(tool_response(CALL_B, 89)),
+            sse_response(final_response()),
+        ],
+    )
+    .await;
+    let codex = Arc::clone(&harness.test().codex);
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "generate two large diagnostic outputs after one optimizer failure".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await?;
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while requests.requests().len() < 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Smart Prune request should start");
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(46)).await;
+    tokio::time::resume();
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while requests.requests().len() < 4 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("second main follow-up should start without another optimizer request");
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[0].body_json()["model"], MAIN_MODEL);
+    assert_eq!(requests[1].body_json()["model"], SMART_PRUNE_MODEL);
+    assert_eq!(requests[2].body_json()["model"], MAIN_MODEL);
+    assert_eq!(requests[3].body_json()["model"], MAIN_MODEL);
+    assert_source_output_preserved(&requests[1], &requests[2], CALL_A);
+    assert!(requests[3].body_contains_text(&"Y".repeat(256)));
+    assert!(!requests[3].body_contains_text("[ELPIS SMART PRUNE]"));
+
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))),
+    )
+    .await
+    .expect("turn should complete after one bounded Smart Prune timeout");
+
+    let snapshot = harness.test().codex.smart_prune_snapshot().await;
+    assert_eq!(snapshot.optimizer_requests, 1);
+    assert_eq!(snapshot.failed_batches, 1);
+    assert_eq!(snapshot.examined_outputs, 1);
+    assert_eq!(snapshot.unchanged_outputs, 1);
+
     Ok(())
 }
 
@@ -597,6 +674,7 @@ async fn optimizer_usage_preserves_absent_then_reported_zero_cache_writes() -> R
         vec![
             tool_response(CALL_A, 90),
             malformed_admission_with_usage("malformed-a", 40, None),
+            final_response(),
             tool_response(CALL_B, 89),
             malformed_admission_with_usage("malformed-b", 60, Some(0)),
             final_response(),
@@ -604,9 +682,18 @@ async fn optimizer_usage_preserves_absent_then_reported_zero_cache_writes() -> R
     )
     .await;
 
-    harness.submit("record two optimizer usage reports").await?;
+    harness
+        .submit("record optimizer usage without cache-write data")
+        .await?;
+    let first_snapshot = harness.test().codex.smart_prune_snapshot().await;
+    assert_eq!(first_snapshot.optimizer_requests, 1);
+    assert_eq!(first_snapshot.failed_batches, 1);
 
-    assert_eq!(requests.requests().len(), 5);
+    harness
+        .submit("record optimizer usage with a reported zero cache write")
+        .await?;
+
+    assert_eq!(requests.requests().len(), 6);
     let snapshot = harness.test().codex.smart_prune_snapshot().await;
     assert_eq!(snapshot.optimizer_requests, 2);
     assert_eq!(snapshot.optimizer_usage_reports, 2);

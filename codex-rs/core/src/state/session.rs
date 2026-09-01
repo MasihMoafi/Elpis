@@ -61,6 +61,8 @@ pub(crate) struct SessionState {
     pub(crate) context_prune_cycle: crate::context_pruner::PruneCycle,
     /// Admission-time Smart Prune counters and bounded latest evidence.
     pub(crate) smart_prune: SmartPruneSnapshot,
+    /// Turn whose failed admission disables further Smart Prune attempts for that turn.
+    pub(crate) smart_prune_failed_turn_id: Option<String>,
 }
 
 impl SessionState {
@@ -97,6 +99,7 @@ impl SessionState {
             context_prune_retry_after: None,
             context_prune_cycle: crate::context_pruner::PruneCycle::default(),
             smart_prune: SmartPruneSnapshot::default(),
+            smart_prune_failed_turn_id: None,
         }
     }
 
