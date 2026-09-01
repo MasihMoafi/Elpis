@@ -1637,6 +1637,39 @@ pub struct TurnActivityUpdatedNotification {
     pub profile: Option<TurnProfileSummary>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum TurnCostAvailability {
+    SubscriptionAuthentication,
+    CostObservationDisabled,
+    ProviderUnsupported,
+    AwaitingBackendPrice,
+    BackendUnavailable,
+    ObservationDropped,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(tag = "type", rename_all = "camelCase")]
+pub enum TurnCostState {
+    Unavailable { reason: TurnCostAvailability },
+    Priced {
+        #[serde(rename = "backendTotalUsd")]
+        #[ts(rename = "backendTotalUsd")]
+        backend_total_usd: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TurnCostUpdatedNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub cost: TurnCostState,
+}
+
 server_notification_definitions! {
     /// NEW NOTIFICATIONS
     Error => "error" (v2::ErrorNotification),
@@ -1662,6 +1695,7 @@ server_notification_definitions! {
     HookStarted => "hook/started" (v2::HookStartedNotification),
     TurnCompleted => "turn/completed" (v2::TurnCompletedNotification),
     TurnActivityUpdated => "turn/activityUpdated" (TurnActivityUpdatedNotification),
+    TurnCostUpdated => "turn/costUpdated" (TurnCostUpdatedNotification),
     HookCompleted => "hook/completed" (v2::HookCompletedNotification),
     TurnDiffUpdated => "turn/diff/updated" (v2::TurnDiffUpdatedNotification),
     TurnPlanUpdated => "turn/plan/updated" (v2::TurnPlanUpdatedNotification),
@@ -3543,6 +3577,54 @@ mod tests {
                     "status": {
                         "type": "idle"
                     },
+                }
+            }),
+            serde_json::to_value(&notification)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_turn_cost_updated_notification() -> Result<()> {
+        let notification = ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::SubscriptionAuthentication,
+            },
+        });
+        assert_eq!(
+            json!({
+                "method": "turn/costUpdated",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "cost": {
+                        "type": "unavailable",
+                        "reason": "subscriptionAuthentication"
+                    }
+                }
+            }),
+            serde_json::to_value(&notification)?,
+        );
+
+        let notification = ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            cost: TurnCostState::Priced {
+                backend_total_usd: "1.2500000".to_string(),
+            },
+        });
+        assert_eq!(
+            json!({
+                "method": "turn/costUpdated",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "cost": {
+                        "type": "priced",
+                        "backendTotalUsd": "1.2500000"
+                    }
                 }
             }),
             serde_json::to_value(&notification)?,

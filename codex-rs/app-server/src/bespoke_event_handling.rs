@@ -76,6 +76,8 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnActivityStatus;
 use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnCostState;
+use codex_app_server_protocol::TurnCostUpdatedNotification;
 use codex_app_server_protocol::TurnDiffUpdatedNotification;
 use codex_app_server_protocol::TurnError;
 use codex_app_server_protocol::TurnInterruptResponse;
@@ -149,6 +151,7 @@ pub(crate) async fn apply_bespoke_event_handling(
     thread_watch_manager: ThreadWatchManager,
     thread_list_state_permit: Arc<tokio::sync::Semaphore>,
     fallback_model_provider: String,
+    initial_turn_cost: Option<TurnCostState>,
 ) {
     let Event {
         id: event_turn_id,
@@ -184,6 +187,15 @@ pub(crate) async fn apply_bespoke_event_handling(
             outgoing
                 .send_server_notification(ServerNotification::TurnStarted(notification))
                 .await;
+            if let Some(cost) = initial_turn_cost {
+                send_turn_cost_updated(
+                    &outgoing,
+                    conversation_id,
+                    &payload.turn_id,
+                    cost,
+                )
+                .await;
+            }
         }
         EventMsg::TurnComplete(turn_complete_event) => {
             // All per-thread requests are bound to a turn, so abort them.
@@ -1230,6 +1242,23 @@ pub(crate) async fn apply_bespoke_event_handling(
 
         _ => {}
     }
+}
+
+pub(crate) async fn send_turn_cost_updated(
+    outgoing: &ThreadScopedOutgoingMessageSender,
+    thread_id: ThreadId,
+    turn_id: &str,
+    cost: TurnCostState,
+) {
+    outgoing
+        .send_server_notification(ServerNotification::TurnCostUpdated(
+            TurnCostUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: turn_id.to_string(),
+                cost,
+            },
+        ))
+        .await;
 }
 
 async fn handle_turn_diff(
@@ -2442,6 +2471,7 @@ mod tests {
                 thread_watch_manager.clone(),
                 Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
                 "test-provider".to_string(),
+                None,
             )
             .await;
 
@@ -2470,6 +2500,7 @@ mod tests {
                 thread_watch_manager.clone(),
                 Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
                 "test-provider".to_string(),
+                None,
             )
             .await;
 
@@ -2565,6 +2596,7 @@ mod tests {
                 self.thread_watch_manager.clone(),
                 Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
                 "test-provider".to_string(),
+                None,
             )
             .await;
         }
@@ -3433,7 +3465,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn turn_started_omits_active_snapshot_items() -> Result<()> {
+    async fn activity_notifications_send_turn_started_before_initial_cost() -> Result<()> {
         let codex_home = TempDir::new()?;
         let config = load_default_config_for_test(&codex_home).await;
         let thread_manager = Arc::new(
@@ -3502,6 +3534,9 @@ mod tests {
             thread_watch_manager,
             Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
             "test-provider".to_string(),
+            Some(codex_app_server_protocol::TurnCostState::Unavailable {
+                reason: codex_app_server_protocol::TurnCostAvailability::SubscriptionAuthentication,
+            }),
         )
         .await;
 
@@ -3514,6 +3549,22 @@ mod tests {
             }
             other => bail!("unexpected message: {other:?}"),
         }
+        let msg = recv_broadcast_notification(&mut rx).await?;
+        assert_eq!(
+            serde_json::to_value(msg)?,
+            json!({
+                "method": "turn/costUpdated",
+                "params": {
+                    "threadId": conversation_id.to_string(),
+                    "turnId": "turn-1",
+                    "cost": {
+                        "type": "unavailable",
+                        "reason": "subscriptionAuthentication"
+                    }
+                }
+            })
+        );
+        assert!(rx.try_recv().is_err());
         Ok(())
     }
 
@@ -3573,6 +3624,7 @@ mod tests {
             thread_watch_manager.clone(),
             Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
             "test-provider".to_string(),
+            None,
         )
         .await;
 
@@ -3657,6 +3709,7 @@ mod tests {
             ThreadWatchManager::new(),
             Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
             "test-provider".to_string(),
+            None,
         )
         .await;
 

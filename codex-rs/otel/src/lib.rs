@@ -66,6 +66,41 @@ impl From<AuthMode> for TelemetryAuthMode {
     }
 }
 
+/// Parses an unsigned ASCII decimal USD amount and rounds it to micro-USD.
+pub fn parse_turn_cost_microusd(value: &str) -> Option<i64> {
+    let (dollars, fractional) = match value.split_once('.') {
+        Some((dollars, fractional)) if !fractional.is_empty() && !fractional.contains('.') => {
+            (dollars, fractional)
+        }
+        Some(_) => return None,
+        None => (value, ""),
+    };
+    if dollars.is_empty()
+        || !dollars.as_bytes().iter().all(u8::is_ascii_digit)
+        || !fractional.as_bytes().iter().all(u8::is_ascii_digit)
+    {
+        return None;
+    }
+
+    let fractional = fractional.as_bytes();
+    let fractional_precision = 6_usize;
+    let fractional_microusd = fractional
+        .iter()
+        .take(fractional_precision)
+        .fold(0_u64, |value, digit| value * 10 + u64::from(digit - b'0'))
+        * 10_u64.pow(fractional_precision.saturating_sub(fractional.len()) as u32);
+    let round_up = fractional
+        .get(fractional_precision)
+        .is_some_and(|digit| *digit >= b'5');
+    let microusd = dollars
+        .parse::<u64>()
+        .ok()?
+        .checked_mul(1_000_000)?
+        .checked_add(fractional_microusd)?
+        .checked_add(u64::from(round_up))?;
+    i64::try_from(microusd).ok()
+}
+
 /// Start a metrics timer using the globally installed metrics client.
 pub fn start_global_timer(name: &str, tags: &[(&str, &str)]) -> MetricsResult<Timer> {
     let Some(metrics) = crate::metrics::global() else {
@@ -78,4 +113,37 @@ pub fn start_global_timer(name: &str, tags: &[(&str, &str)]) -> MetricsResult<Ti
 /// OTEL metrics client, if the active metrics exporter is Statsig.
 pub fn global_statsig_metrics_settings() -> Option<StatsigMetricsSettings> {
     crate::metrics::global_statsig_settings()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_turn_cost_microusd;
+
+    #[test]
+    fn turn_cost_decimal_parser_rounds_seventh_digit_and_rejects_invalid() {
+        for (value, expected) in [
+            ("0", 0),
+            ("0.000001", 1),
+            ("1.250000", 1_250_000),
+            ("0.0001245", 125),
+        ] {
+            assert_eq!(parse_turn_cost_microusd(value), Some(expected), "{value}");
+        }
+
+        for value in [
+            "-1",
+            "+1",
+            " 1",
+            "1 ",
+            "1e-6",
+            "",
+            ".1",
+            "1.",
+            "1.2.3",
+            "one",
+            "9223372036854.7758075",
+        ] {
+            assert_eq!(parse_turn_cost_microusd(value), None, "{value:?}");
+        }
+    }
 }

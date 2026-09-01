@@ -241,7 +241,15 @@ fn manager_turn_cost_rejects_malformed_negative_and_overflow_values() -> Result<
     )
     .with_metrics(metrics);
 
-    for value in ["not-a-cost", "-1.0", "18446744073709551616.0"] {
+    for value in [
+        "not-a-cost",
+        "-1.0",
+        "+1.0",
+        " 1.0",
+        "1e-6",
+        "1.",
+        "9223372036854.7758075",
+    ] {
         manager.record_turn_cost(
             "turn-invalid",
             value,
