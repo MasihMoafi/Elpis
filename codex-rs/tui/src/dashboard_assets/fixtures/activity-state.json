@@ -1,0 +1,99 @@
+{
+  "state": {
+    "schema_version": 1,
+    "revision": 12,
+    "generated_at": 1800000009000,
+    "context": {
+      "model": "gpt-safe",
+      "used_tokens": 20200,
+      "window_tokens": 258400,
+      "used_percent": 8,
+      "categories": [
+        {
+          "label": "Conversation",
+          "tokens": 19000,
+          "color": "#3b82f6"
+        },
+        {
+          "label": "Instructions",
+          "tokens": 1200,
+          "color": "#d946ef"
+        }
+      ],
+      "saved_tokens": 3400,
+      "sources": [
+        {
+          "name": "AGENTS.md",
+          "category": "instructions",
+          "estimated_tokens": 1200,
+          "admitted": true
+        }
+      ],
+      "backtrack_points": 2
+    },
+    "tokens": {
+      "session_total": {
+        "input": 24000,
+        "cached_input": 18000,
+        "output": 1800,
+        "reasoning_output": 600,
+        "total": 26400
+      },
+      "last_turn": {
+        "input": 4000,
+        "cached_input": 3000,
+        "output": 500,
+        "reasoning_output": 100,
+        "total": 4600
+      }
+    },
+    "activity": {
+      "current": {
+        "status": "running",
+        "started_at": 1800000000000,
+        "cost": {
+          "type": "unavailable",
+          "reason": "awaiting_backend_price"
+        }
+      },
+      "recent": [
+        {
+          "status": "interrupted",
+          "duration_ms": 400,
+          "time_to_first_token_ms": null,
+          "profile": null,
+          "cost": {
+            "type": "unavailable",
+            "reason": "subscription_authentication"
+          }
+        },
+        {
+          "status": "completed",
+          "duration_ms": 930,
+          "time_to_first_token_ms": 240,
+          "profile": {
+            "before_first_sampling_ms": 100,
+            "sampling_ms": 200,
+            "compaction_ms": 30,
+            "between_sampling_overhead_ms": 40,
+            "tool_blocking_ms": 500,
+            "after_last_sampling_ms": 60,
+            "sampling_request_count": 3,
+            "sampling_retry_count": 1
+          },
+          "cost": {
+            "type": "priced",
+            "backend_total_usd": "1.250000"
+          }
+        }
+      ],
+      "automatic_pruning_enabled": false
+    }
+  },
+  "heartbeat_at": 1800000010000,
+  "hostile": {
+    "markup": "<img src=x onerror=1>",
+    "script": "<script>",
+    "path": "/home/private-user/secret"
+  }
+}

@@ -1,159 +1,583 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Elpis · Context Dashboard</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elpis · Dashboard</title>
 <style>
 :root{--ink:#15130f;--paper:#f7f4ee;--card:#fff;--line:#e3ddd1;--mut:#6b635a;--teal:#17a398;--red:#c8442c}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}}
 :root[data-theme=dark]{--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--paper);color:var(--ink);margin:0;padding:44px 22px 100px;font:16px/1.62 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+button{font:inherit}
 .wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
 h1{font:600 34px/1.1 ui-serif,Georgia,serif;letter-spacing:-.023em;margin:0}
 .sub{color:var(--mut);margin:6px 0 0;max-width:76ch;font-size:14px}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.control{background:var(--card);border:1px solid var(--line);border-radius:8px;color:var(--ink);cursor:pointer;padding:7px 11px;font-size:13px}
+.control:hover{border-color:var(--teal)}
+.status{color:var(--mut);font-size:13px;font-weight:600}
+.status-fresh{color:var(--teal)}
+.status-stale{color:var(--red)}
 .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-top:8px}
 .tab{background:none;border:none;color:var(--mut);font:600 13px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;padding:10px 4px;margin-right:18px;cursor:pointer;border-bottom:2px solid transparent}
 .tab.active{color:var(--ink);border-bottom-color:var(--teal)}
-.panel{display:none;flex-direction:column;gap:18px}
-.panel.active{display:flex}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px}
+.tab:focus-visible,.control:focus-visible{outline:3px solid var(--teal);outline-offset:3px}
+.panel{display:flex;flex-direction:column;gap:18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px;min-width:0}
 .kpi .k{font:600 10.5px/1.3 ui-sans-serif,system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--mut)}
-.kpi .n{font:600 26px/1.15 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.022em;margin-top:6px}
-.kpi .l{color:var(--mut);font-size:12px;margin-top:3px}
+.kpi .n{font:600 26px/1.15 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.022em;margin-top:6px;overflow-wrap:anywhere}
+.kpi .l{color:var(--mut);font-size:12px;margin-top:3px;overflow-wrap:anywhere}
 .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:20px 22px;display:flex;flex-direction:column;gap:11px}
 .card h3{font:600 15px/1.25 ui-sans-serif,system-ui,sans-serif;margin:0}
+.timing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.timing-row,.category-row{border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;padding:7px 0}
+.timing-row:last-child,.category-row:last-child{border-bottom:0}
+.timing-value{font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+.category-name{display:flex;align-items:center;gap:8px;min-width:0}
+.swatch{border-radius:3px;display:inline-block;flex:0 0 10px;height:10px;width:10px}
+.category-blue{background:#3b82f6}
+.category-green{background:#22c55e}
+.category-yellow{background:#eab308}
+.category-magenta{background:#d946ef}
+.category-cyan{background:#06b6d4}
+.category-muted{background:#6b635a}
+.legend{color:var(--mut);font-size:12.5px}
+.table-scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:13.5px}
 th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
-th:first-child,td:first-child{text-align:left;font-variant-numeric:normal;white-space:normal}
+th:first-child,td:first-child{text-align:left;font-variant-numeric:normal}
 th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-.bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;display:flex}
-.bar i{display:block;height:100%}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut)}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .foot{color:var(--mut);font-size:12px;text-align:right}
 .admitted{color:var(--teal)}
 .notadmitted{color:var(--mut)}
-</style></head><body>
+@media (max-width:620px){
+  body{padding:26px 14px 70px}
+  h1{font-size:29px}
+  .kpis,.timing-grid{grid-template-columns:1fr}
+  .toolbar{align-items:flex-start;flex-direction:column}
+  .tabs{overflow-x:auto}
+  .card{padding:17px}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:0s!important;scroll-behavior:auto!important;transition-duration:0s!important}
+}
+</style>
+</head>
+<body>
 <div class="wrap">
 <header>
-<h1>Elpis context dashboard</h1>
-<p class="sub" id="model-line">connecting…</p>
-<div class="tabs">
-<button class="tab active" data-tab="context">Context</button>
-<button class="tab" data-tab="tokens">Tokens</button>
+<h1>Elpis dashboard</h1>
+<p class="sub" id="model-line">Waiting for session data…</p>
+<div class="toolbar">
+<div class="status">Session data: <span id="freshness-status" role="status" aria-live="polite">Unavailable</span></div>
+<div class="controls" aria-label="Dashboard updates">
+<button class="control" id="updates-toggle" type="button" aria-pressed="false">Pause updates</button>
+<button class="control" id="refresh-now" type="button">Refresh now</button>
+</div>
+</div>
+<div class="tabs" role="tablist" aria-label="Dashboard views">
+<button class="tab active" id="tab-activity" type="button" role="tab" aria-selected="true" aria-controls="panel-activity" data-tab="activity">Activity</button>
+<button class="tab" id="tab-context" type="button" role="tab" aria-selected="false" aria-controls="panel-context" data-tab="context" tabindex="-1">Context</button>
+<button class="tab" id="tab-tokens" type="button" role="tab" aria-selected="false" aria-controls="panel-tokens" data-tab="tokens" tabindex="-1">Tokens</button>
 </div>
 </header>
 
-<section class="panel active" id="panel-context">
+<section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity">
 <div class="kpis">
-<div class="kpi"><div class="k">Used</div><div class="n" id="ctx-used">–</div><div class="l" id="ctx-used-pct"></div></div>
-<div class="kpi"><div class="k">Window</div><div class="n" id="ctx-window">–</div><div class="l">token budget</div></div>
-<div class="kpi"><div class="k">Pruned this session</div><div class="n" id="ctx-saved">–</div><div class="l">tokens reclaimed</div></div>
-<div class="kpi"><div class="k">Checkpoints</div><div class="n" id="ctx-checkpoints">–</div><div class="l">backtrack points</div></div>
+<div class="kpi"><div class="k">Now</div><div class="n" id="activity-now">Idle</div><div class="l" id="activity-elapsed">Unavailable</div></div>
+<div class="kpi"><div class="k">Current cost</div><div class="n" id="activity-current-cost">Unavailable</div><div class="l">typed availability</div></div>
+<div class="kpi"><div class="k">Latest outcome</div><div class="n" id="activity-latest-status">Unavailable</div><div class="l" id="activity-latest-cost">Unavailable</div></div>
+<div class="kpi"><div class="k">Latest total</div><div class="n" id="activity-latest-total">Unavailable</div><div class="l">elapsed</div></div>
+<div class="kpi"><div class="k">First token</div><div class="n" id="activity-latest-ttft">Unavailable</div><div class="l">TTFT</div></div>
+<div class="kpi"><div class="k">Requests</div><div class="n" id="activity-latest-requests">Unavailable</div><div class="l"><span id="activity-latest-retries">Unavailable</span> retries</div></div>
+<div class="kpi"><div class="k">Automatic pruning</div><div class="n" id="activity-pruning">Experimental · Unavailable</div><div class="l">read-only status</div></div>
+</div>
+<div class="card">
+<h3>Latest timing breakdown</h3>
+<p class="sub" id="activity-profile-empty">Timing breakdown unavailable for this turn</p>
+<div class="timing-grid" id="activity-profile"></div>
+</div>
+<div class="card">
+<h3>Recent activity</h3>
+<p class="sub" id="activity-recent-empty">No terminal turns in this session</p>
+<div class="table-scroll">
+<table>
+<thead><tr><th scope="col">Outcome</th><th scope="col">Total</th><th scope="col">TTFT</th><th scope="col">Cost</th></tr></thead>
+<tbody id="activity-recent-rows"></tbody>
+</table>
+</div>
+</div>
+</section>
+
+<section class="panel" id="panel-context" role="tabpanel" aria-labelledby="tab-context" hidden>
+<div class="kpis">
+<div class="kpi"><div class="k">Used</div><div class="n" id="ctx-used">Unavailable</div><div class="l" id="ctx-used-pct">Unavailable</div></div>
+<div class="kpi"><div class="k">Window</div><div class="n" id="ctx-window">Unavailable</div><div class="l">token budget</div></div>
+<div class="kpi"><div class="k">Pruned this session</div><div class="n" id="ctx-saved">Unavailable</div><div class="l">tokens reclaimed</div></div>
+<div class="kpi"><div class="k">Checkpoints</div><div class="n" id="ctx-checkpoints">Unavailable</div><div class="l">backtrack points</div></div>
 </div>
 <div class="card">
 <h3>Token usage by category</h3>
-<div class="bar" id="ctx-bar"></div>
-<div class="legend" id="ctx-legend"></div>
+<div id="ctx-bar"></div>
+<div class="legend" id="ctx-legend">Unavailable</div>
 </div>
 <div class="card">
 <h3>Admitted sources</h3>
-<div class="foot" id="src-summary"></div>
-<div style="max-height:340px;overflow-y:auto">
+<div class="foot" id="src-summary">Unavailable</div>
+<div class="table-scroll">
 <table>
-<thead><tr><th>Source</th><th>Category</th><th>Tokens</th><th>Status</th></tr></thead>
+<thead><tr><th scope="col">Source</th><th scope="col">Category</th><th scope="col">Tokens</th><th scope="col">Status</th></tr></thead>
 <tbody id="src-rows"></tbody>
 </table>
 </div>
 </div>
 </section>
 
-<section class="panel" id="panel-tokens">
+<section class="panel" id="panel-tokens" role="tabpanel" aria-labelledby="tab-tokens" hidden>
 <div class="kpis">
-<div class="kpi"><div class="k">Session input</div><div class="n" id="tok-input">–</div><div class="l" id="tok-cached"></div></div>
-<div class="kpi"><div class="k">Session output</div><div class="n" id="tok-output">–</div><div class="l" id="tok-reasoning"></div></div>
-<div class="kpi"><div class="k">Session total</div><div class="n" id="tok-total">–</div><div class="l">cumulative, all turns</div></div>
-<div class="kpi"><div class="k">Last turn</div><div class="n" id="tok-last">–</div><div class="l">most recent request</div></div>
+<div class="kpi"><div class="k">Session input</div><div class="n" id="tok-input">Unavailable</div><div class="l" id="tok-cached">Unavailable</div></div>
+<div class="kpi"><div class="k">Session output</div><div class="n" id="tok-output">Unavailable</div><div class="l" id="tok-reasoning">Unavailable</div></div>
+<div class="kpi"><div class="k">Session total</div><div class="n" id="tok-total">Unavailable</div><div class="l">cumulative, all turns</div></div>
+<div class="kpi"><div class="k">Last turn</div><div class="n" id="tok-last">Unavailable</div><div class="l">most recent request</div></div>
 </div>
 <div class="card">
 <h3>About this tab</h3>
-<p class="sub" style="margin:0">Elpis is plan-based (ChatGPT/Codex subscription), not metered API billing, so
-there is no real $ cost figure to show here — only measured token counts.</p>
+<p class="sub">Token totals come from the active runtime. Per-turn cost appears in Activity only when its typed availability is known.</p>
 </div>
 </section>
 
-<p class="foot" id="updated">–</p>
+<p class="foot" id="updated">No valid server heartbeat yet</p>
 </div>
 <script>
-const tabs = document.querySelectorAll('.tab');
-const panels = document.querySelectorAll('.panel');
-tabs.forEach(t => t.addEventListener('click', () => {
-  tabs.forEach(x => x.classList.remove('active'));
-  panels.forEach(x => x.classList.remove('active'));
-  t.classList.add('active');
-  document.getElementById('panel-' + t.dataset.tab).classList.add('active');
-}));
+const STATUS_LABELS = Object.freeze({
+  running: 'Running',
+  completed: 'Completed',
+  failed: 'Failed',
+  interrupted: 'Interrupted'
+});
+const COST_LABELS = Object.freeze({
+  subscription_authentication: 'Cost unavailable for subscription authentication',
+  cost_observation_disabled: 'Cost unavailable — cost observation is disabled',
+  provider_unsupported: 'Cost unavailable — provider unsupported',
+  awaiting_backend_price: 'Cost unavailable — awaiting backend price',
+  backend_unavailable: 'Cost unavailable — backend unavailable',
+  observation_dropped: 'Cost unavailable — observation dropped'
+});
+const CATEGORY_CLASSES = Object.freeze({
+  '#3b82f6': 'category-blue',
+  '#22c55e': 'category-green',
+  '#eab308': 'category-yellow',
+  '#d946ef': 'category-magenta',
+  '#06b6d4': 'category-cyan',
+  '#6b635a': 'category-muted'
+});
+const PROFILE_FIELDS = Object.freeze([
+  ['Before first request', 'before_first_sampling_ms'],
+  ['Sampling', 'sampling_ms'],
+  ['Compaction', 'compaction_ms'],
+  ['Between-request overhead', 'between_sampling_overhead_ms'],
+  ['Tool blocking', 'tool_blocking_ms'],
+  ['After final request', 'after_last_sampling_ms']
+]);
 
-function fmt(n) {
-  if (n === undefined || n === null) return '–';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-  return String(n);
+const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+let lastValidState = null;
+let lastHeartbeat = null;
+let heartbeatReceivedAt = null;
+let updatesPaused = false;
+let pollTimer = null;
+let elapsedTimer = null;
+let freshnessTimer = null;
+let refreshEpoch = 0;
+let nextRequestId = 0;
+let newestAcceptedRequestId = 0;
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function ownValue(map, key) {
+  return typeof key === 'string' && Object.hasOwn(map, key) ? map[key] : null;
+}
+
+function makeNode(tag, className, value) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (value !== undefined) element.textContent = value;
+  return element;
+}
+
+function setText(id, value) {
+  byId(id).textContent = value;
+}
+
+function isCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function formatCount(value) {
+  if (!isCount(value)) return 'Unavailable';
+  if (value >= 1000) return (value / 1000).toFixed(1) + 'k';
+  return String(value);
+}
+
+function formatDuration(value) {
+  if (!isCount(value)) return 'Unavailable';
+  if (value < 1000) return String(Math.round(value)) + ' ms';
+  return (value / 1000).toFixed(value >= 10000 ? 1 : 2) + ' s';
+}
+
+function formatStatus(status) {
+  return ownValue(STATUS_LABELS, status) || 'Unavailable';
+}
+
+function formatCost(cost) {
+  if (!cost || typeof cost !== 'object') return 'Unavailable';
+  if (
+    cost.type === 'priced'
+    && typeof cost.backend_total_usd === 'string'
+    && cost.backend_total_usd.trim().length > 0
+  ) {
+    return 'Backend-reported ' + cost.backend_total_usd;
+  }
+  if (cost.type === 'unavailable') {
+    return ownValue(COST_LABELS, cost.reason) || 'Unavailable';
+  }
+  return 'Unavailable';
+}
+
+function activateTab(selected, focus) {
+  tabs.forEach(tab => {
+    const active = tab === selected;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    byId(tab.getAttribute('aria-controls')).hidden = !active;
+  });
+  if (focus) selected.focus();
+}
+
+tabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => activateTab(tab, false));
+  tab.addEventListener('keydown', event => {
+    let next = index;
+    if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    activateTab(tabs[next], true);
+  });
+});
+
+function renderContext(context) {
+  setText('ctx-used', formatCount(context.used_tokens));
+  setText(
+    'ctx-used-pct',
+    isCount(context.used_percent) ? String(context.used_percent) + '% of window' : 'Unavailable'
+  );
+  setText('ctx-window', formatCount(context.window_tokens));
+  setText('ctx-saved', formatCount(context.saved_tokens));
+  setText('ctx-checkpoints', formatCount(context.backtrack_points));
+
+  const categoryBox = byId('ctx-bar');
+  const categorySummary = byId('ctx-legend');
+  categoryBox.replaceChildren();
+  const categories = Array.isArray(context.categories) ? context.categories : null;
+  if (!categories || categories.length === 0) {
+    categoryBox.append(makeNode('p', 'sub', 'Unavailable'));
+    categorySummary.textContent = 'Unavailable';
+  } else {
+    categories.forEach(category => {
+      const row = makeNode('div', 'category-row');
+      const name = makeNode('span', 'category-name');
+      const colorClass = ownValue(CATEGORY_CLASSES, category.color) || 'category-muted';
+      const swatch = makeNode('span', 'swatch ' + colorClass);
+      const label = typeof category.label === 'string' ? category.label : 'Unavailable';
+      name.append(swatch, makeNode('span', '', label));
+      row.append(name, makeNode('span', 'timing-value', formatCount(category.tokens)));
+      categoryBox.append(row);
+    });
+    categorySummary.textContent =
+      String(categories.length) + ' measured categories · window ' + formatCount(context.window_tokens);
+  }
+
+  const sources = Array.isArray(context.sources) ? context.sources : null;
+  const rows = byId('src-rows');
+  rows.replaceChildren();
+  if (!sources) {
+    setText('src-summary', 'Unavailable');
+    const row = document.createElement('tr');
+    const cell = makeNode('td', '', 'Unavailable');
+    cell.colSpan = 4;
+    row.append(cell);
+    rows.append(row);
+    return;
+  }
+  const admitted = sources.filter(source => source && source.admitted === true).length;
+  setText(
+    'src-summary',
+    String(admitted) + ' of ' + String(sources.length) + ' discovered sources admitted to context'
+  );
+  if (sources.length === 0) {
+    const row = document.createElement('tr');
+    const cell = makeNode('td', '', 'No sources discovered');
+    cell.colSpan = 4;
+    row.append(cell);
+    rows.append(row);
+  } else {
+    sources.forEach(source => {
+      const row = document.createElement('tr');
+      const admittedClass = source.admitted === true ? 'admitted' : 'notadmitted';
+      row.append(
+        makeNode('td', '', typeof source.name === 'string' ? source.name : 'Unavailable'),
+        makeNode('td', '', typeof source.category === 'string' ? source.category : 'Unavailable'),
+        makeNode('td', '', formatCount(source.estimated_tokens)),
+        makeNode('td', admittedClass, source.admitted === true ? 'admitted' : '—')
+      );
+      rows.append(row);
+    });
+  }
+}
+
+function renderTokenTotals(total, fields) {
+  Object.entries(fields).forEach(([field, id]) => {
+    const value = total && typeof total === 'object' ? total[field] : null;
+    if (field === 'cached_input') {
+      setText(id, isCount(value) ? formatCount(value) + ' cached' : 'Unavailable');
+    } else if (field === 'reasoning_output') {
+      setText(id, isCount(value) ? formatCount(value) + ' reasoning' : 'Unavailable');
+    } else {
+      setText(id, formatCount(value));
+    }
+  });
+}
+
+function renderTokens(tokens) {
+  renderTokenTotals(tokens.session_total, {
+    input: 'tok-input',
+    cached_input: 'tok-cached',
+    output: 'tok-output',
+    reasoning_output: 'tok-reasoning',
+    total: 'tok-total'
+  });
+  renderTokenTotals(tokens.last_turn, { total: 'tok-last' });
+}
+
+function renderElapsed() {
+  const current = lastValidState && lastValidState.activity
+    ? lastValidState.activity.current
+    : null;
+  if (
+    !current
+    || !Number.isFinite(current.started_at)
+    || !Number.isFinite(lastHeartbeat)
+    || !Number.isFinite(heartbeatReceivedAt)
+  ) {
+    setText('activity-elapsed', 'Unavailable');
+    return;
+  }
+  const elapsedAtHeartbeat = lastHeartbeat - current.started_at;
+  const sinceReceipt = Math.max(0, Date.now() - heartbeatReceivedAt);
+  setText('activity-elapsed', formatDuration(Math.max(0, elapsedAtHeartbeat + sinceReceipt)));
+}
+
+function renderProfile(profile) {
+  const box = byId('activity-profile');
+  const empty = byId('activity-profile-empty');
+  box.replaceChildren();
+  if (!profile || typeof profile !== 'object') {
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  PROFILE_FIELDS.forEach(([label, field]) => {
+    const row = makeNode('div', 'timing-row');
+    row.append(
+      makeNode('span', '', label),
+      makeNode('span', 'timing-value', formatDuration(profile[field]))
+    );
+    box.append(row);
+  });
+}
+
+function renderRecent(recent) {
+  const rows = byId('activity-recent-rows');
+  const empty = byId('activity-recent-empty');
+  rows.replaceChildren();
+  const visible = [...recent].reverse().slice(0, 20);
+  empty.hidden = visible.length > 0;
+  visible.forEach(turn => {
+    const row = document.createElement('tr');
+    row.append(
+      makeNode('td', '', formatStatus(turn.status)),
+      makeNode('td', '', formatDuration(turn.duration_ms)),
+      makeNode('td', '', formatDuration(turn.time_to_first_token_ms)),
+      makeNode('td', '', formatCost(turn.cost))
+    );
+    rows.append(row);
+  });
+}
+
+function renderActivity(activity) {
+  const current = activity && activity.current ? activity.current : null;
+  setText('activity-now', current ? formatStatus(current.status) : 'Idle');
+  setText('activity-current-cost', current ? formatCost(current.cost) : 'Unavailable');
+  renderElapsed();
+
+  const pruning = activity ? activity.automatic_pruning_enabled : null;
+  setText(
+    'activity-pruning',
+    pruning === true
+      ? 'Experimental · On'
+      : pruning === false
+        ? 'Experimental · Off'
+        : 'Experimental · Unavailable'
+  );
+
+  const recent = activity && Array.isArray(activity.recent) ? activity.recent : [];
+  const latest = recent.at(-1);
+  if (!latest) {
+    setText('activity-latest-status', 'Unavailable');
+    setText('activity-latest-total', 'Unavailable');
+    setText('activity-latest-ttft', 'Unavailable');
+    setText('activity-latest-requests', 'Unavailable');
+    setText('activity-latest-retries', 'Unavailable');
+    setText('activity-latest-cost', 'Unavailable');
+    renderProfile(null);
+  } else {
+    setText('activity-latest-status', formatStatus(latest.status));
+    setText('activity-latest-total', formatDuration(latest.duration_ms));
+    setText('activity-latest-ttft', formatDuration(latest.time_to_first_token_ms));
+    setText(
+      'activity-latest-requests',
+      latest.profile ? formatCount(latest.profile.sampling_request_count) : 'Unavailable'
+    );
+    setText(
+      'activity-latest-retries',
+      latest.profile ? formatCount(latest.profile.sampling_retry_count) : 'Unavailable'
+    );
+    setText('activity-latest-cost', formatCost(latest.cost));
+    renderProfile(latest.profile);
+  }
+  renderRecent(recent);
+}
+
+function renderFreshness() {
+  let label = 'Unavailable';
+  let className = 'status';
+  if (Number.isFinite(lastHeartbeat)) {
+    const age = Math.max(0, Date.now() - lastHeartbeat);
+    if (age <= 10000) {
+      label = 'Fresh';
+      className = 'status status-fresh';
+    } else {
+      label = 'Stale';
+      className = 'status status-stale';
+    }
+  }
+  const element = byId('freshness-status');
+  if (element.textContent !== label) element.textContent = label;
+  element.className = className;
+}
+
+function renderState(state) {
+  const context = state.context && typeof state.context === 'object' ? state.context : {};
+  const tokens = state.tokens && typeof state.tokens === 'object' ? state.tokens : {};
+  const activity = state.activity && typeof state.activity === 'object' ? state.activity : {};
+  setText(
+    'model-line',
+    (typeof context.model === 'string' ? context.model : 'Unavailable')
+      + ' · current session facts'
+  );
+  renderContext(context);
+  renderTokens(tokens);
+  renderActivity(activity);
+  setText('updated', 'Last valid server heartbeat ' + new Date(lastHeartbeat).toLocaleTimeString());
 }
 
 async function refresh() {
+  const requestEpoch = refreshEpoch;
+  const requestId = ++nextRequestId;
   try {
     const res = await fetch('/data.json', { cache: 'no-store' });
-    const d = await res.json();
-    document.getElementById('model-line').textContent = d.model + ' · updated live from the running session';
-
-    document.getElementById('ctx-used').textContent = fmt(d.used_tokens);
-    document.getElementById('ctx-used-pct').textContent = d.used_percent + '% of window';
-    document.getElementById('ctx-window').textContent = fmt(d.window_tokens);
-    document.getElementById('ctx-saved').textContent = fmt(d.saved_tokens);
-    document.getElementById('ctx-checkpoints').textContent = d.backtrack_points;
-
-    const bar = document.getElementById('ctx-bar');
-    const legend = document.getElementById('ctx-legend');
-    bar.innerHTML = '';
-    legend.innerHTML = '';
-    const window = d.window_tokens || 1;
-    (d.categories || []).forEach(c => {
-      const pct = Math.max(0, Math.min(100, (c.tokens / window) * 100));
-      const seg = document.createElement('i');
-      seg.style.width = pct + '%';
-      seg.style.background = c.color;
-      bar.appendChild(seg);
-      const item = document.createElement('span');
-      item.innerHTML = '<i style="background:' + c.color + '"></i>' + c.label + ': ' + fmt(c.tokens);
-      legend.appendChild(item);
-    });
-
-    const sources = d.sources || [];
-    const admitted = sources.filter(s => s.admitted).length;
-    document.getElementById('src-summary').textContent = admitted + ' of ' + sources.length + ' discovered sources admitted to context';
-    const rows = document.getElementById('src-rows');
-    rows.innerHTML = '';
-    sources.forEach(s => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + s.name + '</td><td>' + s.category + '</td><td>' + fmt(s.estimated_tokens) +
-        '</td><td class="' + (s.admitted ? 'admitted' : 'notadmitted') + '">' + (s.admitted ? 'admitted' : '—') + '</td>';
-      rows.appendChild(tr);
-    });
-
-    const t = d.session_total || {};
-    const lt = d.last_turn || {};
-    document.getElementById('tok-input').textContent = fmt(t.input);
-    document.getElementById('tok-cached').textContent = fmt(t.cached_input) + ' cached';
-    document.getElementById('tok-output').textContent = fmt(t.output);
-    document.getElementById('tok-reasoning').textContent = fmt(t.reasoning_output) + ' reasoning';
-    document.getElementById('tok-total').textContent = fmt(t.total);
-    document.getElementById('tok-last').textContent = fmt(lt.total);
-
-    document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
-  } catch (e) {
-    document.getElementById('model-line').textContent = 'waiting for session data…';
+    if (!res.ok) return;
+    const envelope = await res.json();
+    if (
+      !envelope
+      || !envelope.state
+      || !Number.isFinite(envelope.state.schema_version)
+      || envelope.state.schema_version !== 1
+      || !Number.isFinite(envelope.heartbeat_at)
+    ) {
+      return;
+    }
+    if (requestEpoch !== refreshEpoch || requestId < newestAcceptedRequestId) return;
+    newestAcceptedRequestId = requestId;
+    lastValidState = envelope.state;
+    lastHeartbeat = envelope.heartbeat_at;
+    heartbeatReceivedAt = Date.now();
+    renderState(lastValidState);
+    renderFreshness();
+  } catch (_) {
+    return;
   }
 }
+
+function startPolling() {
+  if (pollTimer !== null) return;
+  const pollingEpoch = refreshEpoch;
+  pollTimer = setInterval(() => {
+    if (!updatesPaused && pollingEpoch === refreshEpoch) refresh();
+  }, 3000);
+}
+
+function stopPolling() {
+  if (pollTimer !== null) clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+function startElapsed() {
+  if (elapsedTimer !== null) return;
+  const elapsedEpoch = refreshEpoch;
+  elapsedTimer = setInterval(() => {
+    if (!updatesPaused && elapsedEpoch === refreshEpoch) renderElapsed();
+  }, 250);
+}
+
+function stopElapsed() {
+  if (elapsedTimer !== null) clearInterval(elapsedTimer);
+  elapsedTimer = null;
+}
+
+byId('updates-toggle').addEventListener('click', () => {
+  updatesPaused = !updatesPaused;
+  refreshEpoch += 1;
+  const button = byId('updates-toggle');
+  button.textContent = updatesPaused ? 'Resume updates' : 'Pause updates';
+  button.setAttribute('aria-pressed', String(updatesPaused));
+  if (updatesPaused) {
+    stopPolling();
+    stopElapsed();
+  } else {
+    refresh();
+    startPolling();
+    startElapsed();
+  }
+});
+
+byId('refresh-now').addEventListener('click', refresh);
+
+freshnessTimer = setInterval(renderFreshness, 1000);
 refresh();
-setInterval(refresh, 3000);
+startPolling();
+startElapsed();
 </script>
-</body></html>
+</body>
+</html>

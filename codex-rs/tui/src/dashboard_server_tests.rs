@@ -14,6 +14,8 @@ use tiny_http::Request;
 use tiny_http::TestRequest;
 
 const PORT: u16 = 43123;
+const ACTIVITY_FIXTURE: &str =
+    include_str!("dashboard_assets/fixtures/activity-state.json");
 
 fn context() -> DashboardContext {
     DashboardContext {
@@ -661,4 +663,336 @@ fn failed_server_start_does_not_latch_and_success_is_reused() {
         Some("http://127.0.0.1:43123".to_string())
     );
     assert_eq!(attempts.get(), 2);
+}
+
+#[test]
+fn activity_fixture_round_trips_only_typed_safe_facts() {
+    for hostile in [
+        "<img src=x onerror=1>",
+        "<script>",
+        "/home/private-user/secret",
+    ] {
+        assert!(ACTIVITY_FIXTURE.contains(hostile));
+    }
+
+    let raw: Value = serde_json::from_str(ACTIVITY_FIXTURE).expect("fixture is JSON");
+    assert_eq!(raw["hostile"]["markup"], "<img src=x onerror=1>");
+    assert_eq!(raw["hostile"]["script"], "<script>");
+    assert_eq!(raw["hostile"]["path"], "/home/private-user/secret");
+
+    let envelope: DashboardEnvelope =
+        serde_json::from_str(ACTIVITY_FIXTURE).expect("fixture matches dashboard wire");
+    assert_eq!(envelope.state.schema_version, 1);
+    assert_eq!(envelope.state.activity.recent.len(), 2);
+    assert_eq!(
+        envelope
+            .state
+            .activity
+            .current
+            .as_ref()
+            .map(|turn| turn.status),
+        Some(super::DashboardActivityStatus::Running)
+    );
+    assert_eq!(
+        envelope
+            .state
+            .activity
+            .current
+            .as_ref()
+            .and_then(|turn| turn.cost.as_ref()),
+        Some(&DashboardCostState::Unavailable {
+            reason: DashboardCostAvailability::AwaitingBackendPrice,
+        })
+    );
+
+    let interrupted = &envelope.state.activity.recent[0];
+    assert_eq!(
+        interrupted.status,
+        super::DashboardActivityStatus::Interrupted
+    );
+    assert_eq!(
+        interrupted.cost.as_ref(),
+        Some(&DashboardCostState::Unavailable {
+            reason: DashboardCostAvailability::SubscriptionAuthentication,
+        })
+    );
+
+    let completed = &envelope.state.activity.recent[1];
+    assert_eq!(completed.status, super::DashboardActivityStatus::Completed);
+    assert_eq!(completed.duration_ms, Some(930));
+    assert_eq!(completed.time_to_first_token_ms, Some(240));
+    let profile = completed.profile.as_ref().expect("measured profile");
+    assert_eq!(profile.before_first_sampling_ms, 100);
+    assert_eq!(profile.sampling_ms, 200);
+    assert_eq!(profile.compaction_ms, 30);
+    assert_eq!(profile.between_sampling_overhead_ms, 40);
+    assert_eq!(profile.tool_blocking_ms, 500);
+    assert_eq!(profile.after_last_sampling_ms, 60);
+    assert_eq!(profile.sampling_request_count, 3);
+    assert_eq!(profile.sampling_retry_count, 1);
+    assert_eq!(
+        completed.cost.as_ref(),
+        Some(&DashboardCostState::Priced {
+            backend_total_usd: "1.250000".to_string(),
+        })
+    );
+
+    let typed = serde_json::to_string(&envelope).expect("serialize typed fixture");
+    for hostile in [
+        "<img src=x onerror=1>",
+        "<script>",
+        "/home/private-user/secret",
+    ] {
+        assert!(!typed.contains(hostile), "typed wire retained {hostile}");
+    }
+}
+
+#[test]
+fn dashboard_asset_exposes_truthful_activity_and_existing_views() {
+    for id in [
+        "tab-activity",
+        "tab-context",
+        "tab-tokens",
+        "panel-activity",
+        "panel-context",
+        "panel-tokens",
+        "activity-now",
+        "activity-elapsed",
+        "activity-current-cost",
+        "activity-latest-status",
+        "activity-latest-total",
+        "activity-latest-ttft",
+        "activity-latest-requests",
+        "activity-latest-retries",
+        "activity-latest-cost",
+        "activity-profile",
+        "activity-profile-empty",
+        "activity-recent-rows",
+        "activity-recent-empty",
+        "activity-pruning",
+        "updates-toggle",
+        "refresh-now",
+        "freshness-status",
+        "ctx-used",
+        "ctx-bar",
+        "src-rows",
+        "tok-input",
+        "tok-last",
+    ] {
+        assert!(INDEX_HTML.contains(&format!("id=\"{id}\"")), "missing {id}");
+    }
+
+    for text in [
+        "Running",
+        "Idle",
+        "Timing breakdown unavailable for this turn",
+        "Cost unavailable for subscription authentication",
+        "Cost unavailable — awaiting backend price",
+        "Backend-reported",
+        "Pause updates",
+        "Resume updates",
+        "Refresh now",
+        "Fresh",
+        "Stale",
+        "Unavailable",
+        "Experimental · On",
+        "Experimental · Off",
+        "Experimental · Unavailable",
+    ] {
+        assert!(INDEX_HTML.contains(text), "missing copy: {text}");
+    }
+
+    assert!(!INDEX_HTML.contains("Elpis is plan-based"));
+    assert!(!INDEX_HTML.contains("$0"));
+}
+
+#[test]
+fn dashboard_asset_has_no_dynamic_html_css_network_or_storage_sink() {
+    for forbidden in [
+        ".innerHTML",
+        ".outerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "eval(",
+        "localStorage",
+        "sessionStorage",
+        "http://",
+        "https://",
+        ".style.",
+        "activity-state.json",
+        "<img src=x onerror=1>",
+        "/home/private-user",
+    ] {
+        assert!(!INDEX_HTML.contains(forbidden), "unsafe asset token: {forbidden}");
+    }
+    for safe in [
+        "document.createElement",
+        ".replaceChildren(",
+        ".append(",
+        ".textContent",
+        "const STATUS_LABELS",
+        "const COST_LABELS",
+        "const CATEGORY_CLASSES",
+    ] {
+        assert!(INDEX_HTML.contains(safe), "missing safe DOM guard: {safe}");
+    }
+}
+
+#[test]
+fn dashboard_asset_validates_envelope_and_preserves_last_good_state() {
+    for source in [
+        "fetch('/data.json'",
+        "if (!res.ok)",
+        "envelope.state.schema_version !== 1",
+        "!Number.isFinite(envelope.heartbeat_at)",
+        "lastValidState = envelope.state",
+        "lastHeartbeat = envelope.heartbeat_at",
+        "const latest = recent.at(-1)",
+        "if (!latest)",
+        "[...recent].reverse().slice(0, 20)",
+        "Array.isArray(context.categories)",
+        "renderTokenTotals(tokens.session_total",
+        "renderTokenTotals(tokens.last_turn",
+        "lastHeartbeat - current.started_at",
+        "Date.now() - heartbeatReceivedAt",
+    ] {
+        assert!(INDEX_HTML.contains(source), "missing envelope guard: {source}");
+    }
+    assert!(!INDEX_HTML.contains("lastHeartbeat = Date.now"));
+    assert!(!INDEX_HTML.contains("current.started_at * 1000"));
+    assert!(!INDEX_HTML.contains("current.started_at*1000"));
+    let freshness = INDEX_HTML
+        .split("function renderFreshness() {")
+        .nth(1)
+        .and_then(|tail| tail.split("\n}\n\nfunction renderState").next())
+        .expect("freshness function");
+    assert!(freshness.contains("Date.now() - lastHeartbeat"));
+    assert!(!freshness.contains("heartbeatReceivedAt"));
+}
+
+#[test]
+fn dashboard_asset_maps_every_unavailable_cost_without_a_price() {
+    for mapping in [
+        "subscription_authentication: 'Cost unavailable for subscription authentication'",
+        "cost_observation_disabled: 'Cost unavailable — cost observation is disabled'",
+        "provider_unsupported: 'Cost unavailable — provider unsupported'",
+        "awaiting_backend_price: 'Cost unavailable — awaiting backend price'",
+        "backend_unavailable: 'Cost unavailable — backend unavailable'",
+        "observation_dropped: 'Cost unavailable — observation dropped'",
+    ] {
+        assert!(INDEX_HTML.contains(mapping), "missing cost map: {mapping}");
+    }
+    let unavailable_map = INDEX_HTML
+        .split("const COST_LABELS = Object.freeze({")
+        .nth(1)
+        .and_then(|tail| tail.split("});").next())
+        .expect("closed unavailable-cost map");
+    assert!(!unavailable_map.contains("Backend-reported"));
+    assert!(INDEX_HTML.contains("cost.type === 'priced'"));
+    assert!(INDEX_HTML.contains("cost.type === 'unavailable'"));
+}
+
+#[test]
+fn dashboard_asset_rejects_inherited_map_keys_and_stale_refreshes() {
+    for source in [
+        "function ownValue(map, key)",
+        "Object.hasOwn(map, key)",
+        "ownValue(STATUS_LABELS, status)",
+        "ownValue(COST_LABELS, cost.reason)",
+        "ownValue(CATEGORY_CLASSES, category.color)",
+        "let refreshEpoch = 0",
+        "let nextRequestId = 0",
+        "let newestAcceptedRequestId = 0",
+        "const requestEpoch = refreshEpoch",
+        "const requestId = ++nextRequestId",
+        "requestEpoch !== refreshEpoch",
+        "requestId < newestAcceptedRequestId",
+        "newestAcceptedRequestId = requestId",
+        "refreshEpoch += 1",
+        "const pollingEpoch = refreshEpoch",
+        "!updatesPaused && pollingEpoch === refreshEpoch",
+        "const elapsedEpoch = refreshEpoch",
+        "!updatesPaused && elapsedEpoch === refreshEpoch",
+        "byId('refresh-now').addEventListener('click', refresh)",
+    ] {
+        assert!(INDEX_HTML.contains(source), "missing race/map guard: {source}");
+    }
+    for unsafe_lookup in [
+        "STATUS_LABELS[status]",
+        "COST_LABELS[cost.reason]",
+        "CATEGORY_CLASSES[category.color]",
+    ] {
+        assert!(
+            !INDEX_HTML.contains(unsafe_lookup),
+            "prototype-chain lookup remains: {unsafe_lookup}"
+        );
+    }
+
+    assert_eq!(INDEX_HTML.matches("refreshEpoch += 1").count(), 1);
+    assert_eq!(
+        INDEX_HTML
+            .matches("newestAcceptedRequestId = requestId")
+            .count(),
+        1
+    );
+    let validated = INDEX_HTML
+        .find("envelope.state.schema_version !== 1")
+        .expect("schema validation");
+    let stale_guard = INDEX_HTML
+        .find("requestEpoch !== refreshEpoch")
+        .expect("epoch guard");
+    let accepted = INDEX_HTML
+        .find("newestAcceptedRequestId = requestId")
+        .expect("accepted request update");
+    let published = INDEX_HTML
+        .find("lastValidState = envelope.state")
+        .expect("state publication");
+    assert!(validated < stale_guard);
+    assert!(stale_guard < accepted);
+    assert!(accepted < published);
+}
+
+#[test]
+fn dashboard_asset_has_keyboard_responsive_and_timer_controls() {
+    for source in [
+        "role=\"tablist\"",
+        "role=\"tab\"",
+        "role=\"tabpanel\"",
+        "aria-selected=\"true\"",
+        "aria-selected=\"false\"",
+        "tab.tabIndex",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+        ":focus-visible",
+        "@media (max-width:",
+        "overflow-x:auto",
+        "@media (prefers-reduced-motion: reduce)",
+        "let pollTimer",
+        "let elapsedTimer",
+        "let freshnessTimer",
+        "clearInterval(pollTimer)",
+        "clearInterval(elapsedTimer)",
+    ] {
+        assert!(INDEX_HTML.contains(source), "missing interaction guard: {source}");
+    }
+
+    let activity_tab = INDEX_HTML.find("id=\"tab-activity\"").expect("Activity tab");
+    let context_tab = INDEX_HTML.find("id=\"tab-context\"").expect("Context tab");
+    assert!(activity_tab < context_tab, "Activity must be the first tab");
+    let activity_tab_tag = INDEX_HTML[activity_tab..]
+        .split('>')
+        .next()
+        .expect("Activity tab opening tag");
+    assert!(activity_tab_tag.contains("aria-selected=\"true\""));
+    let activity_panel = INDEX_HTML
+        .split("<section class=\"panel\" id=\"panel-activity\"")
+        .nth(1)
+        .and_then(|tail| tail.split('>').next())
+        .expect("Activity panel opening tag");
+    assert!(!activity_panel.contains("hidden"));
+    assert!(INDEX_HTML.contains(
+        "id=\"freshness-status\" role=\"status\" aria-live=\"polite\""
+    ));
 }
