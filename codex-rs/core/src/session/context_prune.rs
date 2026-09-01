@@ -44,6 +44,17 @@ enum Escalation {
 
 struct PruneCancelled;
 
+struct PruneCommit<'a> {
+    cancellation_boundary: Option<&'a TaskCancellationBoundary>,
+}
+
+impl PruneCommit<'_> {
+    fn finish(self) -> bool {
+        self.cancellation_boundary
+            .is_none_or(TaskCancellationBoundary::finish_commit)
+    }
+}
+
 struct PruneDebugRecord {
     model_slug: String,
     input_text: String,
@@ -67,24 +78,25 @@ impl PruneDebugRecord {
     }
 }
 
-async fn begin_prune_commit(
+async fn begin_prune_commit<'a>(
     cancellation_token: Option<&CancellationToken>,
-    cancellation_boundary: Option<&TaskCancellationBoundary>,
-) -> bool {
+    cancellation_boundary: Option<&'a TaskCancellationBoundary>,
+) -> Option<PruneCommit<'a>> {
     if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
-        return false;
+        return None;
     }
-    let Some(cancellation_boundary) = cancellation_boundary else {
-        return true;
-    };
-    if !cancellation_boundary.try_commit() {
-        return false;
+    if let Some(cancellation_boundary) = cancellation_boundary {
+        if !cancellation_boundary.try_commit() {
+            return None;
+        }
+        // The session abort path claims the same atomic decision before removing the
+        // active task. Once commit wins, that path leaves the task registered and waits
+        // for normal TurnComplete delivery instead of aborting a partially applied pass.
+        cancellation_boundary.wait_for_commit_release_for_test().await;
     }
-    // The session abort path claims the same atomic decision before removing the
-    // active task. Once commit wins, that path leaves the task registered and waits
-    // for normal TurnComplete delivery instead of aborting a partially applied pass.
-    cancellation_boundary.wait_for_commit_release_for_test().await;
-    true
+    Some(PruneCommit {
+        cancellation_boundary,
+    })
 }
 
 async fn await_or_cancelled<T>(
@@ -353,9 +365,10 @@ async fn run_context_prune(
     }
 
     let Some((record, raw, model_slug, usage, pass_id)) = pass_result else {
-        if !begin_prune_commit(cancellation_token, cancellation_boundary).await {
+        let Some(commit) = begin_prune_commit(cancellation_token, cancellation_boundary).await
+        else {
             return false;
-        }
+        };
         write_prune_debug_records(&log_dir, &debug_records);
         if let Err(err) = context_prune_audit::record_failed_attempts(&log_dir, &attempts) {
             tracing::warn!("Failed to record failed pruning attempt audit: {err:#}");
@@ -368,6 +381,7 @@ async fn run_context_prune(
             "Context prune pass failed ({failures} in a row); retrying after {:?}",
             context_pruner::retry_delay_after_failures(failures)
         );
+        let _ = commit.finish();
         return false;
     };
 
@@ -381,9 +395,9 @@ async fn run_context_prune(
     let after_model_items = after_history.for_prompt(&turn_context.model_info.input_modalities);
     let ace_input = context_pruner::build_prune_input(&batch, active_question.as_deref());
     let session_id = sess.session_id().to_string();
-    if !begin_prune_commit(cancellation_token, cancellation_boundary).await {
+    let Some(commit) = begin_prune_commit(cancellation_token, cancellation_boundary).await else {
         return false;
-    }
+    };
     write_prune_debug_records(&log_dir, &debug_records);
     let audit = match context_prune_audit::write_applied_pass(
         &log_dir,
@@ -409,6 +423,7 @@ async fn run_context_prune(
         Err(err) => {
             tracing::warn!("Context prune audit failed; preserving history: {err:#}");
             sess.state.lock().await.record_context_prune_failure();
+            let _ = commit.finish();
             return false;
         }
     };
@@ -492,7 +507,7 @@ async fn run_context_prune(
             audit.pass_dir.display()
         );
     }
-    true
+    commit.finish()
 }
 
 async fn run_prune_pass(

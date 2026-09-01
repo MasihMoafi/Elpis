@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -22,6 +21,7 @@ use crate::agent::control::AgentExecutionGuard;
 use crate::session::TurnInputQueue;
 use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
+use crate::tasks::TaskCompletion;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
@@ -71,7 +71,7 @@ pub(crate) enum TaskKind {
 }
 
 pub(crate) struct RunningTask {
-    pub(crate) done: Arc<Notify>,
+    pub(crate) completion: Arc<TaskCompletion>,
     pub(crate) kind: TaskKind,
     pub(crate) task: Arc<dyn AnySessionTask>,
     pub(crate) cancellation_token: CancellationToken,
