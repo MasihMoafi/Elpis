@@ -11,6 +11,77 @@ use pretty_assertions::assert_eq;
 use std::collections::VecDeque;
 
 #[tokio::test]
+async fn manual_memory_admission_blocks_same_loop_and_direct_user_turn_submission() {
+    let root = tempdir().expect("temporary workspace");
+    let memories = root.path().join("memories");
+    let cwd = root.path().join("project");
+    std::fs::create_dir_all(&memories).expect("memory directory");
+    std::fs::create_dir_all(&cwd).expect("workspace");
+    std::fs::write(memories.join("MEMORY.md"), "durable memory").expect("manual memory");
+
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.memory_dir = memories.abs();
+    chat.config.cwd = cwd.clone().abs();
+    let rollout_file = NamedTempFile::new().expect("rollout");
+    chat.handle_thread_session(crate::session_state::ThreadSessionState {
+        thread_id: ThreadId::new(),
+        forked_from_id: None,
+        fork_parent_title: None,
+        thread_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        service_tier: None,
+        approval_policy: AskForApproval::Never,
+        approvals_reviewer: ApprovalsReviewer::User,
+        permission_profile: PermissionProfile::read_only(),
+        active_permission_profile: None,
+        cwd: cwd.abs(),
+        runtime_workspace_roots: Vec::new(),
+        instruction_source_paths: Vec::new(),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        collaboration_mode: None,
+        personality: None,
+        message_history: None,
+        network_proxy: None,
+        rollout_path: Some(rollout_file.path().to_path_buf()),
+    });
+    while rx.try_recv().is_ok() {}
+    seed_manual_memory_cache_from_disk(&mut chat).expect("manual-memory cache");
+
+    assert!(chat.begin_manual_memory_admission(true));
+    assert!(!chat.begin_manual_memory_admission(true));
+    assert!(!chat.begin_manual_memory_admission(false));
+    assert!(chat.manual_memory_submission_blocked());
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryAdmissionRequested(_, true))
+    );
+    assert!(rx.try_recv().is_err());
+
+    chat.initial_user_message = Some(UserMessage::from("initial submit"));
+    chat.submit_initial_user_message_if_pending();
+    assert_eq!(
+        chat.initial_user_message.as_ref().map(|message| message.text.as_str()),
+        Some("initial submit")
+    );
+    assert!(op_rx.try_recv().is_err());
+
+    chat.submit_user_message(UserMessage::from("direct submit"));
+    assert_eq!(chat.queued_user_message_texts(), vec!["direct submit"]);
+    assert!(!chat.maybe_send_next_queued_input());
+    assert!(op_rx.try_recv().is_err());
+
+    chat.bottom_pane
+        .set_composer_text("same-loop Enter".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(
+        chat.queued_user_message_texts(),
+        vec!["direct submit", "same-loop Enter"]
+    );
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn submission_preserves_text_elements_and_local_images() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

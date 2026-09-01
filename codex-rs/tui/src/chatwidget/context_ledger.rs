@@ -155,6 +155,7 @@ impl ChatWidget {
                     let all_admitted = all_bulk_context_sources_admitted(
                         &sources,
                         manual_memory_path.as_deref(),
+                        self.manual_memory_can_toggle(),
                     );
                     self.set_all_context_sources_admitted(&sources, !all_admitted);
                     self.request_redraw();
@@ -182,6 +183,7 @@ impl ChatWidget {
                 let all_admitted = all_bulk_context_sources_admitted(
                     &sources,
                     manual_memory_path.as_deref(),
+                    self.manual_memory_can_toggle(),
                 );
                 self.set_all_context_sources_admitted(&sources, !all_admitted);
             }
@@ -200,6 +202,22 @@ impl ChatWidget {
             KeyCode::Char(' ') | KeyCode::Enter => {
                 let source = &sources[self.context_ledger.selected];
                 self.set_context_source_admitted(source, !source.admitted);
+            }
+            KeyCode::Char('c') => {
+                let source = &sources[self.context_ledger.selected];
+                let is_manual_memory = is_manual_memory_source(
+                    source,
+                    self.manual_memory_cache
+                        .bound_target
+                        .as_ref()
+                        .map(|target| target.view.memory_path.as_path()),
+                );
+                if is_manual_memory {
+                    self.begin_manual_memory_create();
+                } else {
+                    self.context_ledger.focused = false;
+                    return false;
+                }
             }
             KeyCode::Backspace | KeyCode::Delete => {
                 let source = sources[self.context_ledger.selected].clone();
@@ -640,14 +658,57 @@ impl ChatWidget {
         self.manual_memory_cache.pending_context_report
     }
 
+    pub(crate) fn manual_memory_pending_mutation(&self) -> Option<ManualMemoryMutation> {
+        self.manual_memory_cache.pending_mutation
+    }
+
+    pub(crate) fn manual_memory_submission_blocked(&self) -> bool {
+        matches!(
+            self.manual_memory_cache.pending_mutation,
+            Some(ManualMemoryMutation::Admission { .. })
+        )
+    }
+
+    pub(crate) fn seed_manual_memory_pending_mutation(
+        &mut self,
+        pending_mutation: Option<ManualMemoryMutation>,
+    ) {
+        self.manual_memory_cache.pending_mutation = pending_mutation;
+        match pending_mutation {
+            Some(ManualMemoryMutation::Create) => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Creating;
+            }
+            Some(ManualMemoryMutation::Admission { .. }) => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+                self.manual_memory_cache.status = None;
+                self.manual_memory_cache.sources.clear();
+                self.manual_memory_cache.unavailable_reason = None;
+            }
+            None if self.manual_memory_cache.phase == ManualMemoryPhase::Creating => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+                self.manual_memory_cache.status = None;
+                self.manual_memory_cache.sources.clear();
+                self.manual_memory_cache.unavailable_reason = None;
+            }
+            None => {}
+        }
+        self.request_redraw();
+    }
+
     pub(crate) fn bind_manual_memory_loading(
         &mut self,
         target: ManualMemoryRequestTarget,
         pending_context_report: bool,
+        pending_mutation: Option<ManualMemoryMutation>,
     ) {
         self.manual_memory_cache = ManualMemoryCache {
             bound_target: Some(target),
-            phase: ManualMemoryPhase::Loading,
+            phase: if pending_mutation == Some(ManualMemoryMutation::Create) {
+                ManualMemoryPhase::Creating
+            } else {
+                ManualMemoryPhase::Loading
+            },
+            pending_mutation,
             pending_context_report,
             ..ManualMemoryCache::default()
         };
@@ -661,8 +722,68 @@ impl ChatWidget {
         self.manual_memory_cache.sources.clear();
         self.manual_memory_cache.unavailable_reason = None;
         self.manual_memory_cache.refresh_requested = true;
+        if self.manual_memory_cache.pending_mutation == Some(ManualMemoryMutation::Create) {
+            self.manual_memory_cache.phase = ManualMemoryPhase::Creating;
+        }
         self.request_redraw();
         Some(target)
+    }
+
+    pub(crate) fn begin_manual_memory_create(&mut self) -> bool {
+        if self.manual_memory_cache.pending_mutation.is_some()
+            || self.manual_memory_cache.status.as_ref().is_none_or(|status| {
+                status.state
+                    != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+            })
+        {
+            return false;
+        }
+        let Some(target) = self.manual_memory_cache.bound_target.clone() else {
+            return false;
+        };
+        self.manual_memory_cache.pending_mutation = Some(ManualMemoryMutation::Create);
+        self.manual_memory_cache.phase = ManualMemoryPhase::Creating;
+        self.request_redraw();
+        self.app_event_tx
+            .send(AppEvent::ManualMemoryCreateRequested(target));
+        true
+    }
+
+    pub(crate) fn begin_manual_memory_admission(&mut self, admitted: bool) -> bool {
+        if self.manual_memory_cache.pending_mutation.is_some() {
+            return false;
+        }
+        let Some(status) = self.manual_memory_cache.status.as_ref() else {
+            return false;
+        };
+        let current = match status.state {
+            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing => return false,
+            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::AvailableNotAdmitted => {
+                false
+            }
+            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted => true,
+        };
+        if current == admitted {
+            return false;
+        }
+        let Some(target) = self.manual_memory_cache.bound_target.clone() else {
+            return false;
+        };
+        self.manual_memory_cache.pending_mutation =
+            Some(ManualMemoryMutation::Admission { admitted });
+        self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+        self.manual_memory_cache.status = None;
+        self.manual_memory_cache.sources.clear();
+        self.manual_memory_cache.unavailable_reason = None;
+        self.request_redraw();
+        self.app_event_tx
+            .send(AppEvent::ManualMemoryAdmissionRequested(target, admitted));
+        true
+    }
+
+    pub(crate) fn clear_manual_memory_pending_mutation(&mut self) {
+        self.manual_memory_cache.pending_mutation = None;
+        self.request_redraw();
     }
 
     pub(crate) fn request_manual_memory_status_refresh(&mut self) {
@@ -747,17 +868,40 @@ impl ChatWidget {
         sources: &[crate::legacy_core::elpis_context::ContinuitySource],
         admitted: bool,
     ) {
+        if self.reject_manual_memory_writer_conflict() {
+            return;
+        }
         let manual_memory_path = self
             .manual_memory_cache
             .bound_target
             .as_ref()
             .map(|target| target.view.memory_path.clone());
+        let mut ordinary_write_attempted = false;
         for source in sources.iter().filter(|source| {
-            is_bulk_context_source_actionable(source, manual_memory_path.as_deref())
+            source.selectable
+                && !is_manual_memory_source(source, manual_memory_path.as_deref())
+                && source.admitted != admitted
         }) {
-            if !self.set_context_source_admitted(source, admitted) {
-                break;
+            ordinary_write_attempted = true;
+            if let Err(error) = crate::legacy_core::elpis_context::set_continuity_source_admitted(
+                Some(self.config.memory_dir.as_path()),
+                self.config.cwd.as_path(),
+                &source.name,
+                admitted,
+            ) {
+                self.add_error_message(format!("Could not update context admission: {error}"));
+                self.request_manual_memory_status_refresh();
+                return;
             }
+        }
+        let memory_enqueued = self.manual_memory_can_toggle()
+            && sources.iter().any(|source| {
+                is_manual_memory_source(source, manual_memory_path.as_deref())
+                    && source.admitted != admitted
+            })
+            && self.begin_manual_memory_admission(admitted);
+        if ordinary_write_attempted && !memory_enqueued {
+            self.request_manual_memory_status_refresh();
         }
     }
 
@@ -769,6 +913,9 @@ impl ChatWidget {
         source: &crate::legacy_core::elpis_context::ContinuitySource,
         selectable: &[usize],
     ) {
+        if self.reject_manual_memory_writer_conflict() {
+            return;
+        }
         let is_manual_memory = is_manual_memory_source(
             source,
             self.manual_memory_cache
@@ -778,7 +925,7 @@ impl ChatWidget {
         );
         if is_manual_memory {
             self.add_info_message(
-                "Manual Memory controls are not available yet.".to_string(),
+                "Manual Memory cannot be removed here; exclude it or edit its file.".to_string(),
                 /*hint*/ None,
             );
             return;
@@ -816,6 +963,9 @@ impl ChatWidget {
         source: &crate::legacy_core::elpis_context::ContinuitySource,
         admitted: bool,
     ) -> bool {
+        if self.reject_manual_memory_writer_conflict() {
+            return false;
+        }
         let is_manual_memory = is_manual_memory_source(
             source,
             self.manual_memory_cache
@@ -824,8 +974,11 @@ impl ChatWidget {
                 .map(|target| target.view.memory_path.as_path()),
         );
         if is_manual_memory {
+            if self.manual_memory_can_toggle() {
+                return self.begin_manual_memory_admission(admitted);
+            }
             self.add_info_message(
-                "Manual Memory controls are not available yet.".to_string(),
+                "Manual Memory does not exist yet; press c to create it.".to_string(),
                 /*hint*/ None,
             );
             return false;
@@ -845,6 +998,24 @@ impl ChatWidget {
         self.request_manual_memory_status_refresh();
         updated
     }
+
+    fn manual_memory_can_toggle(&self) -> bool {
+        self.manual_memory_cache.status.as_ref().is_some_and(|status| {
+            status.state
+                != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+        })
+    }
+
+    pub(super) fn reject_manual_memory_writer_conflict(&mut self) -> bool {
+        if self.manual_memory_cache.pending_mutation.is_none() {
+            return false;
+        }
+        self.add_info_message(
+            "Context admission is busy while Manual Memory is changing.".to_string(),
+            /*hint*/ None,
+        );
+        true
+    }
 }
 
 fn is_manual_memory_source(
@@ -857,17 +1028,26 @@ fn is_manual_memory_source(
 fn is_bulk_context_source_actionable(
     source: &crate::legacy_core::elpis_context::ContinuitySource,
     manual_memory_path: Option<&std::path::Path>,
+    manual_memory_actionable: bool,
 ) -> bool {
-    source.selectable && !is_manual_memory_source(source, manual_memory_path)
+    source.selectable
+        && (!is_manual_memory_source(source, manual_memory_path) || manual_memory_actionable)
 }
 
 fn all_bulk_context_sources_admitted(
     sources: &[crate::legacy_core::elpis_context::ContinuitySource],
     manual_memory_path: Option<&std::path::Path>,
+    manual_memory_actionable: bool,
 ) -> bool {
     let mut actionable = sources
         .iter()
-        .filter(|source| is_bulk_context_source_actionable(source, manual_memory_path));
+        .filter(|source| {
+            is_bulk_context_source_actionable(
+                source,
+                manual_memory_path,
+                manual_memory_actionable,
+            )
+        });
     actionable
         .next()
         .is_some_and(|first| first.admitted && actionable.all(|source| source.admitted))
