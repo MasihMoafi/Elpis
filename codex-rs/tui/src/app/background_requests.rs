@@ -195,6 +195,23 @@ impl App {
         if self.manual_memory_status.in_flight.as_ref() == Some(&target) {
             return false;
         }
+        let superseded_storage = self
+            .manual_memory_status
+            .in_flight
+            .as_ref()
+            .filter(|previous| previous.storage != target.storage)
+            .map(|previous| previous.storage.clone())
+            .filter(|storage| {
+                self.manual_memory_status
+                    .mutations
+                    .get(storage)
+                    .is_some_and(|owner| {
+                        matches!(owner.stage, ManualMemoryMutationStage::AwaitingStatus(_))
+                    })
+            });
+        if let Some(storage) = superseded_storage {
+            self.manual_memory_status.mutations.remove(&storage);
+        }
         self.manual_memory_status.in_flight = Some(target.clone());
 
         let instruction_source_paths = self.chat_widget.instruction_source_paths_as_path_bufs();

@@ -499,6 +499,58 @@ async fn manual_memory_completion_on_a_different_storage_target_detaches_without
 }
 
 #[tokio::test]
+async fn manual_memory_storage_switch_retires_superseded_post_write_verification() {
+    let root = tempdir().expect("temporary workspace");
+    let cwd_a = root.path().join("A");
+    let cwd_b = root.path().join("B");
+    std::fs::create_dir_all(&cwd_a).expect("A workspace");
+    std::fs::create_dir_all(&cwd_b).expect("B workspace");
+    let mut app = make_test_app().await;
+    let thread_id = configured_app_ids(&mut app);
+    app.chat_widget
+        .handle_thread_session(test_thread_session(thread_id, cwd_a.clone()));
+    let origin = app
+        .current_manual_memory_target(50)
+        .expect("A mutation origin");
+    app.manual_memory_status.epoch = origin.view.epoch;
+    app.manual_memory_status.mutations.insert(
+        origin.storage.clone(),
+        ManualMemoryOwnedMutation {
+            origin: origin.clone(),
+            mutation: ManualMemoryMutation::Create,
+            stage: ManualMemoryMutationStage::AwaitingStatus(
+                ManualMemoryMutationCompletion::Succeeded,
+            ),
+            allow_same_view_autosend: true,
+        },
+    );
+    let verification = app
+        .next_manual_memory_target()
+        .expect("A post-write verification target");
+    app.manual_memory_status.in_flight = Some(verification.clone());
+
+    app.chat_widget
+        .handle_thread_session(test_thread_session(thread_id, cwd_b));
+    let next = app
+        .next_manual_memory_target()
+        .expect("B status target");
+    assert_ne!(next.storage, origin.storage);
+    assert!(app.launch_manual_memory_status(next.clone()));
+
+    assert_eq!(app.manual_memory_status.in_flight, Some(next));
+    assert!(!app
+        .manual_memory_status
+        .mutations
+        .contains_key(&origin.storage));
+    assert_eq!(
+        app.finish_manual_memory_status(&verification, ready_without_sources()),
+        None,
+    );
+    app.seed_manual_memory_mutation_for_cwd(&cwd_a);
+    assert_eq!(app.chat_widget.manual_memory_pending_mutation(), None);
+}
+
+#[tokio::test]
 async fn manual_memory_workers_map_collision_and_missing_file_without_payload_bytes(
 ) -> anyhow::Result<()> {
     const BODY: &str = "PRIVATE_MEMORY_BODY_MUST_NOT_CROSS_THE_EVENT";
