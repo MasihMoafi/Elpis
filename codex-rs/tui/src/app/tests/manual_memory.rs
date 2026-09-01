@@ -9,6 +9,19 @@ fn configured_app_ids(app: &mut App) -> ThreadId {
     thread_id
 }
 
+fn submit_user_message(app: &mut App, text: &str) {
+    app.chat_widget.submit_user_message_with_mode(
+        text.to_string(),
+        CollaborationModeMask {
+            name: "Default".to_string(),
+            mode: None,
+            model: None,
+            reasoning_effort: None,
+            developer_instructions: None,
+        },
+    );
+}
+
 fn ready_without_sources() -> ManualMemoryStatusCompletion {
     ready_with_state(crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing)
 }
@@ -139,8 +152,8 @@ async fn manual_memory_mutation_and_status_failures_restore_without_sending() {
         Ok(AppEvent::ManualMemoryAdmissionRequested(target, true)) => target,
         other => panic!("expected admission request, got {other:?}"),
     };
-    app.chat_widget
-        .queue_user_message(crate::chatwidget::UserMessage::from("blocked draft"));
+    submit_user_message(&mut app, "blocked draft");
+    assert_matches!(app_event_rx.try_recv(), Ok(AppEvent::SubmitThreadOp { .. }));
     assert!(op_rx.try_recv().is_err());
 
     assert!(app.claim_manual_memory_mutation(
@@ -177,8 +190,7 @@ async fn manual_memory_mutation_and_status_failures_restore_without_sending() {
         Ok(AppEvent::ManualMemoryAdmissionRequested(target, true)) => target,
         other => panic!("expected second admission request, got {other:?}"),
     };
-    app.chat_widget
-        .queue_user_message(crate::chatwidget::UserMessage::from("status-failed draft"));
+    submit_user_message(&mut app, "status-failed draft");
     assert!(app.claim_manual_memory_mutation(
         &requested,
         ManualMemoryMutation::Admission { admitted: true },
@@ -245,8 +257,7 @@ async fn manual_memory_admission_success_drains_only_after_matching_fresh_ready_
         Ok(AppEvent::ManualMemoryAdmissionRequested(target, true)) => target,
         other => panic!("expected admission request, got {other:?}"),
     };
-    app.chat_widget
-        .queue_user_message(crate::chatwidget::UserMessage::from("send after durable status"));
+    submit_user_message(&mut app, "send after durable status");
     assert!(app.claim_manual_memory_mutation(
         &requested,
         ManualMemoryMutation::Admission { admitted: true },
@@ -307,8 +318,7 @@ async fn manual_memory_same_target_switch_keeps_barrier_but_disables_late_autose
             ManualMemoryMutation::Admission { admitted: true },
         ),
     );
-    app.chat_widget
-        .queue_user_message(crate::chatwidget::UserMessage::from("A draft"));
+    submit_user_message(&mut app, "A draft");
 
     let restored = app.prepare_manual_memory_lifecycle_change();
     assert!(restored.is_some());
@@ -412,8 +422,7 @@ async fn manual_memory_closed_side_failover_restores_blocked_input_without_autos
     app.chat_widget
         .apply_external_edit("side draft: ".to_string());
     app.chat_widget.handle_paste(side_paste.clone());
-    app.chat_widget
-        .queue_user_message(crate::chatwidget::UserMessage::from("blocked side draft"));
+    submit_user_message(&mut app, "blocked side draft");
     assert_eq!(
         app.chat_widget.queued_user_message_texts(),
         vec!["blocked side draft"]
