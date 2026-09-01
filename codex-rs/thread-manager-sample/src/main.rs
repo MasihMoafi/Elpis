@@ -332,6 +332,7 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
                 current_turn_id = Some(event.turn_id.clone());
                 None
             }
+            EventMsg::TurnProfile(_) => None,
             EventMsg::DynamicToolCallResponse(_)
             | EventMsg::McpToolCallBegin(_)
             | EventMsg::McpToolCallEnd(_)
@@ -377,6 +378,7 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
         }
 
         match event.msg {
+            EventMsg::TurnProfile(_) => {}
             EventMsg::TurnComplete(_) => {
                 return Ok(());
             }
