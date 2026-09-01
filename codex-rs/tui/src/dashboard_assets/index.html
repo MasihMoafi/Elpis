@@ -5,80 +5,132 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elpis · Dashboard</title>
 <style>
-:root{--ink:#15130f;--paper:#f7f4ee;--card:#fff;--line:#e3ddd1;--mut:#6b635a;--teal:#17a398;--red:#c8442c}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}}
-:root[data-theme=dark]{--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}
+:root{--night-ledger:#0d0b0f;--smoked-plum:#181319;--iron-rule:#33272f;--bone:#f2e9e6;--ash-rose:#aa9ba2;--ember:#d45b6a;--flare:#f08a78;--verdigris:#70b9a4;color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-body{background:var(--paper);color:var(--ink);margin:0;padding:44px 22px 100px;font:16px/1.62 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+body{background:var(--night-ledger);color:var(--bone);margin:0;padding:40px 22px 88px;font:15px/1.58 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 button{font:inherit}
-.wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
-h1{font:600 34px/1.1 ui-serif,Georgia,serif;letter-spacing:-.023em;margin:0}
-.sub{color:var(--mut);margin:6px 0 0;max-width:76ch;font-size:14px}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px}
-.controls{display:flex;gap:8px;flex-wrap:wrap}
-.control{background:var(--card);border:1px solid var(--line);border-radius:8px;color:var(--ink);cursor:pointer;padding:7px 11px;font-size:13px}
-.control:hover{border-color:var(--teal)}
-.status{color:var(--mut);font-size:13px;font-weight:600}
-.status-fresh{color:var(--teal)}
-.status-stale{color:var(--red)}
-.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-top:8px}
-.tab{background:none;border:none;color:var(--mut);font:600 13px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;padding:10px 4px;margin-right:18px;cursor:pointer;border-bottom:2px solid transparent}
-.tab.active{color:var(--ink);border-bottom-color:var(--teal)}
-.tab:focus-visible,.control:focus-visible{outline:3px solid var(--teal);outline-offset:3px}
+.wrap{margin:0 auto;max-width:1120px}
+.observation-frame{background:var(--smoked-plum);border:1px solid var(--iron-rule);border-radius:4px;overflow:hidden}
+header{border-bottom:1px solid var(--iron-rule);padding:22px 28px 0}
+.masthead-top{align-items:flex-start;display:flex;gap:24px;justify-content:space-between}
+#elpis-wordmark{align-items:baseline;display:flex;gap:8px;margin:0;min-width:max-content}
+.wordmark-name{color:var(--bone);font:600 27px/1 "Iowan Old Style","Palatino Linotype","Book Antiqua",serif;letter-spacing:.09em}
+.wordmark-role{color:var(--ash-rose);font:600 10px/1.2 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.13em;text-transform:uppercase}
+.top-actions{align-items:center;display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end}
+.controls{display:flex;flex-wrap:wrap;gap:6px}
+.control{background:var(--night-ledger);border:1px solid var(--iron-rule);border-radius:2px;color:var(--bone);cursor:pointer;font:600 11px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.04em;padding:9px 11px}
+.control:hover{border-color:var(--ember);color:var(--flare)}
+.status{color:var(--ash-rose);font:600 11px/1.2 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.04em}
+.freshness{background:var(--night-ledger);border:1px solid var(--iron-rule);border-radius:2px;padding:7px 9px}
+.status-fresh{color:var(--verdigris)}
+.status-stale{color:var(--ember)}
+.live-summary{align-items:center;display:flex;gap:14px;min-height:50px;padding:12px 0}
+.signal{align-items:center;display:inline-flex;flex:0 0 auto;gap:8px;font:600 11px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase}
+.signal-idle{color:var(--ash-rose)}
+.signal-running{color:var(--flare)}
+.signal-beacon{background:var(--ash-rose);border-radius:50%;display:block;height:7px;position:relative;width:7px}
+.signal-running .signal-beacon{background:var(--flare)}
+.signal-running .signal-beacon::after{border:1px solid var(--ember);border-radius:50%;content:"";inset:-5px;position:absolute;animation:elpising 2.8s ease-out infinite}
+@keyframes elpising{0%,28%{opacity:.72;transform:scale(.45)}75%,100%{opacity:0;transform:scale(1.28)}}
+.sub{color:var(--ash-rose);font-size:13px;margin:5px 0 0;max-width:76ch}
+#model-line{margin:0;overflow-wrap:anywhere}
+.tabs{display:flex;gap:0;overflow-x:auto}
+.tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--ash-rose);cursor:pointer;font:600 11px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.1em;margin-right:28px;padding:13px 0 12px;text-transform:uppercase}
+.tab.active{border-bottom-color:var(--ember);color:var(--bone)}
+.tab:focus-visible,.control:focus-visible{outline:2px solid var(--flare);outline-offset:3px}
+.observation-spine{border-left:3px solid var(--ember);margin:26px 28px 20px;padding-left:24px}
 .panel{display:flex;flex-direction:column;gap:18px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px;min-width:0}
-.kpi .k{font:600 10.5px/1.3 ui-sans-serif,system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--mut)}
-.kpi .n{font:600 26px/1.15 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.022em;margin-top:6px;overflow-wrap:anywhere}
-.kpi .l{color:var(--mut);font-size:12px;margin-top:3px;overflow-wrap:anywhere}
-.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:20px 22px;display:flex;flex-direction:column;gap:11px}
-.card h3{font:600 15px/1.25 ui-sans-serif,system-ui,sans-serif;margin:0}
-.timing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
-.timing-row,.category-row{border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;padding:7px 0}
-.timing-row:last-child,.category-row:last-child{border-bottom:0}
-.timing-value{font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+.turn-overview{border:1px solid var(--iron-rule);display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.turn-block{min-width:0;padding:20px 22px}
+.turn-block:first-child{border-right:1px solid var(--iron-rule)}
+.turn-label,.kpi .k,.turn-fact .k,.pruning-strip .k{color:var(--ash-rose);font:600 10px/1.3 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.13em;text-transform:uppercase}
+.turn-primary{color:var(--ash-rose);font:600 28px/1.15 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;margin-top:7px;overflow-wrap:anywhere}
+.tone-ash{color:var(--ash-rose)}
+.tone-ember{color:var(--ember)}
+.tone-flare{color:var(--flare)}
+.tone-bone{color:var(--bone)}
+.turn-cost{color:var(--ash-rose);font-size:12px;margin-top:4px;min-height:1.6em;overflow-wrap:anywhere}
+.turn-facts{display:grid;gap:1px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:18px;background:var(--iron-rule)}
+.turn-fact{background:var(--night-ledger);min-width:0;padding:11px 12px}
+.turn-fact .n{font:600 15px/1.35 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;margin-top:5px;overflow-wrap:anywhere}
+.turn-fact .l{color:var(--ash-rose);font-size:11px;margin-top:2px}
+.pruning-strip{align-items:center;border:1px solid var(--iron-rule);display:grid;gap:12px;grid-template-columns:auto minmax(0,1fr) auto;padding:11px 14px}
+.pruning-strip .n{font:600 13px/1.35 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.pruning-strip .l{color:var(--ash-rose);font-size:11px;text-align:right}
+.kpis{background:var(--iron-rule);border:1px solid var(--iron-rule);display:grid;gap:1px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.kpi{background:var(--smoked-plum);min-width:0;padding:16px 18px}
+.kpi .n{font:600 23px/1.2 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;margin-top:7px;overflow-wrap:anywhere}
+.kpi .l{color:var(--ash-rose);font-size:11px;margin-top:3px;overflow-wrap:anywhere}
+.card{background:var(--night-ledger);border:1px solid var(--iron-rule);border-radius:3px;display:flex;flex-direction:column;gap:12px;padding:18px 20px}
+.card h3{font:600 11px/1.25 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.12em;margin:0;text-transform:uppercase}
+.timing-grid{display:grid;gap:0 24px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.timing-row{border-bottom:1px solid var(--iron-rule);display:grid;gap:8px;grid-template-columns:minmax(0,1fr) auto;padding:10px 0}
+.timing-row:nth-last-child(-n+2){border-bottom:0}
+.timing-value{font:600 12px/1.4 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;text-align:right}
+.phase-meter{accent-color:var(--flare);grid-column:1/-1;height:5px;width:100%}
+.phase-meter::-webkit-meter-bar{background:var(--iron-rule);border:0;border-radius:1px;height:3px}
+.phase-meter::-webkit-meter-optimum-value{background:var(--flare);border-radius:1px}
+.phase-meter::-moz-meter-bar{background:var(--flare);border-radius:1px}
+.category-row{border-bottom:1px solid var(--iron-rule);display:flex;gap:12px;justify-content:space-between;padding:7px 0}
+.category-row:last-child{border-bottom:0}
 .category-name{display:flex;align-items:center;gap:8px;min-width:0}
-.swatch{border-radius:3px;display:inline-block;flex:0 0 10px;height:10px;width:10px}
+.swatch{border-radius:1px;display:inline-block;flex:0 0 9px;height:9px;width:9px}
 .category-blue{background:#3b82f6}
 .category-green{background:#22c55e}
 .category-yellow{background:#eab308}
 .category-magenta{background:#d946ef}
 .category-cyan{background:#06b6d4}
-.category-muted{background:#6b635a}
-.legend{color:var(--mut);font-size:12.5px}
+.category-muted{background:var(--ash-rose)}
+.legend{color:var(--ash-rose);font-size:12px}
 .table-scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:13.5px}
-th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
+table{border-collapse:collapse;font-size:12px;width:100%}
+th,td{border-bottom:1px solid var(--iron-rule);font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;padding:8px 9px;text-align:right;white-space:nowrap}
 th:first-child,td:first-child{text-align:left;font-variant-numeric:normal}
-th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-.foot{color:var(--mut);font-size:12px;text-align:right}
-.admitted{color:var(--teal)}
-.notadmitted{color:var(--mut)}
-@media (max-width:620px){
-  body{padding:26px 14px 70px}
-  h1{font-size:29px}
-  .kpis,.timing-grid{grid-template-columns:1fr}
-  .toolbar{align-items:flex-start;flex-direction:column}
-  .tabs{overflow-x:auto}
-  .card{padding:17px}
+th{color:var(--ash-rose);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.foot{color:var(--ash-rose);font:11px/1.4 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;text-align:right}
+#updated{border-top:1px solid var(--iron-rule);margin:0;padding:12px 28px 14px}
+.admitted{color:var(--verdigris)}
+.notadmitted{color:var(--ash-rose)}
+@media (max-width:720px){
+  body{padding:14px 10px 56px}
+  header{padding:18px 18px 0}
+  .masthead-top{align-items:stretch;flex-direction:column;gap:14px}
+  .top-actions{justify-content:space-between}
+  .live-summary{align-items:flex-start;flex-direction:column;gap:8px}
+  .observation-spine{margin:20px 18px 16px;padding-left:14px}
+  .turn-overview,.timing-grid{grid-template-columns:1fr}
+  .turn-block:first-child{border-bottom:1px solid var(--iron-rule);border-right:0}
+  .timing-row:nth-last-child(2){border-bottom:1px solid var(--iron-rule)}
+  .timing-row:last-child{border-bottom:0}
+  .kpis{grid-template-columns:1fr}
+  .pruning-strip{align-items:start;grid-template-columns:1fr}
+  .pruning-strip .l{text-align:left}
+  .card{padding:16px}
+  #updated{padding:12px 18px 14px}
 }
 @media (prefers-reduced-motion: reduce){
-  *,*::before,*::after{animation-duration:0s!important;scroll-behavior:auto!important;transition-duration:0s!important}
+  .signal-running .signal-beacon::after{animation:none!important}
+  *,*::before,*::after{scroll-behavior:auto!important;transition-duration:0s!important}
 }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap observation-frame" id="observation-frame">
 <header>
-<h1>Elpis dashboard</h1>
-<p class="sub" id="model-line">Waiting for session data…</p>
-<div class="toolbar">
-<div class="status">Session data: <span id="freshness-status" role="status" aria-live="polite">Unavailable</span></div>
+<div class="masthead-top">
+<h1 id="elpis-wordmark"><span class="wordmark-name">ELPIS</span><span class="wordmark-role">/ live observatory</span></h1>
+<div class="top-actions">
+<div class="status freshness">Session data: <span id="freshness-status" role="status" aria-live="polite">Unavailable</span></div>
 <div class="controls" aria-label="Dashboard updates">
 <button class="control" id="updates-toggle" type="button" aria-pressed="false">Pause updates</button>
 <button class="control" id="refresh-now" type="button">Refresh now</button>
 </div>
+</div>
+</div>
+<div class="live-summary" id="live-summary">
+<div class="signal signal-idle" id="activity-signal"><span class="signal-beacon" aria-hidden="true"></span><span id="activity-signal-label">Idle</span></div>
+<p class="sub" id="model-line">Waiting for session data…</p>
 </div>
 <div class="tabs" role="tablist" aria-label="Dashboard views">
 <button class="tab active" id="tab-activity" type="button" role="tab" aria-selected="true" aria-controls="panel-activity" data-tab="activity">Activity</button>
@@ -87,16 +139,29 @@ th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-tra
 </div>
 </header>
 
+<main class="observation-spine" id="observation-spine">
 <section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity">
-<div class="kpis">
-<div class="kpi"><div class="k">Now</div><div class="n" id="activity-now">Idle</div><div class="l" id="activity-elapsed">Unavailable</div></div>
-<div class="kpi"><div class="k">Current cost</div><div class="n" id="activity-current-cost">Unavailable</div><div class="l">typed availability</div></div>
-<div class="kpi"><div class="k">Latest outcome</div><div class="n" id="activity-latest-status">Unavailable</div><div class="l" id="activity-latest-cost">Unavailable</div></div>
-<div class="kpi"><div class="k">Latest total</div><div class="n" id="activity-latest-total">Unavailable</div><div class="l">elapsed</div></div>
-<div class="kpi"><div class="k">First token</div><div class="n" id="activity-latest-ttft">Unavailable</div><div class="l">TTFT</div></div>
-<div class="kpi"><div class="k">Requests</div><div class="n" id="activity-latest-requests">Unavailable</div><div class="l"><span id="activity-latest-retries">Unavailable</span> retries</div></div>
-<div class="kpi"><div class="k">Automatic pruning</div><div class="n" id="activity-pruning">Experimental · Unavailable</div><div class="l">read-only status</div></div>
+<div class="turn-overview">
+<section class="turn-block" aria-label="Current turn">
+<div class="turn-label">Now</div>
+<div class="turn-primary tone-ash" id="activity-now">Idle</div>
+<div class="turn-facts">
+<div class="turn-fact"><div class="k">Elapsed</div><div class="n" id="activity-elapsed">Unavailable</div></div>
+<div class="turn-fact"><div class="k">Current cost</div><div class="n" id="activity-current-cost">Unavailable</div><div class="l">typed availability</div></div>
 </div>
+</section>
+<section class="turn-block" aria-label="Latest terminal turn">
+<div class="turn-label">Latest outcome</div>
+<div class="turn-primary tone-ash" id="activity-latest-status">Unavailable</div>
+<div class="turn-cost" id="activity-latest-cost">Unavailable</div>
+<div class="turn-facts">
+<div class="turn-fact"><div class="k">Latest total</div><div class="n" id="activity-latest-total">Unavailable</div><div class="l">elapsed</div></div>
+<div class="turn-fact"><div class="k">First token</div><div class="n" id="activity-latest-ttft">Unavailable</div><div class="l">TTFT</div></div>
+<div class="turn-fact"><div class="k">Requests</div><div class="n" id="activity-latest-requests">Unavailable</div><div class="l"><span id="activity-latest-retries">Unavailable</span> retries</div></div>
+</div>
+</section>
+</div>
+<div class="pruning-strip"><div class="k">Automatic pruning</div><div class="n" id="activity-pruning">Experimental · Unavailable</div><div class="l">read-only status</div></div>
 <div class="card">
 <h3>Latest timing breakdown</h3>
 <p class="sub" id="activity-profile-empty">Timing breakdown unavailable for this turn</p>
@@ -150,6 +215,7 @@ th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-tra
 <p class="sub">Token totals come from the active runtime. Per-turn cost appears in Activity only when its typed availability is known.</p>
 </div>
 </section>
+</main>
 
 <p class="foot" id="updated">No valid server heartbeat yet</p>
 </div>
@@ -159,6 +225,12 @@ const STATUS_LABELS = Object.freeze({
   completed: 'Completed',
   failed: 'Failed',
   interrupted: 'Interrupted'
+});
+const STATUS_TONE_CLASSES = Object.freeze({
+  running: 'tone-flare',
+  completed: 'tone-bone',
+  failed: 'tone-ember',
+  interrupted: 'tone-ember'
 });
 const COST_LABELS = Object.freeze({
   subscription_authentication: 'Cost unavailable for subscription authentication',
@@ -177,12 +249,12 @@ const CATEGORY_CLASSES = Object.freeze({
   '#6b635a': 'category-muted'
 });
 const PROFILE_FIELDS = Object.freeze([
-  ['Before first request', 'before_first_sampling_ms'],
-  ['Sampling', 'sampling_ms'],
-  ['Compaction', 'compaction_ms'],
-  ['Between-request overhead', 'between_sampling_overhead_ms'],
-  ['Tool blocking', 'tool_blocking_ms'],
-  ['After final request', 'after_last_sampling_ms']
+  ['Before first request', 'before_first_sampling_ms', 'phase-meter-before-first'],
+  ['Sampling', 'sampling_ms', 'phase-meter-sampling'],
+  ['Compaction', 'compaction_ms', 'phase-meter-compaction'],
+  ['Between-request overhead', 'between_sampling_overhead_ms', 'phase-meter-between'],
+  ['Tool blocking', 'tool_blocking_ms', 'phase-meter-tools'],
+  ['After final request', 'after_last_sampling_ms', 'phase-meter-after-last']
 ]);
 
 const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
@@ -234,6 +306,13 @@ function formatDuration(value) {
 
 function formatStatus(status) {
   return ownValue(STATUS_LABELS, status) || 'Unavailable';
+}
+
+function setTurnStatus(id, status, fallback) {
+  const element = byId(id);
+  const toneClass = ownValue(STATUS_TONE_CLASSES, status) || 'tone-ash';
+  element.textContent = typeof status === 'string' ? formatStatus(status) : fallback;
+  element.className = 'turn-primary ' + toneClass;
 }
 
 function formatCost(cost) {
@@ -397,12 +476,28 @@ function renderProfile(profile) {
     return;
   }
   empty.hidden = true;
-  PROFILE_FIELDS.forEach(([label, field]) => {
+  const phaseValues = PROFILE_FIELDS.map(([, field]) => profile[field]).filter(isCount);
+  const phaseTotal = phaseValues.reduce((total, value) => total + value, 0);
+  const meterMax = Number.isFinite(phaseTotal) && phaseTotal > 0
+    ? phaseTotal
+    : Math.max(1, ...phaseValues);
+  PROFILE_FIELDS.forEach(([label, field, meterId]) => {
+    const value = profile[field];
     const row = makeNode('div', 'timing-row');
     row.append(
       makeNode('span', '', label),
-      makeNode('span', 'timing-value', formatDuration(profile[field]))
+      makeNode('span', 'timing-value', formatDuration(value))
     );
+    if (isCount(value)) {
+      const meter = document.createElement('meter');
+      meter.id = meterId;
+      meter.className = 'phase-meter';
+      meter.min = 0;
+      meter.max = meterMax;
+      meter.value = value;
+      meter.setAttribute('aria-hidden', 'true');
+      row.append(meter);
+    }
     box.append(row);
   });
 }
@@ -427,7 +522,15 @@ function renderRecent(recent) {
 
 function renderActivity(activity) {
   const current = activity && activity.current ? activity.current : null;
-  setText('activity-now', current ? formatStatus(current.status) : 'Idle');
+  const signalRunning = current && current.status === 'running';
+  const signal = byId('activity-signal');
+  signal.className = signalRunning ? 'signal signal-running' : 'signal signal-idle';
+  setText('activity-signal-label', signalRunning ? 'elpising' : 'Idle');
+  setTurnStatus(
+    'activity-now',
+    current ? current.status : null,
+    current ? 'Unavailable' : 'Idle'
+  );
   setText('activity-current-cost', current ? formatCost(current.cost) : 'Unavailable');
   renderElapsed();
 
@@ -444,7 +547,7 @@ function renderActivity(activity) {
   const recent = activity && Array.isArray(activity.recent) ? activity.recent : [];
   const latest = recent.at(-1);
   if (!latest) {
-    setText('activity-latest-status', 'Unavailable');
+    setTurnStatus('activity-latest-status', null, 'Unavailable');
     setText('activity-latest-total', 'Unavailable');
     setText('activity-latest-ttft', 'Unavailable');
     setText('activity-latest-requests', 'Unavailable');
@@ -452,7 +555,7 @@ function renderActivity(activity) {
     setText('activity-latest-cost', 'Unavailable');
     renderProfile(null);
   } else {
-    setText('activity-latest-status', formatStatus(latest.status));
+    setTurnStatus('activity-latest-status', latest.status, 'Unavailable');
     setText('activity-latest-total', formatDuration(latest.duration_ms));
     setText('activity-latest-ttft', formatDuration(latest.time_to_first_token_ms));
     setText(

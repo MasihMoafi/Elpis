@@ -996,3 +996,137 @@ fn dashboard_asset_has_keyboard_responsive_and_timer_controls() {
         "id=\"freshness-status\" role=\"status\" aria-live=\"polite\""
     ));
 }
+
+#[test]
+fn dashboard_asset_uses_the_elpis_observatory_visual_system() {
+    for token in [
+        "--night-ledger:#0d0b0f",
+        "--smoked-plum:#181319",
+        "--iron-rule:#33272f",
+        "--bone:#f2e9e6",
+        "--ash-rose:#aa9ba2",
+        "--ember:#d45b6a",
+        "--flare:#f08a78",
+        "--verdigris:#70b9a4",
+    ] {
+        assert!(INDEX_HTML.contains(token), "missing palette token: {token}");
+    }
+
+    for id in [
+        "observation-frame",
+        "elpis-wordmark",
+        "live-summary",
+        "activity-signal",
+        "activity-signal-label",
+        "observation-spine",
+        "phase-meter-before-first",
+        "phase-meter-sampling",
+        "phase-meter-compaction",
+        "phase-meter-between",
+        "phase-meter-tools",
+        "phase-meter-after-last",
+    ] {
+        assert!(INDEX_HTML.contains(id), "missing observatory id: {id}");
+    }
+
+    for source in [
+        "class=\"wrap observation-frame\" id=\"observation-frame\"",
+        "class=\"live-summary\" id=\"live-summary\"",
+        "class=\"signal signal-idle\" id=\"activity-signal\"",
+        "class=\"observation-spine\" id=\"observation-spine\"",
+        "const signalRunning = current && current.status === 'running'",
+        "signal.className = signalRunning ? 'signal signal-running' : 'signal signal-idle'",
+        "signalRunning ? 'elpising' : 'Idle'",
+        "const phaseValues = PROFILE_FIELDS.map(([, field]) => profile[field]).filter(isCount)",
+        "const phaseTotal = phaseValues.reduce((total, value) => total + value, 0)",
+        "Number.isFinite(phaseTotal) && phaseTotal > 0",
+        ": Math.max(1, ...phaseValues)",
+        "if (isCount(value)) {",
+        "document.createElement('meter')",
+        "meter.id = meterId",
+        "meter.className = 'phase-meter'",
+        "meter.min = 0",
+        "meter.max = meterMax",
+        "meter.value = value",
+        "meter.setAttribute('aria-hidden', 'true')",
+    ] {
+        assert!(INDEX_HTML.contains(source), "missing visual guard: {source}");
+    }
+
+    let profile_renderer = INDEX_HTML
+        .split("function renderProfile(profile) {")
+        .nth(1)
+        .and_then(|tail| tail.split("\n}\n\nfunction renderRecent").next())
+        .expect("profile renderer");
+    let valid_phase = profile_renderer.find("if (isCount(value)) {").expect("phase guard");
+    let meter_created = profile_renderer
+        .find("document.createElement('meter')")
+        .expect("native meter");
+    let meter_min = profile_renderer.find("meter.min = 0").expect("finite minimum");
+    let meter_max = profile_renderer
+        .find("meter.max = meterMax")
+        .expect("finite maximum");
+    let meter_value = profile_renderer
+        .find("meter.value = value")
+        .expect("validated value");
+    assert!(valid_phase < meter_created);
+    assert!(meter_created < meter_min);
+    assert!(meter_min < meter_max);
+    assert!(meter_max < meter_value);
+
+    assert_eq!(INDEX_HTML.matches("@keyframes").count(), 1);
+    assert!(INDEX_HTML.contains("@keyframes elpising"));
+    for forbidden in [
+        "linear-gradient(",
+        "radial-gradient(",
+        "@import",
+        "url(",
+        "<svg",
+        "<canvas",
+        "meter.setAttribute('value'",
+        "meter.setAttribute(\"value\"",
+    ] {
+        assert!(
+            !INDEX_HTML.contains(forbidden),
+            "visual asset added forbidden token: {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn dashboard_asset_uses_closed_semantic_tones_for_turn_statuses() {
+    for source in [
+        ".tone-ash{color:var(--ash-rose)}",
+        ".tone-ember{color:var(--ember)}",
+        ".tone-flare{color:var(--flare)}",
+        ".tone-bone{color:var(--bone)}",
+        "class=\"turn-primary tone-ash\" id=\"activity-now\"",
+        "class=\"turn-primary tone-ash\" id=\"activity-latest-status\"",
+        "const STATUS_TONE_CLASSES = Object.freeze({",
+        "running: 'tone-flare'",
+        "completed: 'tone-bone'",
+        "failed: 'tone-ember'",
+        "interrupted: 'tone-ember'",
+        "function setTurnStatus(id, status, fallback)",
+        "const toneClass = ownValue(STATUS_TONE_CLASSES, status) || 'tone-ash'",
+        "element.className = 'turn-primary ' + toneClass",
+        "setTurnStatus('activity-now', current ? current.status : null,",
+        "current ? 'Unavailable' : 'Idle'",
+        "setTurnStatus('activity-latest-status', null, 'Unavailable')",
+        "setTurnStatus('activity-latest-status', latest.status, 'Unavailable')",
+    ] {
+        assert!(INDEX_HTML.contains(source), "missing status tone guard: {source}");
+    }
+
+    assert_eq!(INDEX_HTML.matches("var(--verdigris)").count(), 2);
+    for unsafe_class in [
+        "element.className = 'turn-primary ' + status",
+        "element.className = `turn-primary ${status}`",
+        "STATUS_TONE_CLASSES[status]",
+    ] {
+        assert!(
+            !INDEX_HTML.contains(unsafe_class),
+            "server status can become a class: {unsafe_class}"
+        );
+    }
+}
