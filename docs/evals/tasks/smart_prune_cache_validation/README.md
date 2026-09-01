@@ -115,7 +115,7 @@ Interpret the linked response as follows:
 - cached input shown as zero: `NO_REUSE_OBSERVED`, not an invalidation diagnosis or
   proof that the provider explicitly reported zero;
 - response usage absent: `UNKNOWN`;
-- cache write shown as `not reported`: unknown, not zero.
+- cache write shown as `Unavailable`: unknown, not zero.
 
 The dashboard is aggregate-only and does not expose raw tool output, identifiers,
 hashes, or filesystem paths. The authoritative exact evidence remains in the private
