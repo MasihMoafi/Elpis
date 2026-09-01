@@ -10,7 +10,15 @@ use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;
 use codex_otel::TURN_NETWORK_PROXY_METRIC;
 use codex_protocol::ThreadId;
+use codex_protocol::TurnProfileSummary;
+use codex_protocol::protocol::ErrorEvent;
+use codex_protocol::protocol::Event;
+use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::TurnAbortedEvent;
+use codex_protocol::protocol::TurnCompleteEvent;
+use codex_protocol::protocol::TurnProfileEvent;
+use codex_protocol::protocol::TurnProfileOutcome;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::metrics::data::AggregatedMetrics;
@@ -20,6 +28,228 @@ use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+use crate::turn_timing::TurnProfile;
+
+fn deterministic_profile() -> TurnProfile {
+    TurnProfile {
+        before_first_sampling_ms: 11,
+        sampling_ms: 22,
+        compaction_ms: 33,
+        between_sampling_overhead_ms: 44,
+        tool_blocking_ms: 55,
+        after_last_sampling_ms: 66,
+        sampling_request_count: 7,
+        sampling_retry_count: 8,
+    }
+}
+
+fn assert_exact_profile(profile: &TurnProfileSummary) {
+    assert_eq!(profile.before_first_sampling_ms, 11);
+    assert_eq!(profile.sampling_ms, 22);
+    assert_eq!(profile.compaction_ms, 33);
+    assert_eq!(profile.between_sampling_overhead_ms, 44);
+    assert_eq!(profile.tool_blocking_ms, 55);
+    assert_eq!(profile.after_last_sampling_ms, 66);
+    assert_eq!(profile.sampling_request_count, 7);
+    assert_eq!(profile.sampling_retry_count, 8);
+}
+
+async fn delivered_terminal_events(
+    terminal_event: impl FnOnce(&str) -> EventMsg,
+    profile: Option<TurnProfile>,
+) -> [Event; 2] {
+    let (session, turn_context, rx) =
+        crate::session::tests::make_session_and_context_with_rx().await;
+    let terminal_event = terminal_event(&turn_context.sub_id);
+    let profile_event = super::build_turn_profile_event(
+        turn_context.sub_id.clone(),
+        &terminal_event,
+        profile,
+    );
+
+    super::emit_terminal_event_sequence(
+        session.as_ref(),
+        turn_context.as_ref(),
+        profile_event,
+        terminal_event,
+    )
+    .await;
+
+    let first = rx.recv().await.expect("transient profile event");
+    let second = rx.recv().await.expect("durable terminal event");
+    assert!(rx.try_recv().is_err(), "expected exactly two events");
+    [first, second]
+}
+
+#[tokio::test]
+async fn normal_completion_is_delivered_after_transient_profile() {
+    let [profile_event, terminal_event] = delivered_terminal_events(
+        |turn_id| {
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: turn_id.to_string(),
+                last_agent_message: Some("unchanged".to_string()),
+                error: None,
+                started_at: Some(100),
+                completed_at: Some(200),
+                duration_ms: Some(231),
+                time_to_first_token_ms: Some(12),
+            })
+        },
+        Some(deterministic_profile()),
+    )
+    .await;
+
+    let profile_event_id = profile_event.id.clone();
+    let terminal_event_id = terminal_event.id.clone();
+    assert_eq!(profile_event_id, terminal_event_id);
+    let EventMsg::TurnProfile(TurnProfileEvent {
+        turn_id,
+        outcome,
+        started_at,
+        duration_ms,
+        time_to_first_token_ms,
+        profile,
+    }) = profile_event.msg
+    else {
+        panic!("profile event should precede terminal event");
+    };
+    assert_eq!(turn_id, profile_event_id);
+    assert_eq!(outcome, TurnProfileOutcome::Completed);
+    assert_eq!(started_at, Some(100));
+    assert_eq!(duration_ms, Some(231));
+    assert_eq!(time_to_first_token_ms, Some(12));
+    assert_exact_profile(profile.as_ref().expect("completed profile"));
+    assert!(matches!(
+        terminal_event.msg,
+        EventMsg::TurnComplete(TurnCompleteEvent {
+            turn_id,
+            last_agent_message: Some(message),
+            error: None,
+            started_at: Some(100),
+            completed_at: Some(200),
+            duration_ms: Some(231),
+            time_to_first_token_ms: Some(12),
+        }) if turn_id == terminal_event_id && message == "unchanged"
+    ));
+}
+
+#[tokio::test]
+async fn failed_completion_derives_activity_outcome_from_terminal_error() {
+    let [profile_event, terminal_event] = delivered_terminal_events(
+        |turn_id| {
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: turn_id.to_string(),
+                last_agent_message: None,
+                error: Some(ErrorEvent {
+                    message: "terminal failure".to_string(),
+                    codex_error_info: None,
+                }),
+                started_at: Some(210),
+                completed_at: Some(420),
+                duration_ms: Some(210),
+                time_to_first_token_ms: Some(21),
+            })
+        },
+        Some(deterministic_profile()),
+    )
+    .await;
+
+    assert!(matches!(
+        profile_event.msg,
+        EventMsg::TurnProfile(TurnProfileEvent {
+            outcome: TurnProfileOutcome::Failed,
+            started_at: Some(210),
+            duration_ms: Some(210),
+            time_to_first_token_ms: Some(21),
+            ..
+        })
+    ));
+    assert!(matches!(
+        terminal_event.msg,
+        EventMsg::TurnComplete(TurnCompleteEvent {
+            error: Some(ErrorEvent { message, .. }),
+            started_at: Some(210),
+            completed_at: Some(420),
+            duration_ms: Some(210),
+            time_to_first_token_ms: Some(21),
+            ..
+        }) if message == "terminal failure"
+    ));
+}
+
+#[tokio::test]
+async fn abort_is_delivered_after_transient_profile_without_ttft() {
+    let [profile_event, terminal_event] = delivered_terminal_events(
+        |turn_id| {
+            EventMsg::TurnAborted(TurnAbortedEvent {
+                turn_id: Some(turn_id.to_string()),
+                reason: codex_protocol::protocol::TurnAbortReason::Interrupted,
+                started_at: Some(300),
+                completed_at: Some(400),
+                duration_ms: Some(231),
+            })
+        },
+        Some(deterministic_profile()),
+    )
+    .await;
+
+    let profile_event_id = profile_event.id.clone();
+    let terminal_event_id = terminal_event.id.clone();
+    assert_eq!(profile_event_id, terminal_event_id);
+    let EventMsg::TurnProfile(TurnProfileEvent {
+        outcome,
+        time_to_first_token_ms,
+        profile,
+        ..
+    }) = profile_event.msg
+    else {
+        panic!("profile event should precede terminal event");
+    };
+    assert_eq!(outcome, TurnProfileOutcome::Interrupted);
+    assert_eq!(time_to_first_token_ms, None);
+    assert_exact_profile(profile.as_ref().expect("completed profile"));
+    assert!(matches!(
+        terminal_event.msg,
+        EventMsg::TurnAborted(TurnAbortedEvent {
+            turn_id: Some(turn_id),
+            reason: codex_protocol::protocol::TurnAbortReason::Interrupted,
+            started_at: Some(300),
+            completed_at: Some(400),
+            duration_ms: Some(231),
+        }) if turn_id == terminal_event_id
+    ));
+}
+
+#[tokio::test]
+async fn activity_is_delivered_when_profile_is_unavailable() {
+    let [profile_event, terminal_event] = delivered_terminal_events(
+        |turn_id| {
+            EventMsg::TurnAborted(TurnAbortedEvent {
+                turn_id: Some(turn_id.to_string()),
+                reason: codex_protocol::protocol::TurnAbortReason::Interrupted,
+                started_at: None,
+                completed_at: Some(400),
+                duration_ms: None,
+            })
+        },
+        None,
+    )
+    .await;
+
+    assert!(matches!(
+        profile_event.msg,
+        EventMsg::TurnProfile(TurnProfileEvent {
+            outcome: TurnProfileOutcome::Interrupted,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+            ..
+        })
+    ));
+    assert!(matches!(terminal_event.msg, EventMsg::TurnAborted(_)));
+}
 
 fn test_session_telemetry() -> SessionTelemetry {
     let exporter = InMemoryMetricExporter::default();

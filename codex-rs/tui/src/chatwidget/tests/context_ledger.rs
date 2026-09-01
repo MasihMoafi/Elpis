@@ -73,6 +73,70 @@ fn configure_ledger_sources(
 }
 
 #[tokio::test]
+async fn manual_memory_create_key_emits_once_and_blocks_same_loop_duplicates(
+) -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let memories = root.path().join("memories");
+    let cwd = root.path().join("project");
+    std::fs::create_dir_all(&memories)?;
+    std::fs::create_dir_all(&cwd)?;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.memory_dir = memories.abs();
+    chat.config.cwd = cwd.abs();
+    chat.last_rendered_width.set(Some(120));
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('c'))));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('c'))));
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Creating);
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ManualMemoryCreateRequested(_))
+    );
+    assert!(rx.try_recv().is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn manual_memory_mutation_excludes_ordinary_and_add_writers_before_disk_io(
+) -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    let admission_path = chat
+        .manual_memory_bound_target()
+        .expect("manual-memory target")
+        .storage
+        .admission_path
+        .clone();
+    let admission_before = std::fs::read(&admission_path).ok();
+    chat.seed_manual_memory_pending_mutation(Some(ManualMemoryMutation::Create));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char(' '))));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Delete)));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g'))));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('e'))));
+    let candidate = root.path().join("candidate.md");
+    std::fs::write(&candidate, "candidate")?;
+    chat.dispatch_command_with_args(
+        SlashCommand::Add,
+        candidate.display().to_string(),
+        Vec::new(),
+    );
+
+    assert_eq!(std::fs::read(&admission_path).ok(), admission_before);
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)),
+            "rejected writers must not invalidate an untouched projection"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -220,6 +284,7 @@ async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyh
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    std::fs::remove_file(memories.join("MEMORY.md"))?;
     let custom_memory_source = memories.join("custom-context.md");
     std::fs::write(
         &custom_memory_source,
@@ -332,7 +397,37 @@ async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyh
             .expect("manual-memory row")
             .admitted,
         manual_memory_admitted,
-        "bulk actions must leave only the canonical Memory row untouched"
+        "a missing canonical Memory row is not an admission action"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn manual_memory_bulk_enqueues_memory_last_and_uses_its_mandatory_refresh(
+) -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
+
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, AppEvent::ManualMemoryAdmissionRequested(_, true)))
+            .count(),
+        1
+    );
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        AppEvent::ManualMemoryStatusRefreshRequested(_)
+    )));
+    assert_eq!(
+        chat.manual_memory_pending_mutation(),
+        Some(ManualMemoryMutation::Admission { admitted: true })
     );
     Ok(())
 }

@@ -10,6 +10,7 @@ pub(super) use crate::app_command::AppCommand as Op;
 pub(super) use crate::app_event::AppEvent;
 pub(super) use crate::app_event::ExitMode;
 pub(super) use crate::app_event::ManualMemoryRequestTarget;
+pub(super) use crate::app_event::ManualMemoryMutation;
 pub(super) use crate::app_event::ManualMemoryStatusCompletion;
 pub(super) use crate::app_event::ManualMemoryStorageTarget;
 pub(super) use crate::app_event::ManualMemoryViewKey;
@@ -111,7 +112,12 @@ pub(super) use codex_app_server_protocol::ToolRequestUserInputOption;
 pub(super) use codex_app_server_protocol::ToolRequestUserInputParams;
 pub(super) use codex_app_server_protocol::ToolRequestUserInputQuestion;
 pub(super) use codex_app_server_protocol::Turn as AppServerTurn;
+pub(super) use codex_app_server_protocol::TurnActivityStatus;
+pub(super) use codex_app_server_protocol::TurnActivityUpdatedNotification;
 pub(super) use codex_app_server_protocol::TurnCompletedNotification;
+pub(super) use codex_app_server_protocol::TurnCostAvailability;
+pub(super) use codex_app_server_protocol::TurnCostState;
+pub(super) use codex_app_server_protocol::TurnCostUpdatedNotification;
 pub(super) use codex_app_server_protocol::TurnError as AppServerTurnError;
 pub(super) use codex_app_server_protocol::TurnStartedNotification;
 pub(super) use codex_app_server_protocol::TurnStatus as AppServerTurnStatus;
@@ -227,7 +233,11 @@ pub(super) fn seed_manual_memory_cache_from_disk(
             &dev_rule_roots,
             Some(&status),
         )?;
-    chat.bind_manual_memory_loading(target.clone(), /*pending_context_report*/ false);
+    chat.bind_manual_memory_loading(
+        target.clone(),
+        /*pending_context_report*/ false,
+        /*pending_mutation*/ None,
+    );
     if !chat.apply_manual_memory_status_completion(
         &target,
         ManualMemoryStatusCompletion::Ready { status, sources },

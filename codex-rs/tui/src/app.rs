@@ -11,6 +11,9 @@ use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event::HistoryLookupResponse;
 use crate::app_event::ManualMemoryRequestTarget;
+use crate::app_event::ManualMemoryMutation;
+use crate::app_event::ManualMemoryMutationCompletion;
+use crate::app_event::ManualMemoryMutationFailure;
 use crate::app_event::ManualMemoryStatusCompletion;
 use crate::app_event::ManualMemoryStorageTarget;
 use crate::app_event::ManualMemoryUnavailableReason;
@@ -507,6 +510,39 @@ struct InitialHistoryReplayBuffer {
 struct ManualMemoryStatusCoordinator {
     epoch: u64,
     in_flight: Option<ManualMemoryRequestTarget>,
+    mutations: HashMap<ManualMemoryStorageTarget, ManualMemoryOwnedMutation>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ManualMemoryMutationStage {
+    Running,
+    AwaitingStatus(ManualMemoryMutationCompletion),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ManualMemoryOwnedMutation {
+    origin: ManualMemoryRequestTarget,
+    mutation: ManualMemoryMutation,
+    stage: ManualMemoryMutationStage,
+    allow_same_view_autosend: bool,
+}
+
+impl ManualMemoryOwnedMutation {
+    fn running(origin: ManualMemoryRequestTarget, mutation: ManualMemoryMutation) -> Self {
+        Self {
+            origin,
+            mutation,
+            stage: ManualMemoryMutationStage::Running,
+            allow_same_view_autosend: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ManualMemoryCompletionDisposition {
+    Ignored,
+    Detached,
+    Refresh(ManualMemoryRequestTarget),
 }
 
 pub(crate) struct App {

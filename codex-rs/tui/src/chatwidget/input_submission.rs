@@ -102,6 +102,16 @@ impl ChatWidget {
         history_record: UserMessageHistoryRecord,
         shell_escape_policy: ShellEscapePolicy,
     ) -> (bool, Option<AppCommand>) {
+        if self.manual_memory_submission_blocked() {
+            self.input_queue
+                .queued_user_messages
+                .push_back(QueuedUserMessage::from(user_message));
+            self.input_queue
+                .queued_user_message_history_records
+                .push_back(history_record);
+            self.refresh_pending_input_preview();
+            return (true, None);
+        }
         if !self.is_session_configured() {
             tracing::warn!("cannot submit user message before session is configured; queueing");
             self.input_queue

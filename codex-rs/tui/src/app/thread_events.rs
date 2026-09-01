@@ -23,6 +23,13 @@ pub(super) enum ThreadBufferedEvent {
     HistoryEntryResponse(HistoryLookupResponse),
 }
 
+pub(super) fn notification_is_ephemeral(notification: &ServerNotification) -> bool {
+    matches!(
+        notification,
+        ServerNotification::TurnActivityUpdated(_) | ServerNotification::TurnCostUpdated(_)
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ThreadEventAttachment {
     Live,
@@ -98,6 +105,9 @@ impl ThreadEventStore {
     }
 
     pub(super) fn push_notification(&mut self, notification: ServerNotification) {
+        if notification_is_ephemeral(&notification) {
+            return;
+        }
         self.pending_interactive_replay
             .note_server_notification(&notification);
         match &notification {
@@ -337,7 +347,12 @@ mod tests {
     use codex_app_server_protocol::HookStartedNotification;
     use codex_app_server_protocol::RequestId as AppServerRequestId;
     use codex_app_server_protocol::ThreadClosedNotification;
+    use codex_app_server_protocol::TurnActivityStatus;
+    use codex_app_server_protocol::TurnActivityUpdatedNotification;
     use codex_app_server_protocol::TurnCompletedNotification;
+    use codex_app_server_protocol::TurnCostAvailability;
+    use codex_app_server_protocol::TurnCostState;
+    use codex_app_server_protocol::TurnCostUpdatedNotification;
     use codex_app_server_protocol::TurnStartedNotification;
     use codex_config::types::ApprovalsReviewer;
     use codex_protocol::models::PermissionProfile;
@@ -512,6 +527,35 @@ mod tests {
             TurnStatus::Interrupted,
         ));
         assert_eq!(store.active_turn_id(), None);
+    }
+
+    #[test]
+    fn thread_event_store_never_persists_ephemeral_activity_notifications() {
+        let thread_id = ThreadId::new();
+        let mut store = ThreadEventStore::new(/*capacity*/ 8);
+
+        store.push_notification(ServerNotification::TurnActivityUpdated(
+            TurnActivityUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: "turn-1".to_string(),
+                status: TurnActivityStatus::Completed,
+                started_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+                profile: None,
+            },
+        ));
+        store.push_notification(ServerNotification::TurnCostUpdated(
+            TurnCostUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: "turn-1".to_string(),
+                cost: TurnCostState::Unavailable {
+                    reason: TurnCostAvailability::BackendUnavailable,
+                },
+            },
+        ));
+
+        assert!(store.snapshot().events.is_empty());
     }
 
     #[test]

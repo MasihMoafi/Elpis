@@ -102,10 +102,12 @@ Inside Elpis:
 4. After a qualifying turn, reopen the Ledger. Require increased examined and admitted
    counts, a smaller source-to-admitted estimate, zero new failed batches, and
    `response linked` for the latest admission.
-5. Run `/dashboard` and open **Smart Prune**. Require the evidence flow to reach a
-   linked main request and response. Record the admission ID, request sequence, request
-   hash, source/admitted estimates, response input, cached input, cache-write display,
-   optimizer usage coverage, and optimizer latency.
+5. Run `/dashboard` and open **Smart Prune**. Require the latest aggregate to show
+   verified request and response linkage. Record the configured preference and
+   current-thread next-turn state; examined, admitted, and unchanged output counts and
+   failed batch count; approximate source, admitted, and saved tokens; response input,
+   cached input, and cache-write display; optimizer request and usage-report counts and
+   usage; and optimizer latency.
 
 Interpret the linked response as follows:
 
@@ -113,11 +115,12 @@ Interpret the linked response as follows:
 - cached input shown as zero: `NO_REUSE_OBSERVED`, not an invalidation diagnosis or
   proof that the provider explicitly reported zero;
 - response usage absent: `UNKNOWN`;
-- cache write shown as `not reported`: unknown, not zero.
+- cache write shown as `Unavailable`: unknown, not zero.
 
-The dashboard is aggregate-only and does not expose raw tool output. The authoritative
-exact evidence remains under the admission audit path shown in the dashboard and in the
-private trace bundle.
+The dashboard is aggregate-only and does not expose raw tool output, identifiers,
+hashes, or filesystem paths. The authoritative exact evidence remains in the private
+on-disk admission audit under `~/.elpis/logs/smart-prune/admissions/` and, when enabled,
+the private trace bundle.
 
 ## Test 3: normalized live-session check
 

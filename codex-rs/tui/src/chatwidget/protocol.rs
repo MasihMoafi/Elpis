@@ -84,16 +84,22 @@ impl ChatWidget {
                     .thread_id()
                     .is_some_and(|thread_id| thread_id.to_string() == notification.thread_id);
                 if is_current_thread {
+                    let dashboard_changed = !self.smart_prune_synced
+                        || self.smart_prune != notification.smart_prune;
                     self.smart_prune = notification.smart_prune;
                     self.smart_prune_synced = true;
-                    self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+                    if dashboard_changed {
+                        self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+                    }
                     self.request_redraw();
                 }
             }
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
+                let smart_prune_changed = !self.smart_prune_synced
+                    || self.smart_prune != notification.token_usage.smart_prune;
                 self.smart_prune = notification.token_usage.smart_prune.clone();
                 self.smart_prune_synced = true;
-                self.update_context_prune_savings(
+                let savings_changed = self.update_context_prune_savings(
                     notification.token_usage.context_prune_saved_tokens,
                     from_replay,
                 );
@@ -101,10 +107,12 @@ impl ChatWidget {
                     notification.token_usage.last.total_tokens,
                     notification.token_usage.model_context_window,
                 );
-                self.set_token_info(Some(token_usage_info_from_app_server(
+                let tokens_changed = self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));
-                self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+                if !tokens_changed && (smart_prune_changed || savings_changed) {
+                    self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+                }
                 self.refresh_status_line();
             }
             ServerNotification::ThreadNameUpdated(notification) => {
@@ -145,6 +153,12 @@ impl ChatWidget {
                 }
             }
             ServerNotification::TurnStarted(notification) => {
+                if replay_kind.is_none() {
+                    self.on_turn_started_activity(
+                        notification.turn.id.clone(),
+                        notification.turn.started_at,
+                    );
+                }
                 self.turn_lifecycle.last_turn_id = Some(notification.turn.id);
                 self.last_non_retry_error = None;
                 if !matches!(replay_kind, Some(ReplayKind::ResumeInitialMessages)) {
@@ -153,6 +167,16 @@ impl ChatWidget {
             }
             ServerNotification::TurnCompleted(notification) => {
                 self.handle_turn_completed_notification(notification, replay_kind);
+            }
+            ServerNotification::TurnActivityUpdated(notification) => {
+                if replay_kind.is_none() {
+                    self.on_turn_completed_activity(notification);
+                }
+            }
+            ServerNotification::TurnCostUpdated(notification) => {
+                if replay_kind.is_none() {
+                    self.on_turn_cost_updated_activity(notification);
+                }
             }
             ServerNotification::ItemStarted(notification) => {
                 self.handle_item_started_notification(notification, replay_kind.is_some());

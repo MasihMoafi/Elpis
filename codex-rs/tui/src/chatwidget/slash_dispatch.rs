@@ -642,6 +642,9 @@ impl ChatWidget {
         let trimmed = args.trim();
         match cmd {
             SlashCommand::Add => {
+                if self.reject_manual_memory_writer_conflict() {
+                    return;
+                }
                 let cleaned = clean_dropped_path(trimmed);
                 match crate::legacy_core::elpis_context::add_continuity_sources(
                     Some(self.config.memory_dir.as_path()),

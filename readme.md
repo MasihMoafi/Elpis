@@ -100,13 +100,14 @@ uses a layered pipeline to keep useful findings while removing disposable explor
 | --- | --- | --- |
 | **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
 | **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
-| **3. Ace pruning — Experimental** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | Manual `/prune` or `/force-prune`; automatic pressure cycling only in a conversation started with the default-off setting enabled |
+| **3. Smart Prune — Experimental** | Shrinks eligible fresh textual tool results before their first main-model exposure while preserving the tool event and call ID. | When enabled with the Context Ledger `p` switch or `/smart-prune on` |
+| **4. Manual Ace pruning** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | Explicit `/prune` or `/force-prune` only |
 
 `/prune` and `/force-prune` are explicit manual Ace actions and do not rewrite user instructions,
 assistant messages, or model reasoning. `/compact` immediately runs Codex native compaction; it
 is independent of Ace pruning. Automatic native compaction uses the model-window threshold and
-usable-window headroom. Automatic Ace pruning is Experimental and off by default; `/settings`
-saves its value for the next conversation.
+usable-window headroom. Smart Prune is Experimental and off by default; its Ledger switch and
+`/smart-prune on|off` command apply to subsequent turns without rewriting admitted history.
 
 #### What a pruning decision looks like
 
@@ -284,7 +285,7 @@ Across those configured historical requests, Elpis spent over 95% of its operati
 
 ### RQ4: Cache Preservation & Token Economics
 
-Smart Prune now optimizes a fresh tool result before first main-model exposure, so its automatic path does not rewrite already-sent history. One normal-work ON session reported 95.85% cached input overall; the first responses linked to two admissions reported 98.96% and 98.89%. Encoded-request tests separately establish stable prefix and cache-key construction on the tested path. This supports the cache-preserving mechanism, not a complete RQ4 result: there was no matched OFF arm or private full-request trace, and the pilot exposed a 45-second-timeout retry storm. The chart below is the 41-pass cost breakdown from the superseded 42-pass retrospective run, not current Smart Prune economics. See the [2026-09-01 live pilot](docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
+Smart Prune now optimizes a fresh tool result before first main-model exposure, so its automatic path does not rewrite already-sent history. One normal-work ON session reported 95.85% cached input overall; the first responses linked to two admissions reported 98.96% and 98.89%. Encoded-request tests separately establish stable prefix and cache-key construction on the tested path. This supports the cache-preserving mechanism, not a complete RQ4 result: there was no matched OFF arm or private full-request trace. The pilot also exposed a 45-second-timeout retry storm; in focused tests, the current code skips later Smart Prune batches in a turn after its first optimizer failure, but that fix has not yet been live-revalidated. The chart below is the 41-pass cost breakdown from the superseded 42-pass retrospective run, not current Smart Prune economics. See the [2026-09-01 live pilot](docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 

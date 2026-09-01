@@ -98,6 +98,7 @@ impl ChatWidget {
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(crate) fn set_feature_enabled(&mut self, feature: Feature, enabled: bool) -> bool {
+        let previously_enabled = self.config.features.enabled(feature);
         if let Err(err) = self.config.features.set_enabled(feature, enabled) {
             tracing::warn!(
                 error = %err,
@@ -134,7 +135,9 @@ impl ChatWidget {
             self.turn_lifecycle.set_prevent_idle_sleep(enabled);
         }
         if feature == Feature::AutomaticContextPruning {
-            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+            if enabled != previously_enabled {
+                self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+            }
             self.request_redraw();
         }
         #[cfg(target_os = "windows")]

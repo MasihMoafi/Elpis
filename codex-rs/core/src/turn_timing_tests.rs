@@ -236,6 +236,7 @@ async fn turn_profile_and_duration_share_a_completion_instant() {
         .await;
 
     let (_, duration_ms, profile) = state.complete_profile_and_duration_ms().await;
+    let profile = profile.expect("started turn should produce a completed profile");
     let classified_ms = profile.before_first_sampling_ms
         + profile.sampling_ms
         + profile.compaction_ms
@@ -247,6 +248,16 @@ async fn turn_profile_and_duration_share_a_completion_instant() {
         duration_ms,
         Some(i64::try_from(classified_ms).expect("profile duration should fit i64"))
     );
+}
+
+#[tokio::test]
+async fn unfinished_turn_timing_state_has_no_completed_profile() {
+    let state = TurnTimingState::default();
+
+    let (_, duration_ms, profile) = state.complete_profile_and_duration_ms().await;
+
+    assert_eq!(duration_ms, None);
+    assert_eq!(profile, None);
 }
 
 #[test]

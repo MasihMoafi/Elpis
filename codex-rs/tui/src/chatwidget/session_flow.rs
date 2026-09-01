@@ -27,6 +27,14 @@ impl ChatWidget {
             self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
             self.smart_prune = ThreadSmartPruneSnapshot::default();
             self.smart_prune_synced = false;
+            self.last_prune_saved_tokens = None;
+            let tokens_changed = self.set_token_info(/*info*/ None);
+            // `set_token_info` publishes its own semantic change. A thread change
+            // still needs one refresh when there was no prior token snapshot.
+            if !tokens_changed {
+                self.app_event_tx
+                    .send(AppEvent::RefreshContextDashboard);
+            }
         }
         self.refresh_elpis_tip();
         self.turn_lifecycle.reset_thread();

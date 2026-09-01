@@ -2,6 +2,129 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+#[tokio::test]
+async fn semantic_token_snapshot_changes_request_dashboard_refresh_once() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let info = make_token_info(120, 1_000);
+
+    chat.set_token_info(Some(info.clone()));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    chat.set_token_info(Some(info.clone()));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    chat.set_token_info(None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    chat.set_token_info(None);
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    chat.set_token_info(Some(info));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    chat.clear_token_usage();
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    chat.clear_token_usage();
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+fn dashboard_token_usage_notification(
+    chat: &ChatWidget,
+    saved_tokens: u64,
+    smart_prune_enabled: bool,
+) -> ServerNotification {
+    let usage = || codex_app_server_protocol::TokenUsageBreakdown {
+        total_tokens: 120,
+        input_tokens: 100,
+        cached_input_tokens: 20,
+        cache_write_tokens: None,
+        output_tokens: 20,
+        reasoning_output_tokens: 0,
+    };
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = smart_prune_enabled;
+    ServerNotification::ThreadTokenUsageUpdated(
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
+            thread_id: chat
+                .thread_id()
+                .map(|thread_id| thread_id.to_string())
+                .unwrap_or_default(),
+            turn_id: "turn-1".to_string(),
+            token_usage: codex_app_server_protocol::ThreadTokenUsage {
+                total: usage(),
+                last: usage(),
+                model_context_window: Some(1_000),
+                context_prune_saved_tokens: saved_tokens,
+                smart_prune,
+            },
+        },
+    )
+}
+
+#[tokio::test]
+async fn token_savings_and_smart_prune_changes_each_refresh_exactly_once() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    for notification in [
+        dashboard_token_usage_notification(&chat, 10, false),
+        dashboard_token_usage_notification(&chat, 20, false),
+        dashboard_token_usage_notification(&chat, 20, true),
+    ] {
+        chat.handle_server_notification(notification, /*replay_kind*/ None);
+        assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+        assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+    }
+
+    chat.handle_server_notification(
+        dashboard_token_usage_notification(&chat, 20, true),
+        /*replay_kind*/ None,
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn only_effective_smart_prune_configuration_changes_refresh_dashboard() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    assert!(!chat.set_feature_enabled(Feature::AutomaticContextPruning, false));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    assert!(chat.set_feature_enabled(Feature::AutomaticContextPruning, true));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+
+    assert!(chat.set_feature_enabled(Feature::AutomaticContextPruning, true));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    assert!(!chat.set_feature_enabled(Feature::AutomaticContextPruning, false));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+}
+
+#[tokio::test]
+async fn only_semantic_core_smart_prune_snapshots_refresh_dashboard() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    let notification = |smart_prune| {
+        ServerNotification::ThreadSmartPruneUpdated(
+            codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                smart_prune,
+            },
+        )
+    };
+
+    let initial = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    chat.handle_server_notification(notification(initial.clone()), /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    chat.handle_server_notification(notification(initial), /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    let mut changed = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    changed.enabled = true;
+    chat.handle_server_notification(notification(changed), /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
 const SAFETY_BUFFERING_HEADER_TEXT: &str =
     "Our systems are thinking a bit more about this request before responding.";
 
@@ -63,6 +186,36 @@ fn configured_thread_session(thread_id: ThreadId) -> crate::session_state::Threa
         network_proxy: None,
         rollout_path: None,
     }
+}
+
+#[tokio::test]
+async fn thread_switch_clears_thread_scoped_dashboard_usage() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let first_thread_id = ThreadId::new();
+    chat.handle_thread_session(configured_thread_session(first_thread_id));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.set_token_info(Some(make_token_info(120, 1_000)));
+    assert!(chat.update_context_prune_savings(40, /*from_replay*/ true));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.handle_thread_session(configured_thread_session(first_thread_id));
+    assert!(chat.token_info.is_some());
+    assert_eq!(chat.last_prune_saved_tokens, Some(40));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.handle_thread_session(configured_thread_session(ThreadId::new()));
+
+    assert!(chat.token_info.is_none());
+    assert_eq!(chat.bottom_pane.context_window_used_tokens(), None);
+    assert_eq!(chat.last_prune_saved_tokens, None);
+    assert_eq!(chat.last_prune_saved_tokens.unwrap_or(0), 0);
+    assert_eq!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
 }
 
 fn start_safety_buffering_test_turn(
@@ -1318,4 +1471,244 @@ async fn live_app_server_thread_closed_requests_immediate_exit() {
     );
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::Exit(ExitMode::Immediate)));
+}
+
+#[tokio::test]
+async fn live_activity_notifications_project_only_safe_scalars_and_typed_cost() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id =
+        "prompt-secret-agent-response-secret-command-output-secret-account-provider-path-secret";
+    let turn_id = "turn-secret-id";
+
+    chat.handle_server_notification(
+        ServerNotification::TurnStarted(TurnStartedNotification {
+            thread_id: thread_id.to_string(),
+            turn: AppServerTurn {
+                id: turn_id.to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::InProgress,
+                error: None,
+                started_at: Some(42),
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::Error(ErrorNotification {
+            error: AppServerTurnError {
+                message: "raw-error-secret".to_string(),
+                codex_error_info: None,
+                additional_details: Some("trace-secret".to_string()),
+            },
+            will_retry: true,
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::SubscriptionAuthentication,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+
+    let unavailable = chat.dashboard_activity_state();
+    let unavailable_debug = format!("{unavailable:?}");
+    for private_value in [
+        "prompt-secret",
+        "agent-response-secret",
+        "command-output-secret",
+        "account-provider-path-secret",
+        turn_id,
+        "raw-error-secret",
+        "trace-secret",
+    ] {
+        assert!(!unavailable_debug.contains(private_value));
+    }
+    let crate::activity_state::DashboardActivityState {
+        current,
+        recent,
+    } = unavailable;
+    let current = current
+        .expect("live turn should project as current");
+    let crate::activity_state::DashboardActivityRow {
+        status,
+        started_at,
+        duration_ms,
+        time_to_first_token_ms,
+        profile,
+        cost,
+    } = current;
+    assert_eq!(
+        status,
+        crate::activity_state::DashboardActivityStatus::Running
+    );
+    assert_eq!(
+        cost,
+        Some(TurnCostState::Unavailable {
+            reason: TurnCostAvailability::SubscriptionAuthentication,
+        })
+    );
+    assert_eq!(started_at, Some(42));
+    assert_eq!(duration_ms, None);
+    assert_eq!(time_to_first_token_ms, None);
+    assert_eq!(profile, None);
+    assert!(recent.is_empty());
+
+    chat.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: Some(42),
+            duration_ms: Some(100),
+            time_to_first_token_ms: Some(25),
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnStarted(TurnStartedNotification {
+            thread_id: thread_id.to_string(),
+            turn: AppServerTurn {
+                id: "turn-priced".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::InProgress,
+                error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-priced".to_string(),
+            cost: TurnCostState::Priced {
+                backend_total_usd: "1.250000".to_string(),
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-priced".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+
+    let priced = chat.dashboard_activity_state();
+    assert_eq!(
+        priced.recent[0].cost,
+        Some(TurnCostState::Unavailable {
+            reason: TurnCostAvailability::SubscriptionAuthentication,
+        })
+    );
+    assert_eq!(
+        priced.recent[1].cost,
+        Some(TurnCostState::Priced {
+            backend_total_usd: "1.250000".to_string(),
+        })
+    );
+}
+
+#[tokio::test]
+async fn dropped_dashboard_publication_receiver_does_not_block_turn_completion() {
+    let (mut chat, rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    drop(rx);
+
+    chat.handle_server_notification(
+        ServerNotification::TurnStarted(TurnStartedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: AppServerTurn {
+                id: "turn-1".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::InProgress,
+                error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+    chat.handle_server_notification(
+        ServerNotification::TurnCompleted(TurnCompletedNotification {
+            thread_id: "thread-1".to_string(),
+            turn: AppServerTurn {
+                id: "turn-1".to_string(),
+                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items: Vec::new(),
+                status: AppServerTurnStatus::Completed,
+                error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+
+    assert!(!chat.bottom_pane.is_task_running());
+    assert_eq!(chat.dashboard_activity_state().recent.len(), 1);
+}
+
+#[tokio::test]
+async fn empty_activity_reset_still_requests_dashboard_publication() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.reset_activity();
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    assert_eq!(chat.dashboard_activity_state().current, None);
+    assert!(chat.dashboard_activity_state().recent.is_empty());
+}
+
+#[tokio::test]
+async fn unknown_activity_cost_does_not_request_dashboard_publication() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.handle_server_notification(
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "unknown-turn".to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::BackendUnavailable,
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+    assert!(chat.dashboard_activity_state().recent.is_empty());
 }

@@ -303,6 +303,7 @@ jobs:
 
   build-macos:
     name: Build and verify Elpis on macOS (Apple Silicon)
+    if: github.event_name != 'workflow_dispatch'
     runs-on: macos-14
     timeout-minutes: 120
     defaults:
@@ -442,6 +443,7 @@ jobs:
 
   installer-platform-detection:
     name: Verify installer platform selection
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

@@ -13,7 +13,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn submit_initial_user_message_if_pending(&mut self) {
-        if self.suppress_initial_user_message_submit {
+        if self.suppress_initial_user_message_submit || self.manual_memory_submission_blocked() {
             return;
         }
         #[cfg(any(target_os = "windows", test))]
@@ -23,6 +23,86 @@ impl ChatWidget {
         if let Some(user_message) = self.initial_user_message.take() {
             self.submit_user_message(user_message);
         }
+    }
+
+    pub(crate) fn restore_admission_blocked_input_to_composer(&mut self) -> bool {
+        if !self.manual_memory_submission_blocked() {
+            return false;
+        }
+        if let Some(initial) = self.initial_user_message.take() {
+            self.input_queue
+                .queued_user_messages
+                .push_front(QueuedUserMessage::from(initial));
+            self.input_queue
+                .queued_user_message_history_records
+                .push_front(UserMessageHistoryRecord::UserMessageText);
+        }
+        let pending_steers = std::mem::take(&mut self.input_queue.pending_steers);
+        let restored = self.drain_pending_messages_for_restore();
+        self.input_queue.pending_steers = pending_steers;
+        if let Some(composer) = restored {
+            self.restore_composer_state(composer);
+            self.refresh_pending_input_preview();
+            self.request_redraw();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn manual_memory_lifecycle_composer_state(&self) -> Option<ThreadComposerState> {
+        let draft = self.bottom_pane.composer_draft_snapshot();
+        let composer = ThreadComposerState {
+            text: draft.text,
+            text_elements: draft.text_elements,
+            local_images: draft.local_images,
+            remote_image_urls: draft.remote_image_urls,
+            mention_bindings: draft.mention_bindings,
+            pending_pastes: draft.pending_pastes,
+        };
+        composer.has_content().then_some(composer)
+    }
+
+    pub(crate) fn restore_manual_memory_lifecycle_composer_state(
+        &mut self,
+        composer: Option<ThreadComposerState>,
+    ) {
+        let Some(composer) = composer else {
+            return;
+        };
+        let current = self.manual_memory_lifecycle_composer_state();
+        let mut messages = Vec::new();
+        let mut pending_pastes = Vec::new();
+        let mut used_paste_placeholders = HashSet::new();
+
+        for composer in std::iter::once(composer).chain(current) {
+            let ThreadComposerState {
+                text,
+                local_images,
+                remote_image_urls,
+                text_elements,
+                mention_bindings,
+                pending_pastes: composer_pending_pastes,
+            } = composer;
+            let (message, composer_pending_pastes) = remap_colliding_paste_placeholders(
+                UserMessage {
+                    text,
+                    local_images,
+                    remote_image_urls,
+                    text_elements,
+                    mention_bindings,
+                },
+                composer_pending_pastes,
+                &mut used_paste_placeholders,
+            );
+            messages.push(message);
+            pending_pastes.extend(composer_pending_pastes);
+        }
+
+        self.restore_composer_state(Self::composer_state_from_user_message(
+            merge_user_messages(messages),
+            pending_pastes,
+        ));
     }
 
     pub(super) fn pop_next_queued_user_message(

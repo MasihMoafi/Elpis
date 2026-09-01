@@ -63,7 +63,7 @@ pub(crate) struct ManualMemoryViewKey {
     pub(crate) memory_path: PathBuf,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct ManualMemoryStorageTarget {
     pub(crate) admission_path: PathBuf,
     pub(crate) memory_path: PathBuf,
@@ -106,6 +106,27 @@ pub(crate) enum ManualMemoryStatusCompletion {
         sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
     },
     Unavailable(ManualMemoryUnavailableReason),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryMutation {
+    Create,
+    Admission { admitted: bool },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryMutationFailure {
+    AlreadyExists,
+    Missing,
+    StorageUnavailable,
+    PersistenceFailed,
+    WorkerFailed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManualMemoryMutationCompletion {
+    Succeeded,
+    Failed(ManualMemoryMutationFailure),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,6 +308,22 @@ pub(crate) enum AppEvent {
 
     /// Result of a blocking manual-memory/source read.
     ManualMemoryStatusLoaded(ManualMemoryRequestTarget, ManualMemoryStatusCompletion),
+
+    /// Create the configured manual-memory file on a blocking worker.
+    ManualMemoryCreateRequested(ManualMemoryRequestTarget),
+
+    /// Result of a manual-memory create worker.
+    ManualMemoryCreateFinished(ManualMemoryRequestTarget, ManualMemoryMutationCompletion),
+
+    /// Persist the configured manual-memory admission state on a blocking worker.
+    ManualMemoryAdmissionRequested(ManualMemoryRequestTarget, bool),
+
+    /// Result of a manual-memory admission worker.
+    ManualMemoryAdmissionFinished(
+        ManualMemoryRequestTarget,
+        bool,
+        ManualMemoryMutationCompletion,
+    ),
 
     /// Open a read-only dashboard of the current context window and its provenance.
     OpenContextDashboard,
