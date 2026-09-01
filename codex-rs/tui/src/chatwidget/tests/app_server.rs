@@ -1533,12 +1533,8 @@ async fn live_activity_notifications_project_only_safe_scalars_and_typed_cost() 
     ] {
         assert!(!unavailable_debug.contains(private_value));
     }
-    let crate::activity_state::DashboardActivityState {
-        current,
-        recent,
-    } = unavailable;
-    let current = current
-        .expect("live turn should project as current");
+    let crate::activity_state::DashboardActivityState { current, recent } = unavailable;
+    let current = current.expect("live turn should project as current");
     let crate::activity_state::DashboardActivityRow {
         status,
         started_at,

@@ -1653,7 +1653,9 @@ pub enum TurnCostAvailability {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(tag = "type", rename_all = "camelCase")]
 pub enum TurnCostState {
-    Unavailable { reason: TurnCostAvailability },
+    Unavailable {
+        reason: TurnCostAvailability,
+    },
     Priced {
         #[serde(rename = "backendTotalUsd")]
         #[ts(rename = "backendTotalUsd")]

@@ -18,12 +18,12 @@ use codex_backend_client::ApiKeyResponseCost;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::OtelExporterKind;
 use codex_core::config::ConfigBuilder;
-use codex_login::auth::BedrockApiKeyAuth;
-use codex_login::auth::save_auth;
 use codex_login::AuthDotJson;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::CodexAuth;
 use codex_login::TokenData;
+use codex_login::auth::BedrockApiKeyAuth;
+use codex_login::auth::save_auth;
 use codex_login::login_with_api_key;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 use codex_model_provider_info::built_in_model_providers;
@@ -98,12 +98,11 @@ async fn availability_policy_classifies_auth_exporter_and_provider_without_io() 
         }
     );
 
-    let bedrock_auth = AuthManager::from_auth_for_testing(CodexAuth::BedrockApiKey(
-        BedrockApiKeyAuth {
+    let bedrock_auth =
+        AuthManager::from_auth_for_testing(CodexAuth::BedrockApiKey(BedrockApiKeyAuth {
             api_key: "bedrock-test".to_string(),
             region: "us-east-1".to_string(),
-        },
-    ));
+        }));
     let policy = TurnCostAvailabilityPolicy::new(Arc::new(config.clone()), bedrock_auth);
     assert_eq!(
         policy.classify(&config),
@@ -147,7 +146,7 @@ async fn availability_policy_classifies_auth_exporter_and_provider_without_io() 
 
 #[tokio::test]
 async fn activity_notifications_listener_path_orders_initial_cost_before_enqueue_and_counts_hidden_raw()
-{
+ {
     let codex_home = TempDir::new().expect("temporary Elpis home");
     let mut config = load_default_config_for_test(&codex_home).await;
     config.otel.metrics_exporter = OtelExporterKind::OtlpGrpc {
@@ -164,9 +163,7 @@ async fn activity_notifications_listener_path_orders_initial_cost_before_enqueue
         ),
     );
     let codex_core::NewThread {
-        thread_id,
-        thread,
-        ..
+        thread_id, thread, ..
     } = thread_manager
         .start_thread(config.clone())
         .await
@@ -179,10 +176,7 @@ async fn activity_notifications_listener_path_orders_initial_cost_before_enqueue
         .track_current_turn_event(&started.id, &started.msg);
 
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("sk-test"));
-    let policy = TurnCostAvailabilityPolicy::new(
-        Arc::new(config.clone()),
-        auth_manager.clone(),
-    );
+    let policy = TurnCostAvailabilityPolicy::new(Arc::new(config.clone()), auth_manager.clone());
     let (observation_tx, mut observation_rx) = mpsc::channel(4);
     let worker = TurnCostWorkerHandle {
         sender: observation_tx,
@@ -799,28 +793,34 @@ async fn priced_cost_records_only_after_every_response_arrives() {
     let (session_telemetry, metrics) = test_session_telemetry(thread_id);
     assert!(register_active_turn(&runtime.dropped_turns, turn_id));
 
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Started {
-            session_telemetry: Box::new(session_telemetry),
-        },
-    }).await;
-    for _ in 0..2 {
-        runtime.record_observation(TurnCostObservation {
+    runtime
+        .record_observation(TurnCostObservation {
             thread_id,
             turn_id: turn_id.to_string(),
             auth_revision: 0,
-            kind: TurnCostObservationKind::ResponseCompleted,
-        }).await;
+            kind: TurnCostObservationKind::Started {
+                session_telemetry: Box::new(session_telemetry),
+            },
+        })
+        .await;
+    for _ in 0..2 {
+        runtime
+            .record_observation(TurnCostObservation {
+                thread_id,
+                turn_id: turn_id.to_string(),
+                auth_revision: 0,
+                kind: TurnCostObservationKind::ResponseCompleted,
+            })
+            .await;
     }
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Finished { interrupted: false },
-    }).await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: turn_id.to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Finished { interrupted: false },
+        })
+        .await;
 
     let mut cost = ApiKeyTurnCost {
         turn_id: turn_id.to_string(),
@@ -882,20 +882,24 @@ async fn stalled_pending_cost_is_dropped_after_the_bounded_retry_budget() {
     let turn_id = "turn-stalled";
     let (session_telemetry, _metrics) = test_session_telemetry(thread_id);
     assert!(register_active_turn(&runtime.dropped_turns, turn_id));
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Started {
-            session_telemetry: Box::new(session_telemetry),
-        },
-    }).await;
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Finished { interrupted: true },
-    }).await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: turn_id.to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Started {
+                session_telemetry: Box::new(session_telemetry),
+            },
+        })
+        .await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: turn_id.to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Finished { interrupted: true },
+        })
+        .await;
     let pending = ApiKeyTurnCost {
         turn_id: turn_id.to_string(),
         status: ApiKeyTurnCostStatus::Pending,
@@ -1130,14 +1134,16 @@ async fn malformed_and_overflow_costs_never_reach_telemetry_or_priced_ui() {
         let thread_id = runtime.thread_id;
         let turn_id = "turn-invalid";
         let (session_telemetry, metrics) = test_session_telemetry(thread_id);
-        runtime.record_observation(TurnCostObservation {
-            thread_id,
-            turn_id: turn_id.to_string(),
-            auth_revision: 0,
-            kind: TurnCostObservationKind::Started {
-                session_telemetry: Box::new(session_telemetry),
-            },
-        }).await;
+        runtime
+            .record_observation(TurnCostObservation {
+                thread_id,
+                turn_id: turn_id.to_string(),
+                auth_revision: 0,
+                kind: TurnCostObservationKind::Started {
+                    session_telemetry: Box::new(session_telemetry),
+                },
+            })
+            .await;
         let invalid = ApiKeyTurnCost {
             turn_id: turn_id.to_string(),
             status: ApiKeyTurnCostStatus::Priced,
@@ -1189,7 +1195,9 @@ async fn observation_channel_and_tracking_capacity_report_dropped() {
     let thread_id = ThreadId::new();
     let (session_telemetry, metrics) = test_session_telemetry(thread_id);
     assert_eq!(
-        handle.observe_event(thread_id, &config, &turn_started_event(), 0, || session_telemetry),
+        handle.observe_event(thread_id, &config, &turn_started_event(), 0, || {
+            session_telemetry
+        }),
         None
     );
     assert_eq!(
@@ -1308,10 +1316,7 @@ async fn observation_channel_and_tracking_capacity_report_dropped() {
         "map capacity may terminalize a turn only once"
     );
     runtime
-        .process_api_key_cost(
-            "over-capacity",
-            &priced_cost("over-capacity", "0.25"),
-        )
+        .process_api_key_cost("over-capacity", &priced_cost("over-capacity", "0.25"))
         .await;
     assert!(!runtime.turns.contains_key("over-capacity"));
     assert_eq!(turn_cost_metric_value(&over_capacity_metrics), None);
@@ -1393,7 +1398,9 @@ async fn failed_finished_sends_demote_drops_and_bound_history_without_later_fini
         msg: turn_started_event().msg,
     };
     assert_eq!(
-        handle.observe_event(thread_id, &runtime.config, &started, 0, || session_telemetry),
+        handle.observe_event(thread_id, &runtime.config, &started, 0, || {
+            session_telemetry
+        }),
         None
     );
     runtime
@@ -1446,13 +1453,9 @@ async fn failed_finished_sends_demote_drops_and_bound_history_without_later_fini
     }
     let finished = turn_finished_event(turn_id);
     assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &finished,
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
+        handle.observe_event(thread_id, &runtime.config, &finished, 0, || panic!(
+            "finish observation does not construct telemetry"
+        ),),
         None,
         "a failed finish must not emit a second drop notification"
     );
@@ -1513,13 +1516,9 @@ async fn failed_started_send_stays_active_until_received_finish() {
     receiver.recv().await.expect("queued channel filler");
     let finished = turn_finished_event(turn_id);
     assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &finished,
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
+        handle.observe_event(thread_id, &runtime.config, &finished, 0, || panic!(
+            "finish observation does not construct telemetry"
+        ),),
         None
     );
     runtime
@@ -1614,14 +1613,16 @@ async fn late_notifier_targets_current_subscribers_without_broadcasting() {
     let mut runtime = test_runtime(&server, auth_manager).await;
     let thread_id = runtime.thread_id;
     let (session_telemetry, _metrics) = test_session_telemetry(thread_id);
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: "turn-unsubscribed".to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Started {
-            session_telemetry: Box::new(session_telemetry),
-        },
-    }).await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: "turn-unsubscribed".to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Started {
+                session_telemetry: Box::new(session_telemetry),
+            },
+        })
+        .await;
     assert!(
         runtime
             .thread_state_manager
@@ -1720,10 +1721,7 @@ async fn assert_start_auth_transition_is_terminal(transition: TestAuthTransition
         CodexAuth::from_api_key("sk-before-classification"),
         auth_home.path().to_path_buf(),
     );
-    let policy = TurnCostAvailabilityPolicy::new(
-        Arc::new(config.clone()),
-        auth_manager.clone(),
-    );
+    let policy = TurnCostAvailabilityPolicy::new(Arc::new(config.clone()), auth_manager.clone());
     let (observation_tx, mut observation_rx) = mpsc::channel(1);
     let worker = TurnCostWorkerHandle {
         sender: observation_tx,
@@ -1930,15 +1928,14 @@ async fn recv_cost_state(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> TurnCostS
 async fn recv_turn_cost_notification(
     rx: &mut mpsc::Receiver<OutgoingEnvelope>,
 ) -> TurnCostUpdatedNotification {
-    let ServerNotification::TurnCostUpdated(notification) = recv_server_notification(rx).await else {
+    let ServerNotification::TurnCostUpdated(notification) = recv_server_notification(rx).await
+    else {
         panic!("expected turn cost notification");
     };
     notification
 }
 
-async fn recv_server_notification(
-    rx: &mut mpsc::Receiver<OutgoingEnvelope>,
-) -> ServerNotification {
+async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> ServerNotification {
     let envelope = timeout(Duration::from_secs(1), rx.recv())
         .await
         .expect("timed out waiting for cost notification")

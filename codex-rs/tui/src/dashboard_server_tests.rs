@@ -94,7 +94,10 @@ fn empty_activity() -> DashboardActivityState {
     }
 }
 
-fn running_activity(started_at: Option<i64>, cost: Option<TurnCostState>) -> DashboardActivityState {
+fn running_activity(
+    started_at: Option<i64>,
+    cost: Option<TurnCostState>,
+) -> DashboardActivityState {
     DashboardActivityState {
         current: Some(DashboardActivityRow {
             status: DashboardActivityStatus::Running,
@@ -332,7 +335,10 @@ fn cache_write_unreported_and_reported_zero_are_distinct_semantic_states() {
         1_000,
     ));
     let unreported = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
-    assert_eq!(unreported["tokens"]["last_turn"]["cache_write"], Value::Null);
+    assert_eq!(
+        unreported["tokens"]["last_turn"]["cache_write"],
+        Value::Null
+    );
 
     assert!(publish_state_into(
         &mut slot,
@@ -416,7 +422,10 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
             "unchanged_outputs",
         ],
     );
-    assert_eq!(synced["smart_prune"]["optimizer_usage"]["cache_write"], Value::Null);
+    assert_eq!(
+        synced["smart_prune"]["optimizer_usage"]["cache_write"],
+        Value::Null
+    );
 
     assert_keys(
         &synced["smart_prune"]["latest"],
@@ -585,7 +594,12 @@ fn envelope_and_nested_wire_dtos_deserialize_for_frozen_fixtures() {
 
     assert_eq!(envelope.heartbeat_at, 1_770_000_000_500);
     assert_eq!(
-        envelope.state.activity.current.as_ref().map(|turn| turn.status),
+        envelope
+            .state
+            .activity
+            .current
+            .as_ref()
+            .map(|turn| turn.status),
         Some(super::DashboardActivityStatus::Running)
     );
     assert_eq!(envelope.state.activity.recent.len(), 2);
@@ -685,7 +699,10 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "Approx. saved",
         "Estimated token usage by category",
     ] {
-        assert!(INDEX_HTML.contains(required), "missing dashboard contract: {required}");
+        assert!(
+            INDEX_HTML.contains(required),
+            "missing dashboard contract: {required}"
+        );
     }
 }
 
@@ -725,7 +742,10 @@ fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields()
         "http://",
         "https://",
     ] {
-        assert!(!INDEX_HTML.contains(forbidden), "unsafe dashboard source: {forbidden}");
+        assert!(
+            !INDEX_HTML.contains(forbidden),
+            "unsafe dashboard source: {forbidden}"
+        );
     }
 }
 

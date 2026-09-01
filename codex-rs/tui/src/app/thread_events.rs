@@ -571,10 +571,7 @@ mod tests {
             TurnStatus::Completed,
         ));
         assert_eq!(store.active_turn_id(), Some("turn-new"));
-        assert_eq!(
-            store.pending_interrupt_turn_id.as_deref(),
-            Some("turn-new")
-        );
+        assert_eq!(store.pending_interrupt_turn_id.as_deref(), Some("turn-new"));
 
         store.push_notification(turn_completed_notification(
             thread_id,
@@ -586,11 +583,9 @@ mod tests {
 
         store.push_notification(turn_started_notification(thread_id, "turn-close"));
         store.pending_interrupt_turn_id = Some("turn-close".to_string());
-        store.push_notification(ServerNotification::ThreadClosed(
-            ThreadClosedNotification {
-                thread_id: thread_id.to_string(),
-            },
-        ));
+        store.push_notification(ServerNotification::ThreadClosed(ThreadClosedNotification {
+            thread_id: thread_id.to_string(),
+        }));
         assert_eq!(store.active_turn_id(), None);
         assert_eq!(store.pending_interrupt_turn_id, None);
     }

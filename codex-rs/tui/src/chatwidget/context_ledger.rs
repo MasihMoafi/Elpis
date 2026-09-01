@@ -798,9 +798,7 @@ impl ChatWidget {
         self.manual_memory_cache.status.as_ref()
     }
 
-    pub(crate) fn manual_memory_unavailable_reason(
-        &self,
-    ) -> Option<ManualMemoryUnavailableReason> {
+    pub(crate) fn manual_memory_unavailable_reason(&self) -> Option<ManualMemoryUnavailableReason> {
         self.manual_memory_cache.unavailable_reason
     }
 
@@ -885,10 +883,14 @@ impl ChatWidget {
 
     pub(crate) fn begin_manual_memory_create(&mut self) -> bool {
         if self.manual_memory_cache.pending_mutation.is_some()
-            || self.manual_memory_cache.status.as_ref().is_none_or(|status| {
-                status.state
-                    != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
-            })
+            || self
+                .manual_memory_cache
+                .status
+                .as_ref()
+                .is_none_or(|status| {
+                    status.state
+                        != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+                })
         {
             return false;
         }
@@ -1154,10 +1156,13 @@ impl ChatWidget {
     }
 
     fn manual_memory_can_toggle(&self) -> bool {
-        self.manual_memory_cache.status.as_ref().is_some_and(|status| {
-            status.state
-                != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
-        })
+        self.manual_memory_cache
+            .status
+            .as_ref()
+            .is_some_and(|status| {
+                status.state
+                    != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+            })
     }
 
     pub(super) fn reject_manual_memory_writer_conflict(&mut self) -> bool {
@@ -1193,15 +1198,9 @@ fn all_bulk_context_sources_admitted(
     manual_memory_path: Option<&std::path::Path>,
     manual_memory_actionable: bool,
 ) -> bool {
-    let mut actionable = sources
-        .iter()
-        .filter(|source| {
-            is_bulk_context_source_actionable(
-                source,
-                manual_memory_path,
-                manual_memory_actionable,
-            )
-        });
+    let mut actionable = sources.iter().filter(|source| {
+        is_bulk_context_source_actionable(source, manual_memory_path, manual_memory_actionable)
+    });
     actionable
         .next()
         .is_some_and(|first| first.admitted && actionable.all(|source| source.admitted))

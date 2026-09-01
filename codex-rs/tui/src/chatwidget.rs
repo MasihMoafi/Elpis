@@ -933,8 +933,7 @@ fn token_usage_info_from_app_server(token_usage: ThreadTokenUsage) -> TokenUsage
 impl ChatWidget {
     pub(crate) fn on_turn_started_activity(&mut self, turn_id: String, started_at: Option<i64>) {
         if self.activity_state.start(turn_id, started_at) {
-            self.app_event_tx
-                .send(AppEvent::RefreshContextDashboard);
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
         }
     }
 
@@ -949,8 +948,7 @@ impl ChatWidget {
             notification.time_to_first_token_ms,
             notification.profile,
         ) {
-            self.app_event_tx
-                .send(AppEvent::RefreshContextDashboard);
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
         }
     }
 
@@ -962,15 +960,13 @@ impl ChatWidget {
             .activity_state
             .update_cost(&notification.turn_id, notification.cost)
         {
-            self.app_event_tx
-                .send(AppEvent::RefreshContextDashboard);
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
         }
     }
 
     pub(crate) fn reset_activity(&mut self) {
         self.activity_state.reset();
-        self.app_event_tx
-            .send(AppEvent::RefreshContextDashboard);
+        self.app_event_tx.send(AppEvent::RefreshContextDashboard);
     }
 
     /// Clears Activity before a different session emits the coalesced dashboard refresh.
@@ -1106,8 +1102,7 @@ impl ChatWidget {
             }
         }
         if changed {
-            self.app_event_tx
-                .send(AppEvent::RefreshContextDashboard);
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
         }
         changed
     }
@@ -1765,9 +1760,7 @@ impl ChatWidget {
     }
 
     #[cfg(test)]
-    pub(crate) fn dashboard_usage_state_for_test(
-        &self,
-    ) -> (Option<i64>, Option<i64>, Option<u64>) {
+    pub(crate) fn dashboard_usage_state_for_test(&self) -> (Option<i64>, Option<i64>, Option<u64>) {
         (
             self.token_info
                 .as_ref()
@@ -1877,8 +1870,7 @@ impl ChatWidget {
 
     pub(crate) fn clear_token_usage(&mut self) {
         if self.token_info.take().is_some() {
-            self.app_event_tx
-                .send(AppEvent::RefreshContextDashboard);
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
         }
     }
 }

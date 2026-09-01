@@ -61,7 +61,9 @@ async fn manual_memory_admission_blocks_same_loop_and_direct_user_turn_submissio
     chat.initial_user_message = Some(UserMessage::from("initial submit"));
     chat.submit_initial_user_message_if_pending();
     assert_eq!(
-        chat.initial_user_message.as_ref().map(|message| message.text.as_str()),
+        chat.initial_user_message
+            .as_ref()
+            .map(|message| message.text.as_str()),
         Some("initial submit")
     );
     assert!(op_rx.try_recv().is_err());

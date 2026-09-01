@@ -32,8 +32,7 @@ impl ChatWidget {
             // `set_token_info` publishes its own semantic change. A thread change
             // still needs one refresh when there was no prior token snapshot.
             if !tokens_changed {
-                self.app_event_tx
-                    .send(AppEvent::RefreshContextDashboard);
+                self.app_event_tx.send(AppEvent::RefreshContextDashboard);
             }
         }
         self.refresh_elpis_tip();

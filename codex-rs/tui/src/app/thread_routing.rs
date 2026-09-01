@@ -1430,8 +1430,8 @@ impl App {
     }
 
     fn reset_activity_before_thread_session(&mut self, next_thread_id: Option<ThreadId>) {
-        let thread_will_change = next_thread_id
-            .is_some_and(|thread_id| self.chat_widget.thread_id() != Some(thread_id));
+        let thread_will_change =
+            next_thread_id.is_some_and(|thread_id| self.chat_widget.thread_id() != Some(thread_id));
         if thread_will_change {
             self.chat_widget.reset_activity_for_thread_change();
         } else {
