@@ -15,6 +15,16 @@ use codex_config::types::WindowsSandboxModeToml;
 
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
+fn manual_memory_same_view_ignoring_epoch(
+    left: &ManualMemoryViewKey,
+    right: &ManualMemoryViewKey,
+) -> bool {
+    left.primary_root_thread_id == right.primary_root_thread_id
+        && left.displayed_thread_id == right.displayed_thread_id
+        && left.cwd == right.cwd
+        && left.memory_path == right.memory_path
+}
+
 impl App {
     pub(super) fn begin_manual_memory_refresh(
         &mut self,
@@ -29,11 +39,93 @@ impl App {
         let Some(target) = self.next_manual_memory_target() else {
             return false;
         };
-        self.chat_widget
-            .bind_manual_memory_loading(target.clone(), pending_context_report);
+        let pending_mutation = self.pending_manual_memory_mutation_for(&target.storage);
+        self.chat_widget.bind_manual_memory_loading(
+            target.clone(),
+            pending_context_report,
+            pending_mutation,
+        );
         self.publish_current_dashboard_snapshot();
         self.launch_manual_memory_status(target);
         true
+    }
+
+    pub(super) fn claim_manual_memory_mutation(
+        &mut self,
+        origin: &ManualMemoryRequestTarget,
+        mutation: ManualMemoryMutation,
+    ) -> bool {
+        if self.chat_widget.manual_memory_bound_target() != Some(origin)
+            || self.chat_widget.manual_memory_pending_mutation() != Some(mutation)
+            || self
+                .manual_memory_status
+                .mutations
+                .contains_key(&origin.storage)
+        {
+            return false;
+        }
+        let pending_context_report = self.chat_widget.manual_memory_context_report_pending();
+        let Some(target) = self.next_manual_memory_target() else {
+            self.chat_widget.clear_manual_memory_pending_mutation();
+            return false;
+        };
+        self.manual_memory_status.in_flight = None;
+        self.manual_memory_status.mutations.insert(
+            origin.storage.clone(),
+            ManualMemoryOwnedMutation::running(origin.clone(), mutation),
+        );
+        self.chat_widget.bind_manual_memory_loading(
+            target,
+            pending_context_report,
+            Some(mutation),
+        );
+        self.publish_current_dashboard_snapshot();
+        true
+    }
+
+    pub(super) fn record_manual_memory_mutation_completion(
+        &mut self,
+        origin: &ManualMemoryRequestTarget,
+        mutation: ManualMemoryMutation,
+        completion: ManualMemoryMutationCompletion,
+    ) -> ManualMemoryCompletionDisposition {
+        let Some(owner) = self.manual_memory_status.mutations.get_mut(&origin.storage) else {
+            return ManualMemoryCompletionDisposition::Ignored;
+        };
+        if owner.origin != *origin
+            || owner.mutation != mutation
+            || owner.stage != ManualMemoryMutationStage::Running
+        {
+            return ManualMemoryCompletionDisposition::Ignored;
+        }
+        owner.stage = ManualMemoryMutationStage::AwaitingStatus(completion);
+
+        let current_storage = self
+            .current_manual_memory_target(self.manual_memory_status.epoch)
+            .map(|target| target.storage);
+        if current_storage.as_ref() != Some(&origin.storage) {
+            self.manual_memory_status.mutations.remove(&origin.storage);
+            return ManualMemoryCompletionDisposition::Detached;
+        }
+
+        let pending_context_report = self.chat_widget.manual_memory_context_report_pending();
+        let Some(target) = self.next_manual_memory_target() else {
+            if matches!(mutation, ManualMemoryMutation::Admission { .. }) {
+                self.chat_widget
+                    .restore_admission_blocked_input_to_composer();
+            }
+            self.chat_widget.clear_manual_memory_pending_mutation();
+            self.manual_memory_status.mutations.remove(&origin.storage);
+            return ManualMemoryCompletionDisposition::Detached;
+        };
+        self.manual_memory_status.in_flight = None;
+        self.chat_widget.bind_manual_memory_loading(
+            target.clone(),
+            pending_context_report,
+            Some(mutation),
+        );
+        self.publish_current_dashboard_snapshot();
+        ManualMemoryCompletionDisposition::Refresh(target)
     }
 
     pub(super) fn finish_manual_memory_status(
@@ -41,16 +133,119 @@ impl App {
         target: &ManualMemoryRequestTarget,
         completion: ManualMemoryStatusCompletion,
     ) -> Option<bool> {
-        if self.manual_memory_status.in_flight.as_ref() != Some(target)
-            || !self
-                .chat_widget
-                .apply_manual_memory_status_completion(target, completion)
+        if self.manual_memory_status.in_flight.as_ref() != Some(target) {
+            return None;
+        }
+        let owned_mutation = self
+            .manual_memory_status
+            .mutations
+            .get(&target.storage)
+            .cloned();
+        if owned_mutation
+            .as_ref()
+            .is_some_and(|owner| owner.stage == ManualMemoryMutationStage::Running)
+        {
+            self.manual_memory_status.in_flight = None;
+            return None;
+        }
+        let status_confirms_admission = match (&completion, owned_mutation.as_ref()) {
+            (
+                ManualMemoryStatusCompletion::Ready { status, .. },
+                Some(ManualMemoryOwnedMutation {
+                    mutation: ManualMemoryMutation::Admission { admitted },
+                    ..
+                }),
+            ) => match status.state {
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted => {
+                    *admitted
+                }
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::AvailableNotAdmitted => {
+                    !*admitted
+                }
+                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing => false,
+            },
+            _ => false,
+        };
+        if !self
+            .chat_widget
+            .apply_manual_memory_status_completion(target, completion)
         {
             return None;
         }
         self.manual_memory_status.in_flight = None;
+        if let Some(owner) = owned_mutation
+            && let ManualMemoryMutationStage::AwaitingStatus(mutation_completion) = owner.stage
+        {
+            self.manual_memory_status.mutations.remove(&target.storage);
+            match owner.mutation {
+                ManualMemoryMutation::Create => {
+                    self.chat_widget.clear_manual_memory_pending_mutation();
+                }
+                ManualMemoryMutation::Admission { .. } => {
+                    let same_view = manual_memory_same_view_ignoring_epoch(
+                        &owner.origin.view,
+                        &target.view,
+                    );
+                    let may_send = mutation_completion
+                        == ManualMemoryMutationCompletion::Succeeded
+                        && status_confirms_admission
+                        && owner.allow_same_view_autosend
+                        && same_view;
+                    if !may_send {
+                        self.chat_widget
+                            .restore_admission_blocked_input_to_composer();
+                    }
+                    self.chat_widget.clear_manual_memory_pending_mutation();
+                    if may_send {
+                        self.chat_widget.submit_initial_user_message_if_pending();
+                        self.chat_widget.maybe_send_next_queued_input();
+                    }
+                }
+            }
+        }
         self.publish_current_dashboard_snapshot();
         Some(self.chat_widget.take_pending_context_report())
+    }
+
+    fn present_manual_memory_mutation_completion(
+        &mut self,
+        mutation: ManualMemoryMutation,
+        completion: ManualMemoryMutationCompletion,
+    ) {
+        match completion {
+            ManualMemoryMutationCompletion::Succeeded => {
+                let message = match mutation {
+                    ManualMemoryMutation::Create => "Manual Memory created.",
+                    ManualMemoryMutation::Admission { admitted: true } => {
+                        "Manual Memory will be included on the next turn."
+                    }
+                    ManualMemoryMutation::Admission { admitted: false } => {
+                        "Manual Memory will be excluded on the next turn."
+                    }
+                };
+                self.chat_widget.add_info_message(message.to_string(), None);
+            }
+            ManualMemoryMutationCompletion::Failed(reason) => {
+                let message = match reason {
+                    ManualMemoryMutationFailure::AlreadyExists => {
+                        "Manual Memory already exists; its status was refreshed."
+                    }
+                    ManualMemoryMutationFailure::Missing => {
+                        "Manual Memory does not exist; create it before including it."
+                    }
+                    ManualMemoryMutationFailure::StorageUnavailable => {
+                        "Manual Memory storage is unavailable."
+                    }
+                    ManualMemoryMutationFailure::PersistenceFailed => {
+                        "Manual Memory could not be saved; its status was refreshed."
+                    }
+                    ManualMemoryMutationFailure::WorkerFailed => {
+                        "The Manual Memory worker failed; its status was refreshed."
+                    }
+                };
+                self.chat_widget.add_error_message(message.to_string());
+            }
+        }
     }
 
     pub(super) async fn handle_event(
@@ -187,6 +382,47 @@ impl App {
                     let totals =
                         crate::app_backtrack::context_usage_totals(&self.transcript_cells);
                     self.chat_widget.add_context_usage_output(totals);
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ManualMemoryCreateRequested(target) => {
+                if self.claim_manual_memory_mutation(&target, ManualMemoryMutation::Create) {
+                    self.launch_manual_memory_create(target);
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ManualMemoryCreateFinished(target, completion) => {
+                let disposition = self.record_manual_memory_mutation_completion(
+                    &target,
+                    ManualMemoryMutation::Create,
+                    completion,
+                );
+                if let ManualMemoryCompletionDisposition::Refresh(fresh) = disposition {
+                    self.present_manual_memory_mutation_completion(
+                        ManualMemoryMutation::Create,
+                        completion,
+                    );
+                    self.launch_manual_memory_status(fresh);
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ManualMemoryAdmissionRequested(target, admitted) => {
+                let mutation = ManualMemoryMutation::Admission { admitted };
+                if self.claim_manual_memory_mutation(&target, mutation) {
+                    self.launch_manual_memory_admission(target, admitted);
+                }
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ManualMemoryAdmissionFinished(target, admitted, completion) => {
+                let mutation = ManualMemoryMutation::Admission { admitted };
+                let disposition = self.record_manual_memory_mutation_completion(
+                    &target,
+                    mutation,
+                    completion,
+                );
+                if let ManualMemoryCompletionDisposition::Refresh(fresh) = disposition {
+                    self.present_manual_memory_mutation_completion(mutation, completion);
+                    self.launch_manual_memory_status(fresh);
                 }
                 tui.frame_requester().schedule_frame();
             }

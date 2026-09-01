@@ -45,6 +45,7 @@ use std::time::Instant;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
+use crate::app_event::ManualMemoryMutation;
 use crate::app_event::ManualMemoryRequestTarget;
 use crate::app_event::ManualMemoryStatusCompletion;
 use crate::app_event::ManualMemoryUnavailableReason;
@@ -424,7 +425,7 @@ use self::user_messages::PendingSteerCompareKey;
 use self::user_messages::QueueDrain;
 use self::user_messages::QueuedUserMessage;
 use self::user_messages::ShellEscapePolicy;
-use self::user_messages::ThreadComposerState;
+pub(crate) use self::user_messages::ThreadComposerState;
 pub(crate) use self::user_messages::ThreadInputState;
 pub(crate) use self::user_messages::ThreadInputStateRestoreMode;
 pub(crate) use self::user_messages::UserMessage;
@@ -527,6 +528,7 @@ struct ManualMemoryCache {
     status: Option<crate::legacy_core::elpis_context::ManualMemoryStatus>,
     sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
     unavailable_reason: Option<ManualMemoryUnavailableReason>,
+    pending_mutation: Option<ManualMemoryMutation>,
     refresh_requested: bool,
     pending_context_report: bool,
 }

@@ -71,6 +71,7 @@ impl App {
         let Some(active_id) = self.active_thread_id else {
             return;
         };
+        self.prepare_manual_memory_lifecycle_change();
         let input_state = self.chat_widget.capture_thread_input_state();
         if let Some(channel) = self.thread_event_channels.get_mut(&active_id) {
             let receiver = self.active_thread_rx.take();
@@ -1167,6 +1168,7 @@ impl App {
         self.activate_thread_channel(thread_id).await;
         self.chat_widget
             .set_initial_user_message_submit_suppressed(/*suppressed*/ true);
+        self.seed_manual_memory_mutation_for_cwd(session.cwd.as_path());
         match presentation {
             ThreadAttachPresentation::SessionLineage => {
                 self.chat_widget.handle_thread_session(session);
@@ -1374,6 +1376,7 @@ impl App {
         let suppress_replay_notices =
             replay_filter::snapshot_has_pending_interactive_request(&snapshot);
         if let Some(session) = snapshot.session {
+            self.seed_manual_memory_mutation_for_cwd(session.cwd.as_path());
             if session.reasoning_effort != Some(ReasoningEffortConfig::Ultra) {
                 self.chat_widget
                     .set_plan_mode_reasoning_effort(self.config.plan_mode_reasoning_effort.clone());
@@ -1470,6 +1473,15 @@ impl App {
             &event,
             ThreadBufferedEvent::Notification(ServerNotification::ThreadSettingsUpdated(_))
         );
+        let changes_manual_memory_storage = matches!(
+            &event,
+            ThreadBufferedEvent::Notification(ServerNotification::ThreadSettingsUpdated(
+                notification
+            )) if self.chat_widget.config_ref().cwd != notification.thread_settings.cwd
+        );
+        if changes_manual_memory_storage {
+            self.prepare_manual_memory_lifecycle_change();
+        }
         match event {
             ThreadBufferedEvent::Notification(notification) => {
                 self.cache_collab_receiver_threads_for_notification(&notification);

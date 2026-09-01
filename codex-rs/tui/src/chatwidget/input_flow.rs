@@ -27,7 +27,8 @@ impl ChatWidget {
                 }
                 let should_submit_now = self.is_session_configured()
                     && !self.is_plan_streaming_in_tui()
-                    && !self.input_queue.suppress_queue_autosend;
+                    && !self.input_queue.suppress_queue_autosend
+                    && !self.manual_memory_submission_blocked();
                 if should_submit_now {
                     if self.only_user_shell_commands_running()
                         && !user_message.text.starts_with('!')
@@ -103,6 +104,7 @@ impl ChatWidget {
         if !self.is_session_configured()
             || self.is_user_turn_pending_or_running()
             || self.input_queue.suppress_queue_autosend
+            || self.manual_memory_submission_blocked()
         {
             self.input_queue
                 .queued_user_messages
@@ -122,7 +124,7 @@ impl ChatWidget {
 
     /// If idle and there are queued inputs, submit exactly one to start the next turn.
     pub(crate) fn maybe_send_next_queued_input(&mut self) -> bool {
-        if self.input_queue.suppress_queue_autosend {
+        if self.input_queue.suppress_queue_autosend || self.manual_memory_submission_blocked() {
             return false;
         }
         if self.is_user_turn_pending_or_running() {
