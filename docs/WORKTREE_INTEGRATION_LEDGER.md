@@ -23,7 +23,7 @@ This ledger records local integration decisions. It is not release evidence, doe
 
 ## Final integration boundary
 
-- No push, tag, hosted release, version bump, worktree deletion, or process restart.
-- Keep the installed debug binary unchanged until all selected functional work and final local checks are complete.
-- Then advance local `main` to the exact reviewed coordinator commit, build one optimized artifact under `docs/LOCAL_BUILD_RULES.md`, install it atomically as `elpis`, retain a recoverable copy of the replaced binary, and prove the installed artifact hash matches.
+- No tag, hosted release, version bump, worktree deletion, or process restart. A disposable hosted-CI branch is authorized for Linux candidate verification only; it does not authorize a release.
+- Keep the installed binary unchanged until all selected functional work and hosted Linux checks are complete.
+- Then install the exact verified Linux artifact atomically as `elpis`, retain a recoverable copy of the replaced binary, and prove the installed artifact hash matches. Do not move local `main` without a separate clean-tree integration check.
 - Automated evidence does not equal user acceptance. Masih performs the final manual checklist.

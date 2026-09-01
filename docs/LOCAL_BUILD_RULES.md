@@ -50,9 +50,9 @@ CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo
 
 The same variables and `nice` wrapper apply to `scripts/verify-elpis`. Do not raise
 the job/thread counts to shorten a run. Hosted CI is preferable when an authorized
-branch/push workflow exists; the current no-push candidate must stay local and
-throttled. Source-only and fake-Cargo checks do not need this wrapper because they
-do not compile or execute Rust.
+branch/push workflow exists. Local Rust commands remain throttled under this document;
+remote validation does not authorize a release. Source-only and fake-Cargo checks do
+not need this wrapper because they do not compile or execute Rust.
 
 ## 4. Verification command for workspace-wide edits
 
