@@ -39,17 +39,32 @@ Prefix every cargo command with `CODEX_SKIP_BWRAP_BUILD=1`. A cargo failure with
 that variable set is an environment problem, not a code problem — do not "fix" code in
 response to it.
 
-## 3. Verification command for workspace-wide edits
+## 3. Throttle every local Rust build and test
+
+Never let Cargo use the workstation's default all-core parallelism. Unless Masih
+explicitly changes the limit, every local Rust verification command must inherit:
 
 ```bash
-CODEX_SKIP_BWRAP_BUILD=1 cargo check --workspace --all-targets --exclude codex-sandboxing
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo ...
+```
+
+The same variables and `nice` wrapper apply to `scripts/verify-elpis`. Do not raise
+the job/thread counts to shorten a run. Hosted CI is preferable when an authorized
+branch/push workflow exists; the current no-push candidate must stay local and
+throttled. Source-only and fake-Cargo checks do not need this wrapper because they
+do not compile or execute Rust.
+
+## 4. Verification command for workspace-wide edits
+
+```bash
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo check --workspace --all-targets --exclude codex-sandboxing
 ```
 
 `--all-targets` matters: it type-checks tests too, and several Elpis test files are the
 only callers of some functions. A `--lib`-only check will happily let you delete
 something the tests still use.
 
-## 4. Known failures that are NOT yours
+## 5. Known failures that are NOT yours
 
 Verified pre-existing as of 2026-07-25 — do not chase them, do not "fix" them as part of
 unrelated work:
@@ -64,7 +79,7 @@ unrelated work:
 Establish the warning/failure baseline **before** you start editing, so you can tell
 what you introduced from what was already broken.
 
-## 5. Never format the whole repo
+## 6. Never format the whole repo
 
 `cargo fmt --all` rewrites every file in the workspace, including in-flight work from
 another session or another agent. Masih often has a second session open. Format only the
@@ -74,14 +89,14 @@ files you edited:
 CODEX_SKIP_BWRAP_BUILD=1 cargo fmt -p <crate>     # or rustfmt the specific paths
 ```
 
-## 6. Checked verification selector
+## 7. Checked verification selector
 
 Run the checked selector from the repository root:
 
 ```bash
-scripts/verify-elpis --changed codex-rs/tui/src/dashboard_server.rs
-scripts/verify-elpis --surface full
-ELPIS_CARGO_TARGET_DIR=/absolute/shared/target scripts/verify-elpis --surface tui
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --changed codex-rs/tui/src/dashboard_server.rs
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 nice -n 10 scripts/verify-elpis --surface full
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 ELPIS_CARGO_TARGET_DIR=/absolute/shared/target nice -n 10 scripts/verify-elpis --surface tui
 ```
 
 The selector sets `CODEX_SKIP_BWRAP_BUILD=1` for every Cargo child. Without an
