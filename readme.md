@@ -78,8 +78,9 @@ for more context.
 Elpis separates the active working set from durable evidence. The next request receives a small,
 inspectable context; the exact record stays on disk and can be retrieved when it is needed.
 
-Three paired runs used one byte-identical prompt, the same model, and the same source commit on
-both arms. Peak context per request fell **47–65%** in all three runs; median context stabilized
+Three paired configured historical runs with automatic pruning enabled under the superseded
+high-frequency setup used one byte-identical prompt, the same model, and the same source commit
+on both arms. In those runs, peak context per request fell **47–65%**; median context stabilized
 at **26.6–27.1%**. Codex peaked above 90% of the window in each run, while Elpis stayed safely
 bounded in the green zone.
 
@@ -246,21 +247,21 @@ can inspect, edit, export, or delete.
 
 ## Evaluation status
 
-The published evaluation empirically benchmarks Elpis against OpenAI's Codex CLI across three paired, byte-identical workloads on `gpt-5.6-luna` (258,400 token context window).
+The published evaluation reports three paired, byte-identical configured historical workloads with automatic pruning enabled under the superseded high-frequency setup, on `gpt-5.6-luna` (258,400 token context window).
 
 ### RQ1: Context Reduction & Operating Hygiene
 
-Across all three independent runs, Elpis prevents context exhaustion by maintaining working sets within safe operational thresholds.
+Across those configured historical runs, Elpis maintained working sets within safe operational thresholds.
 
 #### Peak Context Utilization
 
-Codex expanded into the critical danger zone (>90% window) in every run, forcing 3 emergency compactions. Elpis maintained peak window utilization at **32.5–49.5%**, achieving a **47–65% reduction in peak context footprint**:
+In those configured historical runs, Codex expanded into the critical danger zone (>90% window) in every run, forcing 3 emergency compactions. Elpis maintained peak window utilization at **32.5–49.5%**, achieving a **47–65% reduction in peak context footprint**:
 
 ![Peak Context Window Utilization (Elpis vs. Codex)](docs/assets/elpis_empirical_evaluation_bars.svg)
 
 #### Input Token Distribution & Interquartile Stability
 
-While Codex suffered wide distribution variance as transcripts accumulated, Elpis tightly stabilized median token input across all runs at **68.8k–69.6k tokens (26.6%–27.0% of the window)**:
+In those configured historical runs, Codex suffered wide distribution variance as transcripts accumulated, while Elpis tightly stabilized median token input at **68.8k–69.6k tokens (26.6%–27.0% of the window)**:
 
 ![Input Tokens per Model Call (Interquartile Range & Median across 3 Runs)](docs/assets/elpis-token-distribution-boxplots.svg)
 
@@ -272,7 +273,7 @@ When normalized across the request lifecycle (0% to 100% completion), Codex exhi
 
 #### Operating Zone Breakdown
 
-Across all executed requests, Elpis spent over 95% of its operating lifespan inside the safe and healthy bands, with zero requests entering the critical danger zone:
+Across those configured historical requests, Elpis spent over 95% of its operating lifespan inside the safe and healthy bands, with zero requests entering the critical danger zone:
 
 ![Context operating zones by run](docs/assets/elpis-operating-zones.svg)
 
@@ -293,7 +294,7 @@ Every pruning event produces an immutable audit record on disk under `~/.elpis/l
 
 | Research Question | Empirical Finding |
 | --- | --- |
-| **RQ1 — Context Efficiency** | Peak reduction of 47–65%; median context stabilized at 26.6–27.1% of the 258k window. |
+| **RQ1 — Context Efficiency** | Historical superseded high-frequency setup: peak reduction of 47–65%; median context stabilized at 26.6–27.1% of the 258k window. |
 | **RQ2 — Information Retention** | 6/6 tested post-prune targets preserved intact (100% retention). |
 | **RQ3 — Task Performance** | Not established. The available runs do not support a comparative correctness claim. |
 | **RQ4 — Pruning Economics** | Penalty established, current magnitude open. The measured figures describe a superseded high-frequency configuration. |
