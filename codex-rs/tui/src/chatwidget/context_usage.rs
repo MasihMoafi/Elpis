@@ -11,6 +11,7 @@
 //! estimates only: they are scaled to that measured total, and any unaccounted
 //! remainder is shown explicitly as "Other (overhead)".
 
+use codex_features::Feature;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
@@ -52,6 +53,26 @@ struct ContextUsageSnapshot {
     rollout_path: Option<std::path::PathBuf>,
 }
 
+fn dashboard_source_projection(
+    source: &crate::legacy_core::elpis_context::ContinuitySource,
+) -> crate::dashboard_server::DashboardSource {
+    let name = if source.origin == "manual addition" {
+        source
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Custom source".to_string())
+    } else {
+        source.name.clone()
+    };
+    crate::dashboard_server::DashboardSource {
+        name,
+        category: format!("{:?}", source.category),
+        estimated_tokens: source.estimated_tokens,
+        admitted: source.admitted,
+    }
+}
+
 #[derive(Debug)]
 struct ContextUsageHistoryCell {
     before_chart: Vec<Line<'static>>,
@@ -88,6 +109,26 @@ impl ContextUsageHistoryCell {
     }
 }
 
+fn instruction_bucket_bytes(
+    sources: &[crate::legacy_core::elpis_context::ContinuitySource],
+) -> (usize, usize) {
+    sources
+        .iter()
+        .filter(|source| {
+            source.category == ContinuitySourceCategory::Instructions && source.admitted
+        })
+        .fold((0, 0), |(system_prompt, development_rules), source| {
+            if matches!(
+                source.origin,
+                "managed development rules" | "configured development rules"
+            ) {
+                (system_prompt, development_rules + source.bytes as usize)
+            } else {
+                (system_prompt + source.bytes as usize, development_rules)
+            }
+        })
+}
+
 impl HistoryCell for ContextUsageHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         self.rendered_lines(width)
@@ -121,8 +162,8 @@ impl ChatWidget {
         if !std::mem::take(&mut self.context_prune_report_pending) {
             return;
         }
-        self.app_event_tx
-            .send(crate::app_event::AppEvent::RequestContextUsageReport);
+        self.add_info_message("Manual pruning command finished".to_string(), None);
+        self.request_fresh_context_usage_report();
     }
 
     pub(super) fn update_context_prune_savings(&mut self, saved_tokens: u64, from_replay: bool) {
@@ -141,36 +182,17 @@ impl ChatWidget {
         totals: &ContextUsageTranscriptTotals,
     ) -> ContextUsageSnapshot {
         let sources = self.continuity_sources();
-        // Only admitted sources are actually in context; non-admitted discovered
-        // files must not inflate the System prompt / Skills buckets.
-        let instruction_sources: Vec<_> = sources
-            .iter()
-            .filter(|source| {
-                source.category == ContinuitySourceCategory::Instructions && source.admitted
-            })
-            .collect();
-        let is_skill_path = |path: &std::path::Path| {
-            path.components()
-                .any(|component| component.as_os_str() == "skills")
-        };
-        let system_prompt_chars: usize = instruction_sources
-            .iter()
-            .filter(|source| !is_skill_path(&source.path))
-            .map(|source| source.bytes as usize)
-            .sum();
-        let skills_chars: usize = instruction_sources
-            .iter()
-            .filter(|source| is_skill_path(&source.path))
-            .map(|source| source.bytes as usize)
-            .sum();
+        // Only admitted instruction sources count. Their stable provenance, not a
+        // directory-name guess, determines which attribution bucket receives them.
+        let (system_prompt_chars, development_rule_chars) = instruction_bucket_bytes(&sources);
 
         let estimate =
             |chars: usize| codex_utils_string::approx_tokens_from_byte_count(chars) as u64;
-        // System prompt and Skills are fixed on-disk costs sent as-is with each
+        // System prompt and Development rules are fixed on-disk costs sent as-is with each
         // request — they must NEVER be scaled up to absorb unexplained usage
-        // (that is what previously inflated Skills to nonsense figures).
+        // (that is what previously inflated Development rules to nonsense figures).
         let fixed_system = estimate(system_prompt_chars);
-        let fixed_skills = estimate(skills_chars);
+        let fixed_development_rules = estimate(development_rule_chars);
         let conversation_estimates: [u64; 3] = [
             estimate(totals.user_message_chars),
             estimate(totals.agent_response_chars),
@@ -202,12 +224,12 @@ impl ChatWidget {
             conversation_estimates[1],
             conversation_estimates[2],
             fixed_system,
-            fixed_skills,
+            fixed_development_rules,
         ];
         let category_tokens = scale_token_counts(&raw_categories, used);
         let conversation = [category_tokens[0], category_tokens[1], category_tokens[2]];
         let fixed_system = category_tokens[3];
-        let fixed_skills = category_tokens[4];
+        let fixed_development_rules = category_tokens[4];
         let other = used.saturating_sub(category_tokens.iter().sum());
         let saved_tokens = self.last_prune_saved_tokens.unwrap_or(0);
 
@@ -237,8 +259,8 @@ impl ChatWidget {
                 color: Color::Magenta,
             },
             CategoryUsage {
-                label: "Skills",
-                tokens: fixed_skills,
+                label: "Development rules",
+                tokens: fixed_development_rules,
                 saved_tokens: 0,
                 color: Color::Cyan,
             },
@@ -306,20 +328,18 @@ impl ChatWidget {
         let sources = snapshot
             .sources
             .iter()
-            .map(|source| crate::dashboard_server::DashboardSource {
-                name: source.name.clone(),
-                category: format!("{:?}", source.category),
-                estimated_tokens: source.estimated_tokens,
-                admitted: source.admitted,
-            })
+            .map(dashboard_source_projection)
             .collect();
 
-        let to_totals = |usage: &crate::token_usage::TokenUsage| crate::dashboard_server::DashboardTokenTotals {
-            input: usage.input_tokens,
-            cached_input: usage.cached_input_tokens,
-            output: usage.output_tokens,
-            reasoning_output: usage.reasoning_output_tokens,
-            total: usage.total_tokens,
+        let to_totals = |usage: &crate::token_usage::TokenUsage| {
+            crate::dashboard_server::DashboardTokenTotals {
+                input: usage.input_tokens,
+                cached_input: usage.cached_input_tokens,
+                cache_write: usage.cache_write_tokens,
+                output: usage.output_tokens,
+                reasoning_output: usage.reasoning_output_tokens,
+                total: usage.total_tokens,
+            }
         };
         let default_usage = crate::token_usage::TokenUsage::default();
         let session_total = self
@@ -332,18 +352,72 @@ impl ChatWidget {
             .as_ref()
             .map(|info| to_totals(&info.last_token_usage))
             .unwrap_or_else(|| to_totals(&default_usage));
+        let smart_prune_latest = self.smart_prune.latest.as_ref().map(|latest| {
+            crate::dashboard_server::DashboardSmartPruneAdmissionSnapshot {
+                admission_id: latest.admission_id.clone(),
+                audit_path: latest.audit_path.clone(),
+                examined_outputs: latest.examined_outputs,
+                admitted_outputs: latest.admitted_outputs,
+                approx_source_tokens: latest.approx_source_tokens,
+                approx_admitted_tokens: latest.approx_admitted_tokens,
+                approx_saved_tokens: latest.approx_saved_tokens,
+                request_sequence: latest.request_sequence,
+                request_input_sha256: latest.request_input_sha256.clone(),
+                request_linkage_verified: latest.request_linkage_verified,
+                response_id: latest.response_id.clone(),
+                response_usage: latest.response_usage.as_ref().map(|usage| {
+                    crate::dashboard_server::DashboardTokenTotals {
+                        input: usage.input_tokens,
+                        cached_input: usage.cached_input_tokens,
+                        cache_write: usage.cache_write_tokens,
+                        output: usage.output_tokens,
+                        reasoning_output: usage.reasoning_output_tokens,
+                        total: usage.total_tokens,
+                    }
+                }),
+                response_linkage_verified: latest.response_linkage_verified,
+            }
+        });
+        let smart_prune = crate::dashboard_server::DashboardSmartPruneSnapshot {
+            enabled: self.smart_prune.enabled,
+            examined_outputs: self.smart_prune.examined_outputs,
+            admitted_outputs: self.smart_prune.admitted_outputs,
+            unchanged_outputs: self.smart_prune.unchanged_outputs,
+            failed_batches: self.smart_prune.failed_batches,
+            approx_source_tokens: self.smart_prune.approx_source_tokens,
+            approx_admitted_tokens: self.smart_prune.approx_admitted_tokens,
+            approx_saved_tokens: self.smart_prune.approx_saved_tokens,
+            optimizer_requests: self.smart_prune.optimizer_requests,
+            optimizer_usage_reports: self.smart_prune.optimizer_usage_reports,
+            optimizer_usage: crate::dashboard_server::DashboardTokenTotals {
+                input: self.smart_prune.optimizer_usage.input_tokens,
+                cached_input: self.smart_prune.optimizer_usage.cached_input_tokens,
+                cache_write: self.smart_prune.optimizer_usage.cache_write_tokens,
+                output: self.smart_prune.optimizer_usage.output_tokens,
+                reasoning_output: self.smart_prune.optimizer_usage.reasoning_output_tokens,
+                total: self.smart_prune.optimizer_usage.total_tokens,
+            },
+            optimizer_latency_ms: self.smart_prune.optimizer_latency_ms,
+            main_request_sequence: self.smart_prune.main_request_sequence,
+            latest: smart_prune_latest,
+        };
 
         crate::dashboard_server::publish(&crate::dashboard_server::DashboardSnapshot {
             model: snapshot.model,
-            used_tokens: snapshot.used_tokens.unwrap_or(0),
+            used_tokens: snapshot.used_tokens,
             window_tokens: snapshot.window_tokens,
-            used_percent: snapshot.used_percent.unwrap_or(0),
+            used_percent: snapshot.used_percent,
             categories,
             saved_tokens: snapshot.saved_tokens,
             sources,
             backtrack_points: snapshot.backtrack_points,
             session_total,
             last_turn,
+            automatic_pruning_configured_for_next_conversation: self
+                .config
+                .features
+                .enabled(Feature::AutomaticContextPruning),
+            smart_prune,
         });
     }
 
@@ -416,9 +490,7 @@ impl ChatWidget {
         let mut after_chart = vec![Line::default()];
         after_chart.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
         if self.last_prune_saved_tokens.is_none() {
-            after_chart.push(Line::from(
-                "   No Ace pruning passes run yet — context is below trigger floor.".dim(),
-            ));
+            after_chart.push(no_prune_totals_line());
         } else {
             after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
@@ -632,8 +704,13 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     }
     if let Some(latest) = &snapshot.latest_native_compaction {
         if narrow {
-            lines
-                .push(format!("   Latest process compaction: {} · {}", latest.reason, latest.count).into());
+            lines.push(
+                format!(
+                    "   Latest process compaction: {} · {}",
+                    latest.reason, latest.count
+                )
+                .into(),
+            );
             lines.push(format!("     evidence {}", latest.evidence).dim().into());
         } else {
             lines.push(
@@ -894,6 +971,10 @@ pub(super) fn saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static
     })
 }
 
+fn no_prune_totals_line() -> Line<'static> {
+    "   No Ace pruning totals recorded yet".dim().into()
+}
+
 fn newly_reclaimed_tokens(previous_total: Option<u64>, current_total: u64) -> u64 {
     current_total.saturating_sub(previous_total.unwrap_or(0))
 }
@@ -918,6 +999,34 @@ fn fmt_percent(tokens: u64, window: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_memory_dashboard_source_projection_does_not_serialize_custom_absolute_paths() {
+        let absolute_path = "/home/test/private/context/secret-plan.md";
+        let source = crate::legacy_core::elpis_context::ContinuitySource {
+            name: absolute_path.to_string(),
+            path: std::path::PathBuf::from(absolute_path),
+            bytes: 128,
+            estimated_tokens: 32,
+            category: ContinuitySourceCategory::Files,
+            origin: "manual addition",
+            lifetime: "every turn",
+            reason: "manually added file",
+            admitted: true,
+            selectable: true,
+        };
+
+        let projected = dashboard_source_projection(&source);
+        let serialized = serde_json::to_string(&crate::dashboard_server::DashboardSnapshot {
+            sources: vec![projected.clone()],
+            ..Default::default()
+        })
+        .expect("serialize dashboard snapshot");
+
+        assert_eq!(projected.name, "secret-plan.md");
+        assert!(!serialized.contains(absolute_path));
+        assert!(!serialized.contains("/home/test/private/context"));
+    }
 
     fn filled_cells(lines: &[Line<'static>]) -> usize {
         lines
@@ -974,6 +1083,38 @@ mod tests {
     }
 
     #[test]
+    fn instruction_attribution_uses_origin_not_path_components() {
+        let sources = [
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: "dev/AGENTS.md".to_string(),
+                path: std::path::PathBuf::from("/tmp/dev-rules/AGENTS.md"),
+                bytes: 480,
+                estimated_tokens: 120,
+                category: ContinuitySourceCategory::Instructions,
+                origin: "configured development rules",
+                lifetime: "every turn",
+                reason: "configured development rules",
+                admitted: true,
+                selectable: true,
+            },
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: "Project AGENTS.md".to_string(),
+                path: std::path::PathBuf::from("/tmp/project/skills/AGENTS.md"),
+                bytes: 320,
+                estimated_tokens: 80,
+                category: ContinuitySourceCategory::Instructions,
+                origin: "runtime instructions",
+                lifetime: "every turn",
+                reason: "applicable project rules",
+                admitted: true,
+                selectable: true,
+            },
+        ];
+
+        assert_eq!(instruction_bucket_bytes(&sources), (320, 480));
+    }
+
+    #[test]
     fn saved_context_flash_reports_real_reclaimed_size() {
         let line = saved_context_flash_line(60_400).expect("saved context line");
         let text = line
@@ -990,6 +1131,19 @@ mod tests {
         assert_eq!(newly_reclaimed_tokens(None, 4_200), 4_200);
         assert_eq!(newly_reclaimed_tokens(Some(4_200), 7_000), 2_800);
         assert_eq!(newly_reclaimed_tokens(Some(7_000), 4_200), 0);
+    }
+
+    #[test]
+    fn no_prune_totals_copy_is_neutral_about_automatic_triggering() {
+        let text = no_prune_totals_line()
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(text, "   No Ace pruning totals recorded yet");
+        assert!(!text.contains("trigger"));
+        assert!(!text.contains("automatic"));
     }
 
     #[test]
@@ -1066,6 +1220,7 @@ mod tests {
                 name: "GOAL.md".to_string(),
                 path: std::path::PathBuf::from("/workspace/GOAL.md"),
                 bytes: 1_024,
+                origin: "Elpis workspace state",
                 estimated_tokens: 256,
                 category: ContinuitySourceCategory::Files,
                 lifetime: "until goal completion",

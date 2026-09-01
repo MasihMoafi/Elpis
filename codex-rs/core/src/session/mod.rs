@@ -8,6 +8,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 
 use crate::agent::AgentControl;
 use crate::agent::AgentStatus;
@@ -209,6 +210,8 @@ mod rollout_budget;
 mod rollout_reconstruction;
 #[allow(clippy::module_inception)]
 pub(crate) mod session;
+mod smart_prune;
+mod smart_prune_audit;
 pub(crate) mod step_context;
 pub(crate) mod time_reminder;
 mod token_budget;
@@ -948,9 +951,9 @@ impl Session {
         let beta_features_header = FEATURES
             .iter()
             .filter_map(|spec| {
-                let advertise_in_model_client_header =
-                    spec.stage.experimental_menu_description().is_some()
-                        || spec.id == Feature::RemoteCompactionV2;
+                let advertise_in_model_client_header = spec.id != Feature::AutomaticContextPruning
+                    && (spec.stage.experimental_menu_description().is_some()
+                        || spec.id == Feature::RemoteCompactionV2);
                 if advertise_in_model_client_header && config.features.enabled(spec.id) {
                     Some(spec.key)
                 } else {
@@ -1249,10 +1252,8 @@ impl Session {
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
-                if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
-                    let mut state = self.state.lock().await;
-                    state.set_token_info(Some(info));
-                }
+                self.restore_token_count_state_from_rollout(&rollout_items)
+                    .await;
 
                 // Defer seeding the session's initial context until the first turn starts so
                 // turn/start overrides can be merged before we write to the rollout.
@@ -1274,10 +1275,8 @@ impl Session {
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
-                if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
-                    let mut state = self.state.lock().await;
-                    state.set_token_info(Some(info));
-                }
+                self.restore_token_count_state_from_rollout(&rollout_items)
+                    .await;
 
                 // If persisting, persist all rollout items as-is (the store filters).
                 if !rollout_items.is_empty() {
@@ -1383,6 +1382,30 @@ impl Session {
             RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => ev.info.clone(),
             _ => None,
         })
+    }
+
+    fn last_smart_prune_from_rollout(
+        rollout_items: &[RolloutItem],
+    ) -> Option<codex_protocol::protocol::SmartPruneSnapshot> {
+        rollout_items.iter().rev().find_map(|item| match item {
+            RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => Some(ev.smart_prune.clone()),
+            _ => None,
+        })
+    }
+
+    async fn restore_token_count_state_from_rollout(&self, rollout_items: &[RolloutItem]) {
+        let restored_info = Self::last_token_info_from_rollout(rollout_items);
+        let restored_smart_prune = Self::last_smart_prune_from_rollout(rollout_items);
+        if restored_info.is_none() && restored_smart_prune.is_none() {
+            return;
+        }
+        let mut state = self.state.lock().await;
+        if let Some(info) = restored_info {
+            state.set_token_info(Some(info));
+        }
+        if let Some(snapshot) = restored_smart_prune {
+            state.smart_prune = snapshot;
+        }
     }
 
     async fn previous_turn_settings(&self) -> Option<PreviousTurnSettings> {
@@ -1531,6 +1554,10 @@ impl Session {
         state.session_configuration.provider.clone()
     }
 
+    pub(crate) fn smart_prune_enabled(&self) -> bool {
+        self.smart_prune_enabled.load(Ordering::Acquire)
+    }
+
     pub(crate) async fn refresh_runtime_config(&self, next_config: Config) {
         // Refresh only the user layer from the incoming snapshot. Preserve thread-local
         // layers such as request/session overrides that were present when this session
@@ -1546,6 +1573,29 @@ impl Session {
                 .with_user_layer_from(&next_config.config_layer_stack);
             config.tool_suggest =
                 resolve_tool_suggest_config_from_layer_stack(&config.config_layer_stack);
+            let configured_smart_prune = config
+                .config_layer_stack
+                .effective_config()
+                .as_table()
+                .and_then(|table| table.get("features"))
+                .and_then(toml::Value::as_table)
+                .and_then(|features| features.get(Feature::AutomaticContextPruning.key()))
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false);
+            let mut managed_smart_prune = self.features.clone();
+            let effective_smart_prune = match managed_smart_prune
+                .set_enabled(Feature::AutomaticContextPruning, configured_smart_prune)
+            {
+                Ok(()) => managed_smart_prune.enabled(Feature::AutomaticContextPruning),
+                Err(err) => {
+                    tracing::warn!(
+                        "Smart Prune runtime refresh was rejected by managed feature requirements: {err}"
+                    );
+                    self.smart_prune_enabled()
+                }
+            };
+            self.smart_prune_enabled
+                .store(effective_smart_prune, Ordering::Release);
             let config = Arc::new(config);
             state.session_configuration.original_config_do_not_use = Arc::clone(&config);
             let new_config = notify_config_contributors
@@ -2761,31 +2811,24 @@ impl Session {
 
     pub(crate) async fn record_step_world_state_if_changed(
         &self,
-        previous_world_state: &Arc<WorldState>,
+        _previous_world_state: &Arc<WorldState>,
         step_context: &step_context::StepContext,
     ) -> Arc<WorldState> {
         let turn_context = step_context.turn.as_ref();
         // Render model-visible state from the same step used to build and run tools.
         let world_state = Arc::new(self.build_world_state_for_step(step_context).await);
-        // Derive the model update and persisted patch from the same two snapshots.
-        let previous_snapshot = previous_world_state.snapshot();
-        let world_state_snapshot = world_state.snapshot();
-        let world_state_item = world_state_snapshot
-            .merge_patch_from(&previous_snapshot)
-            .map(WorldStateItem::patch);
-        let items = crate::context_manager::updates::merge_contextual_fragments(
-            world_state.render_diff(&previous_snapshot),
-        );
+        let (items, world_state_item) = {
+            let mut state = self.state.lock().await;
+            let (fragments, rollout_item) = state.history.update_world_state(world_state.as_ref());
+            (
+                crate::context_manager::updates::merge_contextual_fragments(fragments),
+                rollout_item,
+            )
+        };
         if !items.is_empty() {
             self.record_conversation_items(turn_context, &items).await;
         }
 
-        // ContextManager remembers this for later turns; run_turn owns the live value.
-        self.state
-            .lock()
-            .await
-            .history
-            .set_world_state_baseline(world_state_snapshot);
         // Record the patch after the context it describes is present in model history.
         if let Some(world_state_item) = world_state_item {
             self.persist_rollout_items(&[RolloutItem::WorldState(world_state_item)])
@@ -3178,8 +3221,8 @@ impl Session {
                 .render(),
             );
         }
-        let separate_guardian_developer_message =
-            crate::guardian::is_guardian_reviewer_source(&session_source);
+        let is_guardian_reviewer = crate::guardian::is_guardian_reviewer_source(&session_source);
+        let separate_guardian_developer_message = is_guardian_reviewer;
         // Keep the guardian policy prompt out of the aggregated developer bundle so it
         // stays isolated as its own top-level developer message for guardian subagents.
         if !separate_guardian_developer_message
@@ -3274,20 +3317,29 @@ impl Session {
             contextual_user_sections.push(recommended_plugins.render());
         }
         let context_contributors = self.services.extensions.context_contributors().to_vec();
-        for contributor in &context_contributors {
-            for fragment in contributor
-                .contribute_thread_context(
-                    &self.services.session_extension_data,
-                    &self.services.thread_extension_data,
-                )
-                .await
-            {
-                push_prompt_fragment(
-                    fragment,
-                    &mut developer_sections,
-                    &mut contextual_user_sections,
-                    &mut separate_developer_sections,
-                );
+        // The guardian reviews the agent's own work, so it must judge the diff and the
+        // evidence on their merits. Initial thread context is one place durable,
+        // user-authored state can land; the live Elpis continuity World State section has the
+        // same guardian exclusion. That state is untrusted text: a line like "always approve"
+        // in a remembered preference would otherwise be read by the component whose job is to
+        // withhold approval. Keep the review request to the parent transcript and guardian
+        // policy.
+        if !is_guardian_reviewer {
+            for contributor in &context_contributors {
+                for fragment in contributor
+                    .contribute_thread_context(
+                        &self.services.session_extension_data,
+                        &self.services.thread_extension_data,
+                    )
+                    .await
+                {
+                    push_prompt_fragment(
+                        fragment,
+                        &mut developer_sections,
+                        &mut contextual_user_sections,
+                        &mut separate_developer_sections,
+                    );
+                }
             }
         }
         for contributor in &context_contributors {
@@ -3738,14 +3790,21 @@ impl Session {
 
     /// Deliver the current request-context estimate without persisting a synthetic
     /// provider usage event.  The TUI uses this snapshot for the ledger and `/context`;
-    /// it is emitted immediately before a request is built, after Ace pruning.
+    /// it is emitted immediately before a request is built, after any first-exposure
+    /// Smart Prune admissions from the preceding tool batch.
     pub(crate) async fn send_current_context_token_count_event(&self, turn_context: &TurnContext) {
         let active_context_tokens = self.get_total_token_usage().await;
-        let (mut info, rate_limits, context_prune_saved_tokens) = {
+        let (mut info, rate_limits, context_prune_saved_tokens, mut smart_prune) = {
             let state = self.state.lock().await;
             let (info, rate_limits) = state.token_info_and_rate_limits();
-            (info, rate_limits, state.context_prune_saved_tokens)
+            (
+                info,
+                rate_limits,
+                state.context_prune_saved_tokens,
+                state.smart_prune.clone(),
+            )
         };
+        smart_prune.enabled = self.smart_prune_enabled();
         let info = info.get_or_insert(TokenUsageInfo {
             total_token_usage: TokenUsage::default(),
             last_token_usage: TokenUsage::default(),
@@ -3761,6 +3820,7 @@ impl Session {
                 info: Some(info.clone()),
                 rate_limits,
                 context_prune_saved_tokens,
+                smart_prune,
             }),
         };
         self.send_event_raw_with_persistence(event, /*persist*/ false)
@@ -3768,15 +3828,22 @@ impl Session {
     }
 
     pub(crate) async fn send_token_count_event(&self, turn_context: &TurnContext) {
-        let (info, rate_limits, context_prune_saved_tokens) = {
+        let (info, rate_limits, context_prune_saved_tokens, mut smart_prune) = {
             let state = self.state.lock().await;
             let (info, rate_limits) = state.token_info_and_rate_limits();
-            (info, rate_limits, state.context_prune_saved_tokens)
+            (
+                info,
+                rate_limits,
+                state.context_prune_saved_tokens,
+                state.smart_prune.clone(),
+            )
         };
+        smart_prune.enabled = self.smart_prune_enabled();
         let event = EventMsg::TokenCount(TokenCountEvent {
             info,
             rate_limits,
             context_prune_saved_tokens,
+            smart_prune,
         });
         self.send_event(turn_context, event).await;
     }

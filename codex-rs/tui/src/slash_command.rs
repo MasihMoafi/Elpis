@@ -43,6 +43,7 @@ pub enum SlashCommand {
     Init,
     Compact,
     Prune,
+    SmartPrune,
     #[strum(to_string = "force-prune")]
     ForcePrune,
     Plan,
@@ -100,6 +101,9 @@ impl SlashCommand {
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Usage => "inspect current context, continuity, and token usage",
             SlashCommand::Prune => "distill completed tool output out of the context window",
+            SlashCommand::SmartPrune => {
+                "optimize fresh tool results before their first model request"
+            }
             SlashCommand::ForcePrune => {
                 "force a prune down to a target of remaining context: /force-prune <1-100>"
             }
@@ -153,7 +157,8 @@ impl SlashCommand {
     pub fn supports_inline_args(self) -> bool {
         matches!(
             self,
-            SlashCommand::ForcePrune
+            SlashCommand::SmartPrune
+                | SlashCommand::ForcePrune
                 | SlashCommand::Review
                 | SlashCommand::Add
                 | SlashCommand::Rename
@@ -195,6 +200,7 @@ impl SlashCommand {
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Prune
+            | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Keymap
             | SlashCommand::Vim
@@ -256,6 +262,7 @@ impl SlashCommand {
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Prune
+            | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Diff
             | SlashCommand::Usage
@@ -269,6 +276,7 @@ impl SlashCommand {
             | SlashCommand::Goal
             | SlashCommand::Rename
             | SlashCommand::Copy
+            | SlashCommand::Experimental
             // Inherited Codex features being re-evaluated for the Elpis contract:
             // multi-agent threads (I6 /multi-task), IDE context, and Plan mode
             // (evaluated against I5 structured interactive clarification).
@@ -284,7 +292,6 @@ impl SlashCommand {
             | SlashCommand::Logout
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
-            | SlashCommand::Experimental
             | SlashCommand::AutoReview
             | SlashCommand::Import
             | SlashCommand::Archive
@@ -365,7 +372,6 @@ mod tests {
             "plugins",
             "raw",
             "review",
-            "settings",
             "status",
             "statusline",
             "title",
@@ -375,6 +381,7 @@ mod tests {
         }
         assert!(visible.contains(&"add"));
         assert!(visible.contains(&"usage"));
+        assert!(visible.contains(&"settings"));
         assert!(visible.contains(&"fork"));
         assert!(visible.contains(&"goal"));
         assert!(visible.contains(&"hooks"));
@@ -417,6 +424,22 @@ mod tests {
                 .any(|(name, command)| name == "dashboard" && command == SlashCommand::Dashboard)
         );
         assert!(SlashCommand::Dashboard.description().contains("context"));
+    }
+
+    #[test]
+    fn smart_prune_is_visible_argument_aware_and_idle_only() {
+        assert_eq!(
+            SlashCommand::from_str("smart-prune"),
+            Ok(SlashCommand::SmartPrune)
+        );
+        assert!(SlashCommand::SmartPrune.supports_inline_args());
+        assert!(!SlashCommand::SmartPrune.available_during_task());
+        assert!(
+            super::built_in_slash_commands()
+                .into_iter()
+                .any(|(name, command)| name == "smart-prune"
+                    && command == SlashCommand::SmartPrune)
+        );
     }
 
     #[test]

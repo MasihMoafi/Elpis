@@ -25,6 +25,8 @@ impl ChatWidget {
             .set_queue_submissions(/*queue_submissions*/ false);
         if previous_thread_id != self.thread_id {
             self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
+            self.smart_prune = ThreadSmartPruneSnapshot::default();
+            self.smart_prune_synced = false;
         }
         self.refresh_elpis_tip();
         self.turn_lifecycle.reset_thread();

@@ -1,4 +1,4 @@
-//! Layers 3 and 4 of Elpis's context pruning (see `docs/context.md`). The Ace pass handles
+//! Elpis's optional Ace context-pruning mechanism (see `docs/context.md`). The Ace pass handles
 //! content that requires judgment — deciding
 //! whether a search was a dead end (delete outright, no trace) or found something
 //! that matters (keep one evidence-pointer line). That judgment comes from a model
@@ -14,14 +14,13 @@
 //! 20–30% band is a healthy working region that no pass may touch. See
 //! `docs/cache-friendly-pruning.md`.
 //!
-//! There is deliberately no second, backlog-sized trigger. An earlier "steady" trigger
-//! fired whenever completed turns held a few percent of the window in uncovered tool
-//! output, independent of how full the window actually was. That is what produced runs
-//! of dozens of tiny passes inside the healthy band: each pass rewrote model-visible
-//! history, and every rewrite discards the reusable prompt-cache prefix past the first
-//! rewritten item. Pressure alone covers the case steady existed for, because its
-//! eligible region is cut by recency rather than at a turn boundary — a single
-//! tool-driven turn that balloons past 30% without ever ending is still prunable.
+//! The historical "steady" trigger was removed; it once fired whenever completed turns held a
+//! few percent of the window in uncovered tool output, independent of how full the window was.
+//! That former behavior produced dozens of tiny passes inside the healthy band: each rewrote
+//! model-visible history and discarded the reusable prompt-cache prefix past the first rewritten
+//! item. The current pressure path covers the case steady once covered, because its eligible
+//! region is cut by recency rather than at a turn boundary — a single tool-driven turn that
+//! balloons past 30% without ever ending is still prunable.
 //!
 //! A pass reaches into the turn in flight, so it keeps the newest
 //! `PRESSURE_KEEP_RECENT_PERCENT` of the window verbatim: the observations the next
@@ -63,9 +62,9 @@ pub(crate) const AUTO_PRUNE_TRIGGER_PERCENT: i64 = 30;
 pub(crate) const AUTO_PRUNE_TARGET_PERCENT: i64 = 20;
 
 /// How much of the newest tool evidence a pressure pass always leaves verbatim, as a
-/// percentage of the context window. Unlike the steady pass, a pressure pass reaches
-/// into the turn that is still running, so it needs its own floor: the observations the
-/// next follow-up reasons over sit at the end of the history, and only what is behind
+/// percentage of the context window. Unlike the removed historical steady pass, a pressure
+/// pass reaches into the turn that is still running, so it needs its own floor. The observations
+/// the next follow-up reasons over sit at the end of the history, and only what is behind
 /// them may be rewritten.
 pub(crate) const PRESSURE_KEEP_RECENT_PERCENT: i64 = 10;
 
@@ -132,7 +131,7 @@ impl PruneRecord {
 pub(crate) enum PruneTrigger {
     /// The user explicitly requested a selective pass with `/prune`.
     Manual,
-    /// Active use reached `AUTO_PRUNE_TRIGGER_PERCENT`.
+    /// Targeted pressure selection, used by automatic pressure and manual `/force-prune`.
     Pressure,
 }
 
@@ -470,10 +469,9 @@ fn completed_turn_end(input: &[ResponseItem]) -> usize {
 /// Index one past the oldest item that still fits inside the keep-recent budget: the
 /// newest items totalling `PRESSURE_KEEP_RECENT_PERCENT` of the window stay verbatim.
 fn recency_cut(input: &[ResponseItem], context_window: i64) -> usize {
-    let keep_budget = usize::try_from(
-        context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100,
-    )
-    .unwrap_or(usize::MAX);
+    let keep_budget =
+        usize::try_from(context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100)
+            .unwrap_or(usize::MAX);
 
     let mut kept = 0usize;
     for (index, item) in input.iter().enumerate().rev() {
@@ -720,7 +718,11 @@ pub(crate) fn apply_prune_record_untracked(
     if record.is_empty() {
         return 0;
     }
-    let epoch = input.iter().filter(|item| is_prune_epoch_marker(item)).count() as u64 + 1;
+    let epoch = input
+        .iter()
+        .filter(|item| is_prune_epoch_marker(item))
+        .count() as u64
+        + 1;
     let covered: HashSet<&str> = record.covered_call_ids.iter().map(String::as_str).collect();
     let conclusions = conclusions_by_call_id(&record.text);
     let mut saved = 0usize;
@@ -990,7 +992,10 @@ mod tests {
         let window = 1_000_000;
         let used = 300_000;
         let reclaim = reclaim_target_tokens(used, window, AUTO_PRUNE_TARGET_PERCENT);
-        assert_eq!(used - reclaim as i64, window * AUTO_PRUNE_TARGET_PERCENT / 100);
+        assert_eq!(
+            used - reclaim as i64,
+            window * AUTO_PRUNE_TARGET_PERCENT / 100
+        );
         assert_eq!(AUTO_PRUNE_TARGET_PERCENT, 20);
     }
 
@@ -1038,7 +1043,10 @@ mod tests {
             tool_output("newest", &"x".repeat(8_000)),
         ];
 
-        assert_eq!(uncovered_pressure_tokens(&input, &HashSet::new(), window), 0);
+        assert_eq!(
+            uncovered_pressure_tokens(&input, &HashSet::new(), window),
+            0
+        );
     }
 
     #[test]
@@ -1100,7 +1108,7 @@ mod tests {
             reclaim_target_tokens(199_999, 1_000_000, AUTO_PRUNE_TARGET_PERCENT),
             0
         );
-        // An explicit `/prune <pct>` targets that much context remaining.
+        // An explicit `/force-prune <pct>` targets that much context remaining.
         assert_eq!(reclaim_target_tokens(300_000, 1_000_000, 10), 200_000);
         assert_eq!(reclaim_target_tokens(300_000, 1_000_000, 90), 0);
     }
@@ -1488,7 +1496,10 @@ mod tests {
         assert_eq!(input[..first_frozen], epoch_one[..]);
         assert!(frozen_prefix_len(&input) > first_frozen);
         assert_eq!(
-            input.iter().filter(|item| is_prune_epoch_marker(item)).count(),
+            input
+                .iter()
+                .filter(|item| is_prune_epoch_marker(item))
+                .count(),
             2,
             "each pass seals exactly one epoch"
         );

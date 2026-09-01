@@ -39,7 +39,10 @@ fn test_cache_state_transitions_anthropic_ttl() {
     let t100 = t0 + Duration::from_secs(100);
     assert_eq!(tracker.get_state(&key, t100), CacheState::Hot);
     assert!(tracker.get_state(&key, t100).is_hot());
-    assert_eq!(tracker.remaining_ttl(&key, t100), Some(Duration::from_secs(200)));
+    assert_eq!(
+        tracker.remaining_ttl(&key, t100),
+        Some(Duration::from_secs(200))
+    );
 
     // At t0 + 269s: Still Hot (just before 270s threshold)
     let t269 = t0 + Duration::from_secs(269);
@@ -49,12 +52,18 @@ fn test_cache_state_transitions_anthropic_ttl() {
     let t270 = t0 + Duration::from_secs(270);
     assert_eq!(tracker.get_state(&key, t270), CacheState::NearExpiry);
     assert!(tracker.get_state(&key, t270).is_near_expiry());
-    assert_eq!(tracker.remaining_ttl(&key, t270), Some(Duration::from_secs(30)));
+    assert_eq!(
+        tracker.remaining_ttl(&key, t270),
+        Some(Duration::from_secs(30))
+    );
 
     // At t0 + 299s: NearExpiry (1s remaining)
     let t299 = t0 + Duration::from_secs(299);
     assert_eq!(tracker.get_state(&key, t299), CacheState::NearExpiry);
-    assert_eq!(tracker.remaining_ttl(&key, t299), Some(Duration::from_secs(1)));
+    assert_eq!(
+        tracker.remaining_ttl(&key, t299),
+        Some(Duration::from_secs(1))
+    );
 
     // At t0 + 300s: Cold (TTL expired)
     let t300 = t0 + Duration::from_secs(300);
@@ -88,7 +97,10 @@ fn test_ttl_refresh_on_subsequent_request() {
     // At t0 + 400s (150s after t250): Should still be Hot because TTL was refreshed at t250!
     let t400 = t0 + Duration::from_secs(400);
     assert_eq!(tracker.get_state(&key, t400), CacheState::Hot);
-    assert_eq!(tracker.remaining_ttl(&key, t400), Some(Duration::from_secs(150)));
+    assert_eq!(
+        tracker.remaining_ttl(&key, t400),
+        Some(Duration::from_secs(150))
+    );
 
     // At t250 + 275s (t0 + 525s): NearExpiry
     let t525 = t0 + Duration::from_secs(525);
@@ -254,7 +266,9 @@ fn test_safe_input_queue_urgent_flush_near_expiry() {
     tracker.record_usage(&key, t0, 2000, 0, 2000);
 
     let mut queue = SafeInputQueue::new();
-    queue.enqueue_user_input("Queued input while tool was running").unwrap();
+    queue
+        .enqueue_user_input("Queued input while tool was running")
+        .unwrap();
 
     // At t0 + 60s: Hot -> Not urgent (can wait/debounce)
     let t60 = t0 + Duration::from_secs(60);

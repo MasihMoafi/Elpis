@@ -3,6 +3,7 @@
 ## Start
 
 - Read `docs/GUIDE.md`; it is the product, architecture, and requirements source of truth.
+- Read `docs/USER_REQUESTS.md`; it records Masih's requested outcomes and is separate from agent-created execution work.
 - Read `TASKS.md`; work only on its Current Action unless Masih changes priority.
 - Read `docs/context.md` and `docs/sessions.md` before touching context, session, or pruning behavior.
 - Read `docs/SHIPPING_RULES.md` before a release or any change that reads the filesystem, environment, or network.
@@ -18,6 +19,7 @@
 - After edits, retain the diff and verification result; reread file bodies on demand.
 - Do not add slash commands unless Masih explicitly selects them.
 - Worker agents must not edit `GUIDE.md` or `TASKS.md`; the coordinator owns those files.
+- Workers must not close, narrow, or rewrite `docs/USER_REQUESTS.md`; only Masih's explicit acceptance changes that ledger.
 - Do not delegate to Jules. The coordinator selects and manages workers and worktrees.
 
 ## Definition of Done

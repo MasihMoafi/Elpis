@@ -28,6 +28,14 @@ pub struct SkillsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bundled: Option<BundledSkillsConfig>,
 
+    /// Whether newly discovered skills are enabled before an explicit per-skill rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_enabled: Option<bool>,
+
+    /// Ordered roots containing always-visible Elpis development-rule Markdown files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dev_rule_roots: Vec<AbsolutePathBuf>,
+
     /// Whether turns receive the automatic skills instructions block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_instructions: Option<bool>,

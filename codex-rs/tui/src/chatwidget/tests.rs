@@ -9,6 +9,10 @@ pub(super) use super::*;
 pub(super) use crate::app_command::AppCommand as Op;
 pub(super) use crate::app_event::AppEvent;
 pub(super) use crate::app_event::ExitMode;
+pub(super) use crate::app_event::ManualMemoryRequestTarget;
+pub(super) use crate::app_event::ManualMemoryStatusCompletion;
+pub(super) use crate::app_event::ManualMemoryStorageTarget;
+pub(super) use crate::app_event::ManualMemoryViewKey;
 pub(super) use crate::app_event_sender::AppEventSender;
 pub(super) use crate::approval_events::ApplyPatchApprovalRequestEvent;
 pub(super) use crate::approval_events::ExecApprovalRequestEvent;
@@ -181,6 +185,58 @@ pub(super) use tempfile::tempdir;
 pub(super) use tokio::sync::mpsc::error::TryRecvError;
 pub(super) use tokio::sync::mpsc::unbounded_channel;
 pub(super) use toml::Value as TomlValue;
+
+pub(super) fn seed_manual_memory_cache_from_disk(
+    chat: &mut ChatWidget,
+) -> anyhow::Result<ManualMemoryRequestTarget> {
+    let memories_root = chat.config_ref().memory_dir.clone();
+    let cwd = chat.config_ref().cwd.clone();
+    let dev_rule_roots = chat.config_ref().dev_rule_roots();
+    let (admission_path, memory_path) =
+        crate::legacy_core::elpis_context::manual_memory_storage_paths(
+            Some(memories_root.as_path()),
+            cwd.as_path(),
+        )
+        .ok_or_else(|| anyhow::anyhow!("manual-memory test storage is unavailable"))?;
+    let thread_id = chat.thread_id().unwrap_or_else(ThreadId::new);
+    let target = ManualMemoryRequestTarget {
+        view: ManualMemoryViewKey {
+            epoch: chat
+                .manual_memory_bound_target()
+                .map_or(1, |target| target.view.epoch.saturating_add(1)),
+            primary_root_thread_id: thread_id,
+            displayed_thread_id: thread_id,
+            cwd: cwd.to_path_buf(),
+            memory_path: memory_path.clone(),
+        },
+        storage: ManualMemoryStorageTarget {
+            admission_path,
+            memory_path,
+        },
+    };
+    let status = crate::legacy_core::elpis_context::manual_memory_status(
+        Some(memories_root.as_path()),
+        cwd.as_path(),
+    )?
+    .ok_or_else(|| anyhow::anyhow!("manual-memory test status is unavailable"))?;
+    let sources = crate::legacy_core::elpis_context::continuity_sources_from_manual_memory_status(
+        Some(memories_root.as_path()),
+        cwd.as_path(),
+        &chat.instruction_source_paths_as_path_bufs(),
+        &dev_rule_roots,
+        Some(&status),
+    )?;
+    chat.bind_manual_memory_loading(target.clone(), /*pending_context_report*/ false);
+    if !chat.apply_manual_memory_status_completion(
+        &target,
+        ManualMemoryStatusCompletion::Ready { status, sources },
+    ) {
+        return Err(anyhow::anyhow!(
+            "manual-memory test cache rejected its target"
+        ));
+    }
+    Ok(target)
+}
 
 pub(super) fn chatwidget_snapshot_dir() -> PathBuf {
     let snapshot_file = codex_utils_cargo_bin::find_resource!(

@@ -6,6 +6,35 @@ use crate::app_event::AppEvent;
 use crate::chatwidget::rate_limits::RATE_LIMIT_SWITCH_PROMPT_VIEW_ID;
 
 impl ChatWidget {
+    pub(super) fn request_smart_prune_enabled(&mut self, enabled: bool) -> bool {
+        if self.is_user_turn_pending_or_running() {
+            self.add_info_message(
+                "Smart Prune can be changed after this turn.".to_string(),
+                Some("The submitted or active turn keeps the policy it started with.".to_string()),
+            );
+            self.request_redraw();
+            return false;
+        }
+
+        self.app_event_tx.send(AppEvent::UpdateFeatureFlags {
+            updates: vec![(Feature::AutomaticContextPruning, enabled)],
+        });
+        true
+    }
+
+    pub(super) fn toggle_smart_prune(&mut self) -> bool {
+        if !self.smart_prune_synced && !self.is_user_turn_pending_or_running() {
+            self.add_info_message(
+                "Smart Prune state is still syncing.".to_string(),
+                Some("Use /smart-prune on|off to set an explicit state now.".to_string()),
+            );
+            self.request_redraw();
+            return false;
+        }
+        let enabled = !self.smart_prune.enabled;
+        self.request_smart_prune_enabled(enabled)
+    }
+
     /// Set the approval policy in the widget's config copy.
     pub(crate) fn set_approval_policy(&mut self, policy: AskForApproval) {
         if let Err(err) = self
@@ -103,6 +132,10 @@ impl ChatWidget {
         }
         if feature == Feature::PreventIdleSleep {
             self.turn_lifecycle.set_prevent_idle_sleep(enabled);
+        }
+        if feature == Feature::AutomaticContextPruning {
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+            self.request_redraw();
         }
         #[cfg(target_os = "windows")]
         if matches!(

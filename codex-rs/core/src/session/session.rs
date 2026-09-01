@@ -21,6 +21,7 @@ use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnEnvironmentSelections;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicBool;
 use tokio::sync::Semaphore;
 
 /// Context for an initialized model agent
@@ -38,6 +39,9 @@ pub(crate) struct Session {
     /// The set of enabled features should be invariant for the lifetime of the
     /// session.
     pub(super) features: ManagedFeatures,
+    /// Runtime-refreshable Smart Prune gate. Each turn snapshots this value so a
+    /// config reload cannot change policy halfway through a turn.
+    pub(super) smart_prune_enabled: AtomicBool,
     pub(super) multi_agent_version: OnceLock<MultiAgentVersion>,
     pub(super) pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
@@ -620,7 +624,7 @@ impl Session {
             config.current_time_reminder.as_ref(),
             external_time_provider,
         )?;
-        let selected_capability_roots =
+        let selected_capability_roots = if config.features.enabled(Feature::Plugins) {
             match thread_extension_init.get::<Vec<SelectedCapabilityRoot>>() {
                 Some(roots) => roots.as_ref().clone(),
                 None => {
@@ -630,7 +634,11 @@ impl Session {
                     }
                     roots
                 }
-            };
+            }
+        } else {
+            thread_extension_init.insert(Vec::<SelectedCapabilityRoot>::new());
+            Vec::new()
+        };
         let mcp_thread_init = thread_extension_init.clone();
         let thread_extension_data = codex_extension_api::ExtensionData::new_with_init(
             thread_id.to_string(),
@@ -1183,6 +1191,11 @@ impl Session {
                 state: Mutex::new(state),
                 managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
                 features: config.features.clone(),
+                smart_prune_enabled: AtomicBool::new(
+                    config
+                        .features
+                        .enabled(Feature::AutomaticContextPruning),
+                ),
                 multi_agent_version,
                 pending_mcp_server_refresh_config: Mutex::new(None),
                 conversation: Arc::new(RealtimeConversationManager::new()),

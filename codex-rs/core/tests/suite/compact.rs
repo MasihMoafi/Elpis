@@ -1,7 +1,6 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use anyhow::Result;
 use anyhow::anyhow;
-use codex_core::compact::CLEANUP_PROMPT;
 use codex_core::compact::SUMMARIZATION_PROMPT;
 use codex_core::compact::SUMMARY_PREFIX;
 use codex_core::config::Config;
@@ -10,6 +9,8 @@ use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::bundled_models_response;
+use codex_prompts::CLEANUP_PROMPT;
+use codex_prompts::CONTEXT_PRUNE_PROMPT;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::PermissionProfile;
@@ -96,8 +97,6 @@ const KEEP_USER_DECISION: &str = "KEEP_DECISION_7319";
 const KEEP_ASSISTANT_RULE: &str = "KEEP_RULE_8421";
 const DROP_REDUNDANT_NOISE: &str = "DROP_NOISE_5634";
 const PROTECTED_RECENT_CONTEXT: &str = "PROTECTED_RECENT_CONTEXT_1942";
-const VALID_CLEANUP_MANIFEST: &str = "m0: KEEP\nm1: KEEP\nm2: DELETE\nm3: DELETE";
-const MALFORMED_CLEANUP_MANIFEST: &str = "m0 KEEP";
 
 pub(super) const COMPACT_WARNING_MESSAGE: &str = "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted.";
 
@@ -496,7 +495,13 @@ fn format_labeled_requests_snapshot(
     )
 }
 
-async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (String, String) {
+struct CompactPreservationScenario {
+    next_main_request: String,
+    rollout: String,
+    request_bodies: Vec<String>,
+}
+
+async fn run_compact_preservation_scenario(compact: bool) -> CompactPreservationScenario {
     let server = start_mock_server().await;
     let first_response = sse(vec![
         ev_assistant_message("m1", KEEP_ASSISTANT_RULE),
@@ -511,13 +516,13 @@ async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (S
         ev_completed("r3"),
     ]);
     let final_response = sse(vec![ev_completed("r5")]);
-    let responses = if let Some(cleanup_manifest) = cleanup_manifest {
+    let responses = if compact {
         vec![
             first_response,
             redundant_response,
             recent_response,
             sse(vec![
-                ev_assistant_message("m4", cleanup_manifest),
+                ev_assistant_message("m4", SUMMARY_TEXT),
                 ev_completed("r4"),
             ]),
             final_response,
@@ -530,11 +535,11 @@ async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (S
             final_response,
         ]
     };
-    let expected_request_count = responses.len();
     let request_log = mount_sse_sequence(&server, responses).await;
 
-    let mut builder = test_codex().with_config(|config| {
-        config.elpis_compact_cleanup = true;
+    let model_provider = non_openai_model_provider(&server);
+    let mut builder = test_codex().with_config(move |config| {
+        config.model_provider = model_provider;
     });
     let test = builder.build(&server).await.expect("create conversation");
     let codex = test.codex.clone();
@@ -575,7 +580,7 @@ async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (S
         wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
     }
 
-    if cleanup_manifest.is_some() {
+    if compact {
         codex.submit(Op::Compact).await.expect("trigger compact");
         wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
     }
@@ -602,32 +607,22 @@ async fn run_compact_preservation_scenario(cleanup_manifest: Option<&str>) -> (S
     wait_for_event(&codex, |event| matches!(event, EventMsg::ShutdownComplete)).await;
 
     let requests = request_log.requests();
-    assert_eq!(
-        requests.len(),
-        expected_request_count,
-        "unexpected provider request count"
-    );
-    if cleanup_manifest.is_some() {
-        let cleanup_request = &requests[requests.len() - 2];
-        let cleanup_body = cleanup_request.body_json();
-        assert!(
-            body_contains_text(&cleanup_body.to_string(), CLEANUP_PROMPT),
-            "manual compact must use the Elpis cleanup prompt"
-        );
-        assert_eq!(
-            cleanup_body["model"], "gpt-5.6-luna",
-            "manual compact must isolate cleanup on Luna"
-        );
-    }
     let next_main_request = requests
         .last()
         .expect("next main-model request")
         .body_json()
         .to_string();
+    let request_bodies = requests
+        .iter()
+        .map(|request| request.body_json().to_string())
+        .collect();
     let rollout = fs::read_to_string(rollout_path).expect("read saved rollout");
-    (next_main_request, rollout)
+    CompactPreservationScenario {
+        next_main_request,
+        rollout,
+        request_bodies,
+    }
 }
-
 
 /// The Context Ledger admits nothing until asked, so a test about AGENTS.md surviving
 /// compaction has to say so. Apply last in a builder chain: admission is keyed to the cwd.
@@ -645,7 +640,7 @@ fn admit_global_agents_md(config: &mut codex_core::config::Config) {
 async fn compact_preservation_control_without_compaction_keeps_all_markers() {
     skip_if_no_network!();
 
-    let (next_main_request, rollout) = run_compact_preservation_scenario(None).await;
+    let scenario = run_compact_preservation_scenario(false).await;
     for marker in [
         KEEP_USER_DECISION,
         KEEP_ASSISTANT_RULE,
@@ -653,70 +648,39 @@ async fn compact_preservation_control_without_compaction_keeps_all_markers() {
         PROTECTED_RECENT_CONTEXT,
     ] {
         assert!(
-            body_contains_text(&next_main_request, marker),
+            body_contains_text(&scenario.next_main_request, marker),
             "control request should retain {marker}"
         );
         assert!(
-            rollout.contains(marker),
+            scenario.rollout.contains(marker),
             "saved rollout should retain {marker}"
         );
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn compact_preserves_critical_markers_and_removes_redundant_noise() {
+async fn native_compact_uses_summarization_without_elpis_cleanup_route() {
     skip_if_no_network!();
 
-    let (next_main_request, rollout) =
-        run_compact_preservation_scenario(Some(VALID_CLEANUP_MANIFEST)).await;
-    for marker in [
-        KEEP_USER_DECISION,
-        KEEP_ASSISTANT_RULE,
-        DROP_REDUNDANT_NOISE,
-        PROTECTED_RECENT_CONTEXT,
-    ] {
-        assert!(
-            rollout.contains(marker),
-            "saved rollout should retain {marker}"
-        );
-    }
-
-    let missing_critical: Vec<&str> = [KEEP_USER_DECISION, KEEP_ASSISTANT_RULE]
-        .into_iter()
-        .filter(|marker| !body_contains_text(&next_main_request, marker))
-        .collect();
-    let retained_noise = body_contains_text(&next_main_request, DROP_REDUNDANT_NOISE);
+    let scenario = run_compact_preservation_scenario(true).await;
+    let requests = &scenario.request_bodies;
+    let expected_native_compact_request_count = 5;
     assert!(
-        missing_critical.is_empty() && !retained_noise,
-        "compacted request failed preservation: missing_critical={missing_critical:?}, retained_noise={retained_noise}"
+        requests
+            .iter()
+            .all(|body| !body_contains_text(body, CONTEXT_PRUNE_PROMPT)),
+        "native compact must not issue an Ace-prune request"
+    );
+    assert_eq!(requests.len(), expected_native_compact_request_count);
+    let compact_body = &requests[requests.len() - 2];
+    assert!(
+        body_contains_text(compact_body, SUMMARIZATION_PROMPT),
+        "native compact must use the summarization prompt"
     );
     assert!(
-        body_contains_text(&next_main_request, PROTECTED_RECENT_CONTEXT),
-        "recent context must remain protected"
+        !body_contains_text(compact_body, CLEANUP_PROMPT),
+        "native compact must not use the Elpis cleanup prompt"
     );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn malformed_cleanup_manifest_preserves_everything() {
-    skip_if_no_network!();
-
-    let (next_main_request, rollout) =
-        run_compact_preservation_scenario(Some(MALFORMED_CLEANUP_MANIFEST)).await;
-    for marker in [
-        KEEP_USER_DECISION,
-        KEEP_ASSISTANT_RULE,
-        DROP_REDUNDANT_NOISE,
-        PROTECTED_RECENT_CONTEXT,
-    ] {
-        assert!(
-            body_contains_text(&next_main_request, marker),
-            "malformed cleanup must retain {marker}"
-        );
-        assert!(
-            rollout.contains(marker),
-            "saved rollout should retain {marker}"
-        );
-    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

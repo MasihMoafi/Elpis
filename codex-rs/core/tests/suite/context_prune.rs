@@ -1,6 +1,9 @@
 use anyhow::Result;
+use codex_features::Feature;
+use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::RolloutItem;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed_with_tokens;
@@ -9,17 +12,21 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_host_windows;
+use core_test_support::streaming_sse::StreamingSseChunk;
+use core_test_support::streaming_sse::start_streaming_sse_server;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::test_codex;
+use core_test_support::wait_for_event;
 use serde_json::json;
+use serial_test::serial;
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::sync::oneshot;
 
 const CONTEXT_WINDOW: i64 = 10_000;
 const MAIN_MODEL: &str = "gpt-5.4";
 const PRUNE_MODEL: &str = "gpt-5.6-luna";
 const OLD_CALL_ID: &str = "old-pressure-output";
-const CURRENT_CALL_ID: &str = "current-turn-output";
 const GLOBAL_INSTRUCTIONS: &str = "global instructions for the prune/AGENTS.md regression test";
 
 /// Pins the thread to one workspace and admits the global AGENTS.md row there, so build
@@ -28,10 +35,9 @@ fn pin_workspace_and_admit_global_rules(
     workspace: Arc<TempDir>,
 ) -> impl FnOnce(&mut codex_core::config::Config) + Send + 'static {
     move |config| {
-        config.cwd = codex_utils_absolute_path::AbsolutePathBuf::try_from(
-            workspace.path().to_path_buf(),
-        )
-        .expect("absolute workspace path");
+        config.cwd =
+            codex_utils_absolute_path::AbsolutePathBuf::try_from(workspace.path().to_path_buf())
+                .expect("absolute workspace path");
         codex_core::elpis_context::set_continuity_source_admitted(
             Some(config.memory_dir.as_path()),
             config.cwd.as_path(),
@@ -51,7 +57,7 @@ fn shell_arguments(command: &str) -> String {
     .expect("serialize shell arguments")
 }
 
-async fn pressure_harness() -> Result<TestCodexHarness> {
+async fn manual_harness() -> Result<TestCodexHarness> {
     TestCodexHarness::with_builder(
         test_codex()
             .with_model(MAIN_MODEL)
@@ -74,66 +80,99 @@ fn final_response() -> String {
     ])
 }
 
+fn context_prune_checkpoints(items: Vec<RolloutItem>) -> Vec<CompactedItem> {
+    items
+        .into_iter()
+        .filter_map(|item| match item {
+            RolloutItem::Compacted(item) if item.is_context_prune_checkpoint() => Some(item),
+            _ => None,
+        })
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pressure_prune_runs_at_thirty_percent_and_rewrites_next_request() -> Result<()> {
+#[serial(context_prune_counters)]
+async fn automatic_prune_is_disabled_by_default() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
-    let harness = pressure_harness().await?;
-    let prune_response = sse(vec![
-        ev_assistant_message(
-            "prune-result",
-            &format!("{OLD_CALL_ID}: command output was generated and inspected"),
-        ),
-        ev_completed_with_tokens("prune-result", /*total_tokens*/ 100),
-    ]);
+    let harness = TestCodexHarness::with_builder(
+        test_codex()
+            .with_model(MAIN_MODEL)
+            .with_config(|config| config.model_context_window = Some(CONTEXT_WINDOW)),
+    )
+    .await?;
     let requests = mount_sse_sequence(
         harness.server(),
         vec![
             main_tool_response(
                 OLD_CALL_ID,
-                /*total_tokens*/ 2_500,
-                "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
-            ),
-            final_response(),
-            prune_response,
-            main_tool_response(
-                CURRENT_CALL_ID,
                 /*total_tokens*/ 3_000,
-                "printf current-marker",
+                "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
             ),
             final_response(),
         ],
     )
     .await;
 
-    harness.submit("generate an old diagnostic output").await?;
-    harness.submit("inspect the current marker").await?;
+    harness.submit("generate a diagnostic output").await?;
 
     let requests = requests.requests();
-    assert_eq!(requests.len(), 5);
-    assert_eq!(requests[0].body_json()["model"], MAIN_MODEL);
-    assert_eq!(requests[2].body_json()["model"], PRUNE_MODEL);
-    assert_eq!(requests[2].body_json()["reasoning"]["effort"], "max");
-    assert_eq!(requests[3].body_json()["model"], MAIN_MODEL);
-    assert_eq!(requests[4].body_json()["model"], MAIN_MODEL);
-    assert!(requests[2].body_contains_text("<evidence_batch>"));
-    assert!(requests[2].body_contains_text(OLD_CALL_ID));
+    assert_eq!(requests.len(), 2);
     assert!(
-        !requests[2].body_contains_text("output:\ncurrent-marker"),
-        "the pruning model must never receive current-turn tool output"
-    );
-    assert!(requests[3].body_contains_text("[ELPIS CONTEXT UPDATE]"));
-    assert!(requests[3].body_contains_text(&format!("rollout://tool-call/{OLD_CALL_ID}")));
-    assert!(requests[4].body_contains_text("Output:\ncurrent-marker"));
-    assert!(
-        !requests[3].body_contains_text(&"x".repeat(128)),
-        "the next real model request must receive the compact receipt, not raw bulk output"
+        requests
+            .iter()
+            .all(|request| request.body_json()["model"] == MAIN_MODEL),
+        "the default path must not make an Ace pruning request"
     );
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
+async fn smart_prune_flag_never_runs_retrospective_pressure_pruning() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+
+    let harness =
+        TestCodexHarness::with_builder(test_codex().with_model(MAIN_MODEL).with_config(|config| {
+            config.model_context_window = Some(CONTEXT_WINDOW);
+            let _ = config.features.enable(Feature::AutomaticContextPruning);
+        }))
+        .await?;
+    let requests = mount_sse_sequence(
+        harness.server(),
+        vec![
+            main_tool_response(
+                OLD_CALL_ID,
+                /*total_tokens*/ 3_000,
+                // Deliberately below Smart Prune's admission threshold but still
+                // reclaimable by the retired pressure path.
+                "awk 'BEGIN { for (i=0; i<800; i++) printf \"x\" }'",
+            ),
+            final_response(),
+        ],
+    )
+    .await;
+
+    harness
+        .submit("generate a modest diagnostic output")
+        .await?;
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.body_json()["model"] == MAIN_MODEL)
+    );
+    assert!(requests[1].body_contains_text(&"x".repeat(128)));
+    assert!(!requests[1].body_contains_text("[ELPIS CONTEXT UPDATE]"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_survives_session_resume() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -207,6 +246,7 @@ async fn manual_prune_survives_session_resume() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
@@ -330,38 +370,11 @@ async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pressure_prune_does_not_run_below_thirty_percent() -> Result<()> {
-    skip_if_host_windows!(Ok(()));
-
-    let harness = pressure_harness().await?;
-    let requests = mount_sse_sequence(
-        harness.server(),
-        vec![
-            main_tool_response(CURRENT_CALL_ID, /*total_tokens*/ 2_999, "printf x"),
-            final_response(),
-        ],
-    )
-    .await;
-
-    harness.submit("generate a large diagnostic output").await?;
-
-    let requests = requests.requests();
-    assert_eq!(requests.len(), 2);
-    assert!(
-        requests
-            .iter()
-            .all(|request| request.body_json()["model"] == MAIN_MODEL)
-    );
-    assert!(requests[1].body_contains_text("Output:\nx"));
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_rewrites_completed_tool_output_without_compacting_messages() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
-    let harness = pressure_harness().await?;
+    let harness = manual_harness().await?;
     let prune_response = sse(vec![
         ev_assistant_message(
             "manual-prune-result",
@@ -420,8 +433,552 @@ async fn manual_prune_rewrites_completed_tool_output_without_compacting_messages
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
+async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_no_checkpoint()
+-> Result<()> {
+    skip_if_host_windows!(Ok(()));
+
+    let (release_prune_tx, release_prune_rx) = oneshot::channel();
+    let cancelled_prune = vec![
+        StreamingSseChunk {
+            gate: None,
+            body: sse(vec![ev_assistant_message(
+                "cancelled-prune-result",
+                &format!("{OLD_CALL_ID}: command output was generated and inspected"),
+            )]),
+        },
+        StreamingSseChunk {
+            gate: Some(release_prune_rx),
+            body: sse(vec![ev_completed_with_tokens(
+                "cancelled-prune-result",
+                /*total_tokens*/ 100,
+            )]),
+        },
+    ];
+    let (release_retry_tx, release_retry_rx) = oneshot::channel();
+    let retry_prune = vec![
+        StreamingSseChunk {
+            gate: None,
+            body: sse(vec![ev_assistant_message(
+                "retry-prune-result",
+                &format!("{OLD_CALL_ID}: command output was generated and inspected"),
+            )]),
+        },
+        StreamingSseChunk {
+            gate: Some(release_retry_rx),
+            body: sse(vec![ev_completed_with_tokens(
+                "retry-prune-result",
+                /*total_tokens*/ 100,
+            )]),
+        },
+    ];
+    let (server, _) = start_streaming_sse_server(vec![
+        vec![StreamingSseChunk {
+            gate: None,
+            body: main_tool_response(
+                OLD_CALL_ID,
+                /*total_tokens*/ 1_000,
+                "awk 'BEGIN { for (i=0; i<8000; i++) printf \"x\" }'",
+            ),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: final_response(),
+        }],
+        cancelled_prune,
+        retry_prune,
+    ])
+    .await;
+    let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
+        config.model_context_window = Some(CONTEXT_WINDOW);
+        // The generic interruption marker is unrelated to pruning. Disable it so
+        // identical retry input proves that pruning itself left working history and
+        // covered-call selection byte-for-byte unchanged.
+        config.agent_interrupt_message_enabled = false;
+    });
+    let test = builder.build_with_streaming_server(&server).await?;
+    let codex = Arc::clone(&test.codex);
+
+    test.submit_turn("generate an old diagnostic output")
+        .await?;
+    codex.flush_rollout().await?;
+
+    let logs_dir = test.home.path().join("logs");
+    let pruning_dir = logs_dir.join("pruning");
+    let passes_dir = pruning_dir.join("passes");
+    let failed_dir = pruning_dir.join("failed_attempts");
+    std::fs::create_dir_all(&passes_dir)?;
+    std::fs::create_dir_all(&failed_dir)?;
+    let attempts_path = pruning_dir.join("attempts.jsonl");
+    let debug_path = logs_dir.join("prune_debug.log");
+    let report_path = logs_dir.join("prune_report.md");
+    let attempts_before: &[u8] = b"pre-existing attempt log\n";
+    let debug_before: &[u8] = b"pre-existing debug log\n";
+    let report_before: &[u8] = b"pre-existing latest report\n";
+    std::fs::write(&attempts_path, attempts_before)?;
+    std::fs::write(&debug_path, debug_before)?;
+    std::fs::write(&report_path, report_before)?;
+
+    let prune_state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    let applied_passes_before = codex_core::context_pruner::pass_count();
+    let saved_chars_before = codex_core::context_pruner::saved_chars();
+    let checkpoints_before =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
+
+    codex.submit(Op::Prune { target_pct: None }).await?;
+    server.wait_for_request_count(3).await;
+    let requests = server.requests().await;
+    let first_prune_body: serde_json::Value =
+        serde_json::from_slice(&requests[2]).expect("parse first prune request");
+    assert_eq!(first_prune_body["model"], PRUNE_MODEL);
+    assert!(
+        first_prune_body["input"]
+            .to_string()
+            .contains("<evidence_batch>")
+    );
+    assert!(first_prune_body["input"].to_string().contains(OLD_CALL_ID));
+    let first_prune_input = first_prune_body["input"].clone();
+
+    codex_core::test_support::interrupt_active_prune_and_wait_for_cancellation(&codex).await?;
+    let _ = release_prune_tx.send(());
+    let terminal = wait_for_event(&codex, |event| {
+        matches!(event, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert!(
+        matches!(terminal, EventMsg::TurnAborted(_)),
+        "manual prune completed instead of observing cancellation: {terminal:?}"
+    );
+    codex.flush_rollout().await?;
+
+    assert_eq!(
+        server.requests().await.len(),
+        3,
+        "cancellation must not issue a fallback pruning-model request"
+    );
+    let prune_state_after = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    assert_eq!(
+        prune_state_after.raw_history, prune_state_before.raw_history,
+        "cancelled pruning must not change live working history"
+    );
+    assert_eq!(
+        prune_state_after.covered_call_ids, prune_state_before.covered_call_ids,
+        "cancelled pruning must not mark call IDs as covered"
+    );
+    assert_eq!(
+        prune_state_after.saved_tokens, prune_state_before.saved_tokens,
+        "cancelled pruning must not change saved-token accounting"
+    );
+    assert_eq!(
+        codex_core::context_pruner::pass_count(),
+        applied_passes_before,
+        "cancelled pruning must not change applied-pass accounting"
+    );
+    assert_eq!(
+        codex_core::context_pruner::saved_chars(),
+        saved_chars_before,
+        "cancelled pruning must not change removed-character accounting"
+    );
+    assert_eq!(std::fs::read(&report_path)?, report_before);
+    assert_eq!(std::fs::read(&attempts_path)?, attempts_before);
+    assert_eq!(std::fs::read(&debug_path)?, debug_before);
+    assert_eq!(
+        std::fs::read_dir(&passes_dir)?.count(),
+        0,
+        "cancelled pruning must not record applied-pass accounting"
+    );
+    assert_eq!(
+        std::fs::read_dir(&failed_dir)?.count(),
+        0,
+        "user cancellation must not be recorded as a failed pruning attempt"
+    );
+
+    let checkpoints_after =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
+    assert_eq!(
+        checkpoints_after, checkpoints_before,
+        "cancelled pruning must not persist a replacement checkpoint"
+    );
+
+    // Prompt equality is secondary evidence that the unchanged live state selects the
+    // same batch again on the ordinary retry path.
+    let retry_id = codex.submit(Op::Prune { target_pct: None }).await?;
+    server.wait_for_request_count(4).await;
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 4);
+    let retry_body: serde_json::Value =
+        serde_json::from_slice(&requests[3]).expect("parse retry prune request");
+    assert_eq!(retry_body["model"], PRUNE_MODEL);
+    assert_eq!(retry_body["input"], first_prune_input);
+
+    // Pause immediately after the commit decision so Ctrl-C deterministically reaches
+    // the task before the durable sequence starts.
+    let commit_gate = codex_core::test_support::pause_active_prune_commit(&codex).await;
+    let _ = release_retry_tx.send(());
+    codex_core::test_support::wait_for_active_prune_commit(&codex).await;
+    codex_core::test_support::interrupt_active_prune_and_wait_for_commit_protection(&codex).await?;
+    commit_gate.release();
+
+    let committed_terminal = loop {
+        let event = codex.next_event().await?;
+        if event.id == retry_id
+            && matches!(
+                event.msg,
+                EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)
+            )
+        {
+            break event.msg;
+        }
+    };
+    assert!(
+        matches!(committed_terminal, EventMsg::TurnComplete(_)),
+        "an interrupt after commit must let pruning finish: {committed_terminal:?}"
+    );
+
+    let committed_state = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    assert_ne!(committed_state.raw_history, prune_state_before.raw_history);
+    assert!(committed_state.covered_call_ids.contains(OLD_CALL_ID));
+    assert!(committed_state.saved_tokens > prune_state_before.saved_tokens);
+    assert_eq!(
+        codex_core::context_pruner::pass_count(),
+        applied_passes_before + 1
+    );
+    assert!(codex_core::context_pruner::saved_chars() > saved_chars_before);
+    assert_eq!(std::fs::read_dir(&passes_dir)?.count(), 1);
+    assert_ne!(std::fs::read(&report_path)?, report_before);
+    assert_eq!(
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items,)
+            .len(),
+        checkpoints_before.len() + 1
+    );
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
+async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+
+    const FIRST_CALL_ID: &str = "multi-batch-first";
+    const SECOND_CALL_ID: &str = "multi-batch-second";
+    const CALL_IDS: [&str; 2] = [FIRST_CALL_ID, SECOND_CALL_ID];
+
+    let (release_second_pass_tx, release_second_pass_rx) = oneshot::channel();
+    let second_pass = vec![
+        StreamingSseChunk {
+            gate: None,
+            body: sse(vec![ev_assistant_message(
+                "second-batch-prune-result",
+                "NOTHING_TO_KEEP",
+            )]),
+        },
+        StreamingSseChunk {
+            gate: Some(release_second_pass_rx),
+            body: sse(vec![ev_completed_with_tokens(
+                "second-batch-prune-result",
+                /*total_tokens*/ 100,
+            )]),
+        },
+    ];
+    let (server, _) = start_streaming_sse_server(vec![
+        vec![StreamingSseChunk {
+            gate: None,
+            body: main_tool_response(
+                FIRST_CALL_ID,
+                /*total_tokens*/ 1_000,
+                "awk 'BEGIN { for (i=0; i<100000; i++) printf \"x \" }'",
+            ),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: final_response(),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: main_tool_response(
+                SECOND_CALL_ID,
+                /*total_tokens*/ 1_000,
+                "awk 'BEGIN { for (i=0; i<100000; i++) printf \"y \" }'",
+            ),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: final_response(),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: sse(vec![
+                ev_assistant_message("first-batch-prune-result", "NOTHING_TO_KEEP"),
+                ev_completed_with_tokens("first-batch-prune-result", /*total_tokens*/ 100),
+            ]),
+        }],
+        second_pass,
+    ])
+    .await;
+    let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
+        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.tool_output_token_limit = Some(30_000);
+        config.agent_interrupt_message_enabled = false;
+    });
+    let test = builder.build_with_streaming_server(&server).await?;
+    let codex = Arc::clone(&test.codex);
+
+    test.submit_turn("generate the first oversized diagnostic output")
+        .await?;
+    test.submit_turn("generate the second oversized diagnostic output")
+        .await?;
+    codex.flush_rollout().await?;
+
+    let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    let applied_passes_before = codex_core::context_pruner::pass_count();
+    let saved_chars_before = codex_core::context_pruner::saved_chars();
+    let checkpoints_before =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
+
+    let prune_id = codex.submit(Op::Prune { target_pct: None }).await?;
+    server.wait_for_request_count(6).await;
+
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 6, "the sweep must open its second batch");
+    let first_prune_body: serde_json::Value =
+        serde_json::from_slice(&requests[4]).expect("parse first batch request");
+    let second_prune_body: serde_json::Value =
+        serde_json::from_slice(&requests[5]).expect("parse second batch request");
+    let first_prune_input = first_prune_body["input"].to_string();
+    let second_prune_input = second_prune_body["input"].to_string();
+
+    let state_after_first_commit =
+        codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    let newly_covered = CALL_IDS
+        .iter()
+        .copied()
+        .filter(|call_id| {
+            state_after_first_commit.covered_call_ids.contains(*call_id)
+                && !state_before.covered_call_ids.contains(*call_id)
+        })
+        .collect::<Vec<_>>();
+    let still_uncovered = CALL_IDS
+        .iter()
+        .copied()
+        .filter(|call_id| !state_after_first_commit.covered_call_ids.contains(*call_id))
+        .collect::<Vec<_>>();
+    assert!(
+        !newly_covered.is_empty(),
+        "the first pass must be non-vacuous"
+    );
+    assert!(
+        !still_uncovered.is_empty(),
+        "the gated request must be a real later batch"
+    );
+    assert_ne!(
+        state_after_first_commit.raw_history,
+        state_before.raw_history
+    );
+    assert!(state_after_first_commit.saved_tokens > state_before.saved_tokens);
+    for call_id in &newly_covered {
+        assert!(first_prune_input.contains(*call_id));
+        assert!(!second_prune_input.contains(*call_id));
+    }
+    for call_id in &still_uncovered {
+        assert!(second_prune_input.contains(*call_id));
+    }
+
+    codex_core::test_support::interrupt_active_prune_and_wait_for_cancellation(&codex).await?;
+    let _ = release_second_pass_tx.send(());
+    let terminal = loop {
+        let event = codex.next_event().await?;
+        if event.id == prune_id
+            && matches!(
+                event.msg,
+                EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)
+            )
+        {
+            break event.msg;
+        }
+    };
+    assert!(
+        matches!(terminal, EventMsg::TurnAborted(_)),
+        "an interrupt before the second commit must abort the sweep: {terminal:?}"
+    );
+
+    let state_after_cancel = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    assert_eq!(
+        state_after_cancel.raw_history, state_after_first_commit.raw_history,
+        "the cancelled second pass must not change live working history"
+    );
+    assert_eq!(
+        state_after_cancel.covered_call_ids, state_after_first_commit.covered_call_ids,
+        "the cancelled second pass must not cover another call ID"
+    );
+    assert_eq!(
+        state_after_cancel.saved_tokens, state_after_first_commit.saved_tokens,
+        "the cancelled second pass must not change saved-token accounting"
+    );
+    assert_eq!(
+        codex_core::context_pruner::pass_count(),
+        applied_passes_before + 1
+    );
+    assert!(codex_core::context_pruner::saved_chars() > saved_chars_before);
+    assert_eq!(
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items,)
+            .len(),
+        checkpoints_before.len() + 1
+    );
+    assert_eq!(
+        server.requests().await.len(),
+        6,
+        "cancelling pass two must not issue a fallback or third request"
+    );
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
+async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+
+    const FIRST_CALL_ID: &str = "stop-after-commit-first";
+    const SECOND_CALL_ID: &str = "stop-after-commit-second";
+
+    let (release_first_pass_tx, release_first_pass_rx) = oneshot::channel();
+    let first_pass = vec![
+        StreamingSseChunk {
+            gate: None,
+            body: sse(vec![ev_assistant_message(
+                "stop-after-commit-result",
+                "NOTHING_TO_KEEP",
+            )]),
+        },
+        StreamingSseChunk {
+            gate: Some(release_first_pass_rx),
+            body: sse(vec![ev_completed_with_tokens(
+                "stop-after-commit-result",
+                /*total_tokens*/ 100,
+            )]),
+        },
+    ];
+    let (server, _) = start_streaming_sse_server(vec![
+        vec![StreamingSseChunk {
+            gate: None,
+            body: main_tool_response(
+                FIRST_CALL_ID,
+                /*total_tokens*/ 1_000,
+                "awk 'BEGIN { for (i=0; i<100000; i++) printf \"a \" }'",
+            ),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: final_response(),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: main_tool_response(
+                SECOND_CALL_ID,
+                /*total_tokens*/ 1_000,
+                "awk 'BEGIN { for (i=0; i<100000; i++) printf \"b \" }'",
+            ),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: final_response(),
+        }],
+        first_pass,
+        vec![StreamingSseChunk {
+            gate: None,
+            body: sse(vec![
+                ev_assistant_message("unexpected-next-batch", "NOTHING_TO_KEEP"),
+                ev_completed_with_tokens("unexpected-next-batch", /*total_tokens*/ 100),
+            ]),
+        }],
+    ])
+    .await;
+    let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
+        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.tool_output_token_limit = Some(30_000);
+        config.agent_interrupt_message_enabled = false;
+    });
+    let test = builder.build_with_streaming_server(&server).await?;
+    let codex = Arc::clone(&test.codex);
+
+    test.submit_turn("generate the first commit-boundary output")
+        .await?;
+    test.submit_turn("generate the second commit-boundary output")
+        .await?;
+    codex.flush_rollout().await?;
+
+    let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    let applied_passes_before = codex_core::context_pruner::pass_count();
+    let saved_chars_before = codex_core::context_pruner::saved_chars();
+    let checkpoints_before =
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
+
+    let prune_id = codex.submit(Op::Prune { target_pct: None }).await?;
+    server.wait_for_request_count(5).await;
+    let requests = server.requests().await;
+    let first_prune_body: serde_json::Value =
+        serde_json::from_slice(&requests[4]).expect("parse committed batch request");
+    let first_prune_input = first_prune_body["input"].to_string();
+    assert!(first_prune_input.contains(FIRST_CALL_ID));
+    assert!(
+        !first_prune_input.contains(SECOND_CALL_ID),
+        "the unrequested second oversized output proves another batch remains"
+    );
+
+    let commit_gate = codex_core::test_support::pause_active_prune_commit(&codex).await;
+    let _ = release_first_pass_tx.send(());
+    codex_core::test_support::wait_for_active_prune_commit(&codex).await;
+    codex_core::test_support::interrupt_active_prune_and_wait_for_commit_protection(&codex).await?;
+    commit_gate.release();
+
+    let terminal = loop {
+        let event = codex.next_event().await?;
+        if event.id == prune_id
+            && matches!(
+                event.msg,
+                EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)
+            )
+        {
+            break event.msg;
+        }
+    };
+    assert!(
+        matches!(terminal, EventMsg::TurnComplete(_)),
+        "an interrupt during commit must finish that pass normally: {terminal:?}"
+    );
+
+    let state_after = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    assert_ne!(state_after.raw_history, state_before.raw_history);
+    assert!(state_after.covered_call_ids.contains(FIRST_CALL_ID));
+    assert!(!state_after.covered_call_ids.contains(SECOND_CALL_ID));
+    assert!(state_after.saved_tokens > state_before.saved_tokens);
+    assert_eq!(
+        codex_core::context_pruner::pass_count(),
+        applied_passes_before + 1
+    );
+    assert!(codex_core::context_pruner::saved_chars() > saved_chars_before);
+    assert_eq!(
+        context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items,)
+            .len(),
+        checkpoints_before.len() + 1
+    );
+    assert_eq!(
+        server.requests().await.len(),
+        5,
+        "the committed interrupt must stop the sweep before its next request"
+    );
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial(context_prune_counters)]
 async fn manual_prune_without_completed_tool_output_makes_no_model_request() -> Result<()> {
-    let harness = pressure_harness().await?;
+    let harness = manual_harness().await?;
     let requests =
         mount_sse_sequence(harness.server(), vec![final_response(), final_response()]).await;
 

@@ -16,6 +16,43 @@ use codex_config::types::WindowsSandboxModeToml;
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
 impl App {
+    pub(super) fn begin_manual_memory_refresh(
+        &mut self,
+        origin: &ManualMemoryRequestTarget,
+    ) -> bool {
+        if self.chat_widget.manual_memory_bound_target() != Some(origin)
+            || !self.chat_widget.manual_memory_refresh_requested()
+        {
+            return false;
+        }
+        let pending_context_report = self.chat_widget.manual_memory_context_report_pending();
+        let Some(target) = self.next_manual_memory_target() else {
+            return false;
+        };
+        self.chat_widget
+            .bind_manual_memory_loading(target.clone(), pending_context_report);
+        self.publish_current_dashboard_snapshot();
+        self.launch_manual_memory_status(target);
+        true
+    }
+
+    pub(super) fn finish_manual_memory_status(
+        &mut self,
+        target: &ManualMemoryRequestTarget,
+        completion: ManualMemoryStatusCompletion,
+    ) -> Option<bool> {
+        if self.manual_memory_status.in_flight.as_ref() != Some(target)
+            || !self
+                .chat_widget
+                .apply_manual_memory_status_completion(target, completion)
+        {
+            return None;
+        }
+        self.manual_memory_status.in_flight = None;
+        self.publish_current_dashboard_snapshot();
+        Some(self.chat_widget.take_pending_context_report())
+    }
+
     pub(super) async fn handle_event(
         &mut self,
         tui: &mut tui::Tui,
@@ -139,10 +176,17 @@ impl App {
                 }
                 tui.frame_requester().schedule_frame();
             }
-            AppEvent::RequestContextUsageReport => {
-                let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
-                self.chat_widget.publish_dashboard_snapshot(&totals);
-                self.chat_widget.add_context_usage_output(totals);
+            AppEvent::RequestContextUsageReport(origin)
+            | AppEvent::ManualMemoryStatusRefreshRequested(origin) => {
+                if self.begin_manual_memory_refresh(&origin) {
+                    tui.frame_requester().schedule_frame();
+                }
+            }
+            AppEvent::ManualMemoryStatusLoaded(target, completion) => {
+                if self.finish_manual_memory_status(&target, completion) == Some(true) {
+                    let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                    self.chat_widget.add_context_usage_output(totals);
+                }
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenContextDashboard => {
@@ -157,11 +201,16 @@ impl App {
                         );
                     }
                     None => {
-                        self.chat_widget
-                            .add_error_message("Could not start the local dashboard server".to_string());
+                        self.chat_widget.add_error_message(
+                            "Could not start the local dashboard server".to_string(),
+                        );
                     }
                 }
                 tui.frame_requester().schedule_frame();
+            }
+            AppEvent::RefreshContextDashboard => {
+                let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                self.chat_widget.publish_dashboard_snapshot(&totals);
             }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
                 match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
@@ -911,6 +960,35 @@ impl App {
             AppEvent::OllamaModelsLoaded { models } => {
                 self.chat_widget.on_ollama_models_loaded(models);
             }
+            AppEvent::FetchModels {
+                request_id,
+                provider_id,
+            } => {
+                if self
+                    .chat_widget
+                    .model_popup_request_is_current(request_id, provider_id.as_deref())
+                {
+                    app_server.fetch_models(request_id, provider_id, self.app_event_tx.clone());
+                }
+            }
+            AppEvent::ModelsLoaded {
+                request_id,
+                provider_id,
+                result,
+            } => {
+                let updates_primary =
+                    provider_id.as_deref() == Some(self.chat_widget.active_model_provider_id());
+                if self
+                    .chat_widget
+                    .on_models_loaded(request_id, provider_id, result)
+                    && updates_primary
+                {
+                    self.model_catalog = self.chat_widget.model_catalog();
+                    app_server.set_available_models(self.model_catalog.try_list_models()?);
+                    self.sync_active_thread_service_tier_to_cached_session()
+                        .await;
+                }
+            }
             AppEvent::UpdateReasoningEffort(effort) => {
                 self.on_update_reasoning_effort(effort.clone());
                 self.sync_active_thread_reasoning_setting(app_server, effort)
@@ -929,12 +1007,30 @@ impl App {
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
             }
-            AppEvent::UpdateModelForProvider { model, provider_id } => {
+            AppEvent::ApplyProviderModelSelection {
+                model,
+                provider_id,
+                effort,
+            } => {
+                let Some(params) = self.active_thread_provider_model_setting_update_params(
+                    model.clone(),
+                    provider_id.clone(),
+                    effort.clone(),
+                ) else {
+                    self.chat_widget.add_error_message(
+                        "A conversation must be active before changing its provider.".to_string(),
+                    );
+                    return Ok(AppRunControl::Continue);
+                };
+                if !self.send_thread_settings_update(app_server, params).await {
+                    return Ok(AppRunControl::Continue);
+                }
                 self.chat_widget.set_auto_model_routing_enabled(false);
                 self.chat_widget.set_model(&model);
-                self.sync_active_thread_model_setting(app_server, model, Some(provider_id))
-                    .await;
+                self.on_update_reasoning_effort(effort.clone());
                 self.sync_active_thread_service_tier_to_cached_session()
+                    .await;
+                self.persist_provider_model_selection(app_server, model, provider_id, effort)
                     .await;
             }
             AppEvent::EnableAutoModelRouting => {
@@ -980,11 +1076,13 @@ impl App {
                     self.chat_widget.maybe_send_next_queued_input();
                 }
             }
-            AppEvent::OpenReasoningPopup { model } => {
-                self.chat_widget.open_reasoning_popup(model);
+            AppEvent::OpenReasoningPopup { model, provider_id } => {
+                self.chat_widget
+                    .open_reasoning_popup_for_provider(model, provider_id);
             }
-            AppEvent::OpenAdvancedReasoningPopup { model } => {
-                self.chat_widget.open_advanced_reasoning_popup(model);
+            AppEvent::OpenAdvancedReasoningPopup { model, provider_id } => {
+                self.chat_widget
+                    .open_advanced_reasoning_popup_for_provider(model, provider_id);
             }
             AppEvent::ApplyAdvancedReasoning { model, effort } => {
                 let default_effort =
@@ -1538,51 +1636,6 @@ impl App {
                             message.push_str(&label);
                         }
                         self.chat_widget.add_info_message(message, /*hint*/ None);
-                    }
-                    Err(err) => {
-                        let error = format_config_error(&err);
-                        tracing::error!(
-                            error = %error,
-                            "failed to persist model selection"
-                        );
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save default model: {error}"));
-                    }
-                }
-            }
-            AppEvent::PersistProviderModelSelection { model, provider_id } => {
-                // Ask the provider what window this model actually has. Locally served models
-                // are absent from the bundled catalog, so without this the context meter and
-                // every budget derived from it describe generic fallback metadata instead.
-                let context_window = match self
-                    .chat_widget
-                    .model_provider_base_url(provider_id.as_str())
-                {
-                    Some(base_url) if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
-                        crate::chatwidget::model_popups::fetch_ollama_context_window(
-                            base_url,
-                            model.clone(),
-                        )
-                        .await
-                    }
-                    _ => None,
-                };
-                match crate::config_update::write_config_batch(
-                    app_server.request_handle(),
-                    crate::config_update::build_provider_model_selection_edits(
-                        model.as_str(),
-                        provider_id.as_str(),
-                        context_window,
-                    ),
-                )
-                .await
-                {
-                    Ok(_) => {
-                        tracing::info!("Selected model: {model}, Selected provider: {provider_id}");
-                        self.chat_widget.add_info_message(
-                            format!("Model changed to {model} ({provider_id})"),
-                            /*hint*/ None,
-                        );
                     }
                     Err(err) => {
                         let error = format_config_error(&err);
@@ -2240,6 +2293,65 @@ impl App {
             }
         }
         Ok(AppRunControl::Continue)
+    }
+
+    async fn persist_provider_model_selection(
+        &mut self,
+        app_server: &AppServerSession,
+        model: String,
+        provider_id: String,
+        effort: Option<ReasoningEffortConfig>,
+    ) {
+        // Ask the provider what window this model actually has. Locally served models
+        // are absent from the bundled catalog, so without this the context meter and
+        // every budget derived from it describe generic fallback metadata instead.
+        let context_window = match self
+            .chat_widget
+            .model_provider_base_url(provider_id.as_str())
+        {
+            Some(base_url) if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
+                crate::chatwidget::model_popups::fetch_ollama_context_window(
+                    base_url,
+                    model.clone(),
+                )
+                .await
+            }
+            _ => None,
+        };
+        match crate::config_update::write_config_batch(
+            app_server.request_handle(),
+            crate::config_update::build_provider_model_selection_edits(
+                model.as_str(),
+                provider_id.as_str(),
+                effort.as_ref(),
+                context_window,
+            ),
+        )
+        .await
+        {
+            Ok(_) => {
+                let effort_label = effort
+                    .as_ref()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| "default".to_string());
+                tracing::info!(
+                    "Selected model: {model}, Selected provider: {provider_id}, Selected effort: {effort_label}"
+                );
+                self.chat_widget.add_info_message(
+                    format!("Model changed to {model} ({provider_id}) · {effort_label}"),
+                    /*hint*/ None,
+                );
+            }
+            Err(err) => {
+                let error = format_config_error(&err);
+                tracing::error!(
+                    error = %error,
+                    "failed to persist model selection"
+                );
+                self.chat_widget
+                    .add_error_message(format!("Failed to save default model: {error}"));
+            }
+        }
     }
 
     async fn apply_keymap_capture(
