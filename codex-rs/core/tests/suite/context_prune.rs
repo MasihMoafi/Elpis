@@ -20,7 +20,6 @@ use core_test_support::wait_for_event;
 use serde_json::json;
 use serial_test::serial;
 use std::sync::Arc;
-use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 
@@ -507,16 +506,23 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
             )]),
         },
     ];
-    let retry_prune = vec![StreamingSseChunk {
-        gate: None,
-        body: sse(vec![
-            ev_assistant_message(
+    let (release_retry_tx, release_retry_rx) = oneshot::channel();
+    let retry_prune = vec![
+        StreamingSseChunk {
+            gate: None,
+            body: sse(vec![ev_assistant_message(
                 "retry-prune-result",
                 &format!("{OLD_CALL_ID}: command output was generated and inspected"),
-            ),
-            ev_completed_with_tokens("retry-prune-result", /*total_tokens*/ 100),
-        ]),
-    }];
+            )]),
+        },
+        StreamingSseChunk {
+            gate: Some(release_retry_rx),
+            body: sse(vec![ev_completed_with_tokens(
+                "retry-prune-result",
+                /*total_tokens*/ 100,
+            )]),
+        },
+    ];
     let (server, _) = start_streaming_sse_server(vec![
         vec![StreamingSseChunk {
             gate: None,
@@ -565,7 +571,7 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
     std::fs::write(&debug_path, debug_before)?;
     std::fs::write(&report_path, report_before)?;
 
-    let saved_tokens_before = codex.context_prune_saved_tokens().await;
+    let prune_state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     let applied_passes_before = codex_core::context_pruner::pass_count();
     let saved_chars_before = codex_core::context_pruner::saved_chars();
     let checkpoints_before = context_prune_checkpoints(
@@ -585,11 +591,7 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
     assert!(first_prune_body["input"].to_string().contains(OLD_CALL_ID));
     let first_prune_input = first_prune_body["input"].clone();
 
-    codex.submit(Op::Interrupt).await?;
-    // Give the submission loop time to cancel the task before allowing the valid
-    // response to finish. This stays well inside the task runner's 100 ms grace period,
-    // so the pre-fix code can still consume the late response and expose the mutation.
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    codex_core::test_support::interrupt_active_prune_and_wait_for_cancellation(&codex).await?;
     let _ = release_prune_tx.send(());
     let terminal = wait_for_event(&codex, |event| {
         matches!(event, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
@@ -606,9 +608,17 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
         3,
         "cancellation must not issue a fallback pruning-model request"
     );
+    let prune_state_after = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     assert_eq!(
-        codex.context_prune_saved_tokens().await,
-        saved_tokens_before,
+        prune_state_after.raw_history, prune_state_before.raw_history,
+        "cancelled pruning must not change live working history"
+    );
+    assert_eq!(
+        prune_state_after.covered_call_ids, prune_state_before.covered_call_ids,
+        "cancelled pruning must not mark call IDs as covered"
+    );
+    assert_eq!(
+        prune_state_after.saved_tokens, prune_state_before.saved_tokens,
         "cancelled pruning must not change saved-token accounting"
     );
     assert_eq!(
@@ -646,22 +656,60 @@ async fn manual_prune_cancellation_before_mutation_preserves_history_and_writes_
         "cancelled pruning must not persist a replacement checkpoint"
     );
 
-    // Retrying the same manual prune must select the exact same prompt input. This
-    // checks both the byte-for-byte working history and the covered-call set without
-    // adding a test-only state accessor to production code.
+    // Prompt equality is secondary evidence that the unchanged live state selects the
+    // same batch again on the ordinary retry path.
     let retry_id = codex.submit(Op::Prune { target_pct: None }).await?;
-    loop {
-        let event = codex.next_event().await?;
-        if event.id == retry_id && matches!(event.msg, EventMsg::TurnComplete(_)) {
-            break;
-        }
-    }
+    server.wait_for_request_count(4).await;
     let requests = server.requests().await;
     assert_eq!(requests.len(), 4);
     let retry_body: serde_json::Value =
         serde_json::from_slice(&requests[3]).expect("parse retry prune request");
     assert_eq!(retry_body["model"], PRUNE_MODEL);
     assert_eq!(retry_body["input"], first_prune_input);
+
+    // Pause immediately after the commit decision so Ctrl-C deterministically reaches
+    // the task before the durable sequence starts.
+    let commit_gate = codex_core::test_support::pause_active_prune_commit(&codex).await;
+    let _ = release_retry_tx.send(());
+    codex_core::test_support::wait_for_active_prune_commit(&codex).await;
+    codex_core::test_support::interrupt_active_prune_and_wait_for_commit_protection(&codex)
+        .await?;
+    commit_gate.release();
+
+    let committed_terminal = loop {
+        let event = codex.next_event().await?;
+        if event.id == retry_id
+            && matches!(event.msg, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
+        {
+            break event.msg;
+        }
+    };
+    assert!(
+        matches!(committed_terminal, EventMsg::TurnComplete(_)),
+        "an interrupt after commit must let pruning finish: {committed_terminal:?}"
+    );
+
+    let committed_state = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    assert_ne!(committed_state.raw_history, prune_state_before.raw_history);
+    assert!(committed_state.covered_call_ids.contains(OLD_CALL_ID));
+    assert!(committed_state.saved_tokens > prune_state_before.saved_tokens);
+    assert_eq!(
+        codex_core::context_pruner::pass_count(),
+        applied_passes_before + 1
+    );
+    assert!(codex_core::context_pruner::saved_chars() > saved_chars_before);
+    assert_eq!(std::fs::read_dir(&passes_dir)?.count(), 1);
+    assert_ne!(std::fs::read(&report_path)?, report_before);
+    assert_eq!(
+        context_prune_checkpoints(
+            codex
+                .load_history(/*include_archived*/ false)
+                .await?
+                .items,
+        )
+        .len(),
+        checkpoints_before.len() + 1
+    );
 
     server.shutdown().await;
     Ok(())

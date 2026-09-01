@@ -5,6 +5,8 @@
 //! slow, or unavailable pruning pass must never break or stall the user's actual
 //! turn.
 
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::client::ModelClientSession;
@@ -12,6 +14,7 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::context_pruner;
 use crate::responses_metadata::CodexResponsesRequestKind;
+use crate::tasks::TaskCancellationBoundary;
 use codex_features::Feature;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
@@ -40,6 +43,49 @@ enum Escalation {
 }
 
 struct PruneCancelled;
+
+struct PruneDebugRecord {
+    model_slug: String,
+    input_text: String,
+    reason: String,
+    output_text: Option<String>,
+}
+
+impl PruneDebugRecord {
+    fn new(
+        model_slug: &str,
+        input_text: &str,
+        reason: &str,
+        output_text: Option<&str>,
+    ) -> Self {
+        Self {
+            model_slug: model_slug.to_string(),
+            input_text: input_text.to_string(),
+            reason: reason.to_string(),
+            output_text: output_text.map(ToString::to_string),
+        }
+    }
+}
+
+async fn begin_prune_commit(
+    cancellation_token: Option<&CancellationToken>,
+    cancellation_boundary: Option<&TaskCancellationBoundary>,
+) -> bool {
+    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        return false;
+    }
+    let Some(cancellation_boundary) = cancellation_boundary else {
+        return true;
+    };
+    if !cancellation_boundary.try_commit() {
+        return false;
+    }
+    // The session abort path claims the same atomic decision before removing the
+    // active task. Once commit wins, that path leaves the task registered and waits
+    // for normal TurnComplete delivery instead of aborting a partially applied pass.
+    cancellation_boundary.wait_for_commit_release_for_test().await;
+    true
+}
 
 async fn await_or_cancelled<T>(
     cancellation_token: Option<&CancellationToken>,
@@ -72,6 +118,7 @@ pub(super) async fn maybe_run_context_prune(sess: &Arc<Session>, turn_context: &
         None,
         Escalation::Allowed,
         None,
+        None,
     )
     .await;
 }
@@ -96,12 +143,13 @@ pub(super) async fn prune_before_request(sess: &Arc<Session>, turn_context: &Arc
         None,
         Escalation::Deferred,
         None,
+        None,
     )
     .await;
 }
 
 pub(crate) async fn run_manual_context_prune(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
-    run_manual_context_prune_with_target(sess, turn_context, None, None).await;
+    run_manual_context_prune_with_target(sess, turn_context, None, None, None).await;
 }
 
 pub(crate) async fn run_manual_context_prune_with_target(
@@ -109,6 +157,7 @@ pub(crate) async fn run_manual_context_prune_with_target(
     turn_context: &Arc<TurnContext>,
     target_pct: Option<i64>,
     cancellation_token: Option<&CancellationToken>,
+    cancellation_boundary: Option<&TaskCancellationBoundary>,
 ) {
     if let Some(pct) = target_pct {
         run_context_prune(
@@ -118,6 +167,7 @@ pub(crate) async fn run_manual_context_prune_with_target(
             Some(pct),
             Escalation::Allowed,
             cancellation_token,
+            cancellation_boundary,
         )
         .await;
         return;
@@ -133,6 +183,7 @@ pub(crate) async fn run_manual_context_prune_with_target(
             None,
             Escalation::Allowed,
             cancellation_token,
+            cancellation_boundary,
         )
         .await
         {
@@ -170,6 +221,7 @@ async fn run_context_prune(
     target_pct: Option<i64>,
     escalation: Escalation,
     cancellation_token: Option<&CancellationToken>,
+    cancellation_boundary: Option<&TaskCancellationBoundary>,
 ) -> bool {
     if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
         return false;
@@ -282,8 +334,9 @@ async fn run_context_prune(
     // incremental request state. This lets the pressure check run between tool
     // follow-ups without perturbing the user's model session.
     let mut prune_client_session = sess.services.model_client.load().new_session();
+    let log_dir = sess.codex_home().await.join("logs");
 
-    let (pass_result, attempts) = match run_prune_pass(
+    let (pass_result, attempts, debug_records) = match run_prune_pass(
         sess,
         turn_context,
         &mut prune_client_session,
@@ -300,18 +353,17 @@ async fn run_context_prune(
     }
 
     let Some((record, raw, model_slug, usage, pass_id)) = pass_result else {
-        let log_dir = sess.codex_home().await.join("logs");
-        let mut state = sess.state.lock().await;
-        if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+        if !begin_prune_commit(cancellation_token, cancellation_boundary).await {
             return false;
         }
+        write_prune_debug_records(&log_dir, &debug_records);
         if let Err(err) = context_prune_audit::record_failed_attempts(&log_dir, &attempts) {
             tracing::warn!("Failed to record failed pruning attempt audit: {err:#}");
         }
         // Fail open. A failed or malformed pruning pass must not alter history or
         // mark any item as covered; the same batch remains eligible for a later pass,
         // once the backoff this records has elapsed.
-        let failures = state.record_context_prune_failure();
+        let failures = sess.state.lock().await.record_context_prune_failure();
         tracing::warn!(
             "Context prune pass failed ({failures} in a row); retrying after {:?}",
             context_pruner::retry_delay_after_failures(failures)
@@ -328,12 +380,11 @@ async fn run_context_prune(
     after_history.replace(after_items.clone());
     let after_model_items = after_history.for_prompt(&turn_context.model_info.input_modalities);
     let ace_input = context_pruner::build_prune_input(&batch, active_question.as_deref());
-    let log_dir = sess.codex_home().await.join("logs");
     let session_id = sess.session_id().to_string();
-    let mut state = sess.state.lock().await;
-    if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
+    if !begin_prune_commit(cancellation_token, cancellation_boundary).await {
         return false;
     }
+    write_prune_debug_records(&log_dir, &debug_records);
     let audit = match context_prune_audit::write_applied_pass(
         &log_dir,
         context_prune_audit::PruneAuditInput {
@@ -357,12 +408,13 @@ async fn run_context_prune(
         Ok(audit) => audit,
         Err(err) => {
             tracing::warn!("Context prune audit failed; preserving history: {err:#}");
-            state.record_context_prune_failure();
+            sess.state.lock().await.record_context_prune_failure();
             return false;
         }
     };
 
     let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(saved);
+    let mut state = sess.state.lock().await;
     let (context_prune_saved_tokens, window_number, window_ids, world_state_snapshot) = {
         // `ContextManager::replace` unconditionally clears the world-state baseline (it
         // has no way to know whether the rewritten items still match it). A prune pass
@@ -460,6 +512,7 @@ async fn run_prune_pass(
             String,
         )>,
         Vec<context_prune_audit::PruneAttemptRecord>,
+        Vec<PruneDebugRecord>,
     ),
     PruneCancelled,
 > {
@@ -468,6 +521,7 @@ async fn run_prune_pass(
     }
     let pass_id = uuid::Uuid::now_v7().to_string();
     let mut attempts = Vec::new();
+    let mut debug_records = Vec::new();
     let primary_slug =
         if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
             context_pruner::PRUNE_MODEL_SLUG
@@ -485,6 +539,7 @@ async fn run_prune_pass(
         &pass_id,
         context_prune_audit::PruneAttemptKind::Primary,
         &mut attempts,
+        &mut debug_records,
         cancellation_token,
     )
     .await?
@@ -492,6 +547,7 @@ async fn run_prune_pass(
         return Ok((
             Some((record, output, primary_slug.to_string(), usage, pass_id)),
             attempts,
+            debug_records,
         ));
     }
 
@@ -510,6 +566,7 @@ async fn run_prune_pass(
             &pass_id,
             context_prune_audit::PruneAttemptKind::Fallback,
             &mut attempts,
+            &mut debug_records,
             cancellation_token,
         )
         .await?
@@ -517,11 +574,12 @@ async fn run_prune_pass(
             return Ok((
                 Some((record, output, fallback_slug.to_string(), usage, pass_id)),
                 attempts,
+                debug_records,
             ));
         }
     }
 
-    Ok((None, attempts))
+    Ok((None, attempts, debug_records))
 }
 
 async fn try_validated_prune_pass(
@@ -534,6 +592,7 @@ async fn try_validated_prune_pass(
     pass_id: &str,
     kind: context_prune_audit::PruneAttemptKind,
     attempts: &mut Vec<context_prune_audit::PruneAttemptRecord>,
+    debug_records: &mut Vec<PruneDebugRecord>,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<
     Option<(
@@ -553,6 +612,7 @@ async fn try_validated_prune_pass(
         batch,
         active_question,
         prune_model_slug,
+        debug_records,
         cancellation_token,
     )
     .await?
@@ -566,14 +626,12 @@ async fn try_validated_prune_pass(
                     "Context prune response was malformed for model {prune_model_slug}; preserving history"
                 );
                 let input_text = context_pruner::build_prune_input(batch, active_question);
-                log_prune_debug(
-                    sess,
+                debug_records.push(PruneDebugRecord::new(
                     prune_model_slug,
                     &input_text,
                     "response did not parse as a decision manifest",
                     Some(&output),
-                )
-                .await;
+                ));
                 attempts.push(context_prune_audit::PruneAttemptRecord {
                     pass_id: pass_id.to_string(),
                     timestamp,
@@ -624,6 +682,7 @@ async fn try_stream_prune_pass(
     batch: &[(String, String)],
     active_question: Option<&str>,
     prune_model_slug: &str,
+    debug_records: &mut Vec<PruneDebugRecord>,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<
     Result<(String, Option<TokenUsage>), (String, Option<TokenUsage>)>,
@@ -686,14 +745,12 @@ async fn try_stream_prune_pass(
         Err(err) => {
             let msg = format!("stream could not be opened: {err}");
             tracing::warn!("Context prune stream failed for model {prune_model_slug}: {err}");
-            log_prune_debug(
-                sess,
+            debug_records.push(PruneDebugRecord::new(
                 prune_model_slug,
                 &input_text,
                 &msg,
                 None,
-            )
-            .await;
+            ));
             return Ok(Err((msg, None)));
         }
     };
@@ -713,7 +770,12 @@ async fn try_stream_prune_pass(
         }
         Err((reason, _)) => {
             tracing::warn!("Context prune LLM stream error/empty ({prune_model_slug}): {reason}");
-            log_prune_debug(sess, prune_model_slug, &input_text, reason, None).await;
+            debug_records.push(PruneDebugRecord::new(
+                prune_model_slug,
+                &input_text,
+                reason,
+                None,
+            ));
         }
     }
     Ok(outcome)
@@ -765,14 +827,10 @@ fn process_prune_stream_events<E: std::fmt::Display>(
     }
 }
 
-async fn log_prune_debug(
-    sess: &Arc<Session>,
-    model_slug: &str,
-    input_text: &str,
-    reason: &str,
-    output_text: Option<&str>,
-) {
-    let log_dir = sess.codex_home().await.join("logs");
+fn write_prune_debug_records(log_dir: &Path, records: &[PruneDebugRecord]) {
+    if records.is_empty() {
+        return;
+    }
     let _ = std::fs::create_dir_all(&log_dir);
 
     // Raw debug log only; prune_report.md describes the last successfully
@@ -784,13 +842,29 @@ async fn log_prune_debug(
         .open(debug_file)
     {
         use std::io::Write;
-        let ts = chrono::Utc::now().to_rfc3339();
-        let out_str = output_text.unwrap_or("<none>");
-        let _ = writeln!(
-            file,
-            "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {model_slug}\nFAILURE: {reason}\n--- INPUT BATCH SENT TO LLM ---\n{input_text}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n"
-        );
+        for record in records {
+            let ts = chrono::Utc::now().to_rfc3339();
+            let out_str = record.output_text.as_deref().unwrap_or("<none>");
+            let _ = writeln!(
+                file,
+                "=== LAYER 2 PRUNING PASS [{ts}] ===\nMODEL: {}\nFAILURE: {}\n--- INPUT BATCH SENT TO LLM ---\n{}\n--- LLM RESPONSE RECEIVED ---\n{out_str}\n=========================================\n",
+                record.model_slug,
+                record.reason,
+                record.input_text,
+            );
+        }
     }
+}
+
+pub(crate) async fn state_snapshot_for_test(
+    sess: &Arc<Session>,
+) -> (Vec<ResponseItem>, HashSet<String>, u64) {
+    let state = sess.state.lock().await;
+    (
+        state.history.raw_items().to_vec(),
+        state.context_prune_covered.clone(),
+        state.context_prune_saved_tokens,
+    )
 }
 
 #[cfg(test)]

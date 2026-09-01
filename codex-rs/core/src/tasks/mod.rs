@@ -7,12 +7,16 @@ mod review;
 mod user_shell;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
 use codex_extension_api::ExtensionData;
 use futures::future::BoxFuture;
 use tokio::select;
+use tokio::sync::futures::OwnedNotified;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
@@ -65,8 +69,145 @@ pub(crate) use user_shell::execute_user_shell_command;
 
 const GRACEFULL_INTERRUPTION_TIMEOUT_MS: u64 = 100;
 const TASK_COMPACT_METRIC: &str = "codex.task.compact";
+const TASK_RUNNING: u8 = 0;
+const TASK_CANCELLED: u8 = 1;
+const TASK_COMMITTED: u8 = 2;
 
 pub(crate) type SessionTaskResult = CodexResult<Option<String>>;
+
+#[derive(Clone, Default)]
+pub(crate) struct TaskCancellationBoundary {
+    inner: Arc<TaskCancellationBoundaryInner>,
+}
+
+#[derive(Default)]
+struct TaskCancellationBoundaryInner {
+    decision: AtomicU8,
+    decided: Notify,
+    cancel_requested: AtomicBool,
+    cancel_request_observed: Notify,
+    cancellation_delivered: AtomicBool,
+    cancellation_delivery_observed: Notify,
+    commit_paused_for_test: AtomicBool,
+    commit_released_for_test: Notify,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TaskCancellationDecision {
+    Cancelled,
+    Committed,
+}
+
+enum ActiveTurnForAbort {
+    Missing,
+    CommitInProgress(OwnedNotified),
+    Ready(ActiveTurn),
+}
+
+impl TaskCancellationBoundary {
+    pub(crate) fn try_cancel(&self) -> bool {
+        self.inner.cancel_requested.store(true, Ordering::Release);
+        self.inner.cancel_request_observed.notify_waiters();
+        match self.inner.decision.compare_exchange(
+            TASK_RUNNING,
+            TASK_CANCELLED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                self.inner.decided.notify_waiters();
+                true
+            }
+            Err(TASK_CANCELLED) => true,
+            Err(TASK_COMMITTED) => false,
+            Err(state) => unreachable!("invalid task cancellation decision: {state}"),
+        }
+    }
+
+    pub(crate) fn try_commit(&self) -> bool {
+        match self.inner.decision.compare_exchange(
+            TASK_RUNNING,
+            TASK_COMMITTED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                self.inner.decided.notify_waiters();
+                true
+            }
+            Err(TASK_COMMITTED) => true,
+            Err(TASK_CANCELLED) => false,
+            Err(state) => unreachable!("invalid task cancellation decision: {state}"),
+        }
+    }
+
+    pub(crate) async fn wait_for_decision(&self) -> TaskCancellationDecision {
+        loop {
+            let notified = self.inner.decided.notified();
+            match self.inner.decision.load(Ordering::Acquire) {
+                TASK_RUNNING => notified.await,
+                TASK_CANCELLED => return TaskCancellationDecision::Cancelled,
+                TASK_COMMITTED => return TaskCancellationDecision::Committed,
+                state => unreachable!("invalid task cancellation decision: {state}"),
+            }
+        }
+    }
+
+    pub(crate) async fn wait_for_cancel_request(&self) {
+        loop {
+            let notified = self.inner.cancel_request_observed.notified();
+            if self.inner.cancel_requested.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn acknowledge_cancellation_delivery(&self) {
+        self.inner
+            .cancellation_delivered
+            .store(true, Ordering::Release);
+        self.inner.cancellation_delivery_observed.notify_waiters();
+    }
+
+    pub(crate) async fn wait_for_cancellation_delivery(&self) {
+        loop {
+            let notified = self.inner.cancellation_delivery_observed.notified();
+            if self.inner.cancellation_delivered.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    pub(crate) fn pause_commit_for_test(&self) {
+        assert_eq!(
+            self.inner.decision.load(Ordering::Acquire),
+            TASK_RUNNING,
+            "commit can only be paused before the task decides"
+        );
+        self.inner
+            .commit_paused_for_test
+            .store(true, Ordering::Release);
+    }
+
+    pub(crate) fn release_commit_for_test(&self) {
+        self.inner
+            .commit_paused_for_test
+            .store(false, Ordering::Release);
+        self.inner.commit_released_for_test.notify_waiters();
+    }
+
+    pub(crate) async fn wait_for_commit_release_for_test(&self) {
+        loop {
+            let notified = self.inner.commit_released_for_test.notified();
+            if !self.inner.commit_paused_for_test.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InterruptedTurnHistoryMarker {
@@ -198,6 +339,12 @@ pub(crate) trait SessionTask: Send + Sync + 'static {
     /// Returns the tracing name for a spawned task span.
     fn span_name(&self) -> &'static str;
 
+    /// Returns the task's cancel-vs-commit boundary, when it has durable work
+    /// that must finish atomically once committed.
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary> {
+        None
+    }
+
     /// Executes the task until completion or cancellation.
     ///
     /// Implementations typically stream protocol events using `session` and
@@ -237,6 +384,8 @@ pub(crate) trait AnySessionTask: Send + Sync + 'static {
 
     fn span_name(&self) -> &'static str;
 
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary>;
+
     fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
@@ -262,6 +411,10 @@ where
 
     fn span_name(&self) -> &'static str {
         SessionTask::span_name(self)
+    }
+
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary> {
+        SessionTask::cancellation_boundary(self)
     }
 
     fn run(
@@ -471,15 +624,21 @@ impl Session {
         let mut aborted_turn = false;
         let mut active_turn_to_clear = None;
         let mut turn_context = None;
-        if let Some(mut active_turn) = self.take_active_turn().await {
-            let task = active_turn.task.take();
-            aborted_turn = task.is_some();
-            turn_context = task.as_ref().map(|task| Arc::clone(&task.turn_context));
-            if let Some(task) = task {
-                self.handle_task_abort(task, reason.clone()).await;
+        match self.take_active_turn_for_abort(None).await {
+            ActiveTurnForAbort::Missing => {}
+            ActiveTurnForAbort::CommitInProgress(done) => {
+                done.await;
             }
-            if aborted_turn {
-                active_turn_to_clear = Some(active_turn);
+            ActiveTurnForAbort::Ready(mut active_turn) => {
+                let task = active_turn.task.take();
+                aborted_turn = task.is_some();
+                turn_context = task.as_ref().map(|task| Arc::clone(&task.turn_context));
+                if let Some(task) = task {
+                    self.handle_task_abort(task, reason.clone()).await;
+                }
+                if aborted_turn {
+                    active_turn_to_clear = Some(active_turn);
+                }
             }
         }
 
@@ -502,20 +661,13 @@ impl Session {
         turn_id: &str,
         reason: TurnAbortReason,
     ) -> bool {
-        let active_turn = {
-            let mut active = self.active_turn.lock().await;
-            if active
-                .as_ref()
-                .and_then(|active_turn| active_turn.task.as_ref())
-                .is_some_and(|task| task.turn_context.sub_id == turn_id)
-            {
-                active.take()
-            } else {
-                None
+        let mut active_turn = match self.take_active_turn_for_abort(Some(turn_id)).await {
+            ActiveTurnForAbort::Missing => return false,
+            ActiveTurnForAbort::CommitInProgress(done) => {
+                done.await;
+                return false;
             }
-        };
-        let Some(mut active_turn) = active_turn else {
-            return false;
+            ActiveTurnForAbort::Ready(active_turn) => active_turn,
         };
 
         let task = active_turn.task.take();
@@ -762,9 +914,35 @@ impl Session {
         }
     }
 
-    async fn take_active_turn(&self) -> Option<ActiveTurn> {
+    async fn take_active_turn_for_abort(
+        &self,
+        expected_turn_id: Option<&str>,
+    ) -> ActiveTurnForAbort {
         let mut active = self.active_turn.lock().await;
-        active.take()
+        let Some(active_turn) = active.as_ref() else {
+            return ActiveTurnForAbort::Missing;
+        };
+        if expected_turn_id.is_some_and(|expected_turn_id| {
+            active_turn
+                .task
+                .as_ref()
+                .is_none_or(|task| task.turn_context.sub_id != expected_turn_id)
+        }) {
+            return ActiveTurnForAbort::Missing;
+        }
+        if let Some(task) = active_turn.task.as_ref()
+            && let Some(boundary) = task.task.cancellation_boundary()
+            && !boundary.try_cancel()
+        {
+            return ActiveTurnForAbort::CommitInProgress(
+                Arc::clone(&task.done).notified_owned(),
+            );
+        }
+        ActiveTurnForAbort::Ready(
+            active
+                .take()
+                .expect("active turn disappeared while claiming cancellation"),
+        )
     }
 
     pub(crate) async fn close_unified_exec_processes(&self) {
@@ -792,14 +970,18 @@ impl Session {
         }
 
         trace!(task_kind = ?task.kind, sub_id, "aborting running task");
+        let done = Arc::clone(&task.done).notified_owned();
         task.cancellation_token.cancel();
+        if let Some(boundary) = task.task.cancellation_boundary() {
+            boundary.acknowledge_cancellation_delivery();
+        }
         task.turn_context
             .turn_metadata_state
             .cancel_git_enrichment_task();
         let session_task = task.task;
 
         select! {
-            _ = task.done.notified() => {
+            _ = done => {
             },
             _ = tokio::time::sleep(Duration::from_millis(GRACEFULL_INTERRUPTION_TIMEOUT_MS)) => {
                 warn!("task {sub_id} didn't complete gracefully after {}ms", GRACEFULL_INTERRUPTION_TIMEOUT_MS);
