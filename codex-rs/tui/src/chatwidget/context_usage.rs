@@ -142,6 +142,7 @@ impl ChatWidget {
         if !std::mem::take(&mut self.context_prune_report_pending) {
             return;
         }
+        self.add_info_message("Manual pruning command finished".to_string(), None);
         self.app_event_tx
             .send(crate::app_event::AppEvent::RequestContextUsageReport);
     }
@@ -422,9 +423,7 @@ impl ChatWidget {
         let mut after_chart = vec![Line::default()];
         after_chart.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
         if self.last_prune_saved_tokens.is_none() {
-            after_chart.push(Line::from(
-                "   No Ace pruning passes run yet — context is below trigger floor.".dim(),
-            ));
+            after_chart.push(no_prune_totals_line());
         } else {
             after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
@@ -900,6 +899,10 @@ pub(super) fn saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static
     })
 }
 
+fn no_prune_totals_line() -> Line<'static> {
+    "   No Ace pruning totals recorded yet".dim().into()
+}
+
 fn newly_reclaimed_tokens(previous_total: Option<u64>, current_total: u64) -> u64 {
     current_total.saturating_sub(previous_total.unwrap_or(0))
 }
@@ -1028,6 +1031,19 @@ mod tests {
         assert_eq!(newly_reclaimed_tokens(None, 4_200), 4_200);
         assert_eq!(newly_reclaimed_tokens(Some(4_200), 7_000), 2_800);
         assert_eq!(newly_reclaimed_tokens(Some(7_000), 4_200), 0);
+    }
+
+    #[test]
+    fn no_prune_totals_copy_is_neutral_about_automatic_triggering() {
+        let text = no_prune_totals_line()
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(text, "   No Ace pruning totals recorded yet");
+        assert!(!text.contains("trigger"));
+        assert!(!text.contains("automatic"));
     }
 
     #[test]

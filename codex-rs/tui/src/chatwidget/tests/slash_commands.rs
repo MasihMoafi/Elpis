@@ -155,10 +155,29 @@ async fn slash_prune_submits_selective_prune_instead_of_compaction() {
     chat.dispatch_command(SlashCommand::Prune);
 
     assert!(chat.bottom_pane.is_task_running());
+    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
     match rx.try_recv() {
         Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => {}
         other => panic!("expected selective prune op to be submitted, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn slash_prune_status_identifies_a_manual_action() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Prune);
+
+    let event = rx.try_recv().expect("manual prune status");
+    let AppEvent::InsertHistoryCell(cell) = event else {
+        panic!("expected manual prune status, got {event:?}");
+    };
+    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+    assert!(rendered.contains("Manual pruning"), "status: {rendered:?}");
+    assert!(
+        !rendered.contains("Automatic pruning"),
+        "manual status must not claim automatic invocation: {rendered:?}"
+    );
 }
 
 #[tokio::test]
@@ -208,6 +227,77 @@ async fn slash_force_prune_with_percentage_submits_target_to_runtime() {
             })) => break,
             Ok(_) => continue,
             other => panic!("expected targeted prune op, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn slash_force_prune_status_identifies_its_manual_targeting() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::ForcePrune, "20%".to_string(), Vec::new());
+
+    let event = rx.try_recv().expect("manual force-prune status");
+    let AppEvent::InsertHistoryCell(cell) = event else {
+        panic!("expected manual force-prune status, got {event:?}");
+    };
+    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+    assert!(rendered.contains("Manual pruning"), "status: {rendered:?}");
+    assert!(rendered.contains("20%"), "status: {rendered:?}");
+    assert!(
+        !rendered.contains("Automatic pruning"),
+        "manual status must not claim automatic invocation: {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.dispatch_command(SlashCommand::Prune);
+    let _ = rx.try_recv().expect("manual prune start status");
+    let _ = rx.try_recv().expect("manual prune operation");
+
+    handle_turn_completed(&mut chat, "prune-turn", /*duration_ms*/ None);
+
+    let mut completion_messages = Vec::new();
+    let mut requested_context_report = false;
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            AppEvent::InsertHistoryCell(cell) => completion_messages
+                .push(lines_to_single_string(&cell.display_lines(/*width*/ 80))),
+            AppEvent::RequestContextUsageReport => requested_context_report = true,
+            _ => {}
+        }
+    }
+    assert!(requested_context_report, "normal manual completion refreshes context usage");
+    assert_eq!(
+        completion_messages,
+        vec!["Manual pruning command finished\n"],
+        "normal completion must be neutral about applied work"
+    );
+}
+
+#[tokio::test]
+async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.dispatch_command(SlashCommand::Prune);
+    let _ = rx.try_recv().expect("manual prune start status");
+    let _ = rx.try_recv().expect("manual prune operation");
+
+    chat.finalize_turn();
+    handle_turn_completed(&mut chat, "unrelated-turn", /*duration_ms*/ None);
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::RequestContextUsageReport),
+            "failed or interrupted manual tracking must not refresh a later turn"
+        );
+        if let AppEvent::InsertHistoryCell(cell) = event {
+            assert_ne!(
+                lines_to_single_string(&cell.display_lines(/*width*/ 80)),
+                "Manual pruning command finished\n",
+                "failed or interrupted manual tracking must not complete later"
+            );
         }
     }
 }

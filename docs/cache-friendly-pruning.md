@@ -5,7 +5,8 @@ the prompt cache. Companion to `docs/context.md` (what pruning does) and
 `docs/prompt-caching.md` (how the cache is addressed).
 
 > Automatic Ace pruning is disabled by default. The cycle described here applies only when
-> `features.automatic_context_pruning = true`; manual `/prune` remains available.
+> `features.automatic_context_pruning = true` was saved in `/settings` before this conversation
+> started. Manual `/prune` and `/force-prune` remain available regardless of that setting.
 
 ## The old behaviour
 
@@ -142,6 +143,8 @@ request now falls back to instead of the initial prefix.
 - Every applied pass still writes a full audit record (`~/.elpis/logs/pruning/`) and a
   rollout checkpoint. Raw evidence remains intact in the rollout.
 - `/prune` is unaffected: it passes an explicit trigger, so it never consults the cycle gate.
+  `/force-prune` is also manual; its `pressure` audit value names its targeted selection
+  strategy, not automatic invocation.
 
 ## Remaining limitations
 

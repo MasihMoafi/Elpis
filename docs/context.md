@@ -1,4 +1,4 @@
-# Elpis Context Sovereignty & 4-Layer Pruning Pipeline
+# Elpis Context Sovereignty
 
 Elpis enforces **Context Sovereignty**: the principle that context is a strictly budgeted working set, not a dumped chat transcript. The user maintains live visibility and explicit control over every byte admitted to the agent's context window.
 ---
@@ -11,53 +11,32 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 
 ---
 
-## 2. The 4-Layer Pruning Pipeline
+## 2. Three context-control mechanisms and native compaction
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
-When enabled, Layer 3's automatic mode uses one pressure trigger and a gated cycle rather
-than running continuously. An earlier "steady" trigger also fired on backlog size alone,
-independently of how full the window was; it was removed because it produced runs of tiny
-passes inside the healthy 20-30% band, and every pass discards the reusable prompt-cache
-prefix past its first rewritten item. The case it was meant to cover -- a single turn that
-balloons past the boundary without ever ending -- is already handled here, because the
-eligible region is cut by recency rather than at a turn boundary. See
-`cache-friendly-pruning.md`.
+Elpis has three context-control mechanisms. Ace pruning is optional; native Codex compaction
+is independent of it rather than a fourth pruning layer or fallback.
 
-The model-backed Ace pass is **manual by default** because the current evaluation does not
-show a task-success or cost-per-success benefit. `/prune` and `/compact` remain available.
-The pressure cycle can be enabled explicitly with
-`features.automatic_context_pruning = true` for continued experiments.
-
-### Pipeline Layer Comparison
-
-| Layer | Trigger | Scope | Behavior | Failure Recovery |
+| Mechanism | Trigger | Scope | Behavior | Failure Recovery |
 | :--- | :--- | :--- | :--- | :--- |
-| **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
-| **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
-| **3. Ace Pruning** | Explicit `/prune` or `/compact`; optionally, exact model-window use reaches 30% when `features.automatic_context_pruning = true` | Oldest eligible tool exploration, including the turn still running in automatic mode, but never a sealed epoch | Manual pruning sweeps eligible stale tool evidence on request. Optional automatic mode targets roughly 20% use, protects the newest 10% of the window, allows at most 2 back-to-back passes per pressure cycle, and seals rewritten regions with epoch markers. | A failed pass changes nothing. In optional automatic mode, an exhausted pressure cycle hands off to native compaction. |
+| **RTK filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
+| **Safety cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
+| **Ace pruning — Experimental** | Explicit `/prune` or `/force-prune`; automatic pressure cycling only when enabled for this conversation | Eligible old tool evidence | Manual actions sweep eligible evidence. Automatic mode targets roughly 20% use, protects the newest 10%, allows at most two back-to-back passes, and seals regions with epoch markers. | A failed pass changes nothing. Native compaction keeps its own threshold/headroom lifecycle. |
 
-**All three layers ship with Elpis, but Ace is opt-in for automatic use.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
+RTK is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
-When automatic Ace pruning is enabled, the pass runs between model follow-ups as well as at
-the end of a turn, so one long-running tool-driven turn cannot skip the trigger. Each pass
-records which trigger fired (`manual` or `pressure`) in its manifest and report.
-OpenAI-backed passes use Luna at maximal reasoning effort
-(`PRUNE_REASONING_EFFORT = ReasoningEffort::Max`). Every successful pass immediately
-recomputes the working history estimate and writes `prune_report.md` alongside the session logs
-(`codex-rs/core/src/session/context_prune_audit.rs`).
-The automatic pass may reach older tool evidence from the current turn, but its newest 10%
-recency budget remains verbatim for the next follow-up.
+Automatic Ace pruning is **off by default**. `/settings` labels it `Automatic pruning — Experimental` and uses this exact warning: `Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.` Saving that setting affects the **next conversation**, not the already-running one.
 
-`/prune` runs the Ace pass on demand across eligible tool evidence from completed turns.
-It keeps user and assistant messages, the current turn, and durable rollout evidence.
-`/compact` is Elpis-owned conservative cleanup. It first runs the audited tool-evidence
-pass, then asks Luna Max to mark older whole conversation messages as `KEEP` or `DELETE`.
-The latest turn is protected; kept content is copied verbatim; incomplete, malformed, or
-uncertain decisions leave conversation history unchanged. A successful deletion starts a
-new window while the raw transcript remains intact. An explicit custom `compact_prompt`
-retains the upstream summary path as an opt-out. The Context Ledger's exact used-token
-number is authoritative after either path.
+`/prune` and `/force-prune <pct>` are explicit manual Ace actions. Both work while automatic
+pruning is off. `/force-prune` records `pressure` in its audit to name the targeted selection
+strategy; that value does not establish automatic invocation.
+
+`/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
+does not run Ace first. Separately, automatic native compaction uses the donor model-window
+threshold and usable-window headroom. The Context Ledger's exact used-token number is
+authoritative after either mechanism. Ace saved-token totals are cumulative and origin-neutral:
+they do not identify a pass as manual or automatic.
 
 ### Ace pass audit trail
 

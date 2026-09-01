@@ -196,8 +196,10 @@ Signals worth watching:
   to the newest epoch boundary, not to a fixed initial prefix. A *constant* plateau across
   many passes means the epoch breakpoint is not being written — check that the frozen prefix
   exceeds 1,024 tokens and that the marker is present in the request body.
-- **The number of pruning events should be roughly (peak use − 20%) / 10% per session**, not
-  one per turn. Count `"trigger": "pressure"` manifests in `~/.elpis/logs/pruning/passes/`.
+- **Automatic pruning events should be roughly (peak use − 20%) / 10% per session**, not one
+  per turn, when the Experimental setting was enabled for that conversation. A manifest
+  `"trigger": "pressure"` records the targeted selection strategy; manual `/force-prune` uses
+  the same value, so it cannot by itself establish automatic invocation.
 - **`cached_input_tokens: 0` on pruning calls** is expected: each pruning batch is unique
   content, so it can never hit. The namespaced key keeps that miss from costing the turn
   loop its slot.

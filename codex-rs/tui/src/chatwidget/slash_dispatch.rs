@@ -264,6 +264,7 @@ impl ChatWidget {
                 if !self.bottom_pane.is_task_running() {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
+                self.add_info_message("Manual pruning...".to_string(), None);
                 self.app_event_tx.prune(None);
             }
             // `/force-prune` needs its target; without one there is nothing to force,
@@ -882,7 +883,7 @@ impl ChatWidget {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
                 self.add_info_message(
-                    format!("Force pruning down to {target_pct}% of the context window..."),
+                    format!("Manual pruning toward {target_pct}% of the context window..."),
                     None,
                 );
                 self.app_event_tx.prune(Some(target_pct));

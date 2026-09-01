@@ -99,11 +99,13 @@ uses a layered pipeline to keep useful findings while removing disposable explor
 | --- | --- | --- |
 | **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
 | **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
-| **3. Ace pressure cycle** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | When measured model-window use reaches the pressure threshold (30%) |
+| **3. Ace pruning — Experimental** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | Manual `/prune` or `/force-prune`; automatic pressure cycling only in a conversation started with the default-off setting enabled |
 
-`/prune` runs the audited Ace pass on demand without rewriting user instructions, assistant
-messages, or model reasoning. Elpis's `/compact` remains the conservative fallback when selective
-pruning cannot reclaim enough context; the raw transcript remains durable evidence.
+`/prune` and `/force-prune` are explicit manual Ace actions and do not rewrite user instructions,
+assistant messages, or model reasoning. `/compact` immediately runs Codex native compaction; it
+is independent of Ace pruning. Automatic native compaction uses the model-window threshold and
+usable-window headroom. Automatic Ace pruning is Experimental and off by default; `/settings`
+saves its value for the next conversation.
 
 #### What a pruning decision looks like
 
@@ -264,7 +266,7 @@ While Codex suffered wide distribution variance as transcripts accumulated, Elpi
 
 #### Trajectory Dynamics across Context Health Bands
 
-When normalized across the request lifecycle (0% to 100% completion), Codex exhibits unbounded monotonic growth until emergency rollover occurs. Elpis triggers the Ace cycle whenever context crosses the 30% boundary, steadily returning working state to the green target zone:
+When normalized across the request lifecycle (0% to 100% completion), Codex exhibits unbounded monotonic growth until emergency rollover occurs. The Elpis trace shown here is a configured historical run with automatic pruning enabled under the superseded high-frequency setup; it is not current default behavior:
 
 ![Normalized Task-Progress View (0%–100% Sequence Overlay)](docs/assets/elpis-normalized-overlay-highcontrast.svg)
 
@@ -281,7 +283,7 @@ Across all executed requests, Elpis spent over 95% of its operating lifespan ins
 
 ### RQ4: Pruning Overhead & Token Economics
 
-Pruning adds an auxiliary model call sequenced against the main agent, and rewriting history invalidates the provider's cached prefix. Both costs are real. The figures below come from a high-frequency configuration that the implementation has since replaced with a low-frequency one built to reduce that invalidation, so they bound the penalty rather than describe the shipping design: 730,810 auxiliary tokens spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token).
+Pruning adds an auxiliary model call sequenced against the main agent, and rewriting history invalidates the provider's cached prefix. Both costs are real. The figures below are configured historical runs with automatic pruning enabled under the superseded high-frequency setup; they bound that configuration's penalty rather than describe the current default: 730,810 auxiliary tokens spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 

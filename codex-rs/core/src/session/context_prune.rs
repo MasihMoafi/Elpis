@@ -1,5 +1,5 @@
-//! Runs the Ace pass (`crate::context_pruner`) under whichever trigger applies: the
-//! steady backlog floor, the 30% pressure boundary, or a manual `/prune`. Mirrors
+//! Runs the Ace pass (`crate::context_pruner`) under either the 30% automatic pressure
+//! boundary or an explicit manual `/prune`. Mirrors
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual

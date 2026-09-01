@@ -1,4 +1,4 @@
-//! Layers 3 and 4 of Elpis's context pruning (see `docs/context.md`). The Ace pass handles
+//! Elpis's optional Ace context-pruning mechanism (see `docs/context.md`). The Ace pass handles
 //! content that requires judgment — deciding
 //! whether a search was a dead end (delete outright, no trace) or found something
 //! that matters (keep one evidence-pointer line). That judgment comes from a model
@@ -132,7 +132,7 @@ impl PruneRecord {
 pub(crate) enum PruneTrigger {
     /// The user explicitly requested a selective pass with `/prune`.
     Manual,
-    /// Active use reached `AUTO_PRUNE_TRIGGER_PERCENT`.
+    /// Targeted pressure selection, used by automatic pressure and manual `/force-prune`.
     Pressure,
 }
 
