@@ -1333,6 +1333,9 @@ pub enum EventMsg {
     #[serde(rename = "task_complete", alias = "turn_complete")]
     TurnComplete(TurnCompleteEvent),
 
+    /// Scalar-only timing profile for live consumers. This event is transient.
+    TurnProfile(TurnProfileEvent),
+
     /// Usage update for the current session, including totals and last turn.
     /// Optional means unknown — UIs should not display when `None`.
     TokenCount(TokenCountEvent),
@@ -1996,6 +1999,43 @@ pub struct TurnCompleteEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "number | null", optional)]
     pub time_to_first_token_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum TurnProfileOutcome {
+    Completed,
+    Failed,
+    Interrupted,
+}
+
+/// Scalar timing facts only; no messages, paths, account, provider, or trace data.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TurnProfileSummary {
+    pub before_first_sampling_ms: u64,
+    pub sampling_ms: u64,
+    pub compaction_ms: u64,
+    pub between_sampling_overhead_ms: u64,
+    pub tool_blocking_ms: u64,
+    pub after_last_sampling_ms: u64,
+    pub sampling_request_count: u64,
+    pub sampling_retry_count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct TurnProfileEvent {
+    pub turn_id: String,
+    pub outcome: TurnProfileOutcome,
+    #[ts(type = "number | null")]
+    pub started_at: Option<i64>,
+    #[ts(type = "number | null")]
+    pub duration_ms: Option<i64>,
+    #[ts(type = "number | null")]
+    pub time_to_first_token_ms: Option<i64>,
+    pub profile: Option<TurnProfileSummary>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

@@ -10,6 +10,7 @@ use crate::export::write_json_schema;
 use crate::protocol::v1;
 use crate::protocol::v2;
 use codex_experimental_api_macros::ExperimentalApi;
+use codex_protocol::TurnProfileSummary;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -1610,6 +1611,32 @@ pub struct FuzzyFileSearchSessionCompletedNotification {
     pub session_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub enum TurnActivityStatus {
+    Completed,
+    Failed,
+    Interrupted,
+}
+
+/// Ephemeral scalar-only terminal activity; never part of a persisted turn.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+pub struct TurnActivityUpdatedNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub status: TurnActivityStatus,
+    #[ts(type = "number | null")]
+    pub started_at: Option<i64>,
+    #[ts(type = "number | null")]
+    pub duration_ms: Option<i64>,
+    #[ts(type = "number | null")]
+    pub time_to_first_token_ms: Option<i64>,
+    pub profile: Option<TurnProfileSummary>,
+}
+
 server_notification_definitions! {
     /// NEW NOTIFICATIONS
     Error => "error" (v2::ErrorNotification),
@@ -1634,6 +1661,7 @@ server_notification_definitions! {
     TurnStarted => "turn/started" (v2::TurnStartedNotification),
     HookStarted => "hook/started" (v2::HookStartedNotification),
     TurnCompleted => "turn/completed" (v2::TurnCompletedNotification),
+    TurnActivityUpdated => "turn/activityUpdated" (TurnActivityUpdatedNotification),
     HookCompleted => "hook/completed" (v2::HookCompletedNotification),
     TurnDiffUpdated => "turn/diff/updated" (v2::TurnDiffUpdatedNotification),
     TurnPlanUpdated => "turn/plan/updated" (v2::TurnPlanUpdatedNotification),

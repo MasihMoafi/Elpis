@@ -47,6 +47,7 @@ use codex_protocol::AgentPath;
 use codex_protocol::ResponseItemId;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
+use codex_protocol::TurnProfileSummary;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::TrustLevel;
@@ -149,6 +150,8 @@ use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
+use codex_protocol::protocol::TurnProfileEvent;
+use codex_protocol::protocol::TurnProfileOutcome;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::protocol::W3cTraceContext;
@@ -4252,6 +4255,67 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
         .await
         .expect("load rollout path")
         .expect("thread should have rollout path")
+}
+
+#[tokio::test]
+async fn transient_turn_profile_event_is_not_persisted() {
+    let (mut session, turn_context) = make_session_and_context().await;
+    let rollout_path = attach_thread_persistence(&mut session).await;
+    let profile_event = EventMsg::TurnProfile(TurnProfileEvent {
+        turn_id: turn_context.sub_id.clone(),
+        outcome: TurnProfileOutcome::Completed,
+        started_at: Some(100),
+        duration_ms: Some(231),
+        time_to_first_token_ms: Some(12),
+        profile: Some(TurnProfileSummary {
+            before_first_sampling_ms: 11,
+            sampling_ms: 22,
+            compaction_ms: 33,
+            between_sampling_overhead_ms: 44,
+            tool_blocking_ms: 55,
+            after_last_sampling_ms: 66,
+            sampling_request_count: 7,
+            sampling_retry_count: 8,
+        }),
+    });
+
+    session
+        .send_event_without_persistence(&turn_context, profile_event)
+        .await;
+    session
+        .send_event(
+            &turn_context,
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: turn_context.sub_id.clone(),
+                last_agent_message: None,
+                error: None,
+                started_at: Some(100),
+                completed_at: Some(200),
+                duration_ms: Some(231),
+                time_to_first_token_ms: Some(12),
+            }),
+        )
+        .await;
+    session.flush_rollout().await.expect("flush rollout");
+
+    let rollout = std::fs::read_to_string(rollout_path).expect("read rollout output");
+    assert!(rollout.contains("task_complete"));
+    for forbidden in [
+        "\"turn_profile\"",
+        "\"beforeFirstSamplingMs\"",
+        "\"samplingMs\"",
+        "\"compactionMs\"",
+        "\"betweenSamplingOverheadMs\"",
+        "\"toolBlockingMs\"",
+        "\"afterLastSamplingMs\"",
+        "\"samplingRequestCount\"",
+        "\"samplingRetryCount\"",
+    ] {
+        assert!(
+            !rollout.contains(forbidden),
+            "rollout unexpectedly contained transient profile field {forbidden}"
+        );
+    }
 }
 
 fn text_block(s: &str) -> serde_json::Value {

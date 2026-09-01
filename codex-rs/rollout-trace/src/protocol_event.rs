@@ -342,6 +342,7 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
             payload: ToolRuntimePayload::SubAgentActivity(event),
         }),
         EventMsg::Error(_)
+        | EventMsg::TurnProfile(_)
         | EventMsg::Warning(_)
         | EventMsg::GuardianWarning(_)
         | EventMsg::SafetyBuffering(_)
@@ -422,6 +423,7 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         EventMsg::Warning(_) => Some("warning"),
         EventMsg::ShutdownComplete => Some("shutdown_complete"),
         EventMsg::GuardianWarning(_)
+        | EventMsg::TurnProfile(_)
         | EventMsg::SafetyBuffering(_)
         | EventMsg::RealtimeConversationStarted(_)
         | EventMsg::RealtimeConversationRealtime(_)
