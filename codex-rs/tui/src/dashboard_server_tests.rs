@@ -672,7 +672,8 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "id=\"refresh-now\"",
         "setText('poll-toggle', 'Resume')",
         "Idle",
-        "#493235",
+        "color-scheme: light",
+        "--bg: #f7f4ee",
         "ArrowLeft",
         "ArrowRight",
         "Home",
@@ -691,6 +692,8 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "#6b635a",
         ".category-purple { background: #8b5cf6; }",
         "'#8b5cf6': 'category-purple'",
+        ".category-portable { background: #d77757; }",
+        "'#d77757': 'category-portable'",
         "CATEGORY_COLORS[value] || CATEGORY_COLOR_FALLBACK",
         "function formatPercent(value, total)",
         ".toFixed(1) + '%'",
@@ -747,6 +750,8 @@ fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields()
         "rel=\"stylesheet\"",
         "http://",
         "https://",
+        "color-scheme: dark",
+        "--bg: #100b0c",
     ] {
         assert!(
             !INDEX_HTML.contains(forbidden),

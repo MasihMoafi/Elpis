@@ -246,8 +246,7 @@ impl ChatWidget {
             reasoning_effort_override,
             &continuity_sources,
             refreshing_rate_limits,
-            crate::legacy_core::context_pruner::pass_count(),
-            crate::legacy_core::context_pruner::saved_chars(),
+            self.last_prune_saved_tokens.unwrap_or(0),
         );
         if let Some(request_id) = request_id {
             self.refreshing_status_outputs.push((request_id, handle));

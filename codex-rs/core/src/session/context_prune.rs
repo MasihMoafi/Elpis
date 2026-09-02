@@ -324,7 +324,7 @@ async fn run_context_prune(
         return false;
     }
     let mut after_items = items;
-    let saved = context_pruner::apply_prune_record_untracked(&mut after_items, &record);
+    let savings = context_pruner::apply_prune_record_untracked(&mut after_items, &record);
     let mut after_history = history;
     after_history.replace(after_items.clone());
     let after_model_items = after_history.for_prompt(&turn_context.model_info.input_modalities);
@@ -351,7 +351,7 @@ async fn run_context_prune(
             record: &record,
             before_model_items: &before_model_items,
             after_model_items: &after_model_items,
-            saved_chars: saved,
+            saved_chars: savings.chars_removed,
         },
     ) {
         Ok(audit) => audit,
@@ -363,7 +363,7 @@ async fn run_context_prune(
         }
     };
 
-    let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(saved);
+    let saved_tokens = codex_utils_string::approx_tokens_from_byte_count(savings.bytes_removed);
     let mut state = sess.state.lock().await;
     let (context_prune_saved_tokens, window_number, window_ids, world_state_snapshot) = {
         // `ContextManager::replace` unconditionally clears the world-state baseline (it
@@ -415,7 +415,7 @@ async fn run_context_prune(
         ))])
         .await;
     }
-    context_pruner::record_applied_prune(saved);
+    context_pruner::record_applied_prune(savings.chars_removed);
     // Count only an applied pass. A stream or parse failure leaves history untouched and must
     // not spend the hysteresis cycle's successful-pass budget.
     if requested_trigger.is_none() {

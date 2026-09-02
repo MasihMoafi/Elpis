@@ -213,8 +213,12 @@ impl ChatWidget {
         if !self.context_ledger.focused || !ledger_is_rendered {
             return false;
         }
+        if !key_event.modifiers.is_empty() {
+            self.context_ledger.pending_g = false;
+            return false;
+        }
 
-        if key_event.modifiers.is_empty() && matches!(key_event.code, KeyCode::Char('p')) {
+        if matches!(key_event.code, KeyCode::Char('p')) {
             self.toggle_smart_prune();
             return true;
         }
@@ -349,7 +353,7 @@ impl ChatWidget {
         let cyan = Style::default().fg(Color::Cyan);
         let amber = Style::default().fg(Color::Rgb(245, 158, 11));
         let muted = Style::default().fg(Color::Rgb(100, 116, 139));
-        let unattributed_color = Color::Gray;
+        let conversation_color = Color::Gray;
         let context_window = self
             .status_line_context_window_size()
             .unwrap_or(258_400)
@@ -371,10 +375,9 @@ impl ChatWidget {
         .min(context_window);
         let has_request_snapshot = self.token_info.is_some();
         let admitted_display_tokens = total_tokens.min(used_tokens);
-        // This residual includes conversation messages, tool schemas, protocol
-        // framing, images, and estimation error. Calling it all "messages" would
-        // claim a precision the provider does not report.
-        let unattributed_tokens = used_tokens.saturating_sub(admitted_display_tokens);
+        // The Ledger accounts for portable sources. Everything else is the
+        // conversation plus built-in request context; the provider does not split it.
+        let conversation_tokens = used_tokens.saturating_sub(admitted_display_tokens);
         let used_percent = used_tokens
             .saturating_mul(100)
             .saturating_add(context_window / 2)
@@ -392,7 +395,7 @@ impl ChatWidget {
                 (admitted, group.color())
             })
             .collect::<Vec<_>>();
-        let mut bar_segments = vec![(unattributed_tokens, unattributed_color)];
+        let mut bar_segments = vec![(conversation_tokens, conversation_color)];
         bar_segments.extend(scale_usage_segments(
             &admitted_segments,
             admitted_display_tokens,
@@ -542,16 +545,16 @@ impl ChatWidget {
             ]),
             usage_bar_line(content_width, context_window, &bar_segments),
             {
-                let name = "Unattributed context";
+                let name = "Conversation + built-in context";
                 // Same unit as every other row and header; without it this row reads
                 // "≈0" two lines under a total reading "≈4.4k tokens".
-                let right = format!("≈{} tokens", format_tokens(unattributed_tokens));
+                let right = format!("≈{} tokens", format_tokens(conversation_tokens));
                 let pad = content_width
                     .saturating_sub(2 + 2 + name.chars().count() + right.chars().count())
                     .max(1);
                 Line::from(vec![
                     Span::raw("  "),
-                    Span::styled("■ ", Style::default().fg(unattributed_color)),
+                    Span::styled("■ ", Style::default().fg(conversation_color)),
                     Span::raw(name),
                     Span::raw(" ".repeat(pad)),
                     Span::styled(right, muted),

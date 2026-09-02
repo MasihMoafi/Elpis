@@ -96,6 +96,39 @@ async fn manual_memory_create_key_emits_once_and_blocks_same_loop_duplicates() -
 }
 
 #[tokio::test]
+async fn manual_memory_focused_ledger_does_not_capture_ctrl_c() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let memories = root.path().join("memories");
+    let cwd = root.path().join("project");
+    std::fs::create_dir_all(&memories)?;
+    std::fs::create_dir_all(&cwd)?;
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.config.memory_dir = memories.abs();
+    chat.config.cwd = cwd.abs();
+    chat.last_rendered_width.set(Some(120));
+    chat.thread_id = Some(ThreadId::new());
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    handle_turn_started(&mut chat, "turn-1");
+    while rx.try_recv().is_ok() {}
+
+    assert!(
+        chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT,))
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+    next_interrupt_op(&mut op_rx);
+    assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Ready);
+    assert_eq!(chat.manual_memory_pending_mutation(), None);
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::ManualMemoryCreateRequested(_)),
+            "Ctrl-C must stay on the global interrupt/quit path"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn manual_memory_mutation_excludes_ordinary_and_add_writers_before_disk_io()
 -> anyhow::Result<()> {
     let root = tempdir()?;
@@ -312,7 +345,7 @@ async fn clicking_es_toggles_es_instead_of_the_row_above() -> anyhow::Result<()>
 }
 
 #[tokio::test]
-async fn active_turn_exclusion_waits_for_boundary_without_inflating_unattributed_context()
+async fn active_turn_exclusion_waits_for_boundary_without_inflating_conversation_context()
 -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -348,7 +381,7 @@ async fn active_turn_exclusion_waits_for_boundary_without_inflating_unattributed
 
     let before = render_ledger(&chat, 80);
     assert!(before.contains("≈10.0k tokens in context"));
-    assert!(before.contains("Unattributed context"));
+    assert!(before.contains("Conversation + built-in context"));
     assert!(before.contains("≈9.0k tokens"), "{before}");
 
     let buffer = render_ledger_buffer(&chat, 80);
@@ -367,7 +400,7 @@ async fn active_turn_exclusion_waits_for_boundary_without_inflating_unattributed
         after.contains("≈10.0k tokens now · changes queued"),
         "{after}"
     );
-    assert!(after.contains("Unattributed context"));
+    assert!(after.contains("Conversation + built-in context"));
     assert!(after.contains("≈9.0k tokens"), "{after}");
     assert!(
         !chat
@@ -384,7 +417,7 @@ async fn active_turn_exclusion_waits_for_boundary_without_inflating_unattributed
     );
 
     // A usage update from the already-running turn still reflects the old
-    // admission policy. It may add real unattributed tokens, but it must not
+    // admission policy. It may add real conversation/runtime tokens, but it must not
     // pretend the queued exclusion has already changed this request.
     chat.reconcile_context_projection_for_turn("turn-1");
     chat.set_token_info(Some(make_token_info(10_200, 20_000)));
@@ -576,7 +609,10 @@ async fn durable_memory_is_counted_and_its_toggle_projects_free_space() -> anyho
         before.contains("DURABLE MEMORY  ≈800 tokens admitted"),
         "{before}"
     );
-    assert!(before.contains("Unattributed context"), "{before}");
+    assert!(
+        before.contains("Conversation + built-in context"),
+        "{before}"
+    );
     assert!(before.contains("≈9.2k tokens"), "{before}");
     while rx.try_recv().is_ok() {}
 
@@ -637,7 +673,7 @@ async fn durable_memory_is_counted_and_its_toggle_projects_free_space() -> anyho
 
     let after = render_ledger(&chat, 80);
     assert!(after.contains("next request ≈9.2k tokens"), "{after}");
-    assert!(after.contains("Unattributed context"), "{after}");
+    assert!(after.contains("Conversation + built-in context"), "{after}");
     assert!(after.contains("≈9.2k tokens"), "{after}");
     Ok(())
 }

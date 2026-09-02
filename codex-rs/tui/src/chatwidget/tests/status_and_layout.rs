@@ -173,6 +173,119 @@ async fn token_usage_notification_preserves_reported_cache_write_tokens() {
 }
 
 #[tokio::test]
+async fn status_uses_thread_scoped_manual_prune_savings() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let notification = serde_json::from_value::<
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification,
+    >(serde_json::json!({
+        "threadId": chat.thread_id().map(|id| id.to_string()).unwrap_or_default(),
+        "turnId": "turn-pruned",
+        "tokenUsage": {
+            "total": {
+                "totalTokens": 17_300,
+                "inputTokens": 17_300,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningOutputTokens": 0
+            },
+            "last": {
+                "totalTokens": 17_300,
+                "inputTokens": 17_300,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningOutputTokens": 0
+            },
+            "modelContextWindow": 121_600,
+            "contextPruneSavedTokens": 29_268
+        }
+    }))
+    .expect("token usage notification");
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(notification),
+        /*replay_kind*/ None,
+    );
+    while rx.try_recv().is_ok() {}
+
+    chat.add_status_output(
+        /*refreshing_rate_limits*/ false, /*request_id*/ None,
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = lines_to_single_string(cells.last().expect("status output inserted"));
+
+    assert!(
+        rendered.contains("~29.3K tokens removed earlier in this history"),
+        "status output: {rendered}"
+    );
+    assert!(
+        !rendered.contains("0 Ace passes"),
+        "status output: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn context_report_separates_current_tool_context_from_prior_manual_savings() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.animations = false;
+    chat.set_token_info(Some(make_token_info(17_259, 121_600)));
+    assert!(chat.update_context_prune_savings(29_268, /*from_replay*/ true));
+    while rx.try_recv().is_ok() {}
+
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals {
+        checkpoints: 1,
+        user_message_bytes: 344,
+        agent_response_bytes: 1_080,
+        tool_activity_bytes: 2_816,
+    });
+    let lines = chat
+        .active_cell_transcript_lines(/*width*/ 100)
+        .expect("context output rendered");
+    let tool_lines = lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .filter(|line| line.contains("Tool activity"))
+        .collect::<Vec<_>>();
+    let rendered = lines_to_single_string(&lines);
+
+    assert!(
+        rendered.contains("Tool activity"),
+        "context output: {rendered}"
+    );
+    assert!(!tool_lines.is_empty(), "context output: {rendered}");
+    assert!(
+        tool_lines.iter().all(|line| line.contains("704")),
+        "tool rows: {tool_lines:?}"
+    );
+    assert!(
+        tool_lines
+            .iter()
+            .all(|line| !line.contains("removed earlier")),
+        "tool estimate rows must exclude historical savings: {tool_lines:?}"
+    );
+    assert!(
+        rendered.contains("~29.3k tokens removed earlier in this history"),
+        "context output: {rendered}"
+    );
+    assert!(
+        rendered.contains("Built-in + estimate gap"),
+        "context output: {rendered}"
+    );
+    assert!(
+        !rendered.contains("Unattributed"),
+        "context output: {rendered}"
+    );
+    assert!(
+        !rendered.contains("saved in session"),
+        "context output: {rendered}"
+    );
+}
+
+#[tokio::test]
 async fn token_usage_notification_stores_smart_prune_evidence_and_refreshes_dashboard() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     let notification = serde_json::from_value::<

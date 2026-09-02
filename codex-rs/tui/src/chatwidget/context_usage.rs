@@ -7,9 +7,9 @@
 //!
 //! The current request-context count (`token_info.last_token_usage`) is the only
 //! headline number. It is the same snapshot used by the status line and the
-//! Context Ledger. Transcript and portable-source byte counts are attribution
-//! estimates only: they are scaled to that measured total, and any unaccounted
-//! remainder is shown explicitly as "Unattributed (residual)".
+//! Context Ledger. Transcript and portable-source sizes are attribution estimates
+//! only: they are scaled to that measured total, and the request context
+//! not represented by the visible transcript is shown as a built-in/estimate gap.
 
 use codex_features::Feature;
 use ratatui::style::Color;
@@ -17,8 +17,6 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
-use std::time::Duration;
-use std::time::Instant;
 
 use super::ChatWidget;
 use super::context_ledger::LedgerSourceGroup;
@@ -29,14 +27,13 @@ use crate::legacy_core::elpis_context::ContinuitySourceCategory;
 const GRID_COLUMNS: usize = 26;
 const GRID_ROWS: usize = 10;
 const GRID_CELLS: usize = GRID_COLUMNS * GRID_ROWS;
-const UNATTRIBUTED_COLOR: Color = Color::Rgb(139, 92, 246);
+const BUILT_IN_CONTEXT_COLOR: Color = Color::Rgb(139, 92, 246);
+const PORTABLE_CONTEXT_COLOR: Color = Color::Rgb(215, 119, 87);
 
 #[derive(Clone, Debug)]
 struct CategoryUsage {
     label: &'static str,
     tokens: u64,
-    /// Cumulative session evidence; never add this to the current-context size.
-    saved_tokens: u64,
     color: Color,
 }
 
@@ -83,28 +80,15 @@ struct ContextUsageHistoryCell {
     used: u64,
     window: u64,
     after_chart: Vec<Line<'static>>,
-    started_at: Instant,
-    animations_enabled: bool,
 }
 
 impl ContextUsageHistoryCell {
-    const ANIMATION_DURATION: Duration = Duration::from_millis(900);
-
-    fn animation_progress(&self) -> u64 {
-        if !self.animations_enabled {
-            return 1_000;
-        }
-        let elapsed = self.started_at.elapsed().as_millis() as u64;
-        (elapsed.saturating_mul(1_000) / Self::ANIMATION_DURATION.as_millis() as u64).min(1_000)
-    }
-
     fn rendered_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines = self.before_chart.clone();
         lines.extend(build_category_bar_chart(
             &self.categories,
             self.used,
             self.window,
-            self.animation_progress(),
             width,
         ));
         lines.extend(self.after_chart.clone());
@@ -112,9 +96,9 @@ impl ContextUsageHistoryCell {
     }
 }
 
-fn instruction_bucket_bytes(
+fn instruction_bucket_tokens(
     sources: &[crate::legacy_core::elpis_context::ContinuitySource],
-) -> (usize, usize) {
+) -> (u64, u64) {
     sources
         .iter()
         .filter(|source| {
@@ -125,11 +109,32 @@ fn instruction_bucket_bytes(
                 source.origin,
                 "managed development rules" | "configured development rules"
             ) {
-                (system_prompt, development_rules + source.bytes as usize)
+                (
+                    system_prompt,
+                    development_rules.saturating_add(source.estimated_tokens),
+                )
             } else {
-                (system_prompt + source.bytes as usize, development_rules)
+                (
+                    system_prompt.saturating_add(source.estimated_tokens),
+                    development_rules,
+                )
             }
         })
+}
+
+fn dashboard_css_color(color: Color) -> String {
+    match color {
+        Color::Blue | Color::LightBlue => "#3b82f6",
+        Color::Green | Color::LightGreen => "#22c55e",
+        Color::Yellow | Color::LightYellow => "#eab308",
+        Color::Magenta | Color::LightMagenta => "#d946ef",
+        Color::Cyan | Color::LightCyan => "#06b6d4",
+        Color::Gray | Color::DarkGray => "#6b635a",
+        BUILT_IN_CONTEXT_COLOR => "#8b5cf6",
+        PORTABLE_CONTEXT_COLOR => "#d77757",
+        _ => "#6b635a",
+    }
+    .to_string()
 }
 
 impl HistoryCell for ContextUsageHistoryCell {
@@ -143,16 +148,10 @@ impl HistoryCell for ContextUsageHistoryCell {
             &self.categories,
             self.used,
             self.window,
-            1_000,
             100,
         ));
         lines.extend(self.after_chart.clone());
         lines
-    }
-
-    fn transcript_animation_tick(&self) -> Option<u64> {
-        (self.animations_enabled && self.started_at.elapsed() < Self::ANIMATION_DURATION)
-            .then(|| (self.started_at.elapsed().as_millis() / 60) as u64)
     }
 }
 
@@ -209,19 +208,28 @@ impl ChatWidget {
         let sources = self.continuity_sources();
         // Only admitted instruction sources count. Their stable provenance, not a
         // directory-name guess, determines which attribution bucket receives them.
-        let (system_prompt_chars, development_rule_chars) = instruction_bucket_bytes(&sources);
+        let (workspace_instruction_tokens, development_rule_tokens) =
+            instruction_bucket_tokens(&sources);
+        let portable_context_tokens = sources
+            .iter()
+            .filter(|source| {
+                source.admitted && source.category != ContinuitySourceCategory::Instructions
+            })
+            .map(|source| source.estimated_tokens)
+            .sum::<u64>();
 
         let estimate =
-            |chars: usize| codex_utils_string::approx_tokens_from_byte_count(chars) as u64;
-        // System prompt and Development rules are fixed on-disk costs sent as-is with each
-        // request — they must NEVER be scaled up to absorb unexplained usage
+            |bytes: usize| codex_utils_string::approx_tokens_from_byte_count(bytes) as u64;
+        // Workspace instructions and development rules are fixed admitted-source costs.
+        // They must NEVER be scaled up to absorb unexplained usage
         // (that is what previously inflated Development rules to nonsense figures).
-        let fixed_system = estimate(system_prompt_chars);
-        let fixed_development_rules = estimate(development_rule_chars);
+        let fixed_system = workspace_instruction_tokens;
+        let fixed_development_rules = development_rule_tokens;
+        let fixed_portable_context = portable_context_tokens;
         let conversation_estimates: [u64; 3] = [
-            estimate(totals.user_message_chars),
-            estimate(totals.agent_response_chars),
-            estimate(totals.tool_call_chars),
+            estimate(totals.user_message_bytes),
+            estimate(totals.agent_response_bytes),
+            estimate(totals.tool_activity_bytes),
         ];
         // The one measured number: current context occupancy (not the
         // session-cumulative total, which can exceed the window). Before a provider
@@ -250,54 +258,56 @@ impl ChatWidget {
             conversation_estimates[2],
             fixed_system,
             fixed_development_rules,
+            fixed_portable_context,
         ];
         let category_tokens = scale_token_counts(&raw_categories, used);
         let conversation = [category_tokens[0], category_tokens[1], category_tokens[2]];
         let fixed_system = category_tokens[3];
         let fixed_development_rules = category_tokens[4];
-        let other = used.saturating_sub(category_tokens.iter().sum());
+        let fixed_portable_context = category_tokens[5];
+        let agent_runtime = used.saturating_sub(category_tokens.iter().sum());
         let saved_tokens = self.last_prune_saved_tokens.unwrap_or(0);
 
         let mut categories = vec![
             CategoryUsage {
                 label: "User messages",
                 tokens: conversation[0],
-                saved_tokens: 0,
                 color: Color::LightBlue,
             },
             CategoryUsage {
                 label: "Agent responses",
                 tokens: conversation[1],
-                saved_tokens: 0,
                 color: Color::LightGreen,
             },
             CategoryUsage {
-                label: "Tool calls",
+                label: "Tool activity",
                 tokens: conversation[2],
-                saved_tokens,
                 color: Color::LightYellow,
             },
             CategoryUsage {
-                label: "System prompt",
+                label: "Workspace instructions",
                 tokens: fixed_system,
-                saved_tokens: 0,
                 color: Color::LightMagenta,
             },
             CategoryUsage {
                 label: "Development rules",
                 tokens: fixed_development_rules,
-                saved_tokens: 0,
                 color: Color::LightCyan,
             },
+            CategoryUsage {
+                label: "Portable context",
+                tokens: fixed_portable_context,
+                color: PORTABLE_CONTEXT_COLOR,
+            },
         ];
-        if other > 0 {
+        if agent_runtime > 0 {
             categories.push(CategoryUsage {
-                label: "Unattributed (residual)",
-                tokens: other,
-                saved_tokens: 0,
-                color: UNATTRIBUTED_COLOR,
+                label: "Built-in + estimate gap",
+                tokens: agent_runtime,
+                color: BUILT_IN_CONTEXT_COLOR,
             });
         }
+        categories.retain(|category| category.tokens > 0);
         let used_percent = has_request_snapshot
             .then(|| self.status_line_context_used_percent())
             .flatten();
@@ -328,20 +338,6 @@ impl ChatWidget {
     /// the same numbers `/context` already computes and merges semantic changes.
     pub(crate) fn publish_dashboard_snapshot(&self, totals: &ContextUsageTranscriptTotals) {
         let snapshot = self.context_usage_snapshot(totals);
-        let to_css_color = |color: Color| -> String {
-            match color {
-                Color::Blue | Color::LightBlue => "#3b82f6",
-                Color::Green | Color::LightGreen => "#22c55e",
-                Color::Yellow | Color::LightYellow => "#eab308",
-                Color::Magenta | Color::LightMagenta => "#d946ef",
-                Color::Cyan | Color::LightCyan => "#06b6d4",
-                Color::Gray | Color::DarkGray => "#6b635a",
-                Color::Rgb(139, 92, 246) => "#8b5cf6",
-                _ => "#6b635a",
-            }
-            .to_string()
-        };
-
         let categories = snapshot.has_request_snapshot.then(|| {
             snapshot
                 .categories
@@ -349,7 +345,7 @@ impl ChatWidget {
                 .map(|category| crate::dashboard_server::DashboardCategory {
                     label: category.label.to_string(),
                     tokens: category.tokens,
-                    color: to_css_color(category.color),
+                    color: dashboard_css_color(category.color),
                 })
                 .collect()
         });
@@ -468,7 +464,11 @@ impl ChatWidget {
             .bold()
             .into(),
         );
-        legend.push("Token usage by category".bold().into());
+        legend.push(
+            "Estimated attribution (not a provider breakdown)"
+                .bold()
+                .into(),
+        );
         for category in &categories {
             legend.push(category_legend_line(category, window));
         }
@@ -485,12 +485,11 @@ impl ChatWidget {
                 Span::styled("✨ ", Style::default().fg(Color::Green)),
                 Span::styled(
                     format!(
-                        "Saved Context: ~{} tokens reclaimed",
+                        "History pruning: ~{} tokens removed earlier in this history",
                         fmt_tokens(saved_tokens)
                     ),
                     Style::default().fg(Color::Green).bold(),
                 ),
-                Span::styled(" (Ace Pass ⚡)", Style::default().fg(Color::Cyan)),
             ]));
         }
         if !snapshot.has_request_snapshot {
@@ -500,28 +499,38 @@ impl ChatWidget {
         let mut before_chart: Vec<Line<'static>> = Vec::new();
         before_chart.push(" Context Usage".bold().into());
         before_chart.extend(build_grid_with_legend(&categories, used, window, legend));
+        before_chart.push(
+            " Headline total is measured; rows estimate it from visible transcript and admitted files."
+                .dim()
+                .into(),
+        );
+        before_chart.push(
+        " Built-in + estimate gap includes built-in instructions, tool definitions, hidden history, images, protocol, and estimation error; not all is prunable."
+                .dim()
+                .into(),
+        );
         before_chart.push(Line::default());
 
         let mut after_chart = vec![Line::default()];
-        after_chart.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
+        after_chart.push(" History Pruning Audit".bold().into());
         if self.last_prune_saved_tokens.is_none() {
             after_chart.push(no_prune_totals_line());
         } else {
             after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
                 Span::styled(
-                    "latest pass applied",
+                    "cumulative thread history",
                     Style::default().fg(Color::Cyan).bold(),
                 ),
                 Span::from(" · "),
                 Span::styled(
-                    format!("~{} tokens saved", fmt_tokens(saved_tokens)),
+                    format!("~{} tokens removed earlier", fmt_tokens(saved_tokens)),
                     Style::default().fg(Color::Green).bold(),
                 ),
                 Span::styled(" ⚡", Style::default().fg(Color::Yellow)),
             ]));
             after_chart.push(
-                "   Ace only rewrites completed tool-call evidence; the 0-saved rows were not touched."
+                "   History pruning rewrites completed tool-result history; category estimates exclude saved totals."
                     .dim()
                     .into(),
             );
@@ -551,18 +560,10 @@ impl ChatWidget {
             used,
             window,
             after_chart,
-            started_at: Instant::now(),
-            animations_enabled: self.config.animations,
         };
         self.flush_active_cell();
         self.transcript.active_cell = Some(Box::new(cell));
         self.bump_active_cell_revision();
-        if self.config.animations {
-            for tick in 1..=15 {
-                self.bottom_pane
-                    .request_redraw_in(Duration::from_millis(60 * tick));
-            }
-        }
         self.request_redraw();
     }
 }
@@ -596,7 +597,6 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 &snapshot.categories,
                 used,
                 snapshot.window_tokens,
-                1_000,
                 width,
             ));
         }
@@ -681,7 +681,10 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     lines.push(Line::default());
     lines.push(" Continuity evidence".bold().into());
     let pruning = if snapshot.saved_tokens > 0 {
-        format!("~{} reclaimed", fmt_tokens(snapshot.saved_tokens))
+        format!(
+            "~{} removed earlier in history",
+            fmt_tokens(snapshot.saved_tokens)
+        )
     } else {
         "none recorded".to_string()
     };
@@ -765,7 +768,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
 
 /// Scale attribution estimates down when they exceed the measured request
 /// context. If the estimates are smaller, keep them raw and let the caller show
-/// the unassigned remainder as an explicit unattributed bucket.
+/// the remainder as built-in context plus estimation gap.
 fn scale_token_counts(values: &[u64], target: u64) -> Vec<u64> {
     let source_total = values.iter().copied().sum::<u64>();
     if source_total == 0 || target >= source_total {
@@ -792,14 +795,13 @@ fn build_category_bar_chart(
     categories: &[CategoryUsage],
     used: u64,
     window: u64,
-    savings_progress: u64,
     width: u16,
 ) -> Vec<Line<'static>> {
     let bar_width = 24usize;
     let narrow = width < 80;
     let mut lines = Vec::new();
     lines.push(Line::from(
-        " Category Breakdown · current █  session total saved ✨".bold(),
+        " Estimated Attribution · history savings excluded".bold(),
     ));
 
     let overall_cells = if window > 0 {
@@ -845,12 +847,9 @@ fn build_category_bar_chart(
         .max()
         .unwrap_or(0)
         .max(1);
-    let progress = savings_progress.min(1_000);
     for category in categories {
         let current_cells = ((category.tokens * bar_width as u64) / largest_current) as usize;
         let empty_cells = bar_width.saturating_sub(current_cells);
-        let animated_saved = category.saved_tokens.saturating_mul(progress) / 1_000;
-        let sparkle = if progress / 80 % 2 == 0 { "✨" } else { "  " };
         let bar = vec![
             Span::from(if narrow { "   [" } else { "[" }),
             Span::styled(
@@ -864,17 +863,6 @@ fn build_category_bar_chart(
             lines.push(Line::from(vec![
                 Span::from(format!("   {} · ", category.label)),
                 Span::from(fmt_tokens(category.tokens)),
-                if category.saved_tokens > 0 {
-                    Span::styled(
-                        format!(
-                            " · {sparkle} ~{} saved in session",
-                            fmt_tokens(animated_saved)
-                        ),
-                        Style::default().fg(Color::LightGreen).bold(),
-                    )
-                } else {
-                    Span::from(" · 0 saved").dim()
-                },
             ]));
             lines.push(Line::from(bar));
         } else {
@@ -882,17 +870,6 @@ fn build_category_bar_chart(
             spans.extend(bar);
             spans.push(Span::from(" "));
             spans.push(Span::from(fmt_tokens(category.tokens)));
-            spans.push(if category.saved_tokens > 0 {
-                Span::styled(
-                    format!(
-                        "  {sparkle} ~{} saved in session",
-                        fmt_tokens(animated_saved)
-                    ),
-                    Style::default().fg(Color::LightGreen).bold(),
-                )
-            } else {
-                Span::from("  · 0 saved").dim()
-            });
             lines.push(Line::from(spans));
         }
     }
@@ -981,7 +958,7 @@ fn category_legend_line(category: &CategoryUsage, window: u64) -> Line<'static> 
     Line::from(vec![
         Span::styled("● ", Style::default().fg(category.color)),
         Span::from(format!(
-            "{}: {} tokens ({})",
+            "{}: {} tokens ({} of window)",
             category.label,
             fmt_tokens(category.tokens),
             fmt_percent(category.tokens, window),
@@ -1020,7 +997,7 @@ fn smart_prune_saved_context_flash_line(saved_tokens: u64) -> Option<Line<'stati
 }
 
 fn no_prune_totals_line() -> Line<'static> {
-    "   No Ace pruning totals recorded yet".dim().into()
+    "   No history pruning recorded this thread".dim().into()
 }
 
 fn newly_reclaimed_tokens(previous_total: Option<u64>, current_total: u64) -> u64 {
@@ -1112,7 +1089,6 @@ mod tests {
         let categories = vec![CategoryUsage {
             label: "User messages",
             tokens: 500,
-            saved_tokens: 0,
             color: Color::Blue,
         }];
         let lines = build_grid_with_legend(&categories, 500, 1_000, Vec::new());
@@ -1125,7 +1101,6 @@ mod tests {
         let categories = vec![CategoryUsage {
             label: "Tool calls",
             tokens: 10_000_000,
-            saved_tokens: 0,
             color: Color::Yellow,
         }];
         let lines = build_grid_with_legend(&categories, 120, 1_000, Vec::new());
@@ -1138,32 +1113,27 @@ mod tests {
             CategoryUsage {
                 label: "User messages",
                 tokens: 17,
-                saved_tokens: 0,
                 color: Color::LightBlue,
             },
             CategoryUsage {
                 label: "Agent responses",
                 tokens: 251,
-                saved_tokens: 0,
                 color: Color::LightGreen,
             },
             CategoryUsage {
                 label: "Tool calls",
                 tokens: 1_400,
-                saved_tokens: 0,
                 color: Color::LightYellow,
             },
             CategoryUsage {
                 label: "Development rules",
                 tokens: 2_900,
-                saved_tokens: 0,
                 color: Color::LightCyan,
             },
             CategoryUsage {
-                label: "Unattributed (residual)",
+                label: "Built-in + estimate gap",
                 tokens: 6_732,
-                saved_tokens: 0,
-                color: UNATTRIBUTED_COLOR,
+                color: BUILT_IN_CONTEXT_COLOR,
             },
         ];
 
@@ -1175,7 +1145,7 @@ mod tests {
                 (Color::LightGreen, 1),
                 (Color::LightYellow, 3),
                 (Color::LightCyan, 6),
-                (UNATTRIBUTED_COLOR, 14),
+                (BUILT_IN_CONTEXT_COLOR, 14),
             ])
         );
         for (row_index, row) in lines.iter().enumerate() {
@@ -1190,30 +1160,28 @@ mod tests {
     }
 
     #[test]
-    fn category_legend_keeps_user_and_unattributed_colors_distinct() {
+    fn category_legend_keeps_user_and_built_in_context_colors_distinct() {
         let user = CategoryUsage {
             label: "User messages",
             tokens: 17,
-            saved_tokens: 0,
             color: Color::LightBlue,
         };
-        let unattributed = CategoryUsage {
-            label: "Unattributed (residual)",
+        let built_in = CategoryUsage {
+            label: "Built-in + estimate gap",
             tokens: 6_732,
-            saved_tokens: 0,
-            color: UNATTRIBUTED_COLOR,
+            color: BUILT_IN_CONTEXT_COLOR,
         };
 
         let user_legend = category_legend_line(&user, 121_600);
-        let unattributed_legend = category_legend_line(&unattributed, 121_600);
+        let built_in_legend = category_legend_line(&built_in, 121_600);
         assert_eq!(user_legend.spans[0].style.fg, Some(Color::LightBlue));
         assert_eq!(
-            unattributed_legend.spans[0].style.fg,
-            Some(UNATTRIBUTED_COLOR)
+            built_in_legend.spans[0].style.fg,
+            Some(BUILT_IN_CONTEXT_COLOR)
         );
         assert_ne!(
             user_legend.spans[0].style.fg,
-            unattributed_legend.spans[0].style.fg
+            built_in_legend.spans[0].style.fg
         );
     }
 
@@ -1304,7 +1272,13 @@ mod tests {
             },
         ];
 
-        assert_eq!(instruction_bucket_bytes(&sources), (320, 480));
+        assert_eq!(instruction_bucket_tokens(&sources), (80, 120));
+    }
+
+    #[test]
+    fn dashboard_preserves_portable_and_built_in_category_colors() {
+        assert_eq!(dashboard_css_color(PORTABLE_CONTEXT_COLOR), "#d77757");
+        assert_eq!(dashboard_css_color(BUILT_IN_CONTEXT_COLOR), "#8b5cf6");
     }
 
     #[test]
@@ -1344,7 +1318,7 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(text, "   No Ace pruning totals recorded yet");
+        assert_eq!(text, "   No history pruning recorded this thread");
         assert!(!text.contains("trigger"));
         assert!(!text.contains("automatic"));
     }
@@ -1362,49 +1336,33 @@ mod tests {
     }
 
     #[test]
-    fn category_chart_keeps_session_savings_separate_from_current_tool_size() {
+    fn category_chart_excludes_history_savings_and_disclaims_estimate() {
         let categories = vec![
             CategoryUsage {
                 label: "User messages",
                 tokens: 20_000,
-                saved_tokens: 0,
                 color: Color::Blue,
             },
             CategoryUsage {
                 label: "Tool calls",
                 tokens: 24_100,
-                saved_tokens: 60_400,
                 color: Color::Yellow,
             },
         ];
 
-        let initial = build_category_bar_chart(&categories, 44_100, 258_400, 0, 100);
-        let complete = build_category_bar_chart(&categories, 44_100, 258_400, 1_000, 100);
-        let text = complete
+        let lines = build_category_bar_chart(&categories, 44_100, 258_400, 100);
+        let text = lines
             .iter()
             .flat_map(|line| line.spans.iter())
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
         assert!(text.contains("24.1k"));
-        assert!(text.contains("~60.4k saved in session"));
-        assert!(!text.contains("84.5k"));
+        assert!(text.contains("Estimated Attribution"));
+        assert!(text.contains("history savings excluded"));
+        assert!(!text.contains("current context only"));
+        assert!(!text.contains("removed earlier"));
         assert!(!text.contains('→'));
-        assert!(!text.contains("71.4%"));
-        assert_eq!(
-            initial
-                .iter()
-                .flat_map(|line| line.spans.iter())
-                .filter(|span| span.content.contains('▓'))
-                .count(),
-            0
-        );
-        assert!(
-            complete
-                .iter()
-                .flat_map(|line| line.spans.iter())
-                .all(|span| !span.content.contains('▓'))
-        );
     }
 
     #[test]
@@ -1416,9 +1374,8 @@ mod tests {
             used_percent: Some(21),
             has_request_snapshot: true,
             categories: vec![CategoryUsage {
-                label: "Tool calls",
+                label: "Tool activity",
                 tokens: 12_000,
-                saved_tokens: 6_000,
                 color: Color::Yellow,
             }],
             saved_tokens: 6_000,
@@ -1454,7 +1411,7 @@ mod tests {
         assert!(text.contains("GOAL.md"));
         assert!(text.contains("/workspace/GOAL.md"));
         assert!(text.contains("≈256 tokens"));
-        assert!(text.contains("6k reclaimed"));
+        assert!(text.contains("6k removed earlier in history"));
         assert!(text.contains("1 recorded"));
         assert!(text.contains("thread:t/turn:u"));
         assert!(text.contains("/tmp/rollout.jsonl"));
@@ -1468,9 +1425,9 @@ mod tests {
 
         insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 100)), @r"
 gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
-Category Breakdown · current █  session total saved ✨
+Estimated Attribution · history savings excluded
   Overall Capacity [█████░░░░░░░░░░░░░░░░░░░] 42k/200k tokens (21.0% used)
-  Tool calls       [████████████████████████] 12k  ✨ ~6k saved in session
+  Tool activity    [████████████████████████] 12k
   Category and source sizes are attribution estimates; the occupancy above is measured.
 
 Context Ledger
@@ -1480,7 +1437,7 @@ Context Ledger
       the active objective · until goal completion
 
 Continuity evidence
-  Pruning ~6k reclaimed  ·  Native compaction (process) 1 recorded  ·  Backtrack 2 available
+  Pruning ~6k removed earlier in history  ·  Native compaction (process) 1 recorded  ·  Backtrack 2 available
   Pruning checkpoint count: not recorded in the current UI snapshot.
   Latest process compaction: context compaction · 1 · evidence thread:t/turn:u
   Rollout /tmp/rollout.jsonl
@@ -1489,10 +1446,10 @@ Context accounting only · no task-quality, cost, or causal claims.
 ");
         insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 60)), @r"
 gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
-Category Breakdown · current █  session total saved ✨
+Estimated Attribution · history savings excluded
   Overall · 42k/200k · 21.0% used
   [█████░░░░░░░░░░░░░░░░░░░]
-  Tool calls · 12k · ✨ ~6k saved in session
+  Tool activity · 12k
   [████████████████████████]
   Estimates by category/source · headline is measured.
 
@@ -1504,7 +1461,7 @@ Context Ledger
       the active objective · until goal completion
 
 Continuity evidence
-  Pruning ~6k reclaimed
+  Pruning ~6k removed earlier in history
   Native compaction (process) 1 recorded
   Backtrack 2 available
   Pruning checkpoint count unavailable in this UI snapshot.
@@ -1527,7 +1484,6 @@ Accounting only · no quality, cost, or causal claims.
             categories: vec![CategoryUsage {
                 label: "Tool calls",
                 tokens: 12_000,
-                saved_tokens: 6_000,
                 color: Color::Yellow,
             }],
             saved_tokens: 6_000,
@@ -1572,7 +1528,6 @@ Accounting only · no quality, cost, or causal claims.
             categories: vec![CategoryUsage {
                 label: "Tool calls",
                 tokens: 12_000,
-                saved_tokens: 6_000,
                 color: Color::Yellow,
             }],
             saved_tokens: 6_000,

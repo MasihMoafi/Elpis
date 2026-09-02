@@ -618,9 +618,9 @@ fn user_positions_iter(
 /// the Context Ledger already labels its own per-source sizes as estimated tokens.
 pub(crate) struct ContextUsageTranscriptTotals {
     pub(crate) checkpoints: usize,
-    pub(crate) user_message_chars: usize,
-    pub(crate) agent_response_chars: usize,
-    pub(crate) tool_call_chars: usize,
+    pub(crate) user_message_bytes: usize,
+    pub(crate) agent_response_bytes: usize,
+    pub(crate) tool_activity_bytes: usize,
 }
 
 pub(crate) fn context_usage_totals(
@@ -636,9 +636,9 @@ pub(crate) fn context_usage_totals(
 
     let mut totals = ContextUsageTranscriptTotals {
         checkpoints: user_count(cells),
-        user_message_chars: 0,
-        agent_response_chars: 0,
-        tool_call_chars: 0,
+        user_message_bytes: 0,
+        agent_response_bytes: 0,
+        tool_activity_bytes: 0,
     };
 
     fn classify_and_tally(
@@ -661,43 +661,43 @@ pub(crate) fn context_usage_totals(
             }
         }
 
-        let chars: usize = cell
+        let bytes: usize = cell
             .raw_lines()
             .iter()
             .map(|line| {
                 line.spans
                     .iter()
-                    .map(|span| span.content.chars().count())
+                    .map(|span| span.content.len())
                     .sum::<usize>()
             })
             .sum();
 
-        if chars == 0 {
+        if bytes == 0 {
             return;
         }
 
         if kind == TypeId::of::<UserHistoryCell>() {
-            totals.user_message_chars += chars;
+            totals.user_message_bytes += bytes;
         } else if kind == TypeId::of::<AgentMessageCell>()
             || kind == TypeId::of::<crate::history_cell::AgentMarkdownCell>()
             || kind == TypeId::of::<crate::history_cell::StreamingAgentTailCell>()
             || kind == TypeId::of::<crate::history_cell::ReasoningSummaryCell>()
         {
-            totals.agent_response_chars += chars;
+            totals.agent_response_bytes += bytes;
         } else if kind == TypeId::of::<crate::history_cell::UnifiedExecInteractionCell>()
             || kind == TypeId::of::<crate::history_cell::HookCell>()
             || kind == TypeId::of::<crate::history_cell::McpToolCallCell>()
             || kind == TypeId::of::<crate::history_cell::PatchHistoryCell>()
             || kind == TypeId::of::<crate::history_cell::WebSearchCell>()
         {
-            totals.tool_call_chars += chars;
+            totals.tool_activity_bytes += bytes;
         } else if kind == TypeId::of::<crate::history_cell::PlainHistoryCell>()
             || kind == TypeId::of::<crate::history_cell::FinalMessageSeparator>()
             || kind == TypeId::of::<crate::history_cell::UpdateAvailableHistoryCell>()
         {
             // System UI / Plain output / Separators
         } else {
-            totals.tool_call_chars += chars;
+            totals.tool_activity_bytes += bytes;
         }
     }
 
@@ -712,9 +712,9 @@ pub(crate) fn context_usage_totals(
     // only past the last banner yields an empty conversation. When that happens but
     // earlier cells exist, count the whole transcript instead of reporting zeros.
     if start > 0
-        && totals.user_message_chars == 0
-        && totals.agent_response_chars == 0
-        && totals.tool_call_chars == 0
+        && totals.user_message_bytes == 0
+        && totals.agent_response_bytes == 0
+        && totals.tool_activity_bytes == 0
     {
         tally(&mut totals, 0);
     }
@@ -1131,7 +1131,7 @@ mod tests {
     fn context_usage_totals_buckets_by_cell_type() {
         let cells: Vec<Arc<dyn HistoryCell>> = vec![
             Arc::new(UserHistoryCell {
-                message: "hi there".to_string(),
+                message: "سلام 🌱".to_string(),
                 text_elements: Vec::new(),
                 local_image_paths: Vec::new(),
                 remote_image_urls: Vec::new(),
@@ -1150,8 +1150,14 @@ mod tests {
         let totals = context_usage_totals(&cells);
 
         assert_eq!(totals.checkpoints, 1);
-        assert!(totals.user_message_chars > 0);
-        assert!(totals.agent_response_chars > 0);
-        assert!(totals.tool_call_chars > 0);
+        let expected_user_bytes = cells[0]
+            .raw_lines()
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.len())
+            .sum::<usize>();
+        assert_eq!(totals.user_message_bytes, expected_user_bytes);
+        assert!(totals.agent_response_bytes > 0);
+        assert!(totals.tool_activity_bytes > 0);
     }
 }
