@@ -137,7 +137,11 @@ async fn manual_memory_mutation_excludes_ordinary_and_add_writers_before_disk_io
 async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    configure_ledger_sources(&mut chat, root.path())?;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let user_file = root.path().join("user-notes.md");
+    std::fs::write(&user_file, "Manually selected context")?;
+    crate::legacy_core::elpis_context::add_continuity_source(Some(&memories), &cwd, &user_file)?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
 
     let unfocused = render_ledger(&chat, 80);
     assert!(unfocused.contains("Tab focus"));
@@ -149,9 +153,15 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
 
     // GOAL.md and ES.md both carry the session forward, so they share one category and
     // there is no separate evidence heading.
-    for heading in ["SESSION CONTINUITY", "DURABLE MEMORY", "INSTRUCTIONS"] {
+    for heading in [
+        "SESSION CONTINUITY",
+        "USER FILES",
+        "DURABLE MEMORY",
+        "INSTRUCTIONS",
+    ] {
         assert!(rendered.contains(heading), "missing {heading}:\n{rendered}");
     }
+    assert!(rendered.contains("user-notes.md"));
     assert!(rendered.contains("≈"), "token estimates must be labeled");
     assert!(rendered.contains("Up/Down move"));
     assert!(rendered.contains("Space/Enter toggle"));
@@ -663,9 +673,11 @@ async fn ledger_renders_smart_prune_switch_in_both_states() {
         },
     );
     let evidenced = render_ledger(&chat, 30);
-    assert!(evidenced.contains("2/3 admitted"));
-    assert!(evidenced.contains("≈4.0k→≈700"));
-    assert!(evidenced.contains("1 failed"));
+    assert!(evidenced.contains("Admitted 2 of 3 outputs"));
+    assert!(evidenced.contains("source ≈4.0k → kept ≈700"));
+    assert!(evidenced.contains("saved ≈3.3k"));
+    assert!(!evidenced.contains("failed"));
+    assert!(!evidenced.contains("≈4.0k→≈700"));
     assert!(evidenced.contains("Latest 019d0000 · response linked"));
 
     chat.bottom_pane.set_task_running(/*running*/ true);

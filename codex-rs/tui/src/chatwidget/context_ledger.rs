@@ -14,6 +14,56 @@ use crate::terminal_palette::stdout_color_level;
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
 
+/// User-facing grouping for portable sources. Core categories retain their
+/// admission semantics; this layer only keeps manually selected files from
+/// being presented as Elpis-owned session continuity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LedgerSourceGroup {
+    SessionContinuity,
+    UserFiles,
+    DurableMemory,
+    Instructions,
+}
+
+impl LedgerSourceGroup {
+    pub(super) const ALL: [Self; 4] = [
+        Self::SessionContinuity,
+        Self::UserFiles,
+        Self::DurableMemory,
+        Self::Instructions,
+    ];
+
+    pub(super) fn for_source(source: &crate::legacy_core::elpis_context::ContinuitySource) -> Self {
+        use crate::legacy_core::elpis_context::ContinuitySourceCategory as C;
+        if source.origin == "manual addition" {
+            return Self::UserFiles;
+        }
+        match source.category {
+            C::Files => Self::SessionContinuity,
+            C::Memory => Self::DurableMemory,
+            C::Instructions => Self::Instructions,
+        }
+    }
+
+    pub(super) fn display_name(self) -> &'static str {
+        match self {
+            Self::SessionContinuity => "SESSION CONTINUITY",
+            Self::UserFiles => "USER FILES",
+            Self::DurableMemory => "DURABLE MEMORY",
+            Self::Instructions => "INSTRUCTIONS",
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            Self::SessionContinuity => Color::Rgb(52, 168, 83),
+            Self::UserFiles => Color::Rgb(59, 130, 246),
+            Self::DurableMemory => Color::Rgb(215, 119, 87),
+            Self::Instructions => Color::Rgb(255, 193, 7),
+        }
+    }
+}
+
 /// The ledger's rendered content: the lines themselves, the line range each source
 /// occupies (for selection scrolling), and `(line index, file:// destination)` for
 /// every source row that maps to a real file on disk.
@@ -312,18 +362,18 @@ impl ChatWidget {
         // conversation itself — the biggest consumer, previously invisible here.
         let conversation_tokens = used_tokens.saturating_sub(admitted_display_tokens);
         let used_percent = self.status_line_context_used_percent().unwrap_or(0);
-        let admitted_segments = crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL
+        let admitted_segments = LedgerSourceGroup::ALL
             .into_iter()
-            .filter(|category| {
-                *category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
-            })
-            .map(|category| {
+            .filter(|group| *group != LedgerSourceGroup::DurableMemory)
+            .map(|group| {
                 let admitted = sources
                     .iter()
-                    .filter(|source| source.category == category && source.admitted)
+                    .filter(|source| {
+                        LedgerSourceGroup::for_source(source) == group && source.admitted
+                    })
                     .map(|source| source.estimated_tokens)
                     .sum::<u64>();
-                (admitted, category_color(category))
+                (admitted, group.color())
             })
             .collect::<Vec<_>>();
         let mut bar_segments = vec![(conversation_tokens, messages_color)];
@@ -404,12 +454,12 @@ impl ChatWidget {
             "Reading current thread state".to_string()
         } else if self.smart_prune.examined_outputs > 0 {
             format!(
-                "{}/{} admitted · ≈{}→≈{} · {} failed",
+                "Admitted {} of {} outputs · source ≈{} → kept ≈{} · saved ≈{}",
                 self.smart_prune.admitted_outputs,
                 self.smart_prune.examined_outputs,
                 format_tokens(self.smart_prune.approx_source_tokens),
                 format_tokens(self.smart_prune.approx_admitted_tokens),
-                self.smart_prune.failed_batches,
+                format_tokens(self.smart_prune.approx_saved_tokens),
             )
         } else if smart_prune_enabled {
             "Before first send · sent history stays stable".to_string()
@@ -481,11 +531,11 @@ impl ChatWidget {
             lines.push(Line::from("No portable context is available.".dim()));
         }
         let mut source_line_ranges = vec![0..0; sources.len()];
-        for category in crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL {
+        for group in LedgerSourceGroup::ALL {
             let category_sources = sources
                 .iter()
                 .enumerate()
-                .filter(|(_, source)| source.category == category)
+                .filter(|(_, source)| LedgerSourceGroup::for_source(source) == group)
                 .collect::<Vec<_>>();
             if category_sources.is_empty() {
                 continue;
@@ -495,10 +545,10 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let cat_style = Style::default().fg(category_color(category));
+            let cat_style = Style::default().fg(group.color());
             lines.push(Line::from(vec![
                 Span::styled("■ ", cat_style),
-                Span::styled(category.display_name(), cat_style.bold()),
+                Span::styled(group.display_name(), cat_style.bold()),
                 Span::raw("  "),
                 Span::styled(
                     format!("≈{} tokens admitted", format_tokens(admitted_tokens)),
@@ -1204,15 +1254,6 @@ fn all_bulk_context_sources_admitted(
     actionable
         .next()
         .is_some_and(|first| first.admitted && actionable.all(|source| source.admitted))
-}
-
-fn category_color(category: crate::legacy_core::elpis_context::ContinuitySourceCategory) -> Color {
-    use crate::legacy_core::elpis_context::ContinuitySourceCategory as C;
-    match category {
-        C::Files => Color::Rgb(52, 168, 83),
-        C::Memory => Color::Rgb(215, 119, 87),
-        C::Instructions => Color::Rgb(255, 193, 7),
-    }
 }
 
 /// One-line horizontal usage bar: a colored segment per (tokens, color) entry,

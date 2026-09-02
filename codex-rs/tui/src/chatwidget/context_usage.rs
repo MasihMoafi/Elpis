@@ -9,7 +9,7 @@
 //! headline number. It is the same snapshot used by the status line and the
 //! Context Ledger. Transcript and portable-source byte counts are attribution
 //! estimates only: they are scaled to that measured total, and any unaccounted
-//! remainder is shown explicitly as "Other (overhead)".
+//! remainder is shown explicitly as "Unattributed context".
 
 use codex_features::Feature;
 use ratatui::style::Color;
@@ -21,6 +21,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use super::ChatWidget;
+use super::context_ledger::LedgerSourceGroup;
 use crate::app_backtrack::ContextUsageTranscriptTotals;
 use crate::history_cell::HistoryCell;
 use crate::legacy_core::elpis_context::ContinuitySourceCategory;
@@ -247,39 +248,39 @@ impl ChatWidget {
                 label: "User messages",
                 tokens: conversation[0],
                 saved_tokens: 0,
-                color: Color::Blue,
+                color: Color::LightBlue,
             },
             CategoryUsage {
                 label: "Agent responses",
                 tokens: conversation[1],
                 saved_tokens: 0,
-                color: Color::Green,
+                color: Color::LightGreen,
             },
             CategoryUsage {
                 label: "Tool calls",
                 tokens: conversation[2],
                 saved_tokens,
-                color: Color::Yellow,
+                color: Color::LightYellow,
             },
             CategoryUsage {
                 label: "System prompt",
                 tokens: fixed_system,
                 saved_tokens: 0,
-                color: Color::Magenta,
+                color: Color::LightMagenta,
             },
             CategoryUsage {
                 label: "Development rules",
                 tokens: fixed_development_rules,
                 saved_tokens: 0,
-                color: Color::Cyan,
+                color: Color::LightCyan,
             },
         ];
         if other > 0 {
             categories.push(CategoryUsage {
-                label: "Other (overhead)",
+                label: "Unattributed context",
                 tokens: other,
                 saved_tokens: 0,
-                color: Color::DarkGray,
+                color: Color::Gray,
             });
         }
         let used_percent = has_request_snapshot
@@ -314,12 +315,12 @@ impl ChatWidget {
         let snapshot = self.context_usage_snapshot(totals);
         let to_css_color = |color: Color| -> String {
             match color {
-                Color::Blue => "#3b82f6",
-                Color::Green => "#22c55e",
-                Color::Yellow => "#eab308",
-                Color::Magenta => "#d946ef",
-                Color::Cyan => "#06b6d4",
-                Color::DarkGray => "#6b635a",
+                Color::Blue | Color::LightBlue => "#3b82f6",
+                Color::Green | Color::LightGreen => "#22c55e",
+                Color::Yellow | Color::LightYellow => "#eab308",
+                Color::Magenta | Color::LightMagenta => "#d946ef",
+                Color::Cyan | Color::LightCyan => "#06b6d4",
+                Color::Gray | Color::DarkGray => "#6b635a",
                 _ => "#6b635a",
             }
             .to_string()
@@ -456,15 +457,7 @@ impl ChatWidget {
         );
         legend.push("Token usage by category".bold().into());
         for category in &categories {
-            legend.push(Line::from(vec![
-                Span::styled("● ", Style::default().fg(category.color)),
-                Span::from(format!(
-                    "{}: {} tokens ({})",
-                    category.label,
-                    fmt_tokens(category.tokens),
-                    fmt_percent(category.tokens, window),
-                )),
-            ]));
+            legend.push(category_legend_line(category, window));
         }
         legend.push(Line::from(vec![
             Span::from("□ ").dim(),
@@ -622,19 +615,19 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     if snapshot.sources.is_empty() {
         lines.push("   No continuity sources discovered.".dim().into());
     } else {
-        for category in ContinuitySourceCategory::ALL {
+        for group in LedgerSourceGroup::ALL {
             let sources = snapshot
                 .sources
                 .iter()
-                .filter(|source| source.category == category);
+                .filter(|source| LedgerSourceGroup::for_source(source) == group);
             if !snapshot
                 .sources
                 .iter()
-                .any(|source| source.category == category)
+                .any(|source| LedgerSourceGroup::for_source(source) == group)
             {
                 continue;
             }
-            lines.push(format!("   {}", category.display_name()).bold().into());
+            lines.push(format!("   {}", group.display_name()).bold().into());
             for source in sources {
                 let (marker, state, style) = if source.admitted {
                     ("●", "admitted", Style::default().fg(Color::LightGreen))
@@ -759,7 +752,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
 
 /// Scale attribution estimates down when they exceed the measured request
 /// context. If the estimates are smaller, keep them raw and let the caller show
-/// the unassigned remainder as an explicit overhead bucket.
+/// the unassigned remainder as an explicit unattributed bucket.
 fn scale_token_counts(values: &[u64], target: u64) -> Vec<u64> {
     let source_total = values.iter().copied().sum::<u64>();
     if source_total == 0 || target >= source_total {
@@ -922,24 +915,21 @@ fn build_grid_with_legend(
     window: u64,
     legend: Vec<Line<'static>>,
 ) -> Vec<Line<'static>> {
-    let used_cells = ((used.min(window) as usize) * GRID_CELLS) / window.max(1) as usize;
-    let used_total: u64 = categories.iter().map(|c| c.tokens).sum();
-
-    let mut cells: Vec<Option<Color>> = Vec::with_capacity(GRID_CELLS);
-    if used_total > 0 {
-        let mut remaining = used_cells;
-        for (index, category) in categories.iter().enumerate() {
-            let share = if index + 1 == categories.len() {
-                remaining
-            } else {
-                (((category.tokens as usize) * used_cells) / used_total as usize).min(remaining)
-            };
-            cells.extend(std::iter::repeat_n(Some(category.color), share));
-            remaining -= share;
-        }
+    let used_cells =
+        ((u128::from(used.min(window)) * GRID_CELLS as u128) / u128::from(window.max(1))) as usize;
+    let counts = category_grid_cell_counts(categories, used_cells);
+    let allocated_colors = categories
+        .iter()
+        .zip(counts)
+        .flat_map(|(category, count)| std::iter::repeat_n(category.color, count));
+    let mut cells = vec![None; GRID_CELLS];
+    for (position, color) in allocated_colors.enumerate() {
+        // Fill top-to-bottom before moving right so a 9%-full context reads as
+        // roughly 9% of the grid's width, rather than an almost-full first row.
+        let row = position % GRID_ROWS;
+        let column = position / GRID_ROWS;
+        cells[row * GRID_COLUMNS + column] = Some(color);
     }
-    cells.resize(used_cells, None);
-    cells.resize(GRID_CELLS, None);
 
     let mut legend_iter = legend.into_iter();
     let mut lines: Vec<Line<'static>> = cells
@@ -964,6 +954,47 @@ fn build_grid_with_legend(
         lines.push(Line::from(spans));
     }
     lines
+}
+
+fn category_grid_cell_counts(categories: &[CategoryUsage], used_cells: usize) -> Vec<usize> {
+    let total = categories
+        .iter()
+        .map(|category| u128::from(category.tokens))
+        .sum::<u128>();
+    if total == 0 || used_cells == 0 {
+        return vec![0; categories.len()];
+    }
+
+    let mut remainders = Vec::with_capacity(categories.len());
+    let mut counts = categories
+        .iter()
+        .enumerate()
+        .map(|(index, category)| {
+            let scaled = u128::from(category.tokens) * used_cells as u128;
+            remainders.push((index, scaled % total));
+            (scaled / total) as usize
+        })
+        .collect::<Vec<_>>();
+    let remaining = used_cells.saturating_sub(counts.iter().sum());
+    remainders.sort_by(|(left_index, left), (right_index, right)| {
+        right.cmp(left).then_with(|| left_index.cmp(right_index))
+    });
+    for (index, _) in remainders.into_iter().take(remaining) {
+        counts[index] += 1;
+    }
+    counts
+}
+
+fn category_legend_line(category: &CategoryUsage, window: u64) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("● ", Style::default().fg(category.color)),
+        Span::from(format!(
+            "{}: {} tokens ({})",
+            category.label,
+            fmt_tokens(category.tokens),
+            fmt_percent(category.tokens, window),
+        )),
+    ])
 }
 
 pub(super) fn saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static>> {
@@ -1043,6 +1074,18 @@ mod tests {
             .count()
     }
 
+    fn grid_color_counts(lines: &[Line<'static>]) -> std::collections::HashMap<Color, usize> {
+        let mut counts = std::collections::HashMap::new();
+        for span in lines.iter().flat_map(|line| line.spans.iter()) {
+            if span.content.contains('●')
+                && let Some(color) = span.style.fg
+            {
+                *counts.entry(color).or_insert(0) += 1;
+            }
+        }
+        counts
+    }
+
     fn plain_text(lines: Vec<Line<'static>>) -> String {
         lines
             .into_iter()
@@ -1079,6 +1122,135 @@ mod tests {
         }];
         let lines = build_grid_with_legend(&categories, 120, 1_000, Vec::new());
         assert_eq!(filled_cells(&lines), (120 * GRID_CELLS) / 1_000);
+    }
+
+    #[test]
+    fn grid_allocates_screenshot_categories_fairly_and_fills_by_column() {
+        let categories = vec![
+            CategoryUsage {
+                label: "User messages",
+                tokens: 17,
+                saved_tokens: 0,
+                color: Color::LightBlue,
+            },
+            CategoryUsage {
+                label: "Agent responses",
+                tokens: 251,
+                saved_tokens: 0,
+                color: Color::LightGreen,
+            },
+            CategoryUsage {
+                label: "Tool calls",
+                tokens: 1_400,
+                saved_tokens: 0,
+                color: Color::LightYellow,
+            },
+            CategoryUsage {
+                label: "Development rules",
+                tokens: 2_900,
+                saved_tokens: 0,
+                color: Color::LightCyan,
+            },
+            CategoryUsage {
+                label: "Unattributed context",
+                tokens: 6_732,
+                saved_tokens: 0,
+                color: Color::Gray,
+            },
+        ];
+
+        let lines = build_grid_with_legend(&categories, 11_300, 121_600, Vec::new());
+        assert_eq!(filled_cells(&lines), 24);
+        assert_eq!(
+            grid_color_counts(&lines),
+            std::collections::HashMap::from([
+                (Color::LightGreen, 1),
+                (Color::LightYellow, 3),
+                (Color::LightCyan, 6),
+                (Color::Gray, 14),
+            ])
+        );
+        for (row_index, row) in lines.iter().enumerate() {
+            assert_eq!(row.spans[1].content, "● ");
+            assert_eq!(row.spans[2].content, "● ");
+            assert_eq!(
+                row.spans[3].content,
+                if row_index < 4 { "● " } else { "□ " }
+            );
+            assert_eq!(row.spans[4].content, "□ ");
+        }
+    }
+
+    #[test]
+    fn category_legend_keeps_user_and_unattributed_colors_distinct() {
+        let user = CategoryUsage {
+            label: "User messages",
+            tokens: 17,
+            saved_tokens: 0,
+            color: Color::LightBlue,
+        };
+        let unattributed = CategoryUsage {
+            label: "Unattributed context",
+            tokens: 6_732,
+            saved_tokens: 0,
+            color: Color::Gray,
+        };
+
+        let user_legend = category_legend_line(&user, 121_600);
+        let unattributed_legend = category_legend_line(&unattributed, 121_600);
+        assert_eq!(user_legend.spans[0].style.fg, Some(Color::LightBlue));
+        assert_eq!(unattributed_legend.spans[0].style.fg, Some(Color::Gray));
+        assert_ne!(
+            user_legend.spans[0].style.fg,
+            unattributed_legend.spans[0].style.fg
+        );
+    }
+
+    #[test]
+    fn context_report_groups_manual_additions_as_user_files() {
+        let snapshot = ContextUsageSnapshot {
+            model: "gpt-test".to_string(),
+            used_tokens: None,
+            window_tokens: 200_000,
+            used_percent: None,
+            has_request_snapshot: false,
+            categories: Vec::new(),
+            saved_tokens: 0,
+            sources: vec![
+                crate::legacy_core::elpis_context::ContinuitySource {
+                    name: "GOAL.md".to_string(),
+                    path: std::path::PathBuf::from("/workspace/GOAL.md"),
+                    bytes: 64,
+                    estimated_tokens: 16,
+                    category: ContinuitySourceCategory::Files,
+                    origin: "Elpis workspace state",
+                    lifetime: "every turn",
+                    reason: "active workspace goal",
+                    admitted: true,
+                    selectable: true,
+                },
+                crate::legacy_core::elpis_context::ContinuitySource {
+                    name: "/workspace/notes.md".to_string(),
+                    path: std::path::PathBuf::from("/workspace/notes.md"),
+                    bytes: 80,
+                    estimated_tokens: 20,
+                    category: ContinuitySourceCategory::Files,
+                    origin: "manual addition",
+                    lifetime: "every turn",
+                    reason: "manually added file",
+                    admitted: true,
+                    selectable: true,
+                },
+            ],
+            backtrack_points: 0,
+            native_compaction_count: 0,
+            latest_native_compaction: None,
+            rollout_path: None,
+        };
+
+        let text = plain_text(render_dashboard_lines(&snapshot, 100));
+        assert!(text.contains("SESSION CONTINUITY\n    ● admitted  GOAL.md"));
+        assert!(text.contains("USER FILES\n    ● admitted  /workspace/notes.md"));
     }
 
     #[test]
