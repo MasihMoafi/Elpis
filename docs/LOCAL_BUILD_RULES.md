@@ -103,9 +103,9 @@ The selector itself forces `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`,
 `CODEX_SKIP_BWRAP_BUILD=1`, and `CARGO_TARGET_DIR=<selected target>` for every Cargo
 child, invoking it through `nice -n 10`. The wrapper in the examples keeps that
 hardware policy visible at the call site too. Without an
-override, it runs `git rev-parse --path-format=absolute --git-common-dir`, takes the
-common directory's parent, and uses `<parent>/codex-rs/target`. This keeps linked
-worktrees on the repository's shared target.
+override, it uses `<current checkout>/codex-rs/target`, so linked worktrees do not
+reuse another checkout's path-crate artifacts. Explicitly sharing one target across
+different checkouts can reuse stale artifacts and produce false failures.
 
 `ELPIS_CARGO_TARGET_DIR` is accepted only when the value is absolute and the target is
 writable. Replace `/absolute/shared/target` with a real writable path; the selector

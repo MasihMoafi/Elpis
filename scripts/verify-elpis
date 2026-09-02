@@ -443,10 +443,7 @@ if [[ -n ${ELPIS_CARGO_TARGET_DIR-} ]]; then
     target_dir=$ELPIS_CARGO_TARGET_DIR
     [[ $target_dir == /* ]] || die "ELPIS_CARGO_TARGET_DIR must be absolute"
 else
-    git_common_dir=$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
-        die "could not resolve the Git common directory"
-    [[ $git_common_dir == /* ]] || die "Git common directory is not absolute"
-    target_dir="$(dirname "$git_common_dir")/codex-rs/target"
+    target_dir="$REPO_ROOT/codex-rs/target"
 fi
 if [[ -e $target_dir && ! -d $target_dir ]]; then
     die "Cargo target exists but is not a directory: $target_dir"

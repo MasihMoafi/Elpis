@@ -171,7 +171,8 @@ PY
 
 assert_all_cargo_env() {
     local expected_target=${1:-"$FIXTURE/codex-rs/target"}
-    python3 - "$FAKE_CARGO_LOG" "$FIXTURE/codex-rs" "$expected_target" <<'PY'
+    local expected_cargo_cwd=${2:-"$FIXTURE/codex-rs"}
+    python3 - "$FAKE_CARGO_LOG" "$expected_cargo_cwd" "$expected_target" <<'PY'
 import os
 import sys
 
@@ -456,6 +457,40 @@ assert_status 0
 assert_output "Elpis verification: target=$custom_target"
 assert_all_cargo_env "$custom_target"
 
+# Linked worktrees must not reuse another checkout's target. Cargo fingerprints
+# can otherwise accept stale path-crate artifacts from the sibling checkout.
+new_fixture linked-worktree-target
+touch "$FIXTURE/codex-rs/.gitkeep"
+git -C "$FIXTURE" add \
+    codex-rs/.gitkeep \
+    scripts/verify-elpis \
+    tools/verify-elpis/surfaces.toml
+git -C "$FIXTURE" \
+    -c user.name='Elpis verifier test' \
+    -c user.email='elpis-verifier@example.invalid' \
+    commit -qm 'fixture'
+linked_checkout="$TMP_ROOT/linked-checkout"
+git -C "$FIXTURE" worktree add -qb linked-target "$linked_checkout"
+linked_output="$FIXTURE/linked-selector-output"
+: > "$FAKE_CARGO_LOG"
+set +e
+(
+    cd "$linked_checkout"
+    env \
+        PATH="$FIXTURE/bin:$PATH" \
+        FAKE_CARGO_LOG="$FAKE_CARGO_LOG" \
+        scripts/verify-elpis --surface dashboard
+) > "$linked_output" 2>&1
+RUN_STATUS=$?
+set -e
+RUN_OUTPUT=$(<"$linked_output")
+assert_status 0
+assert_output "Elpis verification: target=$linked_checkout/codex-rs/target"
+assert_not_output "Elpis verification: target=$FIXTURE/codex-rs/target"
+assert_all_cargo_env \
+    "$linked_checkout/codex-rs/target" \
+    "$linked_checkout/codex-rs"
+
 new_fixture no-input
 run_selector
 assert_failure_before_cargo
@@ -725,7 +760,8 @@ local_contract = squash(local_selector)
 for clause in (
     "The selector itself forces `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`, `CODEX_SKIP_BWRAP_BUILD=1`, and `CARGO_TARGET_DIR=<selected target>` for every Cargo child, invoking it through `nice -n 10`.",
     "The wrapper in the examples keeps that hardware policy visible at the call site too.",
-    "Without an override, it runs `git rev-parse --path-format=absolute --git-common-dir`, takes the common directory's parent, and uses `<parent>/codex-rs/target`.",
+    "Without an override, it uses `<current checkout>/codex-rs/target`, so linked worktrees do not reuse another checkout's path-crate artifacts.",
+    "Explicitly sharing one target across different checkouts can reuse stale artifacts and produce false failures.",
     "`ELPIS_CARGO_TARGET_DIR` is accepted only when the value is absolute and the target is writable.",
     "It may create the target directory, but it never deletes targets or caches and never runs `cargo clean`.",
     "`cargo fmt --all --check` is the one narrow check-only exception to section 6: it checks the whole workspace without rewriting source.",
