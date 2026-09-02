@@ -188,13 +188,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .send_server_notification(ServerNotification::TurnStarted(notification))
                 .await;
             if let Some(cost) = initial_turn_cost {
-                send_turn_cost_updated(
-                    &outgoing,
-                    conversation_id,
-                    &payload.turn_id,
-                    cost,
-                )
-                .await;
+                send_turn_cost_updated(&outgoing, conversation_id, &payload.turn_id, cost).await;
             }
         }
         EventMsg::TurnComplete(turn_complete_event) => {

@@ -84,8 +84,8 @@ impl ChatWidget {
                     .thread_id()
                     .is_some_and(|thread_id| thread_id.to_string() == notification.thread_id);
                 if is_current_thread {
-                    let dashboard_changed = !self.smart_prune_synced
-                        || self.smart_prune != notification.smart_prune;
+                    let dashboard_changed =
+                        !self.smart_prune_synced || self.smart_prune != notification.smart_prune;
                     self.smart_prune = notification.smart_prune;
                     self.smart_prune_synced = true;
                     if dashboard_changed {

@@ -63,7 +63,10 @@ pub fn parse_ts_js_scopes(source: &str) -> Vec<SymbolScope> {
             let rem = &source[i..];
 
             // 1. Check for `class` or `export class`
-            if rem.starts_with("class ") || rem.starts_with("export class ") || rem.starts_with("export default class ") {
+            if rem.starts_with("class ")
+                || rem.starts_with("export class ")
+                || rem.starts_with("export default class ")
+            {
                 let decl_start = find_line_start(source, i);
                 if let Some((sig, name, body_start, body_end)) = extract_brace_block(source, i) {
                     let (start_line, _) = line_index.line_col(source, decl_start);
@@ -261,7 +264,12 @@ fn is_method_signature(s: &str) -> bool {
         || trimmed.starts_with("protected ")
         || trimmed.starts_with("async ")
         || trimmed.starts_with("constructor(")
-        || (trimmed.contains('(') && trimmed.contains(')') && !trimmed.starts_with("if") && !trimmed.starts_with("for") && !trimmed.starts_with("while") && !trimmed.starts_with("switch"))
+        || (trimmed.contains('(')
+            && trimmed.contains(')')
+            && !trimmed.starts_with("if")
+            && !trimmed.starts_with("for")
+            && !trimmed.starts_with("while")
+            && !trimmed.starts_with("switch"))
 }
 
 fn extract_brace_block(source: &str, start_pos: usize) -> Option<(String, String, usize, usize)> {
@@ -303,7 +311,15 @@ fn extract_brace_block(source: &str, start_pos: usize) -> Option<(String, String
 }
 
 fn extract_identifier(sig: &str) -> String {
-    for kw in &["class ", "function ", "interface ", "const ", "let ", "var ", "async "] {
+    for kw in &[
+        "class ",
+        "function ",
+        "interface ",
+        "const ",
+        "let ",
+        "var ",
+        "async ",
+    ] {
         if let Some(pos) = sig.find(kw) {
             let after = sig[pos + kw.len()..].trim_start();
             let name_end = after

@@ -43,10 +43,7 @@ fn automatic_context_pruning_is_experimental_and_opt_in() {
             announcement: "",
         }
     );
-    assert_eq!(
-        Feature::AutomaticContextPruning.default_enabled(),
-        false
-    );
+    assert_eq!(Feature::AutomaticContextPruning.default_enabled(), false);
     assert_eq!(
         feature_for_key("automatic_context_pruning"),
         Some(Feature::AutomaticContextPruning)

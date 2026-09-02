@@ -160,9 +160,7 @@ fn current_unavailable_auth_reason(
             Some(TurnCostAvailability::BackendUnavailable)
         }
         Some(AuthMode::BedrockApiKey) => None,
-        None if provider_requires_openai_auth => {
-            Some(TurnCostAvailability::BackendUnavailable)
-        }
+        None if provider_requires_openai_auth => Some(TurnCostAvailability::BackendUnavailable),
         None => None,
     }
 }
@@ -174,10 +172,7 @@ fn current_auth_snapshot(
 ) -> (u64, Option<TurnCostAvailability>) {
     loop {
         let revision_before = *auth_changes.borrow();
-        let reason = current_unavailable_auth_reason(
-            auth_manager,
-            provider_requires_openai_auth,
-        );
+        let reason = current_unavailable_auth_reason(auth_manager, provider_requires_openai_auth);
         let revision_after = *auth_changes.borrow();
         if revision_before == revision_after {
             return (revision_after, reason);
@@ -647,10 +642,7 @@ impl WorkerRuntime {
     }
 
     async fn record_observation(&mut self, observation: TurnCostObservation) {
-        let finished = matches!(
-            &observation.kind,
-            TurnCostObservationKind::Finished { .. }
-        );
+        let finished = matches!(&observation.kind, TurnCostObservationKind::Finished { .. });
         if self.discard_if_invalidated(&observation.turn_id) {
             if finished {
                 clear_dropped_turn(&self.dropped_turns, &observation.turn_id);
@@ -907,11 +899,7 @@ impl WorkerRuntime {
         };
         let reason = self.current_unavailable_auth_reason();
         self.late_notifier
-            .notify(
-                thread_id,
-                turn_id,
-                TurnCostState::Unavailable { reason },
-            )
+            .notify(thread_id, turn_id, TurnCostState::Unavailable { reason })
             .await;
         self.remove_turn(turn_id);
     }
@@ -925,11 +913,7 @@ impl WorkerRuntime {
             .collect::<Vec<_>>()
         {
             self.late_notifier
-                .notify(
-                    thread_id,
-                    &turn_id,
-                    TurnCostState::Unavailable { reason },
-                )
+                .notify(thread_id, &turn_id, TurnCostState::Unavailable { reason })
                 .await;
             self.terminalize_turn(&turn_id);
         }
@@ -948,11 +932,7 @@ impl WorkerRuntime {
             .collect::<Vec<_>>()
         {
             self.late_notifier
-                .notify(
-                    thread_id,
-                    &turn_id,
-                    TurnCostState::Unavailable { reason },
-                )
+                .notify(thread_id, &turn_id, TurnCostState::Unavailable { reason })
                 .await;
             self.terminalize_turn(&turn_id);
         }

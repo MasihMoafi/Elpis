@@ -239,7 +239,9 @@ fn map_activity(activity: DashboardActivityState) -> DashboardActivity {
     DashboardActivity {
         current: activity.current.map(|row| DashboardCurrentTurn {
             status: map_activity_status(row.status),
-            started_at: row.started_at.and_then(|seconds| seconds.checked_mul(1_000)),
+            started_at: row
+                .started_at
+                .and_then(|seconds| seconds.checked_mul(1_000)),
             cost: row.cost.map(map_cost),
         }),
         recent: activity
@@ -340,10 +342,7 @@ fn dashboard_bind_addr() -> SocketAddr {
 
 fn serve(listener: tiny_http::Server, port: u16) {
     for request in listener.incoming_requests() {
-        let state = DASHBOARD_STATE
-            .lock()
-            .ok()
-            .and_then(|state| state.clone());
+        let state = DASHBOARD_STATE.lock().ok().and_then(|state| state.clone());
         let response = response_for_at(&request, port, state, Utc::now().timestamp_millis());
         let _ = request.respond(response);
     }
@@ -391,8 +390,7 @@ fn valid_host(request: &tiny_http::Request, port: u16) -> bool {
         return false;
     }
     let value = host.value.as_str();
-    value == format!("127.0.0.1:{port}")
-        || value.eq_ignore_ascii_case(&format!("localhost:{port}"))
+    value == format!("127.0.0.1:{port}") || value.eq_ignore_ascii_case(&format!("localhost:{port}"))
 }
 
 fn data_response_with<E>(

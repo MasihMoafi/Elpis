@@ -296,8 +296,7 @@ enabled = true
         /*bundled_skills_enabled*/ true,
     );
 
-    let outcome =
-        skills_for_config_with_stack(&skills_service, &cwd, &selected_stack, &[]).await;
+    let outcome = skills_for_config_with_stack(&skills_service, &cwd, &selected_stack, &[]).await;
     let selected = outcome
         .skills
         .iter()
@@ -325,7 +324,8 @@ enabled = true
         SkillRenderSideEffects::None,
     )
     .expect("the selected skill should render in the model-visible catalog");
-    let catalog = crate::render_available_skills_body(&catalog.skill_root_lines, &catalog.skill_lines);
+    let catalog =
+        crate::render_available_skills_body(&catalog.skill_root_lines, &catalog.skill_lines);
     assert!(catalog.contains("selected-skill"));
     assert!(catalog.contains("selected catalog metadata"));
     assert!(!catalog.contains("unselected-skill"));

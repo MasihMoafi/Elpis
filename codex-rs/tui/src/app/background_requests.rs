@@ -290,7 +290,7 @@ impl App {
         (target.view.memory_path.as_path() == target.storage.memory_path.as_path()
             && expected.0.as_path() == target.storage.admission_path.as_path()
             && expected.1.as_path() == target.storage.memory_path.as_path())
-            .then_some(memories_root)
+        .then_some(memories_root)
     }
 
     fn manual_memory_mutation_failure(
@@ -356,12 +356,12 @@ impl App {
             admitted,
         ) {
             Ok(()) => ManualMemoryMutationCompletion::Succeeded,
-            Err(error) => ManualMemoryMutationCompletion::Failed(
-                Self::manual_memory_mutation_failure(
+            Err(error) => {
+                ManualMemoryMutationCompletion::Failed(Self::manual_memory_mutation_failure(
                     ManualMemoryMutation::Admission { admitted },
                     &error,
-                ),
-            ),
+                ))
+            }
         }
     }
 

@@ -189,7 +189,6 @@ fn assert_codex_client_metadata(
     );
 }
 
-
 /// The Context Ledger admits nothing until asked, so a test about AGENTS.md reaching the
 /// model has to say so. Apply last in a builder chain: admission is keyed to the final cwd.
 fn admit_global_agents_md(config: &mut codex_core::config::Config) {

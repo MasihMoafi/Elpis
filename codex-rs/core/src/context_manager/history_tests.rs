@@ -5,6 +5,9 @@ use crate::context::world_state::WorldState;
 use crate::context::world_state::WorldStateSection;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use codex_extension_api::PreviousWorldStateSection;
+use codex_extension_api::RenderedWorldStateFragment;
+use codex_extension_api::WorldStateSectionContribution;
 use codex_protocol::AgentPath;
 use codex_protocol::ResponseItemId;
 use codex_protocol::models::BaseInstructions;
@@ -28,9 +31,6 @@ use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::PLUGINS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnContextItem;
-use codex_extension_api::PreviousWorldStateSection;
-use codex_extension_api::RenderedWorldStateFragment;
-use codex_extension_api::WorldStateSectionContribution;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::truncate_text;
@@ -393,7 +393,10 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
         apply_world_state(&mut history, &extension_single_slot(None)),
         0
     );
-    assert_eq!(history_texts(&history), vec!["neighboring developer content"]);
+    assert_eq!(
+        history_texts(&history),
+        vec!["neighboring developer content"]
+    );
 }
 
 fn user_msg(text: &str) -> ResponseItem {

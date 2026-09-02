@@ -124,11 +124,7 @@ impl ActivityState {
     pub(crate) fn project(&self) -> DashboardActivityState {
         DashboardActivityState {
             current: self.current.as_ref().map(|entry| entry.row.clone()),
-            recent: self
-                .recent
-                .iter()
-                .map(|entry| entry.row.clone())
-                .collect(),
+            recent: self.recent.iter().map(|entry| entry.row.clone()).collect(),
         }
     }
 }
@@ -181,13 +177,7 @@ mod tests {
             Some(summary.clone()),
         ));
         assert!(state.start("turn-b".to_string(), None));
-        assert!(state.finish(
-            "turn-b",
-            TurnActivityStatus::Interrupted,
-            None,
-            None,
-            None,
-        ));
+        assert!(state.finish("turn-b", TurnActivityStatus::Interrupted, None, None, None,));
 
         let exact_price = TurnCostState::Priced {
             backend_total_usd: "1.250000".to_string(),
@@ -196,13 +186,19 @@ mod tests {
         let projected = state.project();
         assert_eq!(projected.current, None);
         assert_eq!(projected.recent.len(), 2);
-        assert_eq!(projected.recent[0].status, DashboardActivityStatus::Completed);
+        assert_eq!(
+            projected.recent[0].status,
+            DashboardActivityStatus::Completed
+        );
         assert_eq!(projected.recent[0].started_at, None);
         assert_eq!(projected.recent[0].duration_ms, Some(20));
         assert_eq!(projected.recent[0].time_to_first_token_ms, Some(3));
         assert_eq!(projected.recent[0].profile, Some(summary));
         assert_eq!(projected.recent[0].cost, Some(exact_price));
-        assert_eq!(projected.recent[1].status, DashboardActivityStatus::Interrupted);
+        assert_eq!(
+            projected.recent[1].status,
+            DashboardActivityStatus::Interrupted
+        );
         assert_eq!(projected.recent[1].cost, None);
     }
 
@@ -212,13 +208,7 @@ mod tests {
         for index in 0..=ACTIVITY_RECENT_LIMIT {
             let turn_id = format!("turn-{index}");
             assert!(state.start(turn_id.clone(), None));
-            assert!(state.finish(
-                &turn_id,
-                TurnActivityStatus::Completed,
-                None,
-                None,
-                None,
-            ));
+            assert!(state.finish(&turn_id, TurnActivityStatus::Completed, None, None, None,));
         }
 
         let before = state.project();
@@ -244,20 +234,8 @@ mod tests {
 
         assert!(state.start("turn-a".to_string(), None));
         assert!(!state.start("turn-a".to_string(), None));
-        assert!(state.finish(
-            "turn-a",
-            TurnActivityStatus::Failed,
-            None,
-            None,
-            None,
-        ));
-        assert!(!state.finish(
-            "turn-a",
-            TurnActivityStatus::Failed,
-            None,
-            None,
-            None,
-        ));
+        assert!(state.finish("turn-a", TurnActivityStatus::Failed, None, None, None,));
+        assert!(!state.finish("turn-a", TurnActivityStatus::Failed, None, None, None,));
 
         let row = &state.project().recent[0];
         assert_eq!(row.started_at, None);

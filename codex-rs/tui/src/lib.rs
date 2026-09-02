@@ -84,6 +84,7 @@ use uuid::Uuid;
 
 pub(crate) use codex_app_server_client::legacy_core;
 
+mod activity_state;
 mod additional_dirs;
 mod app;
 mod app_backtrack;
@@ -95,7 +96,6 @@ mod app_server_approval_conversions;
 mod app_server_session;
 mod approval_events;
 mod ascii_animation;
-mod activity_state;
 mod bottom_pane;
 mod branch_summary;
 mod branding;

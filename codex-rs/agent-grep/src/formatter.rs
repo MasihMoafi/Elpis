@@ -45,11 +45,7 @@ pub fn format_search_results(results: &AgentGrepResults, mode: FormatMode) -> St
                 // Print context lines
                 for cl in &m.context_lines {
                     let marker = if cl.is_match { ">" } else { " " };
-                    let seen_tag = if cl.previously_seen {
-                        "  [seen]"
-                    } else {
-                        ""
-                    };
+                    let seen_tag = if cl.previously_seen { "  [seen]" } else { "" };
                     out.push_str(&format!(
                         "{} {:4} | {}{}\n",
                         marker, cl.line_number, cl.content, seen_tag

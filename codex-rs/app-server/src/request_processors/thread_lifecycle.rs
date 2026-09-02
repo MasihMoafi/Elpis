@@ -152,8 +152,7 @@ pub(crate) async fn prepare_turn_cost_event(
             reason: codex_app_server_protocol::TurnCostAvailability::AwaitingBackendPrice,
         }
     );
-    let initial_turn_cost =
-        matches!(&event.msg, EventMsg::TurnStarted(_)).then_some(turn_cost);
+    let initial_turn_cost = matches!(&event.msg, EventMsg::TurnStarted(_)).then_some(turn_cost);
     if initial_turn_cost.is_none() && awaiting_backend_price {
         observe_turn_cost_event(
             turn_cost_worker,

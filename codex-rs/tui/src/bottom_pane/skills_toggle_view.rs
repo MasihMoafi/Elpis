@@ -150,7 +150,10 @@ impl SkillsToggleView {
                     let name = format!("{prefix} [{marker}] {item_name}");
                     GenericDisplayRow {
                         name,
-                        description: Some(format!("{} · Source: {}", item.description, item.origin)),
+                        description: Some(format!(
+                            "{} · Source: {}",
+                            item.description, item.origin
+                        )),
                         ..Default::default()
                     }
                 })
