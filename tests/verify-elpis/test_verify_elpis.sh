@@ -711,11 +711,27 @@ require(
 for artifact_check in (
     "name: Install release artifacts in a clean container",
     "--mount \"type=bind,src=$PWD/dist,dst=/dist,readonly\"",
-    "dpkg -i /dist/*.deb",
+    "rm -f target/debian/*.deb",
+    "path: ${{ runner.temp }}/elpis-deb/*.deb",
+    "test \"${#debs[@]}\" -eq 1",
+    "dpkg-deb -f \"${debs[0]}\" Package",
+    "dpkg-deb -f \"${debs[0]}\" Version",
+    "dpkg -i \"/dist/$DEB_NAME\"",
     "run_smoke /tmp/elpis /tmp/raw-smoke",
     "run_smoke /usr/bin/elpis /tmp/deb-smoke",
 ):
     require(artifact_check in linux, f"missing release artifact check: {artifact_check}")
+require(
+    main.count('test "${#debs[@]}" -eq 1') == 3,
+    "package, install, and publish steps must each require exactly one .deb",
+)
+for stale_deb_glob in (
+    "path: codex-rs/target/debian/*.deb",
+    "dpkg -i /dist/*.deb",
+    "            dist/*.deb \\",
+    "            dist/*.deb.sha256 \\",
+):
+    require(stale_deb_glob not in main, f"stale multi-package glob remains: {stale_deb_glob}")
 require(
     "needs: [build, install-release-artifacts, installer-platform-detection]" in main,
     "release must wait for installed artifact checks",

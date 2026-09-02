@@ -316,15 +316,25 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
         working-directory: codex-rs
         run: |
+          set -euo pipefail
           cargo install cargo-deb --version 3.7.0 --locked
+          rm -f target/debian/*.deb
           cargo deb --no-build -p codex-tui
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' tui/Cargo.toml | head -1)"
+          mapfile -t debs < <(find target/debian -maxdepth 1 -type f -name '*.deb' -print)
+          test "${#debs[@]}" -eq 1
+          test "$(dpkg-deb -f "${debs[0]}" Package)" = elpis
+          deb_version="$(dpkg-deb -f "${debs[0]}" Version)"
+          [[ "$deb_version" == "$expected" || "$deb_version" == "$expected"-* ]]
+          mkdir -p "$RUNNER_TEMP/elpis-deb"
+          cp "${debs[0]}" "$RUNNER_TEMP/elpis-deb/"
 
       - name: Upload Elpis .deb
         if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: elpis-deb
-          path: codex-rs/target/debian/*.deb
+          path: ${{ runner.temp }}/elpis-deb/*.deb
           if-no-files-found: error
           retention-days: 7
 
@@ -364,8 +374,14 @@ jobs:
           set -euo pipefail
           expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' codex-rs/tui/Cargo.toml | head -1)"
           test -n "$expected"
+          mapfile -t debs < <(find dist -maxdepth 1 -type f -name '*.deb' -print)
+          test "${#debs[@]}" -eq 1
+          test "$(dpkg-deb -f "${debs[0]}" Package)" = elpis
+          deb_version="$(dpkg-deb -f "${debs[0]}" Version)"
+          [[ "$deb_version" == "$expected" || "$deb_version" == "$expected"-* ]]
           docker run --rm \
             --env EXPECTED_VERSION="$expected" \
+            --env DEB_NAME="$(basename "${debs[0]}")" \
             --mount "type=bind,src=$PWD/dist,dst=/dist,readonly" \
             ubuntu:24.04 sh -euxc '
               run_smoke() {
@@ -380,7 +396,7 @@ jobs:
               cp /dist/elpis /tmp/elpis
               chmod 0755 /tmp/elpis
               run_smoke /tmp/elpis /tmp/raw-smoke
-              dpkg -i /dist/*.deb
+              dpkg -i "/dist/$DEB_NAME"
               run_smoke /usr/bin/elpis /tmp/deb-smoke
             '
 
@@ -668,11 +684,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' codex-rs/tui/Cargo.toml | head -1)"
+          mapfile -t debs < <(find dist -maxdepth 1 -type f -name '*.deb' -print)
+          test "${#debs[@]}" -eq 1
+          test "$(dpkg-deb -f "${debs[0]}" Package)" = elpis
+          deb_version="$(dpkg-deb -f "${debs[0]}" Version)"
+          [[ "$deb_version" == "$expected" || "$deb_version" == "$expected"-* ]]
+          deb="${debs[0]}"
           mv dist/elpis dist/elpis-linux-x86_64
           (cd dist && sha256sum elpis-linux-x86_64 > elpis-linux-x86_64.sha256)
-          for deb in dist/*.deb; do
-            (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
-          done
+          (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists; refusing to replace it." >&2
             exit 1
@@ -680,8 +702,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             dist/elpis-linux-x86_64 \
             dist/elpis-linux-x86_64.sha256 \
-            dist/*.deb \
-            dist/*.deb.sha256 \
+            "$deb" \
+            "$deb.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --notes-file .github/RELEASE_NOTES.md \
             --title "Elpis $GITHUB_REF_NAME"
