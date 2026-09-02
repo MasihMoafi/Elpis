@@ -362,6 +362,16 @@ async fn interrupt_cancels_in_flight_smart_prune_without_waiting_for_timeout() -
     })
     .await
     .expect("Smart Prune request should start");
+    assert_eq!(
+        harness
+            .test()
+            .codex
+            .smart_prune_snapshot()
+            .await
+            .optimizer_requests,
+        1,
+        "the request must be counted before interrupt can abort cleanup"
+    );
 
     let interrupted_at = Instant::now();
     codex.submit(Op::Interrupt).await?;
@@ -462,8 +472,18 @@ async fn failed_optimizer_skips_later_batches_in_same_turn() -> Result<()> {
     .await
     .expect("Smart Prune request should start");
     tokio::time::pause();
-    tokio::time::advance(Duration::from_secs(46)).await;
+    tokio::time::sleep(Duration::from_secs(46)).await;
     tokio::time::resume();
+    assert_eq!(
+        harness
+            .test()
+            .codex
+            .smart_prune_snapshot()
+            .await
+            .failed_batches,
+        1,
+        "the first optimizer timeout must trip the same-turn failure latch"
+    );
 
     tokio::time::timeout(Duration::from_secs(5), async {
         while requests.requests().len() < 4 {

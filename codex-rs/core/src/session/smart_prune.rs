@@ -117,11 +117,12 @@ pub(super) async fn optimize_pending_outputs(
         return pending;
     }
 
+    record_optimizer_started(sess).await;
     let optimizer_started = Instant::now();
     let admission_result = tokio::select! {
         biased;
         _ = cancellation_token.cancelled() => {
-            record_optimizer_call(sess, optimizer_started.elapsed(), None).await;
+            record_optimizer_finished(sess, optimizer_started.elapsed(), None).await;
             return pending;
         }
         result = tokio::time::timeout(
@@ -133,7 +134,7 @@ pub(super) async fn optimize_pending_outputs(
         Ok(Ok(admission)) => admission.usage.as_ref(),
         _ => None,
     };
-    record_optimizer_call(sess, optimizer_started.elapsed(), optimizer_usage).await;
+    record_optimizer_finished(sess, optimizer_started.elapsed(), optimizer_usage).await;
     let admission = match admission_result {
         Ok(Ok(admission)) => admission,
         Ok(Err(err)) => {
@@ -265,10 +266,14 @@ async fn record_batch_failure(sess: &Session, turn_id: &str, examined: usize) {
     state.smart_prune.failed_batches = state.smart_prune.failed_batches.saturating_add(1);
 }
 
-async fn record_optimizer_call(sess: &Session, elapsed: Duration, usage: Option<&TokenUsage>) {
-    let elapsed_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+async fn record_optimizer_started(sess: &Session) {
     let mut state = sess.state.lock().await;
     state.smart_prune.optimizer_requests = state.smart_prune.optimizer_requests.saturating_add(1);
+}
+
+async fn record_optimizer_finished(sess: &Session, elapsed: Duration, usage: Option<&TokenUsage>) {
+    let elapsed_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let mut state = sess.state.lock().await;
     state.smart_prune.optimizer_latency_ms = state
         .smart_prune
         .optimizer_latency_ms
@@ -697,12 +702,15 @@ mod tests {
             total_tokens: 25,
         };
 
-        record_optimizer_call(&session, Duration::from_millis(7), Some(&first)).await;
+        record_optimizer_started(&session).await;
+        record_optimizer_finished(&session, Duration::from_millis(7), Some(&first)).await;
         let first_snapshot = session.smart_prune_snapshot().await;
         assert_eq!(first_snapshot.optimizer_usage.cache_write_tokens, None);
 
-        record_optimizer_call(&session, Duration::from_millis(5), Some(&second)).await;
-        record_optimizer_call(&session, Duration::from_millis(3), None).await;
+        record_optimizer_started(&session).await;
+        record_optimizer_finished(&session, Duration::from_millis(5), Some(&second)).await;
+        record_optimizer_started(&session).await;
+        record_optimizer_finished(&session, Duration::from_millis(3), None).await;
 
         let snapshot = session.smart_prune_snapshot().await;
         assert_eq!(snapshot.optimizer_requests, 3);
