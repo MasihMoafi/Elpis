@@ -338,10 +338,7 @@ mod tests {
     #[test]
     fn retrospective_prune_command_is_not_available() {
         assert!(SlashCommand::from_str("prune").is_err());
-        assert_eq!(
-            SlashCommand::from_str("compact"),
-            Ok(SlashCommand::Compact)
-        );
+        assert_eq!(SlashCommand::from_str("compact"), Ok(SlashCommand::Compact));
         assert_eq!(
             SlashCommand::from_str("smart-prune"),
             Ok(SlashCommand::SmartPrune)

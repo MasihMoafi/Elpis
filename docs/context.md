@@ -78,32 +78,13 @@ skills, and transcript so they stay readable.
 
 ---
 
-## 3. Context Lifetimes
+## 3. What persists
 
-Every item admitted into Elpis context carries an explicit lifetime:
-
-```text
-+-----------------------------------------------------------------------------------+
-| DURABLE LIFETIME                                                                 |
-| - AGENTS.md rules, active GOAL.md, MEMORY.md, explicit user constraints           |
-+-----------------------------------------------------------------------------------+
-                                         |
-                                         v
-+-----------------------------------------------------------------------------------+
-| TASK LIFETIME                                                                     |
-| - Decisions, changed file paths, blockers, verification, ES.md checkpoint         |
-+-----------------------------------------------------------------------------------+
-                                         |
-                                         v
-+-----------------------------------------------------------------------------------+
-| TURN LIFETIME (Expires after turn question is answered)                           |
-| - Terminal reads, searches, directory listings, command probes, temporary diffs   |
-+-----------------------------------------------------------------------------------+
-```
-
-1. **Durable:** Survives across compaction, model switches, and restarts.
-2. **Task:** Survives across turn execution within the current task; summarized into `ES.md` upon task transition.
-3. **Turn:** Expires immediately after the active turn question is answered. Raw output is evicted from working context, leaving behind an exact evidence pointer (rollout ID / log path).
+Context Ledger settings decide which portable files enter subsequent requests. Conversation
+history, including admitted tool results, otherwise remains model-visible until a real lifecycle
+event changes it: native compaction, explicit `/force-prune`, backtracking, or a new/forked
+session. Smart Prune chooses a fresh result's first admitted form and does not revisit it later.
+Rollout and audit files preserve evidence separately from the active model context.
 
 ---
 
@@ -155,6 +136,15 @@ available candidates and labels their origins. Mentions and the model-visible sk
 enabled skills only. The skills catalog itself is not a Context Ledger token row.
 
 ![The Context Ledger admission model](../website/assets/elpis-context-ledger.svg)
+
+### Manual memory is explicit
+
+The `MEMORY.md` row is ordinary user-controlled context, not an automatic memory system.
+If the row says the file is missing, select it and press `c` to create an empty memory file;
+creation does not admit it. Press `Space` or `Enter` to include or exclude an existing file.
+The Ledger updates immediately during an active turn, while the context change takes effect
+on the next model request. At most 8,000 characters are admitted, and the Ledger shows the
+state and capped estimate without exposing the file contents or path.
 
 ### `/context` — where the window went
 

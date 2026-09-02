@@ -2989,9 +2989,9 @@ async fn settings_popup_shows_only_selected_features() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 240);
     assert!(popup.contains("Keep computer awake"));
-    assert!(popup.contains("Automatic pruning — Experimental"));
+    assert!(popup.contains("Smart Prune — Experimental"));
     assert!(popup.contains(
-        "Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail."
+        "Optimizes eligible fresh tool results before their first main-model request. Uses an extra AI call and may slow a turn or remove useful detail; failures keep the original."
     ));
     assert!(!popup.contains("Network proxy"));
     assert!(

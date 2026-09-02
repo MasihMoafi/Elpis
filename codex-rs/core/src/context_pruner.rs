@@ -6,13 +6,10 @@
 //! action: useful evidence earns one compact conclusion, while dead ends leave no
 //! model-visible trace.
 //!
-//! Automatic pruning runs in **cycles with hysteresis**, not continuously. One cycle
-//! opens when active use reaches `AUTO_PRUNE_TRIGGER_PERCENT` (30%), spends at most
-//! `MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE` Ace passes driving use down toward
-//! `AUTO_PRUNE_TARGET_PERCENT` (20%), and then closes. Once closed, `PruneCycle` blocks
-//! every automatic pass until measured use has climbed back to the 30% trigger — so the
-//! 20–30% band is a healthy working region that no pass may touch. See
-//! `docs/cache-friendly-pruning.md`.
+//! Elpis no longer schedules this retrospective pass automatically. Smart Prune handles
+//! optional automatic optimization before first model exposure; `/force-prune` is the
+//! user-visible retrospective recovery command. The legacy pressure trigger and hysteresis
+//! types remain here for compatibility with the internal pruning operation and its tests.
 //!
 //! The historical "steady" trigger was removed; it once fired whenever completed turns held a
 //! few percent of the window in uncovered tool output, independent of how full the window was.

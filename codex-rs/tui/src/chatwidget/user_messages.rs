@@ -31,8 +31,7 @@ use super::ChatWidget;
 const LEGACY_CODEX_PROMPT_REQUEST_BEGIN: &str = "## My request for Codex:";
 
 fn extract_legacy_codex_prompt_request(message: &str) -> (&str, usize) {
-    let Some((before_request, request)) =
-        message.rsplit_once(LEGACY_CODEX_PROMPT_REQUEST_BEGIN)
+    let Some((before_request, request)) = message.rsplit_once(LEGACY_CODEX_PROMPT_REQUEST_BEGIN)
     else {
         return (message, 0);
     };

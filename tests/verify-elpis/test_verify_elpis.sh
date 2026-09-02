@@ -688,7 +688,7 @@ require(
     "strip step must retain codex-rs working directory",
 )
 require(
-    "      - name: Package .deb\n        if: startsWith(github.ref, 'refs/tags/v')\n        working-directory: codex-rs\n" in linux,
+    "      - name: Package .deb\n        if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}\n        working-directory: codex-rs\n" in linux,
     "package step must retain codex-rs working directory",
 )
 require("cargo test -p codex-tui --bin elpis --locked --target" in macos_and_later, "macOS checks changed")

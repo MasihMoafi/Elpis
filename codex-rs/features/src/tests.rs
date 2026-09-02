@@ -38,8 +38,8 @@ fn automatic_context_pruning_is_experimental_and_opt_in() {
     assert_eq!(
         Feature::AutomaticContextPruning.stage(),
         Stage::Experimental {
-            name: "Automatic pruning — Experimental",
-            menu_description: "Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.",
+            name: "Smart Prune — Experimental",
+            menu_description: "Optimizes eligible fresh tool results before their first main-model request. Uses an extra AI call and may slow a turn or remove useful detail; failures keep the original.",
             announcement: "",
         }
     );

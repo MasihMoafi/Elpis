@@ -19,4 +19,5 @@ Out of scope:
 - Automatic memory extraction or promotion.
 - macOS and Windows artifacts.
 
-Status: release candidate assembly in progress. No tag or v0.2.0 release exists yet.
+Status: release candidate assembled; exact-head hosted verification is pending. No tag or
+v0.2.0 release exists yet.

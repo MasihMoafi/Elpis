@@ -679,7 +679,7 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "Home",
         "End",
         "tab.tabIndex",
-        "Automatic pruning — Experimental",
+        "Smart Prune — Experimental",
         "configured_enabled",
         "current_thread_next_turn_enabled",
         "prefers-reduced-motion: reduce",

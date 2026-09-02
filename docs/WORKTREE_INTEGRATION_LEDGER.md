@@ -1,6 +1,6 @@
 # Elpis Worktree Integration Ledger
 
-Last source audit: 2026-09-02. Coordinator branch: `integration/elpis-stable`.
+Last source audit: 2026-09-03. Release branch: `release/v0.2.0-candidate`.
 
 This ledger records local integration decisions. It is not release evidence, does not replace Git history, and does not authorize deleting a worktree. `patch-equivalent` means `git rev-list --cherry-pick` found no distinct patch at the recorded audit point; it does not mean the branch can be deleted.
 
@@ -20,10 +20,11 @@ This ledger records local integration decisions. It is not release evidence, doe
 | `docs/evaluation-status` | `6307fed` | two distinct documentation patches | Deferred for selective documentation review; do not merge stale or claim-changing documentation wholesale. |
 | `eval/rq3-*` | `51de0a2` / `1a722a4` | historical evaluation heads | No product integration. RQ3 remains unestablished; these branches are evidence/history only. |
 | `feat/smart-prune-admission` | `d2da5b6` | selectively integrated | Admission-time Smart Prune is integrated into `integration/elpis-stable` with coordinator adaptations, including browser-safe revisioned dashboard evidence. Automatic history rewriting remains removed, Smart Prune stays Experimental and off by default, and only `/force-prune` retains emergency retrospective rewriting. Linux candidate CI, install, restart, and Masih acceptance remain pending. |
+| `release/v0.2.0-candidate` | final SHA assigned after this ledger update | release candidate | Contains the integrated Smart Prune, context/dashboard, manual-memory, skill/plugin, provider, and Experimental work-graph work plus Linux release packaging and current documentation. Unfinished human agent-control RPC/UI work remains excluded. |
 
 ## Final integration boundary
 
-- No tag, hosted release, version bump, worktree deletion, or process restart. A disposable hosted-CI branch is authorized for Linux candidate verification only; it does not authorize a release.
-- Keep the installed binary unchanged until all selected functional work and hosted Linux checks are complete.
-- Then install the exact verified Linux artifact atomically as `elpis`, retain a recoverable copy of the replaced binary, and prove the installed artifact hash matches. Do not move local `main` without a separate clean-tree integration check.
+- Masih authorized the exact `v0.2.0` candidate to be published after its full and nightly-release Linux checks pass. No failed or merely partial head may be tagged.
+- Keep the installed binary unchanged until the selected functional work and hosted Linux checks are complete. Then install the exact published Linux artifact atomically as `elpis`, retain a recoverable copy of the replaced binary, and prove the installed artifact hash matches.
+- Do not move the dirty local `main`, delete worktrees, or restart unrelated processes as part of the release.
 - Automated evidence does not equal user acceptance. Masih performs the final manual checklist.
