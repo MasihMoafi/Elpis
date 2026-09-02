@@ -6,15 +6,19 @@ expression: popup
  Elpis · model gpt-5 · location /tmp/project
 ┌──────────────────────────────────────────────┐│CONTEXT LEDGER  ≈90.0k tokens
 │ Implement this plan?                         ││in context
-│                                              ││i = select/deselect all ·
-› 1. Yes, implement this plan   Switch to      ││backspace = remove added file
+│                                              ││Tab focus · Alt+C focus/hide ·
+› 1. Yes, implement this plan   Switch to      ││Ctrl+click open file
                                 Default and    ││
-                                start coding.  ││CONTEXT WINDOW  ≈90.0k of
-  2. Yes, clear context and im… Fresh thread.  ││100.0k used (90%)
-                                Context: 90%   ││██████████████████████████░░░
-                                used.          ││■ Conversation (messages)
-  3. No, stay in Plan mode      Continue       ││≈90.0k tokens
-                                planning with  ││
-                                the model.     ││No portable context is
-└──────────────────────────────────────────────┘│available.
-  Press enter to confirm or esc to go back
+                                start coding.  ││SMART PRUNE          [···] SYNC
+  2. Yes, clear context and im… Fresh thread.  ││Reading current thread state
+                                Context: 90%   ││Syncing… · /smart-prune on|off
+                                used.          ││sets an explicit state
+  3. No, stay in Plan mode      Continue       ││
+                                planning with  ││CONTEXT WINDOW  ≈90.0k of
+                                the model.     ││100.0k used (90%)
+└──────────────────────────────────────────────┘│██████████████████████████░░░
+  Press enter to confirm or esc to go back      │■ Conversation (messages)
+                                                │≈90.0k tokens
+                                                │
+                                                │No portable context is
+                                                │available.
