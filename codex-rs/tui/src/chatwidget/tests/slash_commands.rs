@@ -296,9 +296,9 @@ async fn manual_force_prune_tracking_does_not_leak_after_failed_or_interrupted_t
             "failed or interrupted manual tracking must not refresh a later turn"
         );
         if let AppEvent::InsertHistoryCell(cell) = event {
-            assert_ne!(
-                lines_to_single_string(&cell.display_lines(/*width*/ 80)),
-                "Manual pruning command finished\n",
+            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+            assert!(
+                !rendered.contains("Manual pruning command finished"),
                 "failed or interrupted manual tracking must not complete later"
             );
         }
