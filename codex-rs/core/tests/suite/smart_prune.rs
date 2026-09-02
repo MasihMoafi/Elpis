@@ -1,6 +1,8 @@
 use anyhow::Result;
 use codex_features::Feature;
+use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
@@ -16,6 +18,7 @@ use core_test_support::responses::strip_metadata_from_items;
 use core_test_support::skip_if_host_windows;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::test_codex;
+use core_test_support::test_codex::turn_permission_fields;
 use core_test_support::wait_for_event;
 use serde_json::json;
 use sha2::Digest;
@@ -158,6 +161,75 @@ async fn harness_for_model(enabled: bool, model: &str) -> Result<TestCodexHarnes
 
 async fn harness(enabled: bool) -> Result<TestCodexHarness> {
     harness_for_model(enabled, MAIN_MODEL).await
+}
+
+async fn submit_without_wait(harness: &TestCodexHarness, prompt: &str) -> Result<()> {
+    let test = harness.test();
+    let (sandbox_policy, permission_profile) =
+        turn_permission_fields(PermissionProfile::Disabled, test.cwd_path());
+    let session_model = test.session_configured.model.clone();
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: prompt.into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                approval_policy: Some(AskForApproval::Never),
+                sandbox_policy: Some(sandbox_policy),
+                permission_profile,
+                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+                    mode: codex_protocol::config_types::ModeKind::Default,
+                    settings: codex_protocol::config_types::Settings {
+                        model: session_model,
+                        reasoning_effort: None,
+                        developer_instructions: None,
+                    },
+                }),
+                ..Default::default()
+            },
+        })
+        .await?;
+    Ok(())
+}
+
+async fn wait_for_optimizer_request(
+    harness: &TestCodexHarness,
+    requests: &core_test_support::responses::ResponseMock,
+    call_id: &str,
+) {
+    let request = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(request) = requests.requests().into_iter().find(|request| {
+                request
+                    .header("x-codex-turn-metadata")
+                    .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                    .is_some_and(|value| value["request_kind"] == "smart_prune")
+            }) {
+                break request;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Smart Prune request should start");
+
+    assert_eq!(request.body_json()["model"], SMART_PRUNE_MODEL);
+    assert!(request.body_contains_text(call_id));
+    assert!(request.body_contains_text(&"Z".repeat(256)));
+    assert_eq!(
+        harness
+            .test()
+            .codex
+            .smart_prune_snapshot()
+            .await
+            .optimizer_requests,
+        1,
+        "the optimizer request must be counted before its HTTP request"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -342,36 +414,8 @@ async fn interrupt_cancels_in_flight_smart_prune_without_waiting_for_timeout() -
     .await;
     let codex = Arc::clone(&harness.test().codex);
 
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "generate a large diagnostic output".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await?;
-
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while requests.requests().len() < 2 {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("Smart Prune request should start");
-    assert_eq!(
-        harness
-            .test()
-            .codex
-            .smart_prune_snapshot()
-            .await
-            .optimizer_requests,
-        1,
-        "the request must be counted before interrupt can abort cleanup"
-    );
+    submit_without_wait(&harness, "generate a large diagnostic output").await?;
+    wait_for_optimizer_request(&harness, &requests, CALL_A).await;
 
     let interrupted_at = Instant::now();
     codex.submit(Op::Interrupt).await?;
@@ -451,29 +495,29 @@ async fn failed_optimizer_skips_later_batches_in_same_turn() -> Result<()> {
     .await;
     let codex = Arc::clone(&harness.test().codex);
 
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "generate two large diagnostic outputs after one optimizer failure".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await?;
-
+    submit_without_wait(
+        &harness,
+        "generate two large diagnostic outputs after one optimizer failure",
+    )
+    .await?;
+    wait_for_optimizer_request(&harness, &requests, CALL_A).await;
+    tokio::time::pause();
+    tokio::time::sleep(Duration::from_secs(46)).await;
+    tokio::time::resume();
     tokio::time::timeout(Duration::from_secs(5), async {
-        while requests.requests().len() < 2 {
+        while harness
+            .test()
+            .codex
+            .smart_prune_snapshot()
+            .await
+            .failed_batches
+            != 1
+        {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("Smart Prune request should start");
-    tokio::time::pause();
-    tokio::time::sleep(Duration::from_secs(46)).await;
-    tokio::time::resume();
+    .expect("the first optimizer timeout must trip the same-turn failure latch");
     assert_eq!(
         harness
             .test()
