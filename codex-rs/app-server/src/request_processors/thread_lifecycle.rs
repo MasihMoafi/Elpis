@@ -2,6 +2,7 @@
 use super::*;
 use codex_otel::SessionTelemetry;
 use codex_protocol::config_types::MultiAgentMode;
+use codex_protocol::protocol::Event;
 
 pub(super) const THREAD_UNLOADING_DELAY: Duration = Duration::from_secs(30 * 60);
 
