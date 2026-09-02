@@ -41,7 +41,6 @@ pub enum SlashCommand {
     App,
     Init,
     Compact,
-    Prune,
     SmartPrune,
     #[strum(to_string = "force-prune")]
     ForcePrune,
@@ -99,7 +98,6 @@ impl SlashCommand {
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Usage => "inspect current context, continuity, and token usage",
-            SlashCommand::Prune => "distill completed tool output out of the context window",
             SlashCommand::SmartPrune => {
                 "optimize fresh tool results before their first model request"
             }
@@ -193,7 +191,6 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Prune
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Keymap
@@ -254,7 +251,6 @@ impl SlashCommand {
             | SlashCommand::Resume
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Prune
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Diff
@@ -336,6 +332,28 @@ mod tests {
             !super::built_in_slash_commands()
                 .into_iter()
                 .any(|(name, _)| name == "ide")
+        );
+    }
+
+    #[test]
+    fn retrospective_prune_command_is_not_available() {
+        assert!(SlashCommand::from_str("prune").is_err());
+        assert_eq!(
+            SlashCommand::from_str("compact"),
+            Ok(SlashCommand::Compact)
+        );
+        assert_eq!(
+            SlashCommand::from_str("smart-prune"),
+            Ok(SlashCommand::SmartPrune)
+        );
+        assert_eq!(
+            SlashCommand::from_str("force-prune"),
+            Ok(SlashCommand::ForcePrune)
+        );
+        assert!(
+            !super::built_in_slash_commands()
+                .into_iter()
+                .any(|(name, _)| name == "prune")
         );
     }
 

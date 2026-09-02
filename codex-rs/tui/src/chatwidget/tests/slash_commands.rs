@@ -149,59 +149,6 @@ async fn slash_compact_eagerly_queues_follow_up_before_turn_start() {
 }
 
 #[tokio::test]
-async fn slash_prune_submits_selective_prune_instead_of_compaction() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.dispatch_command(SlashCommand::Prune);
-
-    assert!(chat.bottom_pane.is_task_running());
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
-    match rx.try_recv() {
-        Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => {}
-        other => panic!("expected selective prune op to be submitted, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn slash_prune_status_identifies_a_manual_action() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.dispatch_command(SlashCommand::Prune);
-
-    let event = rx.try_recv().expect("manual prune status");
-    let AppEvent::InsertHistoryCell(cell) = event else {
-        panic!("expected manual prune status, got {event:?}");
-    };
-    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-    assert!(rendered.contains("Manual pruning"), "status: {rendered:?}");
-    assert!(
-        !rendered.contains("Automatic pruning"),
-        "manual status must not claim automatic invocation: {rendered:?}"
-    );
-}
-
-#[tokio::test]
-async fn slash_prune_takes_no_arguments_so_a_bare_prune_always_runs() {
-    // The regression this guards: `/prune` accepted an optional percentage, so a
-    // bare `/prune` went through the argument path and could be swallowed there
-    // instead of running a pass. Force-pruning lives in `/force-prune` now.
-    assert!(!SlashCommand::Prune.supports_inline_args());
-    assert!(SlashCommand::ForcePrune.supports_inline_args());
-
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.dispatch_command_with_args(SlashCommand::Prune, String::new(), Vec::new());
-
-    assert!(chat.bottom_pane.is_task_running());
-    loop {
-        match rx.try_recv() {
-            Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => break,
-            Ok(_) => continue,
-            other => panic!("expected a bare prune to run a pass, got {other:?}"),
-        }
-    }
-}
-
-#[tokio::test]
 async fn slash_dashboard_requests_a_read_only_context_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -302,10 +249,10 @@ async fn slash_force_prune_status_identifies_its_manual_targeting() {
 }
 
 #[tokio::test]
-async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() {
+async fn manual_force_prune_tracking_only_finishes_after_its_normal_turn_completion() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     seed_manual_memory_cache_from_disk(&mut chat).expect("seed manual-memory cache");
-    chat.dispatch_command(SlashCommand::Prune);
+    chat.dispatch_command_with_args(SlashCommand::ForcePrune, "20".to_string(), Vec::new());
     let _ = rx.try_recv().expect("manual prune start status");
     let _ = rx.try_recv().expect("manual prune operation");
 
@@ -328,15 +275,15 @@ async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() 
     );
     assert_eq!(
         completion_messages,
-        vec!["Manual pruning command finished\n"],
+        vec!["• Manual pruning command finished\n"],
         "normal completion must be neutral about applied work"
     );
 }
 
 #[tokio::test]
-async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() {
+async fn manual_force_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.dispatch_command(SlashCommand::Prune);
+    chat.dispatch_command_with_args(SlashCommand::ForcePrune, "20".to_string(), Vec::new());
     let _ = rx.try_recv().expect("manual prune start status");
     let _ = rx.try_recv().expect("manual prune operation");
 

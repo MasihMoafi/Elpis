@@ -459,10 +459,6 @@ const ELPIS_TIPS: &[(&str, &str)] = &[
         "open the Context Ledger and choose what stays in context",
     ),
     (
-        "/prune",
-        "distill stale tool output or force pressure prune: /prune [<pct>]",
-    ),
-    (
         "/auto",
         "let the cheap model route the work to the right one",
     ),

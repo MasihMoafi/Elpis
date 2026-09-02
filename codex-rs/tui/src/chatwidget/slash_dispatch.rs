@@ -259,23 +259,14 @@ impl ChatWidget {
                 const INIT_PROMPT: &str = include_str!("../../prompt_for_init_command.md");
                 self.submit_user_message(INIT_PROMPT.to_string().into());
             }
-            SlashCommand::Prune => {
-                self.begin_context_prune_tracking();
-                self.clear_token_usage();
-                if !self.bottom_pane.is_task_running() {
-                    self.bottom_pane.set_task_running(/*running*/ true);
-                }
-                self.add_info_message("Manual pruning...".to_string(), None);
-                self.app_event_tx.prune(None);
-            }
             SlashCommand::SmartPrune => {
                 self.toggle_smart_prune();
             }
             // `/force-prune` needs its target; without one there is nothing to force,
-            // so say so rather than silently running an ordinary prune.
+            // so say so rather than starting a targetless rewrite.
             SlashCommand::ForcePrune => {
                 self.add_error_message(
-                    "Usage: /force-prune <1-100> — the percentage of the context window to prune down to. Use /prune for an ordinary pass."
+                    "Usage: /force-prune <1-100> — the percentage of the context window to prune down to."
                         .to_string(),
                 );
             }
@@ -1076,7 +1067,6 @@ impl ChatWidget {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Prune
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Review
