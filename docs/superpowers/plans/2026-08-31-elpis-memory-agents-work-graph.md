@@ -380,12 +380,13 @@ pub fn instruction_source_admitted(
 - Modify: `codex-rs/tui/src/chatwidget/context_usage.rs`
 - Modify: `codex-rs/tui/src/chatwidget/status_controls.rs`
 - Modify: `codex-rs/tui/src/status/card.rs`
+- Modify: `codex-rs/tui/src/status/mod.rs` only for the narrow path-free display-data re-export
 - Modify: `codex-rs/tui/src/status/tests.rs`
 - Modify: `codex-rs/tui/src/dashboard_server.rs`
 - Modify: `codex-rs/tui/src/dashboard_server_tests.rs`
 - Modify: `codex-rs/tui/src/dashboard_assets/index.html`
 - Modify only if the existing literal-path copy helper needs a narrow public wrapper: `codex-rs/tui/src/clipboard_copy.rs`
-- Test: `codex-rs/tui/src/chatwidget/tests/context_ledger.rs`, `codex-rs/tui/src/chatwidget/tests/status_command_tests.rs`, and colocated tests in `codex-rs/tui/src/chatwidget/context_usage.rs`; dashboard server tests live in `codex-rs/tui/src/dashboard_server_tests.rs`
+- Test: `codex-rs/tui/src/chatwidget/tests/context_ledger.rs`, `codex-rs/tui/src/chatwidget/tests/status_command_tests.rs`, colocated tests in `codex-rs/tui/src/chatwidget/context_usage.rs`, and publication-transition assertions in `codex-rs/tui/src/app/tests/manual_memory.rs`; dashboard server tests live in `codex-rs/tui/src/dashboard_server_tests.rs`
 - Modify: `tools/verify-elpis/surfaces.toml` and `tests/verify-elpis/test_verify_elpis.sh`
 - Modify: `docs/context.md`
 
@@ -465,7 +466,7 @@ pub fn instruction_source_admitted(
   Expected final evidence: core/request/TUI `/usage`/Ledger/dashboard agree on missing/create/admit/withdraw/truncate/unavailable behavior, async results are epoch-safe, and any unavailable local check remains explicitly unexecuted. Commit with:
 
   ```bash
-  git add codex-rs/tui/src/chatwidget/context_ledger.rs codex-rs/tui/src/chatwidget/context_usage.rs codex-rs/tui/src/chatwidget/status_controls.rs codex-rs/tui/src/status/card.rs codex-rs/tui/src/status/tests.rs codex-rs/tui/src/dashboard_server.rs codex-rs/tui/src/dashboard_server_tests.rs codex-rs/tui/src/dashboard_assets/index.html codex-rs/tui/src/clipboard_copy.rs codex-rs/tui/src/chatwidget/tests/context_ledger.rs codex-rs/tui/src/chatwidget/tests/status_command_tests.rs docs/context.md tools/verify-elpis/surfaces.toml tests/verify-elpis/test_verify_elpis.sh
+  git add codex-rs/tui/src/app/tests/manual_memory.rs codex-rs/tui/src/chatwidget/context_ledger.rs codex-rs/tui/src/chatwidget/context_usage.rs codex-rs/tui/src/chatwidget/status_controls.rs codex-rs/tui/src/status/card.rs codex-rs/tui/src/status/mod.rs codex-rs/tui/src/status/tests.rs codex-rs/tui/src/dashboard_server.rs codex-rs/tui/src/dashboard_server_tests.rs codex-rs/tui/src/dashboard_assets/index.html codex-rs/tui/src/clipboard_copy.rs codex-rs/tui/src/chatwidget/tests/context_ledger.rs codex-rs/tui/src/chatwidget/tests/status_command_tests.rs docs/context.md tools/verify-elpis/surfaces.toml tests/verify-elpis/test_verify_elpis.sh
   git commit -m "feat: make manual memory visible and controllable"
   ```
 

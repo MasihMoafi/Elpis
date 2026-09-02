@@ -83,7 +83,7 @@ argv = ["test", "-p", "codex-core", "--lib", "--locked", "context_cleaner::tests
 [commands.core-elpis-context]
 kind = "cargo"
 mode = "test"
-argv = ["test", "-p", "codex-core", "--lib", "--locked", "elpis_context::tests"]
+argv = ["test", "-p", "codex-core", "--lib", "--locked", "elpis_context"]
 
 [commands.core-context-prune]
 kind = "cargo"
@@ -104,6 +104,11 @@ argv = ["test", "-p", "codex-core", "--lib", "configured_dev_rule_roots_replace_
 kind = "cargo"
 mode = "test"
 argv = ["test", "-p", "codex-tui", "--lib", "context_ledger", "--locked"]
+
+[commands.tui-manual-memory]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "manual_memory_"]
 
 [commands.app-server-list-models]
 kind = "cargo"
@@ -158,7 +163,7 @@ argv = ["test", "-p", "codex-tui", "--lib", "--locked", "work_graph"]
 [commands.app-server-memory-recall]
 kind = "cargo"
 mode = "test"
-argv = ["test", "-p", "codex-app-server", "--test", "all", "--locked", "durable_memory_reaches_the_model_only_once_the_ledger_admits_it"]
+argv = ["test", "-p", "codex-app-server", "--test", "all", "--locked", "memory_recall"]
 
 [commands.core-memory-dir-bounds]
 kind = "cargo"
@@ -264,6 +269,10 @@ commands = [
     "app-server-memory-recall",
     "core-memory-dir-bounds",
     "core-memory-permission-profile",
+    "tui-manual-memory",
+    "tui-context-ledger",
+    "tui-dashboard",
+    "tui-context-usage",
 ]
 
 [[surfaces]]
@@ -290,6 +299,7 @@ commands = [
     "core-skills-default-enable",
     "core-dev-rule-roots",
     "tui-context-ledger",
+    "tui-manual-memory",
     "app-server-list-models",
     "backend-turn-usage",
     "otel-turn-cost",
@@ -404,16 +414,156 @@ glob = "docs/SHIPPING_RULES.md"
 surfaces = ["full"]
 
 [[path_rules]]
+glob = "codex-rs/core/src/elpis_context.rs"
+surfaces = ["memory", "context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/agents_md_manager.rs"
+surfaces = ["memory", "context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/app-server/src/extensions.rs"
+surfaces = ["memory", "app-server"]
+
+[[path_rules]]
+glob = "codex-rs/app-server/tests/suite/v2/memory_recall.rs"
+surfaces = ["memory"]
+
+[[path_rules]]
 glob = "codex-rs/tui/src/dashboard_server.rs"
-surfaces = ["dashboard"]
+surfaces = ["memory", "dashboard"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/dashboard_server_tests.rs"
+surfaces = ["memory", "dashboard"]
 
 [[path_rules]]
 glob = "codex-rs/tui/src/dashboard_assets/**"
-surfaces = ["dashboard"]
+surfaces = ["memory", "dashboard"]
 
 [[path_rules]]
 glob = "codex-rs/tui/src/chatwidget/context_usage.rs"
-surfaces = ["dashboard"]
+surfaces = ["memory", "dashboard"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/context_ledger.rs"
+surfaces = ["memory", "context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/tests/context_ledger.rs"
+surfaces = ["memory", "context-compaction"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app_event.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/app_server_events.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/background_requests.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/event_dispatch.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/session_lifecycle.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/test_support.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/tests.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/tests/manual_memory.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/app/thread_routing.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/constructor.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/session_flow.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/input_flow.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/input_restore.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/input_submission.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/slash_dispatch.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/status_controls.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/tests.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/tests/composer_submission.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/tests/slash_commands.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/tests/status_command_tests.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/chatwidget/user_messages.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/status/card.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/status/mod.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/status/tests.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "codex-rs/tui/src/clipboard_copy.rs"
+surfaces = ["memory", "tui"]
+
+[[path_rules]]
+glob = "docs/context.md"
+surfaces = ["memory", "docs"]
 
 [[path_rules]]
 glob = "codex-rs/features/**"
@@ -441,14 +591,6 @@ surfaces = ["context-compaction"]
 
 [[path_rules]]
 glob = "codex-rs/core/src/session/context_prune*"
-surfaces = ["context-compaction"]
-
-[[path_rules]]
-glob = "codex-rs/tui/src/chatwidget/context_ledger.rs"
-surfaces = ["context-compaction"]
-
-[[path_rules]]
-glob = "codex-rs/tui/src/chatwidget/tests/context_ledger.rs"
 surfaces = ["context-compaction"]
 
 [[path_rules]]
@@ -493,10 +635,6 @@ surfaces = ["memory"]
 
 [[path_rules]]
 glob = "codex-rs/core/**/*continuity*"
-surfaces = ["memory"]
-
-[[path_rules]]
-glob = "codex-rs/app-server/tests/suite/v2/memory_recall.rs"
 surfaces = ["memory"]
 
 [[path_rules]]

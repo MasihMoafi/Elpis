@@ -89,6 +89,31 @@ Elpis provides interactive context admission control in the TUI:
   - Individual portable development rules installed by Elpis
     (`~/.elpis/skills/dev/*.md`)
 
+### Manual memory is explicit
+
+The configured memory directory has one dedicated `MEMORY.md` row. The row remains visible while
+its status is loading, missing, available, admitted, being created, or unavailable; Ledger,
+`/usage`, and `/dashboard` use the same cached status rather than rereading the file while they
+render.
+
+- A missing row cannot be admitted. With that row selected, lowercase `c` creates the minimal
+  `MEMORY.md` template and leaves it **not admitted**. Creating the file never opts it into a
+  request.
+- `Space` or `Enter` explicitly admits or withdraws an existing file for the next request. Bulk
+  admission skips Memory while its status or another Memory change is pending.
+- Lowercase `p` copies the exact configured `MEMORY.md` path. It does not open an editor or file
+  manager. Ctrl+click opens a file only after the cached status confirms that a regular file
+  exists.
+- At most 8,000 trimmed Unicode characters can enter one request. The row reports the next-request
+  count, the count that would be eligible if admitted, and whether longer content is truncated.
+  Only a Ready, Admitted row contributes its capped estimate to Ledger and `/usage` totals.
+- The dashboard receives only phase, admission state, counts, cap, truncation, pending state, and
+  a fixed failure code. It never receives the memory path, body, file metadata, or raw I/O error.
+
+After optional template creation, Elpis does not modify or infer the contents of this file. The
+user owns the text; Elpis owns only template creation, the explicit admission bit, and the safe
+status projection.
+
 ### Development rules and curated skills
 
 Development rules and skills have different admission contracts. Development rules are

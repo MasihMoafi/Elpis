@@ -263,13 +263,32 @@ PY
 new_fixture dashboard
 run_selector --changed codex-rs/tui/src/dashboard_server.rs
 assert_status 0
-assert_output 'Elpis verification: surfaces=dashboard'
-assert_output 'Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage'
-assert_call_count 3
+assert_output 'Elpis verification: surfaces=dashboard,memory'
+assert_output 'Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage,core-elpis-context,tui-context-ledger,tui-manual-memory,app-server-memory-recall,core-memory-dir-bounds,core-memory-permission-profile'
+assert_call_count 9
 assert_call_at 0 fmt --all --check
 assert_call_at 1 test -p codex-tui --lib --locked dashboard
 assert_call_at 2 test -p codex-tui --lib --locked context_usage
+assert_call_at 3 test -p codex-core --lib --locked elpis_context
+assert_call_at 4 test -p codex-tui --lib context_ledger --locked
+assert_call_at 5 test -p codex-tui --lib --locked manual_memory_
+assert_call_at 6 test -p codex-app-server --test all --locked memory_recall
+assert_call_at 7 test -p codex-core --lib --locked memory_dir_is_readable_without_creating_or_widening_writes
+assert_call_at 8 test -p codex-core --lib --locked permission_profile_override_keeps_memories_root_out_of_legacy_projection
 assert_all_cargo_env
+
+new_fixture memory
+run_selector --surface memory
+assert_status 0
+assert_output 'Elpis verification: surfaces=memory'
+assert_output 'Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage,core-elpis-context,tui-context-ledger,tui-manual-memory,app-server-memory-recall,core-memory-dir-bounds,core-memory-permission-profile'
+assert_call_count 9
+assert_argv_occurrences 1 test -p codex-core --lib --locked elpis_context
+assert_argv_occurrences 1 test -p codex-app-server --test all --locked memory_recall
+assert_argv_occurrences 1 test -p codex-tui --lib --locked manual_memory_
+assert_argv_occurrences 1 test -p codex-tui --lib context_ledger --locked
+assert_argv_occurrences 1 test -p codex-tui --lib --locked dashboard
+assert_argv_occurrences 1 test -p codex-tui --lib --locked context_usage
 
 # Explicit surfaces are a stable manifest-order union; repetition and a changed
 # path do not duplicate shared commands or trigger the mixed-path fallback.
@@ -286,7 +305,7 @@ assert_status 0
 [[ $(output_header commands) == "$explicit_commands" ]] ||
     fail "surface order changed the selected command union"
 
-run_selector --changed codex-rs/tui/src/dashboard_server.rs --surface tui
+run_selector --changed codex-rs/tui/src/bottom_pane/mod.rs --surface dashboard
 assert_status 0
 [[ $(output_header commands) == "$explicit_commands" ]] ||
     fail "path plus explicit surface did not match the explicit union"
@@ -295,19 +314,28 @@ run_selector \
     --changed codex-rs/tui/src/dashboard_server.rs \
     --changed codex-rs/tui/src/dashboard_server.rs
 assert_status 0
-assert_output 'Elpis verification: surfaces=dashboard'
+assert_output 'Elpis verification: surfaces=dashboard,memory'
 
 # Unknown, safety-owned, and mixed focused paths conservatively choose full.
 for full_path in \
     codex-rs/unclassified/source.rs \
     codex-rs/protocol/src/lib.rs \
-    scripts/verify-elpis
+    scripts/verify-elpis \
+    tests/verify-elpis/test_verify_elpis.sh \
+    tools/verify-elpis/surfaces.toml
 do
     new_fixture "full-${full_path//\//-}"
     run_selector --changed "$full_path"
     assert_status 0
     assert_output 'Elpis verification: surfaces=full'
 done
+
+new_fixture same-memory-tui-signature
+run_selector \
+    --changed codex-rs/tui/src/app.rs \
+    --changed codex-rs/tui/src/status/card.rs
+assert_status 0
+assert_output 'Elpis verification: surfaces=tui,memory'
 
 new_fixture mixed-focused
 run_selector \
@@ -316,17 +344,69 @@ run_selector \
 assert_status 0
 assert_output 'Elpis verification: surfaces=full'
 
+new_fixture mixed-manual-memory
+run_selector \
+    --changed codex-rs/core/src/elpis_context.rs \
+    --changed codex-rs/tui/src/app.rs
+assert_status 0
+assert_output 'Elpis verification: surfaces=full'
+
+new_fixture complete-a4-selects-full
+run_selector \
+    --changed codex-rs/tui/src/chatwidget/context_ledger.rs \
+    --changed codex-rs/tui/src/dashboard_server_tests.rs \
+    --changed docs/context.md \
+    --changed tools/verify-elpis/surfaces.toml \
+    --changed tests/verify-elpis/test_verify_elpis.sh
+assert_status 0
+assert_output 'Elpis verification: surfaces=full'
+
 # Cross-cutting exceptions must beat each broad family, and each broad family
 # must still classify an ordinary member in the other direction.
 precedence_paths=(
-    'codex-rs/tui/src/dashboard_server.rs|dashboard'
-    'codex-rs/tui/src/chatwidget/context_ledger.rs|context-compaction'
+    'codex-rs/core/src/elpis_context.rs|context-compaction,memory'
+    'codex-rs/core/src/agents_md_manager.rs|context-compaction,memory'
+    'codex-rs/app-server/src/extensions.rs|app-server,memory'
+    'codex-rs/tui/src/dashboard_server.rs|dashboard,memory'
+    'codex-rs/tui/src/dashboard_server_tests.rs|dashboard,memory'
+    'codex-rs/tui/src/dashboard_assets/index.html|dashboard,memory'
+    'codex-rs/tui/src/chatwidget/context_usage.rs|dashboard,memory'
+    'codex-rs/tui/src/chatwidget/context_ledger.rs|context-compaction,memory'
+    'codex-rs/tui/src/chatwidget/tests/context_ledger.rs|context-compaction,memory'
+    'codex-rs/tui/src/app.rs|tui,memory'
+    'codex-rs/tui/src/app_event.rs|tui,memory'
+    'codex-rs/tui/src/app/app_server_events.rs|tui,memory'
+    'codex-rs/tui/src/app/background_requests.rs|tui,memory'
+    'codex-rs/tui/src/app/event_dispatch.rs|tui,memory'
+    'codex-rs/tui/src/app/session_lifecycle.rs|tui,memory'
+    'codex-rs/tui/src/app/test_support.rs|tui,memory'
+    'codex-rs/tui/src/app/tests.rs|tui,memory'
+    'codex-rs/tui/src/app/tests/manual_memory.rs|tui,memory'
+    'codex-rs/tui/src/app/thread_routing.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/constructor.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/session_flow.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/input_flow.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/input_restore.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/input_submission.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/slash_dispatch.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/status_controls.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/tests.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/tests/composer_submission.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/tests/slash_commands.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/tests/status_command_tests.rs|tui,memory'
+    'codex-rs/tui/src/chatwidget/user_messages.rs|tui,memory'
+    'codex-rs/tui/src/status/card.rs|tui,memory'
+    'codex-rs/tui/src/status/mod.rs|tui,memory'
+    'codex-rs/tui/src/status/tests.rs|tui,memory'
+    'codex-rs/tui/src/clipboard_copy.rs|tui,memory'
     'codex-rs/tui/src/multi_agents.rs|agents-work-graph'
-    'codex-rs/tui/src/app.rs|tui'
+    'codex-rs/tui/src/bottom_pane/mod.rs|tui'
     'codex-rs/app-server/src/turn_cost_worker.rs|telemetry'
     'codex-rs/app-server/tests/suite/v2/memory_recall.rs|memory'
     'codex-rs/app-server/src/lib.rs|app-server'
     'docs/LOCAL_BUILD_RULES.md|full'
+    'docs/context.md|docs,memory'
     'docs/notes.md|docs'
 )
 for entry in "${precedence_paths[@]}"; do
