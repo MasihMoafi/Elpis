@@ -242,6 +242,21 @@ jobs:
           test -n "$expected"
           test "$(target/release/elpis --version)" = "elpis $expected"
 
+      - name: Launch the release binary in a clean Linux home
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          smoke_root="$(mktemp -d "$RUNNER_TEMP/elpis-release-smoke.XXXXXX")"
+          mkdir -p "$smoke_root/home" "$smoke_root/elpis" "$smoke_root/codex"
+          env -i \
+            HOME="$smoke_root/home" \
+            ELPIS_HOME="$smoke_root/elpis" \
+            CODEX_HOME="$smoke_root/codex" \
+            PATH="/usr/bin:/bin" \
+            target/release/elpis --migrate-from-codex > "$smoke_root/output.txt"
+          grep -q 'Preview only. Nothing is selected or copied.' "$smoke_root/output.txt"
+          test -d "$smoke_root/elpis"
+
       - name: Commit verified integration source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/product-integration' && hashFiles('.github/finalizer/chunk-00') != ''
         working-directory: .
@@ -303,7 +318,8 @@ jobs:
 
   build-macos:
     name: Build and verify Elpis on macOS (Apple Silicon)
-    if: github.event_name != 'workflow_dispatch'
+    # v0.2.0 is Linux-only; keep the old job readable until macOS support resumes.
+    if: ${{ false }}
     runs-on: macos-14
     timeout-minutes: 120
     defaults:
@@ -459,7 +475,7 @@ jobs:
 
           release="$work/release"
           mkdir -p "$release"
-          for asset in elpis-linux-x86_64 elpis-macos-arm64; do
+          for asset in elpis-linux-x86_64; do
             printf 'payload-for-%s\n' "$asset" > "$release/$asset"
             (cd "$release" && sha256sum "$asset" > "$asset.sha256")
           done
@@ -552,7 +568,7 @@ jobs:
           }
 
           check linux-x86_64 Linux x86_64 gnu elpis-linux-x86_64
-          check darwin-arm64 Darwin arm64 bsd elpis-macos-arm64
+          reject darwin-arm64 Darwin arm64 bsd
           reject darwin-x86_64 Darwin x86_64 bsd
           reject linux-aarch64 Linux aarch64 gnu
 
@@ -561,7 +577,7 @@ jobs:
   release:
     name: Publish tagged binaries
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, build-macos, installer-platform-detection]
+    needs: [build, installer-platform-detection]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -575,12 +591,6 @@ jobs:
           name: elpis-linux-x86_64
           path: dist
 
-      - name: Download verified Elpis macOS binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: elpis-macos-arm64
-          path: dist-macos
-
       - name: Download Elpis .deb
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -592,23 +602,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mv dist/elpis dist/elpis-linux-x86_64
-          # Both artifacts contain a file named `elpis`, so the macOS one is
-          # downloaded to its own directory and renamed before it joins dist/.
-          mv dist-macos/elpis dist/elpis-macos-arm64
           (cd dist && sha256sum elpis-linux-x86_64 > elpis-linux-x86_64.sha256)
-          (cd dist && sha256sum elpis-macos-arm64 > elpis-macos-arm64.sha256)
           for deb in dist/*.deb; do
             (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
           done
-          # Re-tagging the same version must replace the release, not fail on it;
-          # this runs only after build+tests pass, so the old release stays live
-          # until a verified replacement is seconds away.
-          gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes || true
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; refusing to replace it." >&2
+            exit 1
+          fi
           gh release create "$GITHUB_REF_NAME" \
             dist/elpis-linux-x86_64 \
             dist/elpis-linux-x86_64.sha256 \
-            dist/elpis-macos-arm64 \
-            dist/elpis-macos-arm64.sha256 \
             dist/*.deb \
             dist/*.deb.sha256 \
             --repo "$GITHUB_REPOSITORY" \

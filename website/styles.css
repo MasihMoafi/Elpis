@@ -170,8 +170,32 @@ h2 { margin-bottom: 0; font-size: clamp(3rem, 5vw, 5.9rem); font-weight: 500; li
 .plain-list span { color: #a7455d; font-family: ui-monospace, monospace; font-size: .66rem; }
 .ledger-visual { position: relative; padding: 16px; border: 1px solid rgba(18,16,15,.2); background: #171412; box-shadow: 28px 38px 0 rgba(217,84,119,.12); }
 .ledger-caption { display: flex; justify-content: space-between; padding: 3px 5px 16px; color: #e4dad3; font-size: .68rem; }
-.ledger-visual img { width: 100%; min-height: 340px; object-fit: cover; object-position: top left; }
-.image-scrim { position: absolute; inset: 50% 16px 16px; pointer-events: none; background: linear-gradient(transparent, rgba(18,16,15,.7)); }
+.ledger-visual img { width: 100%; min-height: 340px; object-fit: contain; }
+
+.smart-demo-section { background: var(--ink-soft); }
+.admission-demo { border: 1px solid var(--line-strong); background: #0d0c0b; box-shadow: 34px 38px 0 rgba(88,183,165,.07); }
+.admission-route { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr auto; gap: 14px; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--line); color: #8e837b; font-family: ui-monospace, monospace; font-size: .68rem; }
+.admission-route i { height: 1px; background: linear-gradient(90deg, var(--line-strong), var(--verdigris)); }
+.admission-route .route-accent { color: var(--verdigris); }
+.admission-panels { display: grid; grid-template-columns: 1fr auto 1fr; gap: 28px; align-items: center; padding: clamp(24px, 4vw, 54px); }
+.output-card { min-height: 270px; padding: 24px; border: 1px solid var(--line); background: var(--panel); transition: border-color 240ms ease, opacity 240ms ease, transform 240ms ease; }
+.output-card > div { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.output-card span { color: #8d817a; font-size: .65rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.output-card strong { color: var(--paper); font-size: 1.2rem; text-align: right; }
+.output-card small { display: block; margin-top: 4px; color: #776d67; font-size: .55rem; font-weight: 500; }
+.output-card pre { margin: 24px 0 0; white-space: pre-wrap; }
+.output-card code { color: #a99d95; font-family: ui-monospace, monospace; font-size: .76rem; line-height: 1.85; }
+.output-admitted { border-color: rgba(88,183,165,.25); opacity: .48; transform: translateX(-8px); }
+.admission-demo.is-active .output-source { opacity: .55; }
+.admission-demo.is-active .output-admitted { border-color: var(--verdigris); opacity: 1; transform: none; }
+.admission-button { display: grid; min-width: 112px; gap: 12px; place-items: center; padding: 16px 12px; border: 1px solid rgba(88,183,165,.4); background: rgba(88,183,165,.08); color: var(--verdigris); cursor: pointer; font-size: .65rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.admission-button b { font-size: 1.35rem; transition: transform 240ms ease; }
+.admission-demo.is-active .admission-button b { transform: translateX(6px); }
+.admission-evidence { display: grid; grid-template-columns: .55fr .7fr 1.75fr; gap: 24px; align-items: center; padding: 22px 24px; border-top: 1px solid var(--line); }
+.admission-evidence > div { display: grid; gap: 4px; padding-left: 14px; border-left: 1px solid var(--line); }
+.admission-evidence strong { color: var(--verdigris); font-size: 1.55rem; }
+.admission-evidence span, .admission-evidence p { color: #887c75; font-size: .66rem; line-height: 1.55; }
+.admission-evidence p { margin: 0; }
 
 .handoff-section { background: #171412; }
 .handoff-heading { display: grid; grid-template-columns: .7fr 1.3fr; margin-bottom: 70px; }
@@ -201,6 +225,13 @@ h2 { margin-bottom: 0; font-size: clamp(3rem, 5vw, 5.9rem); font-weight: 500; li
 .evaluation-strip dt { font-size: 1.35rem; font-weight: 700; }
 .evaluation-strip dd { margin: 4px 0 0; color: #8f837c; font-size: .62rem; line-height: 1.4; }
 .evaluation-strip > p { margin: 0; color: #8f837c; font-size: .72rem; line-height: 1.6; }
+
+.evidence-section { background: #0b0a09; }
+.evidence-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; }
+.evidence-grid figure { margin: 0; border: 1px solid var(--line); background: var(--ink-soft); }
+.evidence-grid img { width: 100%; min-height: 320px; padding: 18px; object-fit: contain; }
+.evidence-grid figcaption { padding: 15px 18px; border-top: 1px solid var(--line); color: #8f837c; font-size: .67rem; }
+.evidence-link { display: inline-block; margin-top: 28px; }
 
 .install-section { display: grid; grid-template-columns: .75fr 1.25fr; gap: 9vw; align-items: center; background: var(--ember); color: var(--ink); }
 .install-copy .eyebrow { color: #6d1b16; }
@@ -247,6 +278,11 @@ footer > div:first-child p { margin: 12px 0 0; color: #716761; font-size: .72rem
   .lab-card { grid-template-columns: 1fr; }
   .lab-card img { height: 250px; }
   .evaluation-strip { grid-template-columns: 1fr; gap: 24px; }
+  .admission-panels { grid-template-columns: 1fr; }
+  .admission-button { grid-auto-flow: column; justify-content: center; }
+  .admission-button b { transform: rotate(90deg); }
+  .admission-demo.is-active .admission-button b { transform: rotate(90deg) translateX(6px); }
+  .admission-evidence, .evidence-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
@@ -287,6 +323,12 @@ footer > div:first-child p { margin: 12px 0 0; color: #716761; font-size: .72rem
   .ledger-visual { padding: 10px; box-shadow: 12px 14px 0 rgba(217,84,119,.12); }
   .ledger-caption { flex-direction: column; gap: 5px; }
   .ledger-visual img { min-height: 220px; }
+  .admission-route { grid-template-columns: 1fr; }
+  .admission-route i { width: 1px; height: 15px; margin-left: 4px; background: linear-gradient(var(--line-strong), var(--verdigris)); }
+  .admission-demo { box-shadow: 12px 14px 0 rgba(88,183,165,.07); }
+  .admission-panels { padding: 20px; }
+  .output-card { min-height: 240px; }
+  .admission-evidence { gap: 16px; }
   .handoff-heading { display: block; }
   .handoff-heading .eyebrow { margin-bottom: 20px; }
   .handoff-flow { grid-template-columns: 1fr 1fr; }

@@ -1,23 +1,22 @@
 # Execution State
 
-## 2026-09-02 — Public website
+## 2026-09-03 — Elpis v0.2.0 release
 
-Intent: create and deploy a polished, standalone Elpis website without changing the Rust application or the user's in-progress documentation edits.
+Intent: assemble, verify, publish, install, and document one Linux release containing the completed cache-stable Smart Prune path and the stable daily-driver features.
 
 Acceptance:
 
-- Explain provider-neutral continuity in plain language.
-- Show goal, admitted context, control, and evidence as the durable layer.
-- Label manual memory, pruning, work graphs, and historical evaluations truthfully.
-- Provide a Linux-first early-access install path and source link.
-- Use a distinct responsive visual system and accessible interactions.
-- Verify content checks, desktop/mobile layout, interactions, and production deployment.
+- Smart Prune acts before first main-model exposure, is Experimental/off by default, and leaves admitted history unchanged.
+- `/prune` and `/ide` are absent; `/force-prune` and native `/compact` keep their distinct meanings.
+- Context, dashboard, manual memory, skill/plugin, provider, and work-graph claims match code and evidence.
+- Linux full and nightly-release verification pass on the exact release commit.
+- The published artifact is smoke-tested in a clean environment, then installed with matching hashes.
+- README, release notes, technical preprint, portfolio write-up, and standalone website use current, privacy-safe visuals and qualified evaluation claims.
 
 Out of scope:
 
-- Claiming daily-driver acceptance or production readiness.
-- Changing Elpis runtime behavior.
-- Publishing or pushing repository commits.
-- Editing `docs/USER_REQUESTS.md` or `docs/WORK_GRAPHS.md`.
+- The unfinished human agent-control RPC/UI work in `feat/daily-driver-readiness`.
+- Automatic memory extraction or promotion.
+- macOS and Windows artifacts.
 
-Status: local implementation verified. Five content/structure checks pass; the runtime handoff, sticky navigation, mobile menu, responsive layout, and image assets were exercised in the browser at desktop and 375px widths with no console errors or horizontal overflow. Production deployment remains.
+Status: release candidate assembly in progress. No tag or v0.2.0 release exists yet.

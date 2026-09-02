@@ -14,9 +14,9 @@
 
 </div>
 
-![Elpis interactive terminal demo](docs/assets/demo.gif)
+[Try the interactive Elpis demo →](https://elpis.masihmoafi.com)
 
-![Elpis context audit — selective pruning and evidence trail](docs/assets/evidence.gif)
+![Elpis session continuity modes](docs/assets/elpis-session-continuity.svg)
 
 ## Contents
 
@@ -42,7 +42,7 @@
 
 ## Quickstart
 
-Linux x86_64 and macOS on Apple Silicon:
+Linux x86_64:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
@@ -52,7 +52,7 @@ The installer picks the right binary for your machine and installs
 [RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
 choose a provider and sign in or enter its API key.
 
-`v0.1.2` is the current release.
+`v0.2.0` is the current release.
 
 ## What is Elpis
 
@@ -72,8 +72,6 @@ Different paths. Same roots. One shared project.
 Long sessions fill up with transcripts, file reads, searches, command output, and dead ends.
 The useful state gets buried in the story of how the agent reached it, while every request pays
 for more context.
-
-![Agents using excessive tool calls and tokens to gather redundant context](docs/assets/showcase-of-how-much-tool-calls.png)
 
 Elpis separates the active working set from durable evidence. The next request receives a small,
 inspectable context; the exact record stays on disk and can be retrieved when it is needed.
@@ -110,11 +108,12 @@ Automatic native compaction uses the model-window threshold and usable-window he
 Prune is Experimental and off by default; its Ledger switch and `/smart-prune on|off` command
 apply to subsequent turns without rewriting admitted history.
 
-#### What a pruning decision looks like
+#### What a historical pruning decision looked like
 
 ![Task 1 Context Flow and Pruning Lifecycle](docs/assets/sankey_context_flow.svg)
 
-One real pass from disk. A search command whose raw output ran to 18,930 characters — close to
+This is one recorded pass from the superseded retrospective-pruning evaluation, not current
+Smart Prune behavior. A search command whose raw output ran to 18,930 characters — close to
 5,000 tokens carried across requests:
 
 **Before** — what the model was carrying:
@@ -156,15 +155,13 @@ skills expose compact metadata and keep their bodies lazy; `/skills` shows avail
 but mentions and the model-visible list contain enabled skills only. The Ledger has no skills-catalog token row;
 its per-source estimates are not tokenizer measurements.
 
-![The Context Ledger listing admitted instruction files with their token counts and included state](docs/assets/context-ledger.webp)
+![The Context Ledger admission model](website/assets/elpis-context-ledger.svg)
 
 `/context` answers a different question: how full the window is. Its provider-measured
 headline is separate from a rough attribution based on visible transcript and admitted files:
 user messages, agent responses, tool activity, workspace instructions, development rules,
 portable context, and a clearly labeled built-in/estimate gap. Historical pruning savings
 appear separately and are never added to a category row.
-
-<img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
 
 ### Sessions and continuity
 
@@ -226,15 +223,12 @@ command. Full rules and the graph schema are in [docs/WORK_GRAPHS.md](docs/WORK_
 
 ### Bring your own provider
 
-Elpis is not tied to a single model vendor:
+Elpis provides routes for OpenAI and OpenAI-compatible endpoints, native Anthropic Messages,
+native Gemini GenerateContent, OpenRouter, Amazon Bedrock, Ollama, and LM Studio. Model catalogs
+are provider-owned and can change; Elpis does not hard-code a marketing list here.
 
-- **OpenAI:** GPT-4o, GPT-5.6-Luna, o1, o3, and compatible endpoints.
-- **Anthropic:** Claude 3.5 Sonnet, Claude 3 Opus, Claude 3.5 Haiku.
-- **Google:** Gemini 2.0 Flash, Gemini 1.5 Pro.
-- **Local & self-hosted:** Ollama, vLLM, and any OpenAI-compatible server.
-
-Switch models mid-session without restarting. The working context, goal, and session memory are
-preserved across provider boundaries.
+Portable `GOAL.md`, `ES.md`, and admitted rules remain provider-neutral. Native Anthropic and
+Gemini adapters are implemented, while live vendor acceptance remains open.
 
 ### Integrations and tools
 

@@ -52,3 +52,16 @@ header?.querySelectorAll("nav a").forEach((link) => {
     menuButton?.setAttribute("aria-expanded", "false");
   });
 });
+
+const pruneDemo = document.querySelector("[data-prune-demo]");
+const pruneButton = document.querySelector("[data-prune-button]");
+const pruneButtonLabel = document.querySelector("[data-prune-button-label]");
+
+pruneButton?.addEventListener("click", () => {
+  pruneDemo.classList.remove("is-active");
+  pruneButtonLabel.textContent = "Evaluating…";
+  window.setTimeout(() => {
+    pruneDemo.classList.add("is-active");
+    pruneButtonLabel.textContent = "Replay";
+  }, 360);
+});

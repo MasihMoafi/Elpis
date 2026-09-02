@@ -1,5 +1,7 @@
 # Deterministic Work Graphs
 
+## Masih's Idea: Make Agents Work Together The Way Rust Handles Concurrency; Deterministically Make it Such. Is It Already Mimicking That?
+
 Status: implemented behind the under-development `enable_fanout` feature;
 agent-verified on Linux; awaiting Masih's functional acceptance.
 

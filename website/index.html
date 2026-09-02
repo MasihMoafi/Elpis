@@ -21,6 +21,7 @@
       <nav aria-label="Primary navigation">
         <a href="#continuity">Continuity</a>
         <a href="#ledger">Context</a>
+        <a href="#demo">Smart Prune</a>
         <a href="#lab">Lab</a>
         <a href="#install">Install</a>
       </nav>
@@ -35,7 +36,7 @@
         <div class="ambient ambient-one" aria-hidden="true"></div>
         <div class="ambient ambient-two" aria-hidden="true"></div>
         <div class="hero-copy">
-          <p class="eyebrow"><span class="status-dot"></span> Linux-first early access</p>
+          <p class="eyebrow"><span class="status-dot"></span> v0.2.0 · Linux-first early access</p>
           <h1 id="hero-title">Change the runtime.<br /><em>Keep the thread.</em></h1>
           <p class="hero-lede">
             Elpis keeps the goal, admitted context, permissions, and evidence visible while the AI runtime changes underneath.
@@ -47,7 +48,7 @@
           <div class="hero-proof" aria-label="Elpis product properties">
             <span>Local, inspectable state</span>
             <span>Bring your runtime</span>
-            <span>Evidence attached</span>
+            <span>Cache-stable admission</span>
           </div>
         </div>
 
@@ -155,8 +156,45 @@
         </div>
         <div class="ledger-visual">
           <div class="ledger-caption"><span>Context Ledger</span><span class="verified">● admitted state</span></div>
-          <img src="./assets/context-ledger.webp" alt="Elpis Context Ledger showing admitted project instructions" loading="lazy" />
-          <div class="image-scrim" aria-hidden="true"></div>
+          <img src="./assets/elpis-context-ledger.svg" alt="Elpis Context Ledger admission flow from available files to the next request" loading="lazy" />
+        </div>
+      </section>
+
+      <section class="section smart-demo-section" id="demo" aria-labelledby="demo-title">
+        <div class="section-heading">
+          <p class="eyebrow">Admission-time optimization</p>
+          <h2 id="demo-title">Decide once.<br />Then keep appending.</h2>
+          <p>Smart Prune can shorten a fresh textual tool result before the main model first sees it. The admitted event keeps its call identity and is never revisited by Smart Prune.</p>
+        </div>
+
+        <div class="admission-demo" data-prune-demo>
+          <div class="admission-route" aria-label="Smart Prune request sequence">
+            <span>Tool finished</span><i></i><span>Hooks complete</span><i></i><span class="route-accent">Smart Prune</span><i></i><span>Main request</span>
+          </div>
+          <div class="admission-panels">
+            <article class="output-card output-source">
+              <div><span>Fresh source</span><strong>1,385 <small>approx. tokens</small></strong></div>
+              <pre><code>rg output
+231 matching lines
+repeated paths and symbols
+exact source preserved in audit</code></pre>
+            </article>
+            <button class="admission-button" type="button" data-prune-button aria-label="Replay Smart Prune admission">
+              <span data-prune-button-label>Run admission</span><b aria-hidden="true">→</b>
+            </button>
+            <article class="output-card output-admitted" data-prune-result>
+              <div><span>First admitted form</span><strong>472 <small>approx. tokens</small></strong></div>
+              <pre><code>Findings retained
+call id unchanged
+evidence bundle linked
+later requests append</code></pre>
+            </article>
+          </div>
+          <div class="admission-evidence">
+            <div><strong>66%</strong><span>smaller in this recorded admission</span></div>
+            <div><strong>98.96%</strong><span>cached input on its linked first response</span></div>
+            <p>One live observation, not a matched cost or quality comparison. Smart Prune is Experimental and off by default.</p>
+          </div>
         </div>
       </section>
 
@@ -186,7 +224,7 @@
           <article class="lab-card">
             <div class="lab-tag">Experimental</div>
             <img src="./assets/elpis-context-control.svg" alt="Diagram of experimental Elpis context control" loading="lazy" />
-            <div><h3>Automatic context pruning</h3><p>Experimental research into reclaiming context while preserving recoverability. Manual pruning remains the explicit control.</p></div>
+            <div><h3>Smart Prune</h3><p>Experimental first-exposure optimization. It fails open, stays off by default, and never rewrites a result after admission.</p></div>
           </article>
           <article class="lab-card">
             <div class="lab-tag">Experimental</div>
@@ -206,6 +244,25 @@
         </div>
       </section>
 
+      <section class="section evidence-section" aria-labelledby="evidence-title">
+        <div class="section-heading compact">
+          <p class="eyebrow">Historical evaluation</p>
+          <h2 id="evidence-title">Show the traces.<br />Keep the caveats.</h2>
+          <p>These charts preserve the original three-run structure from a superseded high-frequency retrospective-pruning setup. They do not describe the v0.2.0 default or establish better task quality.</p>
+        </div>
+        <div class="evidence-grid">
+          <figure>
+            <img src="./assets/elpis-normalized-overlay-highcontrast.svg" alt="Historical normalized context trajectories for three Elpis and Codex runs" loading="lazy" />
+            <figcaption>Normalized context trajectories · three repetitions of one identical task</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/sankey_context_flow.svg" alt="Historical Sankey flow for one retrospective pruning pass" loading="lazy" />
+            <figcaption>One recorded retrospective pass · preserved as historical evidence</figcaption>
+          </figure>
+        </div>
+        <a class="text-link evidence-link" href="https://github.com/MasihMoafi/Elpis/blob/main/paper/paper.md">Read the technical preprint <span aria-hidden="true">↗</span></a>
+      </section>
+
       <section class="section install-section" id="install" aria-labelledby="install-title">
         <div class="install-copy">
           <p class="eyebrow">Linux-first preview</p>
@@ -220,7 +277,7 @@
             <code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code>
             <button type="button" class="copy-button" data-copy-button>Copy</button>
           </div>
-          <p class="terminal-note">Current candidate: v0.1.2 · early access · review before running</p>
+          <p class="terminal-note">Current release: v0.2.0 · Linux x86_64 · early access</p>
         </div>
       </section>
 
@@ -232,7 +289,7 @@
         <div class="faq-list">
           <details><summary>Does Elpis replace the model provider?<span>+</span></summary><p>No. Elpis manages the session boundary around inference; the selected provider or local runtime still performs generation.</p></details>
           <details><summary>Does Elpis remember everything automatically?<span>+</span></summary><p>No. Project memory is user-maintained and only enters a session when it is admitted through the Context Ledger.</p></details>
-          <details><summary>Is automatic pruning enabled?<span>+</span></summary><p>No. It is experimental and off by default. Explicit manual pruning and native compaction remain separate controls.</p></details>
+          <details><summary>Is Smart Prune enabled?<span>+</span></summary><p>No. It is Experimental and off by default. `/force-prune` is separate emergency recovery; `/compact` remains native compaction.</p></details>
           <details><summary>Is this production-ready?<span>+</span></summary><p>Not yet. The current build is an early-access, Linux-first candidate while daily-driver acceptance continues.</p></details>
         </div>
       </section>
