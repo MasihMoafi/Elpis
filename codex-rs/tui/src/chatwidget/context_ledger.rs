@@ -19,13 +19,13 @@ pub(super) struct LedgerLines {
 
 pub(super) struct ContextLedgerState {
     visible: bool,
-    focused: bool,
-    selected: usize,
+    pub(super) focused: bool,
+    pub(super) selected: usize,
     pending_g: bool,
     why_visible: bool,
     last_area: std::cell::Cell<Option<Rect>>,
     last_scroll: std::cell::Cell<u16>,
-    last_source_ranges: std::cell::RefCell<Vec<(usize, std::ops::Range<usize>)>>,
+    pub(super) last_source_ranges: std::cell::RefCell<Vec<(usize, std::ops::Range<usize>)>>,
 }
 
 impl Default for ContextLedgerState {

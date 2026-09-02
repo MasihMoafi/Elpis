@@ -1346,7 +1346,7 @@ fn dashboard_asset_uses_closed_semantic_tones_for_turn_statuses() {
         "function setTurnStatus(id, status, fallback)",
         "const toneClass = ownValue(STATUS_TONE_CLASSES, status) || 'tone-ash'",
         "element.className = 'turn-primary ' + toneClass",
-        "setTurnStatus('activity-now', current ? current.status : null,",
+        "setTurnStatus(\n    'activity-now',\n    current ? current.status : null,",
         "current ? 'Unavailable' : 'Idle'",
         "setTurnStatus('activity-latest-status', null, 'Unavailable')",
         "setTurnStatus('activity-latest-status', latest.status, 'Unavailable')",

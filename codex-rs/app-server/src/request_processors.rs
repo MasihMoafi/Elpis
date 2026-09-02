@@ -635,6 +635,10 @@ use self::thread_resume_redaction::*;
 use self::thread_summary::*;
 
 pub(crate) use self::thread_lifecycle::populate_thread_turns_from_history;
+#[cfg(test)]
+pub(crate) use self::thread_lifecycle::{
+    observe_initial_turn_cost_after_forwarding, prepare_turn_cost_event,
+};
 pub(crate) use self::thread_processor::thread_from_stored_thread;
 #[cfg(test)]
 pub(crate) use self::thread_summary::read_summary_from_rollout;

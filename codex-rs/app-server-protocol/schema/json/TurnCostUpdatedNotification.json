@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "TurnCostAvailability": {
+      "enum": [
+        "subscriptionAuthentication",
+        "costObservationDisabled",
+        "providerUnsupported",
+        "awaitingBackendPrice",
+        "backendUnavailable",
+        "observationDropped"
+      ],
+      "type": "string"
+    },
+    "TurnCostState": {
+      "oneOf": [
+        {
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/TurnCostAvailability"
+            },
+            "type": {
+              "enum": [
+                "unavailable"
+              ],
+              "title": "UnavailableTurnCostStateType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "type"
+          ],
+          "title": "UnavailableTurnCostState",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "backendTotalUsd": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "priced"
+              ],
+              "title": "PricedTurnCostStateType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "backendTotalUsd",
+            "type"
+          ],
+          "title": "PricedTurnCostState",
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "cost": {
+      "$ref": "#/definitions/TurnCostState"
+    },
+    "threadId": {
+      "type": "string"
+    },
+    "turnId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "cost",
+    "threadId",
+    "turnId"
+  ],
+  "title": "TurnCostUpdatedNotification",
+  "type": "object"
+}
