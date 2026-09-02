@@ -475,9 +475,6 @@ impl ChatWidget {
             SlashCommand::Dashboard => {
                 self.app_event_tx.send(AppEvent::OpenContextDashboard);
             }
-            SlashCommand::Ide => {
-                self.handle_ide_command();
-            }
             SlashCommand::DebugConfig => {
                 self.add_debug_config_output();
             }
@@ -694,9 +691,6 @@ impl ChatWidget {
                 }
                 _ => self.add_error_message(SMART_PRUNE_USAGE.to_string()),
             },
-            SlashCommand::Ide => {
-                self.handle_ide_command_args(trimmed);
-            }
             SlashCommand::Mcp => match trimmed.to_ascii_lowercase().as_str() {
                 "verbose" => self.add_mcp_output(McpServerStatusDetail::Full),
                 _ => self.add_error_message("Usage: /mcp [verbose]".to_string()),
@@ -1059,8 +1053,7 @@ impl ChatWidget {
             return QueueDrain::Stop;
         }
         match cmd {
-            SlashCommand::Ide
-            | SlashCommand::Usage
+            SlashCommand::Usage
             | SlashCommand::Context
             | SlashCommand::Dashboard
             | SlashCommand::DebugConfig

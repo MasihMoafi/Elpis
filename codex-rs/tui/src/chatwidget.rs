@@ -342,8 +342,6 @@ use self::goal_status::GoalStatusState;
 #[cfg(test)]
 use self::goal_status::goal_status_indicator_from_app_goal;
 mod goal_menu;
-mod ide_context;
-use self::ide_context::IdeContextState;
 mod input_queue;
 use self::input_queue::InputQueueState;
 mod input_flow;
@@ -645,7 +643,6 @@ pub(crate) struct ChatWidget {
     /// Tracks whether the buffered next round has seen any `Starting` update yet.
     mcp_startup_pending_next_round_saw_starting: bool,
     connectors: ConnectorsState,
-    ide_context: IdeContextState,
     plugins_cache: PluginsCacheState,
     plugins_fetch_state: PluginListFetchState,
     plugin_remote_sections_loading: bool,
