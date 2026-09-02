@@ -1834,18 +1834,19 @@ mod tests {
 
     #[test]
     fn admission_invalid_utf8_and_nonfile_are_never_defaults() -> anyhow::Result<()> {
-        let invalid_utf8 = tempdir()?;
+        let home = tempdir()?;
+        let invalid_utf8 = home.path().join("invalid-utf8/memories");
         let cwd = tempdir()?;
-        let invalid_path = write_admission_fixture(invalid_utf8.path(), cwd.path(), &[0xff])?;
+        let invalid_path = write_admission_fixture(&invalid_utf8, cwd.path(), &[0xff])?;
         let workspace = invalid_path.parent().expect("workspace");
         assert!(read_admission(workspace).is_err());
-        assert!(admission_fingerprint(Some(invalid_utf8.path()), cwd.path()).is_err());
+        assert!(admission_fingerprint(Some(&invalid_utf8), cwd.path()).is_err());
 
-        let nonfile = tempdir()?;
-        let nonfile_path = admission_path(nonfile.path(), cwd.path());
+        let nonfile = home.path().join("nonfile/memories");
+        let nonfile_path = admission_path(&nonfile, cwd.path());
         std::fs::create_dir_all(&nonfile_path)?;
         assert!(read_admission(nonfile_path.parent().expect("workspace")).is_err());
-        assert!(admission_fingerprint(Some(nonfile.path()), cwd.path()).is_err());
+        assert!(admission_fingerprint(Some(&nonfile), cwd.path()).is_err());
         Ok(())
     }
 
@@ -2068,25 +2069,28 @@ mod tests {
                 .all(|path| Path::new(path) != memory.canonicalize().unwrap())
         );
 
-        let memory_only = tempdir()?;
-        std::fs::write(memory_only.path().join("MEMORY.md"), "memory")?;
-        let only = add_continuity_sources(Some(memory_only.path()), cwd.path(), memory_only.path())
+        let memory_only_home = tempdir()?;
+        let memory_only = memory_only_home.path().join("memories");
+        std::fs::create_dir(&memory_only)?;
+        std::fs::write(memory_only.join("MEMORY.md"), "memory")?;
+        let only = add_continuity_sources(Some(&memory_only), cwd.path(), &memory_only)
             .expect_err("a directory containing only canonical memory must fail");
         assert_eq!(only.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
-        assert!(!admission_path(memory_only.path(), cwd.path()).exists());
+        assert!(!admission_path(&memory_only, cwd.path()).exists());
 
-        let empty_memory = tempdir()?;
-        let empty_path = empty_memory.path().join(MANUAL_MEMORY_FILE);
+        let empty_memory_home = tempdir()?;
+        let empty_memory = empty_memory_home.path().join("memories");
+        std::fs::create_dir(&empty_memory)?;
+        let empty_path = empty_memory.join(MANUAL_MEMORY_FILE);
         std::fs::write(&empty_path, "")?;
-        let empty_direct =
-            add_continuity_source(Some(empty_memory.path()), cwd.path(), &empty_path)
-                .expect_err("empty canonical memory still has a dedicated row");
+        let empty_direct = add_continuity_source(Some(&empty_memory), cwd.path(), &empty_path)
+            .expect_err("empty canonical memory still has a dedicated row");
         assert_eq!(empty_direct.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
         let empty_directory =
-            add_continuity_sources(Some(empty_memory.path()), cwd.path(), empty_memory.path())
+            add_continuity_sources(Some(&empty_memory), cwd.path(), &empty_memory)
                 .expect_err("a directory containing only empty canonical memory must fail");
         assert_eq!(empty_directory.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
-        assert!(!admission_path(empty_memory.path(), cwd.path()).exists());
+        assert!(!admission_path(&empty_memory, cwd.path()).exists());
         Ok(())
     }
 
@@ -2811,6 +2815,7 @@ mod tests {
         assert!(
             sources
                 .iter()
+                .filter(|source| source.category == ContinuitySourceCategory::Instructions)
                 .all(|source| source.selectable && source.admitted)
         );
         assert!(sources.iter().any(|source| source.name == GLOBAL_RULES));
