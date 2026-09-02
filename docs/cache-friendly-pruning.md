@@ -190,8 +190,9 @@ request now falls back to instead of the initial prefix.
   `model_auto_compact_token_limit_scope` selects total context or the body after the carried
   prefix, and `model_auto_compact_enabled = false` keeps the documented context-window error
   path instead.
-- Every applied pass still writes a full audit record (`~/.elpis/logs/pruning/`) and a
-  rollout checkpoint. Raw evidence remains intact in the rollout.
+- Every applied manual Ace pass writes a full audit record (`~/.elpis/logs/pruning/`) and
+  a rollout checkpoint. Applied Smart Prune admissions use the separate
+  `~/.elpis/logs/smart-prune/admissions/` tree. Raw evidence remains intact in the rollout.
 - `/prune` is unaffected: it passes an explicit trigger, so it never consults the cycle gate.
   `/force-prune` is also manual; its `pressure` audit value names its targeted selection
   strategy, not automatic invocation.
@@ -211,3 +212,6 @@ request now falls back to instead of the initial prefix.
   stability or a causal cache-rate, cost, or latency change. The dashboard reports mechanism
   evidence, response linkage, optimizer overhead, and provider token fields without treating
   a missing cache-write field as zero.
+
+For the paper-style treatment, formal invariant, related-system comparison, and reproduction
+commands, see the [technical preprint](../paper/paper.md).

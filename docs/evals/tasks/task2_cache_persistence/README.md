@@ -1,8 +1,14 @@
-# Task 2: Multi-Turn Prompt-Cache Persistence Test
+# Task 2: Historical Retrospective-Pruning Cache Test
+
+> **Legacy protocol.** This fixture evaluates the former 30% pressure cycle and epoch
+> markers. It does not evaluate current Smart Prune admission-time behavior and cannot
+> close current RQ4. Use `../smart_prune_cache_validation/README.md` for the current
+> matched OFF/ON protocol.
 
 ## 1. Objective
 
-Evaluate and verify prompt-cache hit persistence across multi-turn agent interactions under Elpis's cache-friendly pruning architecture versus unmanaged / naive compaction baselines.
+Evaluate prompt-cache behavior for the former retrospective pruning architecture versus
+unmanaged or naive-compaction baselines.
 
 The benchmark measures:
 1. **Cache Hit Rate Trajectory ($H_t = \frac{\text{cached\_tokens}_t}{\text{input\_tokens}_t}$):** Cache hit rate evolution across 8 sequential conversational turns.

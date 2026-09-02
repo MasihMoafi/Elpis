@@ -31,8 +31,10 @@ Neither system chooses what to do. That is the whole design.
 | Repeat | **3 runs per arm.** One run is an anecdote. |
 | Order | One at a time — both compile Rust, and this machine kills a process past 80°C |
 
-**Closes RQ1** (a floor and a σ across 6 runs instead of one point) and **RQ4** — but only if
-task 33 lands in main *first*, otherwise pass cost is still unlogged during the run.
+This experiment can strengthen **RQ1** (a floor and a σ across 6 runs instead of one point).
+It cannot close current **RQ4**, because it exercises the superseded retrospective path.
+Current RQ4 requires the matched Smart Prune OFF/ON protocol in
+`tasks/smart_prune_cache_validation/README.md`, with optimizer cost and latency separated.
 
 Each item must name its files and end in a command, and no item may depend on an earlier
 item's design choice — otherwise the arms diverge at item 2 and the control is lost.

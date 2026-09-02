@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
 
-[Install](#quickstart) • [Features](#core-features) • [Evaluation](#evaluation-status) • [Docs](#documentation)
+[Install](#quickstart) • [Features](#core-features) • [Evaluation](#evaluation-status) • [Paper](paper/paper.md) • [Docs](#documentation)
 
 </div>
 
@@ -143,7 +143,7 @@ Findings:
 
 ### Context Ledger and observability
 
-The **Context Ledger** (`Tab`; during an active turn, `Alt+C` always toggles it) lists admitted goals, rules,
+The **Context Ledger** (`Tab`; during an active turn, `Alt+C` toggles it from the normal chat screen) lists admitted goals, rules,
 memory, and other portable sources with their byte sizes and capped character-derived estimates. Toggling a row
 writes `admission.toml`, which controls what the next turn receives.
 
@@ -157,9 +157,11 @@ its per-source estimates are not tokenizer measurements.
 
 ![The Context Ledger listing admitted instruction files with their token counts and included state](docs/assets/context-ledger.webp)
 
-`/context` answers a different question: where the window went. It displays token usage by user
-messages, agent responses, tool calls, system prompt, Development rules, and free space, alongside available
-backtrack checkpoints.
+`/context` answers a different question: how full the window is. Its provider-measured
+headline is separate from a rough attribution based on visible transcript and admitted files:
+user messages, agent responses, tool activity, workspace instructions, development rules,
+portable context, and a clearly labeled built-in/estimate gap. Historical pruning savings
+appear separately and are never added to a category row.
 
 <img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
 
@@ -285,13 +287,17 @@ Across those configured historical requests, Elpis spent over 95% of its operati
 
 ### RQ4: Cache Preservation & Token Economics
 
-Smart Prune now optimizes a fresh tool result before first main-model exposure, so its automatic path does not rewrite already-sent history. One normal-work ON session reported 95.85% cached input overall; the first responses linked to two admissions reported 98.96% and 98.89%. Encoded-request tests separately establish stable prefix and cache-key construction on the tested path. This supports the cache-preserving mechanism, not a complete RQ4 result: there was no matched OFF arm or private full-request trace. The pilot also exposed a 45-second-timeout retry storm; in focused tests, the current code skips later Smart Prune batches in a turn after its first optimizer failure, but that fix has not yet been live-revalidated. The chart below is the 41-pass cost breakdown from the superseded 42-pass retrospective run, not current Smart Prune economics. See the [2026-09-01 live pilot](docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
+Smart Prune now optimizes a fresh tool result before first main-model exposure, so its automatic path does not rewrite already-sent history. One normal-work ON session reported 95.85% cached input overall; the first responses linked to two admissions reported 98.96% and 98.89%. Encoded-request tests separately establish stable prefix and cache-key construction on the tested path. This supports the cache-preserving mechanism, not a complete RQ4 result: there was no matched OFF arm or private full-request trace. The pilot also exposed a 45-second-timeout retry storm; in focused tests, the current code skips later Smart Prune batches in a turn after its first optimizer failure, but that fix has not yet been live-revalidated. The chart below is the 41-pass cost breakdown from the superseded 42-pass retrospective run, not current Smart Prune economics. See the [technical preprint](paper/paper.md), [mechanism-test record](docs/evals/tasks/smart_prune_cache_validation/2026-09-02-mechanism-tests.md), and [2026-09-01 live pilot](docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 
 ### RQ5: Forensic Auditability
 
-Every pruning event produces an immutable audit record on disk under `~/.elpis/logs/pruning/`. In full forensic reconstruction evaluations, **7 of 9 properties** were completely recoverable from disk, 2 partial, and 0 absent.
+Every applied manual Ace pass writes an audit record under `~/.elpis/logs/pruning/`;
+applied Smart Prune admissions use `~/.elpis/logs/smart-prune/admissions/`. In the manual
+pass reconstruction evaluation, **7 of 9 properties** were completely recoverable from
+disk, 2 partial, and 0 absent. The Smart Prune schema has separate focused tests and is not
+covered by that 7/9 result.
 
 | Research Question | Empirical Finding |
 | --- | --- |
@@ -299,17 +305,18 @@ Every pruning event produces an immutable audit record on disk under `~/.elpis/l
 | **RQ2 — Information Retention** | 6/6 tested post-prune targets preserved intact (100% retention). |
 | **RQ3 — Task Performance** | Not established. The available runs do not support a comparative correctness claim. |
 | **RQ4 — Overhead and Cache** | Cache-preserving mechanism supported; comparative cost and latency remain open. |
-| **RQ5 — Forensic Auditability** | 7/9 properties fully recoverable from local rollout evidence; 0 lost records. |
+| **RQ5 — Forensic Auditability** | Manual Ace schema: 7/9 properties fully recoverable from local evidence; 0 lost records. |
 
 ## Documentation
 
-- [Context and pruning](docs/context.md) — admission, lifetimes, pressure pruning, and audit records
+- [Context and pruning](docs/context.md) — admission, lifetimes, manual pruning, and audit records
+- [Smart Prune and cache stability](docs/cache-friendly-pruning.md) — admission-time optimization, evidence, overhead, and open questions
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md`, and `ES.md`
 - [Deterministic work graphs](docs/WORK_GRAPHS.md) — plan validation, write scopes, concurrency, and evidence gates
 - [Providers](docs/providers.md) — provider adapters, BYOK, and protocol limitations
 - [Evals & benchmarks](docs/evals/) — source data, procedures, scorers, and results
 - [Technical guide](docs/GUIDE.md) — product thesis, requirements, and architecture
-- [Research paper](paper/paper.md) — technical preprint and formal specifications
+- [Research paper](paper/paper.md) — admission-time context optimization, mechanism proof, live evidence, and limitations
 
 ## License
 

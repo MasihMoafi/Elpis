@@ -69,8 +69,9 @@ Verifies parsing, type checking, constant-folding optimization, evaluation, and 
 python3 docs/evals/tasks/task1_ast_refactor/verify.py --dir docs/evals/tasks/task1_ast_refactor/ground_truth
 ```
 
-### Task 2: Multi-Turn Prompt-Cache Persistence
-Verifies prompt-cache hit rate trajectory, stable prefix preservation, and epoch marker breakpoints:
+### Task 2: Historical Multi-Turn Prompt-Cache Persistence
+Exercises the superseded retrospective pressure cycle and epoch-marker fixture. It does not
+evaluate current Smart Prune or close current RQ4:
 
 ```bash
 python3 docs/evals/tasks/task2_cache_persistence/verify_cache.py \

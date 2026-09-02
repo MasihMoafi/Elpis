@@ -1,6 +1,6 @@
 # Evaluation status
 
-Last revised 2026-09-01. Every figure here comes from a recorded run. Where a question is
+Last revised 2026-09-02. Every figure here comes from a recorded run. Where a question is
 open it says so, and nothing on this page is stated more strongly than the evidence carries.
 
 Raw records: [`final-rq1-rq4-data`](https://github.com/MasihMoafi/Elpis) ·
@@ -13,7 +13,7 @@ derived analysis with per-metric provenance and cross-checks:
 | RQ2 | Information retention | **Established for the tested post-prune targets** |
 | RQ3 | Task performance | Not established |
 | RQ4 | Overhead and cache | **Cache reuse observed; comparative economics open** |
-| RQ5 | Auditability | **Answered** |
+| RQ5 | Manual Ace auditability | **Answered** |
 
 ---
 
@@ -91,19 +91,24 @@ optimizer attempts hit Elpis's 45-second deadline, and all attempts together acc
 860.732 seconds of optimizer latency before the per-turn failure guard was added. Current
 end-to-end economics and task quality remain open.
 
-## RQ5 — Auditability · answered
+## RQ5 — Manual Ace auditability · answered
 
 Nine reconstruction properties were audited against artifacts on disk: **7 yes, 2 partial,
 0 no**.
 
-An evaluator can recover, for any pruning pass: when it ran and under which trigger, what
-material it reviewed, the per-item keep/delete decision, the verbatim pre-mutation text,
-the replacement, a resolvable source pointer into the session rollout, and the pruning
-model's own token usage.
+For the evaluated manual Ace pass schema, an evaluator can recover when a pass ran and
+under which trigger, what material it reviewed, the per-item keep/delete decision, the
+verbatim pre-mutation text, the replacement, a resolvable source pointer into the session
+rollout, and the pruning model's own token usage.
 
 Partial on two counts: passes record character savings rather than exact token deltas, and
 session linkage is reconstructed indirectly through item `call_id` rather than stored
 directly.
+
+Smart Prune writes a separate admission schema under
+`~/.elpis/logs/smart-prune/admissions/`. Its focused tests cover source/admitted envelopes,
+hashes, and request/response linkage; the historical 7/9 reconstruction score does not
+evaluate that newer schema.
 
 ---
 
