@@ -252,40 +252,6 @@ impl ContinuitySourceCategory {
     }
 }
 
-/// True when `GOAL.md` records a finished objective. The status line is written by the
-/// goal writer itself, so this needs no database lookup.
-fn goal_is_complete(goal_path: &Path) -> bool {
-    let Ok(contents) = std::fs::read_to_string(goal_path) else {
-        return false;
-    };
-    contents
-        .lines()
-        .take(12)
-        .filter_map(|line| line.trim().strip_prefix("- Status:"))
-        .any(|status| {
-            let status = status.trim();
-            status.eq_ignore_ascii_case("complete") || status.eq_ignore_ascii_case("completed")
-        })
-}
-
-/// True when `ES.md` records a finished or failed session checkpoint.
-fn checkpoint_is_complete(checkpoint_path: &Path) -> bool {
-    let Ok(contents) = std::fs::read_to_string(checkpoint_path) else {
-        return false;
-    };
-    contents
-        .lines()
-        .take(12)
-        .filter_map(|line| line.trim().strip_prefix("- Status:"))
-        .any(|status| {
-            let status = status.trim();
-            status.eq_ignore_ascii_case("complete")
-                || status.eq_ignore_ascii_case("completed")
-                || status.eq_ignore_ascii_case("failed")
-                || status.eq_ignore_ascii_case("abandoned")
-        })
-}
-
 pub fn workspace_context_dir(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
     let elpis_home = memories_root?.parent()?;
     Some(
@@ -726,10 +692,9 @@ fn continuity_sources_with_state(
     }
 
     let goal_path = workspace_dir.join("GOAL.md");
-    // A finished goal is history, not working context. It stays listed so it can be
-    // switched back on deliberately, but a completed objective no longer occupies the
-    // window just because its file is still on disk.
-    let goal_admitted = admission.goal && !goal_is_complete(&goal_path);
+    // Completion metadata is descriptive. The user's explicit Ledger selection is the
+    // sole authority over whether this optional source occupies the next request.
+    let goal_admitted = admission.goal;
     if let Some(source) = existing_file_source(
         "GOAL.md".to_string(),
         goal_path.clone(),
@@ -746,7 +711,7 @@ fn continuity_sources_with_state(
     let checkpoint_path = workspace_dir.join("ES.md");
     // ES.md sits with GOAL.md, not under evidence. Both exist to carry the session
     // forward; neither is a tool observation, which is what the evidence category means.
-    let checkpoint_admitted = admission.checkpoint && !checkpoint_is_complete(&checkpoint_path);
+    let checkpoint_admitted = admission.checkpoint;
     if let Some(source) = existing_file_source(
         "ES.md".to_string(),
         checkpoint_path.clone(),
@@ -2684,6 +2649,36 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn an_explicitly_admitted_finished_checkpoint_reaches_the_next_prompt()
+    -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let workspace = workspace_context_dir(Some(&memories), &cwd).expect("workspace path");
+        tokio::fs::create_dir_all(&workspace).await?;
+        tokio::fs::write(
+            workspace.join("ES.md"),
+            "# Session checkpoint\n\n- Status: completed\n\nKeep this checkpoint.\n",
+        )
+        .await?;
+
+        set_continuity_source_admitted(Some(&memories), &cwd, "ES.md", true)?;
+
+        let checkpoint = continuity_sources(Some(&memories), &cwd, &[])?
+            .into_iter()
+            .find(|source| source.name == "ES.md")
+            .expect("ES.md row");
+        assert!(checkpoint.admitted, "the user's explicit toggle must win");
+        assert!(
+            build_continuity_prompt(Some(&memories), &cwd)
+                .await
+                .is_some_and(|prompt| prompt.contains("Keep this checkpoint.")),
+            "an admitted checkpoint must reach the next request"
+        );
+        Ok(())
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn withdrawn_prebuilt_memory_source_is_skipped_before_injection() -> anyhow::Result<()> {
         let home = tempdir()?;
@@ -3011,7 +3006,7 @@ mod tests {
     }
 
     #[test]
-    fn a_completed_goal_is_listed_but_no_longer_admitted() -> anyhow::Result<()> {
+    fn a_completed_goal_keeps_the_users_explicit_admission() -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("project");
@@ -3041,8 +3036,8 @@ mod tests {
             .find(|source| source.name == "GOAL.md")
             .expect("goal row stays listed");
         assert!(
-            !finished_goal.admitted,
-            "a finished goal stops occupying the window"
+            finished_goal.admitted,
+            "completion metadata must not override the user's toggle"
         );
         Ok(())
     }

@@ -230,6 +230,7 @@ async fn slash_smart_prune_toggles_and_accepts_explicit_state() {
         Ok(AppEvent::UpdateFeatureFlags { updates })
             if updates == vec![(Feature::AutomaticContextPruning, true)]
     ));
+    chat.cancel_pending_smart_prune_update();
 
     chat.smart_prune_synced = false;
     chat.dispatch_command_with_args(SlashCommand::SmartPrune, "off".to_string(), Vec::new());

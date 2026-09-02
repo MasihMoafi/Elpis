@@ -1462,6 +1462,7 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
 
     // Simulate an active task so further submissions are queued.
     chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.last_rendered_width.set(Some(120));
 
     for _ in 0..3 {
         // Recall the prompt from history and ensure it is what we expect.

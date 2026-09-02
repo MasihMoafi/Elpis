@@ -126,6 +126,7 @@ impl ChatWidget {
             smart_prune_synced: false,
             context_prune_report_pending: false,
             last_prune_saved_tokens: None,
+            last_smart_prune_saved_tokens: None,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),
             refreshing_status_outputs: Vec::new(),
             next_status_refresh_request_id: 0,

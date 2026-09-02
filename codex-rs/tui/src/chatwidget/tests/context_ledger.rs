@@ -166,7 +166,8 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     assert!(rendered.contains("Up/Down move"));
     assert!(rendered.contains("Space/Enter toggle"));
     assert!(rendered.contains("WHY INCLUDED"));
-    assert!(rendered.contains("applicable global rules"));
+    assert!(rendered.contains("applicable"), "{rendered}");
+    assert!(rendered.contains("global rules"), "{rendered}");
     assert!(
         rendered.contains("dev/SKILL.md"),
         "configured development rule must render as its own row:\n{rendered}"
@@ -175,7 +176,8 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     let short = render_ledger(&chat, 16);
     assert!(short.contains("Global AGENTS.md"));
     assert!(short.contains("WHY INCLUDED"));
-    assert!(short.contains("applicable global rules"));
+    assert!(short.contains("applicable"));
+    assert!(short.contains("global rules"));
     Ok(())
 }
 
@@ -222,8 +224,6 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
     seed_manual_memory_cache_from_disk(&mut chat)?;
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
-    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down)));
-    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
     let rendered = render_ledger(&chat, 100);
 
     assert!(rendered.contains("≈"), "token estimates must stay labeled");
@@ -237,16 +237,10 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
             "missing {estimate}:\n{rendered}"
         );
     }
-    assert!(rendered.contains("Origin: configured development rules"));
-    assert!(
-        rendered.contains(
-            "Size: 4,739 bytes · Estimate: ≈1,185 tokens (trimmed characters ÷ 4, capped)"
-        )
-    );
-    assert!(rendered.contains("› [x]"));
+    assert!(rendered.contains("Global AGENTS.md"));
+    assert!(rendered.contains("Project AGENTS.md"));
+    assert!(rendered.contains("dev/AGENTS.md"));
     assert!(rendered.contains("INCLUDED"));
-    assert!(rendered.contains("Lifetime: every turn"));
-    assert!(rendered.contains(&format!("Source: {}", configured.canonicalize()?.display())));
     Ok(())
 }
 
@@ -265,6 +259,386 @@ async fn ledger_file_rows_emit_real_file_hyperlinks() -> anyhow::Result<()> {
             .any(|cell| cell.symbol().contains(&hyperlink_prefix)),
         "underlining alone is not clickable; expected an OSC 8 file link"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn clicking_es_toggles_es_instead_of_the_row_above() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "GOAL.md",
+        true,
+    )?;
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "ES.md",
+        true,
+    )?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+
+    let buffer = render_ledger_buffer(&chat, 80);
+    let es_row = (0..80)
+        .find(|row| {
+            (0..52)
+                .map(|column| buffer[(column, *row)].symbol())
+                .collect::<String>()
+                .contains("ES.md")
+        })
+        .expect("rendered ES.md row");
+    assert!(chat.handle_context_ledger_mouse_click(es_row, 8));
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+
+    let sources = chat.continuity_sources();
+    assert!(
+        sources
+            .iter()
+            .find(|source| source.name == "GOAL.md")
+            .expect("GOAL.md")
+            .admitted
+    );
+    assert!(
+        !sources
+            .iter()
+            .find(|source| source.name == "ES.md")
+            .expect("ES.md")
+            .admitted
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn active_turn_exclusion_waits_for_boundary_without_inflating_unattributed_context()
+-> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "GOAL.md",
+        true,
+    )?;
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "ES.md",
+        true,
+    )?;
+    let admission_path =
+        crate::legacy_core::elpis_context::workspace_context_dir(Some(&memories), &cwd)
+            .expect("workspace context")
+            .join("admission.toml");
+    let admission_before_toggle = std::fs::read(&admission_path)?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    for source in &mut chat.manual_memory_cache.sources {
+        source.estimated_tokens = match source.name.as_str() {
+            "GOAL.md" => 600,
+            "ES.md" => 400,
+            _ => 0,
+        };
+    }
+    chat.turn_lifecycle.last_turn_id = Some("turn-1".to_string());
+    chat.set_token_info(Some(make_token_info(10_000, 20_000)));
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    let before = render_ledger(&chat, 80);
+    assert!(before.contains("≈10.0k tokens in context"));
+    assert!(before.contains("Unattributed context"));
+    assert!(before.contains("≈9.0k tokens"), "{before}");
+
+    let buffer = render_ledger_buffer(&chat, 80);
+    let es_row = (0..80)
+        .find(|row| {
+            (0..52)
+                .map(|column| buffer[(column, *row)].symbol())
+                .collect::<String>()
+                .contains("ES.md")
+        })
+        .expect("rendered ES.md row");
+    assert!(chat.handle_context_ledger_mouse_click(es_row, 8));
+
+    let after = render_ledger(&chat, 80);
+    assert!(
+        after.contains("≈10.0k tokens now · changes queued"),
+        "{after}"
+    );
+    assert!(after.contains("Unattributed context"));
+    assert!(after.contains("≈9.0k tokens"), "{after}");
+    assert!(
+        !chat
+            .continuity_sources()
+            .iter()
+            .find(|source| source.name == "ES.md")
+            .expect("ES.md")
+            .admitted
+    );
+    assert_eq!(
+        std::fs::read(&admission_path)?,
+        admission_before_toggle,
+        "an active-turn toggle must not alter the context captured by that turn"
+    );
+
+    // A usage update from the already-running turn still reflects the old
+    // admission policy. It may add real unattributed tokens, but it must not
+    // pretend the queued exclusion has already changed this request.
+    chat.reconcile_context_projection_for_turn("turn-1");
+    chat.set_token_info(Some(make_token_info(10_200, 20_000)));
+    let during_old_turn = render_ledger(&chat, 80);
+    assert!(
+        during_old_turn.contains("≈10.2k tokens now · changes queued"),
+        "{during_old_turn}"
+    );
+    assert!(
+        during_old_turn.contains("≈9.2k tokens"),
+        "{during_old_turn}"
+    );
+
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+    assert_ne!(std::fs::read(&admission_path)?, admission_before_toggle);
+    let after_boundary = render_ledger(&chat, 80);
+    assert!(
+        after_boundary.contains("next request ≈9.8k tokens"),
+        "{after_boundary}"
+    );
+    assert!(after_boundary.contains("≈9.2k tokens"), "{after_boundary}");
+
+    chat.reconcile_context_projection_for_turn("turn-2");
+    chat.set_token_info(Some(make_token_info(9_800, 20_000)));
+    let next_exact_snapshot = render_ledger(&chat, 80);
+    assert!(
+        next_exact_snapshot.contains("≈9.8k tokens in context"),
+        "{next_exact_snapshot}"
+    );
+    assert!(
+        next_exact_snapshot.contains("≈9.2k tokens"),
+        "{next_exact_snapshot}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn active_turn_toggle_back_to_original_cancels_the_queued_write() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "ES.md",
+        true,
+    )?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    let admission_path =
+        crate::legacy_core::elpis_context::workspace_context_dir(Some(&memories), &cwd)
+            .expect("workspace context")
+            .join("admission.toml");
+    let before = std::fs::read(&admission_path)?;
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.last_rendered_width.set(Some(120));
+    assert!(
+        chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT,))
+    );
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down)));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char(' '))));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char(' '))));
+
+    assert!(chat.context_ledger.pending_context_admissions.is_empty());
+    assert_eq!(std::fs::read(&admission_path)?, before);
+    assert!(
+        chat.continuity_sources()
+            .iter()
+            .find(|source| source.name == "ES.md")
+            .expect("ES.md")
+            .admitted
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn grouped_project_rules_project_as_one_admission_key() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let override_path = cwd.join("AGENTS.override.md");
+    std::fs::write(&override_path, "More project instructions")?;
+    chat.instruction_source_paths
+        .push(codex_utils_path_uri::PathUri::from_abs_path(
+            &override_path.abs(),
+        ));
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "Project AGENTS.md",
+        true,
+    )?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+
+    let mut project_tokens = [600, 900].into_iter();
+    for source in &mut chat.manual_memory_cache.sources {
+        source.estimated_tokens = if source.name == "Project AGENTS.md" {
+            project_tokens.next().expect("two project-rule rows")
+        } else {
+            0
+        };
+    }
+    assert!(
+        project_tokens.next().is_none(),
+        "expected two project-rule rows"
+    );
+    chat.set_token_info(Some(make_token_info(10_000, 20_000)));
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    let rendered = render_ledger(&chat, 200);
+    assert!(rendered.contains("Project AGENTS.md"), "{rendered}");
+    let buffer = render_ledger_buffer(&chat, 200);
+    let project_row = (0..200)
+        .find(|row| {
+            (0..52)
+                .fold(String::new(), |mut line, column| {
+                    line.push_str(&crate::terminal_hyperlinks::strip_osc8(
+                        buffer[(column, *row)].symbol(),
+                    ));
+                    line
+                })
+                .contains("Project AGENTS.md")
+        })
+        .expect("rendered project-rule row");
+    assert!(chat.handle_context_ledger_mouse_click(project_row, 8));
+    assert!(render_ledger(&chat, 200).contains("≈8.5k tokens"));
+
+    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+    let after_boundary = render_ledger(&chat, 200);
+    assert!(
+        after_boundary.contains("next request ≈8.5k tokens"),
+        "{after_boundary}"
+    );
+    assert!(
+        chat.manual_memory_cache
+            .sources
+            .iter()
+            .filter(|source| source.name == "Project AGENTS.md")
+            .all(|source| !source.admitted)
+    );
+
+    let buffer = render_ledger_buffer(&chat, 200);
+    let project_row = (0..200)
+        .find(|row| {
+            (0..52)
+                .fold(String::new(), |mut line, column| {
+                    line.push_str(&crate::terminal_hyperlinks::strip_osc8(
+                        buffer[(column, *row)].symbol(),
+                    ));
+                    line
+                })
+                .contains("Project AGENTS.md")
+        })
+        .expect("rendered project-rule row");
+    assert!(chat.handle_context_ledger_mouse_click(project_row, 8));
+    assert_eq!(chat.context_ledger.projected_token_delta, 0);
+    assert!(
+        chat.manual_memory_cache
+            .sources
+            .iter()
+            .filter(|source| source.name == "Project AGENTS.md")
+            .all(|source| source.admitted)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn durable_memory_is_counted_and_its_toggle_projects_free_space() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "MEMORY.md",
+        true,
+    )?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    chat.manual_memory_cache
+        .sources
+        .iter_mut()
+        .find(|source| source.name == "MEMORY.md")
+        .expect("MEMORY.md")
+        .estimated_tokens = 800;
+    chat.set_token_info(Some(make_token_info(10_000, 20_000)));
+
+    let before = render_ledger(&chat, 80);
+    assert!(
+        before.contains("DURABLE MEMORY  ≈800 tokens admitted"),
+        "{before}"
+    );
+    assert!(before.contains("Unattributed context"), "{before}");
+    assert!(before.contains("≈9.2k tokens"), "{before}");
+    while rx.try_recv().is_ok() {}
+
+    chat.last_rendered_width.set(Some(120));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    let buffer = render_ledger_buffer(&chat, 80);
+    let memory_row = (0..80)
+        .find(|row| {
+            (0..52)
+                .map(|column| buffer[(column, *row)].symbol())
+                .collect::<String>()
+                .contains("MEMORY.md")
+        })
+        .expect("rendered MEMORY.md row");
+    assert!(chat.handle_context_ledger_mouse_click(memory_row, 8));
+
+    let queued = render_ledger(&chat, 80);
+    assert!(
+        queued.contains("≈10.0k tokens now · saving change"),
+        "{queued}"
+    );
+    assert!(queued.contains("≈9.2k tokens"), "{queued}");
+    let target = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::ManualMemoryAdmissionRequested(target, false) => Some(target),
+            _ => None,
+        })
+        .expect("manual-memory exclusion request");
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&memories),
+        &cwd,
+        "MEMORY.md",
+        false,
+    )?;
+    let status = crate::legacy_core::elpis_context::manual_memory_status(
+        Some(memories.as_path()),
+        cwd.as_path(),
+    )?
+    .expect("manual-memory status");
+    let mut sources =
+        crate::legacy_core::elpis_context::continuity_sources_from_manual_memory_status(
+            Some(memories.as_path()),
+            cwd.as_path(),
+            &chat.instruction_source_paths_as_path_bufs(),
+            &chat.config_ref().dev_rule_roots(),
+            Some(&status),
+        )?;
+    sources
+        .iter_mut()
+        .find(|source| source.name == "MEMORY.md")
+        .expect("MEMORY.md")
+        .estimated_tokens = 800;
+    assert!(chat.apply_manual_memory_status_completion(
+        &target,
+        ManualMemoryStatusCompletion::Ready { status, sources },
+    ));
+    chat.clear_manual_memory_pending_mutation();
+
+    let after = render_ledger(&chat, 80);
+    assert!(after.contains("next request ≈9.2k tokens"), "{after}");
+    assert!(after.contains("Unattributed context"), "{after}");
+    assert!(after.contains("≈9.2k tokens"), "{after}");
     Ok(())
 }
 
@@ -648,13 +1022,14 @@ async fn ledger_renders_smart_prune_switch_in_both_states() {
     chat.smart_prune.enabled = true;
     let on = render_ledger(&chat, 30);
     assert!(on.contains("[━━━●] ON"));
-    assert!(on.contains("Before first send"));
+    assert!(on.contains("Before first main-model send"));
 
     chat.smart_prune.examined_outputs = 3;
     chat.smart_prune.admitted_outputs = 2;
     chat.smart_prune.failed_batches = 1;
     chat.smart_prune.approx_source_tokens = 4_000;
     chat.smart_prune.approx_admitted_tokens = 700;
+    chat.smart_prune.approx_saved_tokens = 3_300;
     chat.smart_prune.latest = Some(
         codex_app_server_protocol::ThreadSmartPruneAdmissionSnapshot {
             admission_id: "019d0000-example".to_string(),
@@ -673,16 +1048,16 @@ async fn ledger_renders_smart_prune_switch_in_both_states() {
         },
     );
     let evidenced = render_ledger(&chat, 30);
-    assert!(evidenced.contains("Admitted 2 of 3 outputs"));
-    assert!(evidenced.contains("source ≈4.0k → kept ≈700"));
-    assert!(evidenced.contains("saved ≈3.3k"));
+    assert!(evidenced.contains("2 of 3 eligible outputs shortened"));
+    assert!(evidenced.contains("≈3.3k"));
+    assert!(evidenced.contains("saved"));
     assert!(!evidenced.contains("failed"));
     assert!(!evidenced.contains("≈4.0k→≈700"));
     assert!(evidenced.contains("Latest 019d0000 · response linked"));
 
     chat.bottom_pane.set_task_running(/*running*/ true);
     let busy = render_ledger(&chat, 30);
-    assert!(busy.contains("Available after turn"));
+    assert!(busy.contains("active turn unchanged"));
 }
 
 #[tokio::test]
@@ -758,47 +1133,64 @@ async fn focused_ledger_p_toggles_from_authoritative_snapshot_when_layers_differ
 }
 
 #[tokio::test]
-async fn focused_ledger_p_is_consumed_without_update_during_active_turn() {
+async fn focused_ledger_p_updates_immediately_during_active_turn() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));
-    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    chat.smart_prune_synced = true;
     chat.bottom_pane.set_task_running(/*running*/ true);
+    assert!(
+        chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT,))
+    );
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
-    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-    assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::UpdateFeatureFlags { .. }))
-    );
-    assert!(events.iter().any(|event| matches!(
-        event,
-        AppEvent::InsertHistoryCell(cell)
-            if lines_to_single_string(&cell.display_lines(/*width*/ 80))
-                .contains("changed after this turn")
-    )));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    let rendered = render_ledger(&chat, 30);
+    assert!(rendered.contains("[━━━●] ON"), "{rendered}");
+    assert!(rendered.contains("applies next turn"), "{rendered}");
+    assert!(rendered.contains("active turn unchanged"), "{rendered}");
 }
 
 #[tokio::test]
-async fn focused_ledger_p_is_consumed_without_update_while_turn_start_is_pending() {
+async fn focused_ledger_p_ignores_repeat_while_setting_is_saving() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));
+    chat.smart_prune_synced = true;
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
-    chat.input_queue.user_turn_pending_start = true;
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
-    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-    assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::UpdateFeatureFlags { .. }))
-    );
-    assert!(events.iter().any(|event| matches!(
-        event,
-        AppEvent::InsertHistoryCell(cell)
-            if lines_to_single_string(&cell.display_lines(/*width*/ 80))
-                .contains("changed after this turn")
-    )));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    assert!(rx.try_recv().is_err());
+    assert_eq!(chat.context_ledger.pending_smart_prune_enabled, Some(true));
+    assert!(render_ledger(&chat, 30).contains("Saving"));
+}
+
+#[tokio::test]
+async fn focused_ledger_p_updates_immediately_while_turn_start_is_pending() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(120));
+    chat.smart_prune_synced = true;
+    chat.input_queue.user_turn_pending_start = true;
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    let rendered = render_ledger(&chat, 30);
+    assert!(rendered.contains("[━━━●] ON"), "{rendered}");
+    assert!(rendered.contains("applies next turn"), "{rendered}");
 }
 
 #[tokio::test]

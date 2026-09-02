@@ -84,6 +84,10 @@ impl ChatWidget {
                     .thread_id()
                     .is_some_and(|thread_id| thread_id.to_string() == notification.thread_id);
                 if is_current_thread {
+                    self.update_smart_prune_savings(
+                        notification.smart_prune.approx_saved_tokens,
+                        from_replay,
+                    );
                     let dashboard_changed =
                         !self.smart_prune_synced || self.smart_prune != notification.smart_prune;
                     self.smart_prune = notification.smart_prune;
@@ -95,6 +99,11 @@ impl ChatWidget {
                 }
             }
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
+                self.reconcile_context_projection_for_turn(&notification.turn_id);
+                self.update_smart_prune_savings(
+                    notification.token_usage.smart_prune.approx_saved_tokens,
+                    from_replay,
+                );
                 let smart_prune_changed = !self.smart_prune_synced
                     || self.smart_prune != notification.token_usage.smart_prune;
                 self.smart_prune = notification.token_usage.smart_prune.clone();
@@ -166,6 +175,9 @@ impl ChatWidget {
                 }
             }
             ServerNotification::TurnCompleted(notification) => {
+                if replay_kind.is_none() && notification.turn.status != TurnStatus::InProgress {
+                    self.commit_staged_context_admissions(&notification.turn.id);
+                }
                 self.handle_turn_completed_notification(notification, replay_kind);
             }
             ServerNotification::TurnActivityUpdated(notification) => {

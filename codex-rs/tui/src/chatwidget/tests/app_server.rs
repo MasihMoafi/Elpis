@@ -25,6 +25,29 @@ async fn semantic_token_snapshot_changes_request_dashboard_refresh_once() {
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
+#[tokio::test]
+async fn context_projection_survives_same_turn_usage_and_clears_on_the_later_turn() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.context_ledger.projected_token_delta = -20;
+    chat.context_ledger.projection_baseline_turn_id = Some("turn-1".to_string());
+
+    chat.handle_server_notification(
+        dashboard_token_usage_notification(&chat, 0, false),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.context_ledger.projected_token_delta, -20);
+
+    let mut later_notification = dashboard_token_usage_notification(&chat, 0, false);
+    let ServerNotification::ThreadTokenUsageUpdated(later) = &mut later_notification else {
+        unreachable!("token usage notification")
+    };
+    later.turn_id = "turn-2".to_string();
+    chat.handle_server_notification(later_notification, /*replay_kind*/ None);
+
+    assert_eq!(chat.context_ledger.projected_token_delta, 0);
+    assert_eq!(chat.context_ledger.projection_baseline_turn_id, None);
+}
+
 fn dashboard_token_usage_notification(
     chat: &ChatWidget,
     saved_tokens: u64,
@@ -56,6 +79,121 @@ fn dashboard_token_usage_notification(
             },
         },
     )
+}
+
+fn smart_prune_notification(thread_id: ThreadId, saved_tokens: u64) -> ServerNotification {
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = true;
+    smart_prune.approx_saved_tokens = saved_tokens;
+    ServerNotification::ThreadSmartPruneUpdated(
+        codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            smart_prune,
+        },
+    )
+}
+
+#[tokio::test]
+async fn live_smart_prune_savings_flash_only_for_newly_saved_tokens() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 0),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(0));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 3_300),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved ~3.3k tokens"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 5_000),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(5_000));
+    assert!(render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved ~1.7k tokens"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 4_000),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(5_000));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 5_500),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(5_500));
+    assert!(render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved ~500 tokens"));
+}
+
+#[tokio::test]
+async fn first_live_smart_prune_snapshot_seeds_without_flashing_historical_savings() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 3_300),
+        /*replay_kind*/ None,
+    );
+
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
+}
+
+#[tokio::test]
+async fn smart_prune_snapshot_does_not_complete_an_unpersisted_setting_request() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.smart_prune_synced = true;
+
+    assert!(chat.request_smart_prune_enabled(/*enabled*/ true));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 0),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.context_ledger.pending_smart_prune_enabled, Some(true));
+
+    chat.handle_server_notification(
+        dashboard_token_usage_notification(&chat, 0, /*smart_prune_enabled*/ true),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.context_ledger.pending_smart_prune_enabled, Some(true));
+}
+
+#[tokio::test]
+async fn replayed_and_foreign_smart_prune_savings_do_not_flash() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 3_300),
+        Some(ReplayKind::ThreadSnapshot),
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(ThreadId::new(), 5_000),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
 }
 
 #[tokio::test]

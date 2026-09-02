@@ -7,23 +7,19 @@ use crate::chatwidget::rate_limits::RATE_LIMIT_SWITCH_PROMPT_VIEW_ID;
 
 impl ChatWidget {
     pub(super) fn request_smart_prune_enabled(&mut self, enabled: bool) -> bool {
-        if self.is_user_turn_pending_or_running() {
-            self.add_info_message(
-                "Smart Prune can be changed after this turn.".to_string(),
-                Some("The submitted or active turn keeps the policy it started with.".to_string()),
-            );
-            self.request_redraw();
+        if self.context_ledger.pending_smart_prune_enabled.is_some() {
             return false;
         }
-
+        self.context_ledger.pending_smart_prune_enabled = Some(enabled);
         self.app_event_tx.send(AppEvent::UpdateFeatureFlags {
             updates: vec![(Feature::AutomaticContextPruning, enabled)],
         });
+        self.request_redraw();
         true
     }
 
     pub(super) fn toggle_smart_prune(&mut self) -> bool {
-        if !self.smart_prune_synced && !self.is_user_turn_pending_or_running() {
+        if !self.smart_prune_synced && self.context_ledger.pending_smart_prune_enabled.is_none() {
             self.add_info_message(
                 "Smart Prune state is still syncing.".to_string(),
                 Some("Use /smart-prune on|off to set an explicit state now.".to_string()),
@@ -31,8 +27,20 @@ impl ChatWidget {
             self.request_redraw();
             return false;
         }
-        let enabled = !self.smart_prune.enabled;
+        let enabled = !self
+            .context_ledger
+            .pending_smart_prune_enabled
+            .unwrap_or(self.smart_prune.enabled);
         self.request_smart_prune_enabled(enabled)
+    }
+
+    pub(crate) fn cancel_pending_smart_prune_update(&mut self) {
+        self.context_ledger.pending_smart_prune_enabled = None;
+        self.request_redraw();
+    }
+
+    pub(crate) fn current_thread_smart_prune_enabled(&self) -> Option<bool> {
+        self.smart_prune_synced.then_some(self.smart_prune.enabled)
     }
 
     /// Set the approval policy in the widget's config copy.

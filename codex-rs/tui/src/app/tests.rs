@@ -1926,16 +1926,23 @@ async fn update_feature_flags_persists_automatic_pruning_for_next_conversation()
         .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     app.chat_widget
         .handle_key_event(KeyEvent::from(KeyCode::Enter));
-    let updates = match app_event_rx.try_recv() {
-        Ok(AppEvent::UpdateFeatureFlags { updates }) => updates,
-        other => panic!("expected automatic pruning enable update, got {other:?}"),
-    };
+    let updates = std::iter::from_fn(|| app_event_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::UpdateFeatureFlags { updates } => Some(updates),
+            _ => None,
+        })
+        .expect("automatic pruning enable update");
     assert_eq!(updates, vec![(Feature::AutomaticContextPruning, true)]);
     app.update_feature_flags(&mut app_server, updates).await;
 
     let config_path = codex_home.path().join("config.toml");
     let enabled_config = std::fs::read_to_string(&config_path)?;
     assert!(enabled_config.contains("automatic_context_pruning = true"));
+    assert_eq!(
+        app.chat_widget.current_thread_smart_prune_enabled(),
+        None,
+        "a persisted preference must not replace the core-effective thread snapshot"
+    );
 
     app.chat_widget.open_experimental_popup();
     app.chat_widget
@@ -1944,15 +1951,22 @@ async fn update_feature_flags_persists_automatic_pruning_for_next_conversation()
         .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
     app.chat_widget
         .handle_key_event(KeyEvent::from(KeyCode::Enter));
-    let updates = match app_event_rx.try_recv() {
-        Ok(AppEvent::UpdateFeatureFlags { updates }) => updates,
-        other => panic!("expected automatic pruning disable update, got {other:?}"),
-    };
+    let updates = std::iter::from_fn(|| app_event_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::UpdateFeatureFlags { updates } => Some(updates),
+            _ => None,
+        })
+        .expect("automatic pruning disable update");
     assert_eq!(updates, vec![(Feature::AutomaticContextPruning, false)]);
     app.update_feature_flags(&mut app_server, updates).await;
 
     let disabled_config = std::fs::read_to_string(&config_path)?;
     assert!(!disabled_config.contains("automatic_context_pruning"));
+    assert_eq!(
+        app.chat_widget.current_thread_smart_prune_enabled(),
+        None,
+        "the current thread stays core-authoritative until its snapshot changes"
+    );
     let reloaded = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .fallback_cwd(Some(cwd))

@@ -584,6 +584,7 @@ pub(crate) struct ChatWidget {
     smart_prune_synced: bool,
     context_prune_report_pending: bool,
     last_prune_saved_tokens: Option<u64>,
+    last_smart_prune_saved_tokens: Option<u64>,
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
     refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
     next_status_refresh_request_id: u64,

@@ -257,6 +257,7 @@ summary { width: fit-content; color: var(--ember-bright); cursor: pointer; font-
 .category-green { background: #22c55e; }
 .category-yellow { background: #eab308; }
 .category-magenta { background: #d946ef; }
+.category-purple { background: #8b5cf6; }
 .category-cyan { background: #06b6d4; }
 .category-gray { background: #6b635a; }
 .category-muted { background: var(--quiet); }
@@ -506,7 +507,6 @@ td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
         <div class="fact"><dt>Examined outputs</dt><dd id="smart-examined">Unavailable</dd></div>
         <div class="fact"><dt>Admitted outputs</dt><dd id="smart-admitted">Unavailable</dd></div>
         <div class="fact"><dt>Unchanged outputs</dt><dd id="smart-unchanged">Unavailable</dd></div>
-        <div class="fact"><dt>Failed batches</dt><dd id="smart-failed">Unavailable</dd></div>
         <div class="fact"><dt>Approx. source</dt><dd id="smart-source">Unavailable</dd></div>
         <div class="fact"><dt>Approx. admitted</dt><dd id="smart-kept">Unavailable</dd></div>
         <div class="fact"><dt>Approx. saved</dt><dd id="smart-saved">Unavailable</dd></div>
@@ -572,6 +572,7 @@ const CATEGORY_COLORS = Object.freeze({
   '#22c55e': 'category-green',
   '#eab308': 'category-yellow',
   '#d946ef': 'category-magenta',
+  '#8b5cf6': 'category-purple',
   '#06b6d4': 'category-cyan',
   '#6b635a': 'category-gray'
 });
@@ -646,6 +647,12 @@ function makeNode(tag, className, text) {
 
 function formatNumber(value) {
   return isFiniteNumber(value) ? value.toLocaleString() : 'Unavailable';
+}
+
+function formatPercent(value, total) {
+  if (!isFiniteNumber(value) || !isFiniteNumber(total) || total <= 0) return null;
+  const boundedValue = Math.min(Math.max(value, 0), total);
+  return (boundedValue * 100 / total).toFixed(1) + '%';
 }
 
 function formatMilliseconds(value) {
@@ -814,9 +821,10 @@ function renderContext(context) {
   setText('ctx-window', formatNumber(safeContext.window_tokens));
   setText('ctx-saved', formatNumber(safeContext.saved_tokens));
   setText('ctx-checkpoints', formatNumber(safeContext.backtrack_points));
-  setText('ctx-used-percent', isFiniteNumber(safeContext.used_percent)
-    ? safeContext.used_percent + '% of window'
-    : 'Usage percentage unavailable');
+  const usedPercent = formatPercent(safeContext.used_tokens, safeContext.window_tokens);
+  setText('ctx-used-percent', usedPercent === null
+    ? 'Usage percentage unavailable'
+    : usedPercent + ' of window');
 
   const bar = byId('ctx-bar');
   const legend = byId('ctx-legend');
@@ -929,7 +937,6 @@ function renderSmartPrune(smart) {
   setText('smart-examined', formatNumber(safeSmart.examined_outputs));
   setText('smart-admitted', formatNumber(safeSmart.admitted_outputs));
   setText('smart-unchanged', formatNumber(safeSmart.unchanged_outputs));
-  setText('smart-failed', formatNumber(safeSmart.failed_batches));
   setText('smart-source', formatNumber(safeSmart.approx_source_tokens));
   setText('smart-kept', formatNumber(safeSmart.approx_admitted_tokens));
   setText('smart-saved', formatNumber(safeSmart.approx_saved_tokens));

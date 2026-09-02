@@ -9,7 +9,7 @@
 //! headline number. It is the same snapshot used by the status line and the
 //! Context Ledger. Transcript and portable-source byte counts are attribution
 //! estimates only: they are scaled to that measured total, and any unaccounted
-//! remainder is shown explicitly as "Unattributed context".
+//! remainder is shown explicitly as "Unattributed (residual)".
 
 use codex_features::Feature;
 use ratatui::style::Color;
@@ -29,11 +29,13 @@ use crate::legacy_core::elpis_context::ContinuitySourceCategory;
 const GRID_COLUMNS: usize = 26;
 const GRID_ROWS: usize = 10;
 const GRID_CELLS: usize = GRID_COLUMNS * GRID_ROWS;
+const UNATTRIBUTED_COLOR: Color = Color::Rgb(139, 92, 246);
 
 #[derive(Clone, Debug)]
 struct CategoryUsage {
     label: &'static str,
     tokens: u64,
+    /// Cumulative session evidence; never add this to the current-context size.
     saved_tokens: u64,
     color: Color,
 }
@@ -66,12 +68,9 @@ fn dashboard_source_projection(
     .unwrap_or_else(|| "Custom source".to_string());
     crate::dashboard_server::DashboardSource {
         name,
-        category: match source.category {
-            ContinuitySourceCategory::Files => "files",
-            ContinuitySourceCategory::Memory => "memory",
-            ContinuitySourceCategory::Instructions => "instructions",
-        }
-        .to_string(),
+        category: LedgerSourceGroup::for_source(source)
+            .display_name()
+            .to_ascii_lowercase(),
         estimated_tokens: source.estimated_tokens,
         admitted: source.admitted,
     }
@@ -187,6 +186,22 @@ impl ChatWidget {
         changed
     }
 
+    pub(super) fn update_smart_prune_savings(
+        &mut self,
+        saved_tokens: u64,
+        from_replay: bool,
+    ) -> bool {
+        let previous = self.last_smart_prune_saved_tokens;
+        let high_watermark = previous.map_or(saved_tokens, |total| total.max(saved_tokens));
+        let changed = previous != Some(high_watermark);
+        let newly_saved = previous.map_or(0, |total| saved_tokens.saturating_sub(total));
+        self.last_smart_prune_saved_tokens = Some(high_watermark);
+        if !from_replay && let Some(line) = smart_prune_saved_context_flash_line(newly_saved) {
+            self.bottom_pane.show_saved_context_flash(line);
+        }
+        changed
+    }
+
     fn context_usage_snapshot(
         &self,
         totals: &ContextUsageTranscriptTotals,
@@ -277,10 +292,10 @@ impl ChatWidget {
         ];
         if other > 0 {
             categories.push(CategoryUsage {
-                label: "Unattributed context",
+                label: "Unattributed (residual)",
                 tokens: other,
                 saved_tokens: 0,
-                color: Color::Gray,
+                color: UNATTRIBUTED_COLOR,
             });
         }
         let used_percent = has_request_snapshot
@@ -321,6 +336,7 @@ impl ChatWidget {
                 Color::Magenta | Color::LightMagenta => "#d946ef",
                 Color::Cyan | Color::LightCyan => "#06b6d4",
                 Color::Gray | Color::DarkGray => "#6b635a",
+                Color::Rgb(139, 92, 246) => "#8b5cf6",
                 _ => "#6b635a",
             }
             .to_string()
@@ -388,9 +404,7 @@ impl ChatWidget {
                 .config
                 .features
                 .enabled(Feature::AutomaticContextPruning),
-            current_thread_next_turn_enabled: self
-                .smart_prune_synced
-                .then_some(self.smart_prune.enabled),
+            current_thread_next_turn_enabled: self.current_thread_smart_prune_enabled(),
             examined_outputs: self.smart_prune.examined_outputs,
             admitted_outputs: self.smart_prune.admitted_outputs,
             unchanged_outputs: self.smart_prune.unchanged_outputs,
@@ -443,12 +457,11 @@ impl ChatWidget {
         // Right-hand legend, one entry per grid row.
         let model = snapshot.model.clone();
         let mut legend: Vec<Line<'static>> = Vec::new();
-        // Same formula the status line uses, so /context and the "% left" indicator
-        // can never disagree.
-        let used_percent = snapshot.used_percent.unwrap_or(0);
+        let used_percent = fmt_percent(used, window);
+        let free_percent = fmt_percent(free, window);
         legend.push(
             format!(
-                "{model} · {}/{} tokens ({used_percent}% used)",
+                "{model} · {}/{} tokens ({used_percent} used)",
                 fmt_tokens(used),
                 fmt_tokens(window),
             )
@@ -462,9 +475,8 @@ impl ChatWidget {
         legend.push(Line::from(vec![
             Span::from("□ ").dim(),
             Span::from(format!(
-                "Free space: {} ({}% left)",
+                "Free space: {} ({free_percent} left)",
                 fmt_tokens(free),
-                100 - used_percent,
             ))
             .dim(),
         ]));
@@ -561,7 +573,12 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     let mut lines = Vec::new();
 
     match (snapshot.used_tokens, snapshot.used_percent) {
-        (Some(used), Some(used_percent)) => {
+        (Some(used), Some(_)) => {
+            let used_percent = fmt_percent(used, snapshot.window_tokens);
+            let free_percent = fmt_percent(
+                snapshot.window_tokens.saturating_sub(used),
+                snapshot.window_tokens,
+            );
             lines.push(Line::from(vec![
                 Span::from(" "),
                 snapshot.model.clone().bold(),
@@ -573,11 +590,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 )
                 .cyan()
                 .bold(),
-                format!(
-                    " · {used_percent}% used · {}% free",
-                    100_i64.saturating_sub(used_percent)
-                )
-                .dim(),
+                format!(" · {used_percent} used · {free_percent} free").dim(),
             ]));
             lines.extend(build_category_bar_chart(
                 &snapshot.categories,
@@ -786,7 +799,7 @@ fn build_category_bar_chart(
     let narrow = width < 80;
     let mut lines = Vec::new();
     lines.push(Line::from(
-        " Category Breakdown · retained █  reclaimed ✨".bold(),
+        " Category Breakdown · current █  session total saved ✨".bold(),
     ));
 
     let overall_cells = if window > 0 {
@@ -826,36 +839,23 @@ fn build_category_bar_chart(
         ]));
     }
 
-    let largest_before = categories
+    let largest_current = categories
         .iter()
-        .map(|category| category.tokens.saturating_add(category.saved_tokens))
+        .map(|category| category.tokens)
         .max()
         .unwrap_or(0)
         .max(1);
     let progress = savings_progress.min(1_000);
     for category in categories {
-        let before = category.tokens.saturating_add(category.saved_tokens);
-        let retained_cells = ((category.tokens * bar_width as u64) / largest_before) as usize;
-        let final_saved_cells =
-            ((category.saved_tokens * bar_width as u64) / largest_before) as usize;
-        let saved_cells = final_saved_cells * progress as usize / 1_000;
-        let empty_cells = bar_width.saturating_sub(retained_cells + saved_cells);
+        let current_cells = ((category.tokens * bar_width as u64) / largest_current) as usize;
+        let empty_cells = bar_width.saturating_sub(current_cells);
         let animated_saved = category.saved_tokens.saturating_mul(progress) / 1_000;
-        let saved_percent = if before > 0 {
-            fmt_percent(category.saved_tokens, before)
-        } else {
-            "0.0%".to_string()
-        };
         let sparkle = if progress / 80 % 2 == 0 { "✨" } else { "  " };
         let bar = vec![
             Span::from(if narrow { "   [" } else { "[" }),
             Span::styled(
-                "█".repeat(retained_cells),
+                "█".repeat(current_cells),
                 Style::default().fg(category.color),
-            ),
-            Span::styled(
-                "▓".repeat(saved_cells),
-                Style::default().fg(Color::LightGreen).bold(),
             ),
             Span::from("░".repeat(empty_cells)).dim(),
             Span::from("]"),
@@ -863,15 +863,11 @@ fn build_category_bar_chart(
         if narrow {
             lines.push(Line::from(vec![
                 Span::from(format!("   {} · ", category.label)),
-                Span::from(format!(
-                    "{} → {}",
-                    fmt_tokens(before),
-                    fmt_tokens(category.tokens)
-                )),
+                Span::from(fmt_tokens(category.tokens)),
                 if category.saved_tokens > 0 {
                     Span::styled(
                         format!(
-                            " · {sparkle} ~{} saved ({saved_percent})",
+                            " · {sparkle} ~{} saved in session",
                             fmt_tokens(animated_saved)
                         ),
                         Style::default().fg(Color::LightGreen).bold(),
@@ -885,15 +881,11 @@ fn build_category_bar_chart(
             let mut spans = vec![Span::from(format!("   {:16} ", category.label))];
             spans.extend(bar);
             spans.push(Span::from(" "));
-            spans.push(Span::from(format!(
-                "{} → {}",
-                fmt_tokens(before),
-                fmt_tokens(category.tokens)
-            )));
+            spans.push(Span::from(fmt_tokens(category.tokens)));
             spans.push(if category.saved_tokens > 0 {
                 Span::styled(
                     format!(
-                        "  {sparkle} ~{} saved ({saved_percent})",
+                        "  {sparkle} ~{} saved in session",
                         fmt_tokens(animated_saved)
                     ),
                     Style::default().fg(Color::LightGreen).bold(),
@@ -1012,6 +1004,21 @@ pub(super) fn saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static
     })
 }
 
+fn smart_prune_saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static>> {
+    (saved_tokens > 0).then(|| {
+        Line::from(vec![
+            Span::styled("✂ ", Style::default().fg(Color::LightGreen)),
+            Span::styled(
+                format!(
+                    "Smart Prune saved ~{} tokens · snip!",
+                    fmt_tokens(saved_tokens)
+                ),
+                Style::default().fg(Color::LightGreen).bold(),
+            ),
+        ])
+    })
+}
+
 fn no_prune_totals_line() -> Line<'static> {
     "   No Ace pruning totals recorded yet".dim().into()
 }
@@ -1033,7 +1040,8 @@ fn fmt_tokens(tokens: u64) -> String {
 }
 
 fn fmt_percent(tokens: u64, window: u64) -> String {
-    let tenths = tokens.saturating_mul(1000) / window.max(1);
+    let window = window.max(1);
+    let tenths = tokens.saturating_mul(1000).saturating_add(window / 2) / window;
     format!("{}.{}%", tenths / 10, tenths % 10)
 }
 
@@ -1061,7 +1069,7 @@ mod tests {
         let serialized = serde_json::to_string(&projected).expect("serialize dashboard source");
 
         assert_eq!(projected.name, "secret-plan.md");
-        assert_eq!(projected.category, "files");
+        assert_eq!(projected.category, "user files");
         assert!(!serialized.contains(absolute_path));
         assert!(!serialized.contains("/home/private-user"));
     }
@@ -1152,10 +1160,10 @@ mod tests {
                 color: Color::LightCyan,
             },
             CategoryUsage {
-                label: "Unattributed context",
+                label: "Unattributed (residual)",
                 tokens: 6_732,
                 saved_tokens: 0,
-                color: Color::Gray,
+                color: UNATTRIBUTED_COLOR,
             },
         ];
 
@@ -1167,7 +1175,7 @@ mod tests {
                 (Color::LightGreen, 1),
                 (Color::LightYellow, 3),
                 (Color::LightCyan, 6),
-                (Color::Gray, 14),
+                (UNATTRIBUTED_COLOR, 14),
             ])
         );
         for (row_index, row) in lines.iter().enumerate() {
@@ -1190,16 +1198,19 @@ mod tests {
             color: Color::LightBlue,
         };
         let unattributed = CategoryUsage {
-            label: "Unattributed context",
+            label: "Unattributed (residual)",
             tokens: 6_732,
             saved_tokens: 0,
-            color: Color::Gray,
+            color: UNATTRIBUTED_COLOR,
         };
 
         let user_legend = category_legend_line(&user, 121_600);
         let unattributed_legend = category_legend_line(&unattributed, 121_600);
         assert_eq!(user_legend.spans[0].style.fg, Some(Color::LightBlue));
-        assert_eq!(unattributed_legend.spans[0].style.fg, Some(Color::Gray));
+        assert_eq!(
+            unattributed_legend.spans[0].style.fg,
+            Some(UNATTRIBUTED_COLOR)
+        );
         assert_ne!(
             user_legend.spans[0].style.fg,
             unattributed_legend.spans[0].style.fg
@@ -1249,8 +1260,10 @@ mod tests {
         };
 
         let text = plain_text(render_dashboard_lines(&snapshot, 100));
-        assert!(text.contains("SESSION CONTINUITY\n    ● admitted  GOAL.md"));
-        assert!(text.contains("USER FILES\n    ● admitted  /workspace/notes.md"));
+        assert!(text.contains("SESSION CONTINUITY"));
+        assert!(text.contains("● admitted  GOAL.md"));
+        assert!(text.contains("USER FILES"));
+        assert!(text.contains("● admitted  /workspace/notes.md"));
     }
 
     #[test]
@@ -1259,6 +1272,7 @@ mod tests {
         assert_eq!(fmt_tokens(39_700), "39.7k");
         assert_eq!(fmt_tokens(1_000_000), "1m");
         assert_eq!(fmt_percent(305, 1_000), "30.5%");
+        assert_eq!(fmt_percent(11_300, 121_600), "9.3%");
     }
 
     #[test]
@@ -1313,6 +1327,16 @@ mod tests {
     }
 
     #[test]
+    fn smart_prune_flash_is_plain_and_specific() {
+        let line = smart_prune_saved_context_flash_line(3_300).expect("Smart Prune flash");
+        assert_eq!(
+            plain_text(vec![line]),
+            "✂ Smart Prune saved ~3.3k tokens · snip!"
+        );
+        assert!(smart_prune_saved_context_flash_line(0).is_none());
+    }
+
+    #[test]
     fn no_prune_totals_copy_is_neutral_about_automatic_triggering() {
         let text = no_prune_totals_line()
             .spans
@@ -1338,7 +1362,7 @@ mod tests {
     }
 
     #[test]
-    fn category_chart_attributes_and_reveals_saved_tokens() {
+    fn category_chart_keeps_session_savings_separate_from_current_tool_size() {
         let categories = vec![
             CategoryUsage {
                 label: "User messages",
@@ -1362,8 +1386,11 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert!(text.contains("84.5k → 24.1k"));
-        assert!(text.contains("~60.4k saved (71.4%)"));
+        assert!(text.contains("24.1k"));
+        assert!(text.contains("~60.4k saved in session"));
+        assert!(!text.contains("84.5k"));
+        assert!(!text.contains('→'));
+        assert!(!text.contains("71.4%"));
         assert_eq!(
             initial
                 .iter()
@@ -1376,7 +1403,7 @@ mod tests {
             complete
                 .iter()
                 .flat_map(|line| line.spans.iter())
-                .any(|span| span.content.contains('▓'))
+                .all(|span| !span.content.contains('▓'))
         );
     }
 
@@ -1440,10 +1467,10 @@ mod tests {
         );
 
         insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 100)), @r"
-gpt-test · 42k / 200k tokens · 21% used · 79% free
-Category Breakdown · retained █  reclaimed ✨
+gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
+Category Breakdown · current █  session total saved ✨
   Overall Capacity [█████░░░░░░░░░░░░░░░░░░░] 42k/200k tokens (21.0% used)
-  Tool calls       [████████████████▓▓▓▓▓▓▓▓] 18k → 12k  ✨ ~6k saved (33.3%)
+  Tool calls       [████████████████████████] 12k  ✨ ~6k saved in session
   Category and source sizes are attribution estimates; the occupancy above is measured.
 
 Context Ledger
@@ -1461,12 +1488,12 @@ Continuity evidence
 Context accounting only · no task-quality, cost, or causal claims.
 ");
         insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 60)), @r"
-gpt-test · 42k / 200k tokens · 21% used · 79% free
-Category Breakdown · retained █  reclaimed ✨
+gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
+Category Breakdown · current █  session total saved ✨
   Overall · 42k/200k · 21.0% used
   [█████░░░░░░░░░░░░░░░░░░░]
-  Tool calls · 18k → 12k · ✨ ~6k saved (33.3%)
-  [████████████████▓▓▓▓▓▓▓▓]
+  Tool calls · 12k · ✨ ~6k saved in session
+  [████████████████████████]
   Estimates by category/source · headline is measured.
 
 Context Ledger
