@@ -1,14 +1,15 @@
 # Cache-friendly pruning
 
 Elpis now keeps its automatic tool-output optimization out of already-sent history.
-This document explains the cache invariant and the remaining trade-off in manual `/prune`.
+This document explains the cache invariant and the remaining trade-off in emergency
+`/force-prune`.
 It is a companion to `docs/context.md` and `docs/prompt-caching.md`.
 
 ## Current automatic behavior: first-exposure admission
 
 Smart Prune is off by default. The Context Ledger switch or `/smart-prune on|off` changes
-the setting for subsequent turns; manual `/prune` and `/force-prune` remain available
-regardless of that setting.
+the setting for subsequent turns; emergency `/force-prune` remains available regardless
+of that setting.
 
 When Smart Prune is enabled, Elpis waits for the current sibling tool calls and post-tool
 hooks to finish, then evaluates eligible textual results **before** recording any of those
@@ -140,9 +141,9 @@ Guarded by `no_new_cycle_starts_while_use_stays_inside_the_healthy_band`,
 `a_cycle_that_closed_below_the_trigger_always_re_arms_again` (a deadlock regression: a cycle
 that closes at 24% must still re-arm even though it never returns to 20%).
 
-## Manual behavior: epochs
+## Emergency retrospective behavior: epochs
 
-An explicit `/prune` pass seals its rewritten region with an **epoch marker** — a small
+An explicit `/force-prune` pass seals its rewritten region with an **epoch marker** — a small
 developer-role message, `[elpis.context-prune.epoch N] …`, inserted immediately after the
 last covered item. Its text is fixed at write time, so it is byte-stable forever after.
 
@@ -193,20 +194,19 @@ request now falls back to instead of the initial prefix.
 - Every applied manual Ace pass writes a full audit record (`~/.elpis/logs/pruning/`) and
   a rollout checkpoint. Applied Smart Prune admissions use the separate
   `~/.elpis/logs/smart-prune/admissions/` tree. Raw evidence remains intact in the rollout.
-- `/prune` is unaffected: it passes an explicit trigger, so it never consults the cycle gate.
-  `/force-prune` is also manual; its `pressure` audit value names its targeted selection
-  strategy, not automatic invocation.
+- `/force-prune` passes an explicit trigger, so it never consults the cycle gate. Its
+  `pressure` audit value names its targeted selection strategy, not automatic invocation.
 
 ## Remaining limitations
 
-- **Manual `/prune` still invalidates its changed suffix.** Nothing can prevent that:
+- **Emergency `/force-prune` still invalidates its changed suffix.** Nothing can prevent that:
   replacing content in the middle of a prompt changes every prefix past it. Smart Prune
   avoids that specific problem by making its decision before first main-model exposure.
 - **The epoch breakpoint only pays off if the frozen prefix exceeds 1,024 tokens**, the
   GPT-5.6 minimum cacheable prefix. Early in a session it will not.
 - **Marker accumulation.** One ~40-token message per applied pass, never removed (removing
   one would rewrite the prefix it exists to protect). Negligible under hysteresis; a long
-  `/prune` sweep can add up to 12 in one go.
+  `/force-prune` sweep can add up to 12 in one go.
 - **Live reuse is observed; comparative benefit remains open.** The pilot had no private
   full-request trace or matched OFF arm, so it does not establish later live logical-prefix
   stability or a causal cache-rate, cost, or latency change. The dashboard reports mechanism

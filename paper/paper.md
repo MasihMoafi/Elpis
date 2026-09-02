@@ -150,19 +150,20 @@ tool-schema changes, different request settings, explicit compaction, transport 
 or provider policy. The claim is that Smart Prune introduces no retroactive main-history
 rewrite; it cannot guarantee a billed cache hit.
 
-## 4. Retrospective `/prune` remains useful
+## 4. Retrospective pruning is emergency-only
 
-`/prune` and `/force-prune` remain explicit recovery tools. They can reclaim tool-result
-history the main model has already seen, which means they may reduce downstream prompt-cache
-reuse from the first changed item onward. Elpis marks frozen epochs and can place a cache
-breakpoint at a surviving boundary, but no marker can make a changed suffix byte-identical.
+Elpis removed the ambiguous `/prune` command. `/force-prune <1-100>` remains an explicit
+emergency recovery tool. It can reclaim tool-result history the main model has already seen,
+which means it may reduce downstream prompt-cache reuse from the first changed item onward.
+Elpis marks frozen epochs and can place a cache breakpoint at a surviving boundary, but no
+marker can make a changed suffix byte-identical.
 
 This is an intentional trade:
 
 | Path | Acts on | Main-history cache effect | Use |
 | --- | --- | --- | --- |
 | Smart Prune | Fresh eligible tool results | Append-only after first exposure | Automatic when enabled |
-| `/prune` | Already-admitted tool-result history | May invalidate the changed suffix | Explicit recovery |
+| `/force-prune` | Already-admitted tool-result history | May invalidate the changed suffix | Emergency recovery |
 | Native compaction | A broader older span | Replaces earlier context | Context-limit backstop |
 
 ## 5. Evaluation

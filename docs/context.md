@@ -21,10 +21,10 @@ before that result is recorded or sent to the main model for the first time. It 
 only the result body with a smaller, evidence-linked body. It never removes the tool-call
 event, changes its call id, or rewrites an item that has already entered sent history.
 
-`/prune` remains the explicit retrospective Ace pass. It can rewrite older tool-result
-bodies on request, which necessarily changes the cacheable prefix after the first changed
-item. This trade-off is acceptable only because the user asked for cleanup; it is no longer
-the automatic path. See [cache-friendly-pruning.md](cache-friendly-pruning.md).
+The ambiguous retrospective `/prune` command was removed. `/force-prune <1-100>` remains
+an explicit emergency Ace pass. It can rewrite older tool-result bodies on request, which
+necessarily changes the cacheable prefix after the first changed item. See
+[cache-friendly-pruning.md](cache-friendly-pruning.md).
 
 ### Pipeline Layer Comparison
 
@@ -33,7 +33,7 @@ the automatic path. See [cache-friendly-pruning.md](cache-friendly-pruning.md).
 | **1. RTK Filter** | Before selected shell tools execute | Shell command/request | Rewrites supported commands so the external RTK process can emit a smaller result. RTK is syntactic filtering, not semantic history pruning. | Hook rejection or tool failure leaves normal or unfiltered output available. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
 | **3. Smart Prune** | After sibling tools and post-tool hooks, before first main-model exposure, when enabled | Fresh textual function/custom-tool results of at least 1,024 estimated tokens, up to a 24k-token batch | Ace returns `compact` or `unchanged` for every result. Elpis admits a compact body only when it saves at least 256 estimated tokens and 20%; the original envelope and call id remain. | Any timeout, malformed response, audit failure, unsupported body, or weak saving admits the exact original result. |
-| **4. Explicit cleanup** | `/prune` or `/compact` | Already-recorded history | `/prune` selectively rewrites eligible old tool-result bodies; `/compact` performs the broader documented rollover. | Incomplete or invalid decisions leave history unchanged. |
+| **4. Explicit recovery** | `/force-prune <1-100>` or `/compact` | Already-recorded history | `/force-prune` selectively rewrites eligible old tool-result bodies; `/compact` performs Codex's broader documented rollover. | Incomplete or invalid decisions leave history unchanged. |
 
 RTK is a separate binary and an optional `PreToolUse` hook. `scripts/install-elpis.sh`
 installs it alongside Elpis unless `ELPIS_SKIP_RTK=1` is set. On a launch that finds `rtk`
@@ -51,9 +51,9 @@ admission passes use Luna at maximal reasoning effort; other providers use the s
 provider model. The admission call has its own `:smart-prune` prompt-cache namespace and
 does not consume the main turn's stable cache key.
 
-`/prune` and `/force-prune <pct>` are explicit manual Ace actions. Both work while automatic
-pruning is off. `/force-prune` records `pressure` in its audit to name the targeted selection
-strategy; that value does not establish automatic invocation.
+`/force-prune <pct>` is an explicit emergency Ace action and works while Smart Prune is off.
+It records `pressure` in its audit to name the targeted selection strategy; that value does
+not establish automatic invocation.
 
 `/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
 does not run Ace first. Separately, automatic native compaction uses the donor model-window

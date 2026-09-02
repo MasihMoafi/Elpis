@@ -156,9 +156,9 @@ first sees it. From then on, the admitted logical input is append-only. HTTP sen
 full input; the WebSocket path may send only the new delta with `previous_response_id`, but
 only after comparing it with the same unchanged full logical prefix.
 
-Manual `/prune` remains an explicit retrospective rewrite. Each applied manual pass seals
-its region with a byte-stable epoch marker and places a breakpoint there, so a later manual
-pass can fall back to that boundary rather than only the initial prefix. See
+Emergency `/force-prune` remains an explicit retrospective rewrite. Each applied pass seals
+its region with a byte-stable epoch marker and places a breakpoint there, so a later pass can
+fall back to that boundary rather than only the initial prefix. See
 `docs/cache-friendly-pruning.md`.
 
 ### The measurement that motivated this
@@ -211,7 +211,7 @@ Signals worth watching:
 - **A repeating low `cached_input_tokens` value** can indicate prefix invalidation, but
   provider telemetry and matched OFF/ON runs are required before attributing it to Smart
   Prune or claiming a cost change.
-- **Manual `/prune` checkpoints** identify an intentional retrospective rewrite. Correlate
+- **Emergency `/force-prune` checkpoints** identify an intentional retrospective rewrite. Correlate
   `elpis.context-prune.v1:` checkpoints separately from Smart Prune admissions. Across
   successive manual passes, the fallback boundary should move to the newest cacheable epoch;
   a constant plateau can indicate a missing marker or breakpoint.

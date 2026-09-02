@@ -101,13 +101,14 @@ uses a layered pipeline to keep useful findings while removing disposable explor
 | **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
 | **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
 | **3. Smart Prune — Experimental** | Shrinks eligible fresh textual tool results before their first main-model exposure while preserving the tool event and call ID. | When enabled with the Context Ledger `p` switch or `/smart-prune on` |
-| **4. Manual Ace pruning** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | Explicit `/prune` or `/force-prune` only |
+| **4. Emergency Ace pruning** | Selectively rewrites eligible old tool evidence toward a requested working-set target, preserving the latest context and an evidence pointer. | Explicit `/force-prune <1-100>` only |
 
-`/prune` and `/force-prune` are explicit manual Ace actions and do not rewrite user instructions,
-assistant messages, or model reasoning. `/compact` immediately runs Codex native compaction; it
-is independent of Ace pruning. Automatic native compaction uses the model-window threshold and
-usable-window headroom. Smart Prune is Experimental and off by default; its Ledger switch and
-`/smart-prune on|off` command apply to subsequent turns without rewriting admitted history.
+`/force-prune` is an explicit emergency Ace action and does not rewrite user instructions,
+assistant messages, or model reasoning. The ambiguous retrospective `/prune` command was removed.
+`/compact` immediately runs Codex native compaction and remains independent of Ace pruning.
+Automatic native compaction uses the model-window threshold and usable-window headroom. Smart
+Prune is Experimental and off by default; its Ledger switch and `/smart-prune on|off` command
+apply to subsequent turns without rewriting admitted history.
 
 #### What a pruning decision looks like
 

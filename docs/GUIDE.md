@@ -254,8 +254,8 @@ At the product-contract level:
 
 Optional Smart Prune reduces eligible fresh textual tool results before their first
 main-model exposure, then leaves admitted history byte-stable. It never deletes a tool-call
-event. `/prune` remains the explicit retrospective cleanup path and may invalidate the
-cacheable suffix it rewrites. The Context Ledger switch or `/smart-prune on|off` controls
+event. The ambiguous `/prune` command is removed; emergency `/force-prune` may invalidate
+the cacheable suffix it rewrites. The Context Ledger switch or `/smart-prune on|off` controls
 future turns; see [context.md](context.md) for thresholds, failure behavior, and evidence.
 
 Do not turn `GUIDE.md` into an exploration log. Promote only durable rules or facts that change how future agents should work; replace stale guidance instead of accumulating discoveries.

@@ -19,7 +19,7 @@ This ledger records local integration decisions. It is not release evidence, doe
 | `agent/candidate-portable-checkpoint` | `1730ac2` | one distinct patch | Rejected for integration. It only seeds an evaluation prompt and is not a product feature. |
 | `docs/evaluation-status` | `6307fed` | two distinct documentation patches | Deferred for selective documentation review; do not merge stale or claim-changing documentation wholesale. |
 | `eval/rq3-*` | `51de0a2` / `1a722a4` | historical evaluation heads | No product integration. RQ3 remains unestablished; these branches are evidence/history only. |
-| `feat/smart-prune-admission` | `d2da5b6` | selectively integrated | Admission-time Smart Prune is integrated into `integration/elpis-stable` with coordinator adaptations, including browser-safe revisioned dashboard evidence. Automatic history rewriting remains removed, manual `/prune` remains, and Smart Prune stays Experimental and off by default. Linux candidate CI, install, restart, and Masih acceptance remain pending. |
+| `feat/smart-prune-admission` | `d2da5b6` | selectively integrated | Admission-time Smart Prune is integrated into `integration/elpis-stable` with coordinator adaptations, including browser-safe revisioned dashboard evidence. Automatic history rewriting remains removed, Smart Prune stays Experimental and off by default, and only `/force-prune` retains emergency retrospective rewriting. Linux candidate CI, install, restart, and Masih acceptance remain pending. |
 
 ## Final integration boundary
 
