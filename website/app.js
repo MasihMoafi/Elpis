@@ -1,5 +1,6 @@
 const runtimeButtons = [...document.querySelectorAll("[data-runtime]")];
 const runtimeLabel = document.querySelector("[data-runtime-label]");
+const runtimeDetail = document.querySelector("[data-runtime-detail]");
 const handoffState = document.querySelector("[data-handoff-state]");
 const ledgerRows = [...document.querySelectorAll("[data-ledger-row]")];
 
@@ -17,6 +18,7 @@ runtimeButtons.forEach((button) => {
 
     window.setTimeout(() => {
       runtimeLabel.textContent = button.dataset.runtime;
+      runtimeDetail.textContent = button.dataset.runtimeDetail;
       handoffState.textContent = "connected";
       handoffState.classList.remove("is-switching");
       ledgerRows.forEach((row) => row.classList.add("is-retained"));
@@ -26,14 +28,20 @@ runtimeButtons.forEach((button) => {
 
 const copyButton = document.querySelector("[data-copy-button]");
 const command = document.querySelector("[data-command]");
+const copyStatus = document.querySelector("[data-copy-status]");
 
 copyButton?.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(command.textContent.trim());
-    copyButton.textContent = "Copied";
-    window.setTimeout(() => (copyButton.textContent = "Copy"), 1600);
+    copyStatus.textContent = "Command copied to clipboard.";
+    window.setTimeout(() => (copyStatus.textContent = ""), 1600);
   } catch {
-    copyButton.textContent = "Select command";
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(command);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    copyStatus.textContent = "Copy failed. The command has been selected.";
   }
 });
 
