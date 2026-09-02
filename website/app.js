@@ -1,6 +1,6 @@
 const runtimeButtons = [...document.querySelectorAll("[data-runtime]")];
 const runtimeLabel = document.querySelector("[data-runtime-label]");
-const runtimeDetail = document.querySelector("[data-runtime-detail]");
+const runtimeDetail = document.querySelector("[data-runtime-detail-output]");
 const handoffState = document.querySelector("[data-handoff-state]");
 const ledgerRows = [...document.querySelectorAll("[data-ledger-row]")];
 
@@ -18,7 +18,7 @@ runtimeButtons.forEach((button) => {
 
     window.setTimeout(() => {
       runtimeLabel.textContent = button.dataset.runtime;
-      runtimeDetail.textContent = button.dataset.runtimeDetail;
+      runtimeDetail.textContent = button.dataset.runtimeDescription;
       handoffState.textContent = "connected";
       handoffState.classList.remove("is-switching");
       ledgerRows.forEach((row) => row.classList.add("is-retained"));

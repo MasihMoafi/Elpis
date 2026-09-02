@@ -31,9 +31,36 @@ test("runtime controls name distinct providers and explain their inference owner
   const [html, script] = await Promise.all([read("index.html"), read("app.js")]);
   assert.match(html, />OpenAI<\/button>/);
   assert.match(html, />Anthropic<\/button>/);
-  assert.match(html, /data-runtime-detail="OpenAI API · hosted inference"/);
+  assert.match(html, /data-runtime-description="OpenAI API · hosted inference"/);
+  assert.match(html, /data-runtime-detail-output/);
   assert.doesNotMatch(html, /Cloud A|Cloud B/);
-  assert.match(script, /runtimeDetail\.textContent = button\.dataset\.runtimeDetail/);
+  assert.match(script, /runtimeDetail\.textContent = button\.dataset\.runtimeDescription/);
+});
+
+test("runtime selection keeps the three visible control labels stable", async () => {
+  const [html, css] = await Promise.all([read("index.html"), read("styles.css")]);
+  assert.match(html, /data-runtime="Local model"[^>]*>Local<\/button>/);
+  assert.match(html, /data-runtime="OpenAI"[^>]*>OpenAI<\/button>/);
+  assert.match(html, /data-runtime="Anthropic"[^>]*>Anthropic<\/button>/);
+  assert.match(css, /\.runtime-switcher\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(72px, 1fr\)\)[^}]*width:\s*252px/s);
+  assert.match(css, /\.runtime-detail\s*\{[^}]*white-space:\s*nowrap/s);
+});
+
+test("uses source-backed context, observability, and continuation language", async () => {
+  const html = await read("index.html");
+  assert.match(html, /Context admission/);
+  assert.match(html, /Context observability/);
+  assert.match(html, /Auditable checkpoints/);
+  assert.match(html, /Exact resume or\s*<br \/>lean continuation\./);
+  assert.match(html, /GOAL\.md carries the current objective and status/);
+  assert.match(html, /ES\.md records the latest result, changed files, commands, and exact evidence/);
+  assert.doesNotMatch(html, /Know what the agent knows|Resume the work|Goal stays current/i);
+});
+
+test("pauses the runtime marquee on hover or keyboard focus", async () => {
+  const [html, css] = await Promise.all([read("index.html"), read("styles.css")]);
+  assert.match(html, /class="runtime-marquee" tabindex="0"/);
+  assert.match(css, /\.runtime-marquee:hover \.marquee-track, \.runtime-marquee:focus-within \.marquee-track\s*\{[^}]*animation-play-state:\s*paused/s);
 });
 
 test("copy feedback never changes the visible button label or command layout", async () => {
@@ -55,9 +82,12 @@ test("has working anchor navigation and a sticky header", async () => {
 });
 
 test("ships responsive motion with an accessible reduced-motion fallback", async () => {
-  const css = await read("styles.css");
+  const [html, css] = await Promise.all([read("index.html"), read("styles.css")]);
+  assert.match(html, /class="hero-flow"/);
+  assert.match(css, /@keyframes\s+flow-dash/);
   assert.match(css, /@media\s*\(max-width:\s*720px\)/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
+  assert.match(css, /\.flow-pulse\s*\{\s*display:\s*none/);
 });
 
 test("does not include tracking or analytics", async () => {

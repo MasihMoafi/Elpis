@@ -33,6 +33,20 @@
       <section class="hero" aria-labelledby="hero-title">
         <div class="ambient ambient-one" aria-hidden="true"></div>
         <div class="ambient ambient-two" aria-hidden="true"></div>
+        <svg class="hero-flow" viewBox="0 0 1440 820" preserveAspectRatio="none" aria-hidden="true">
+          <path class="flow-route flow-route-one" d="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" />
+          <path class="flow-route flow-route-two" d="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
+          <path class="flow-route flow-route-three" d="M260 -40 C260 170 520 210 720 210 S1000 90 1260 210 S1450 390 1510 390" />
+          <circle class="flow-node" cx="560" cy="530" r="4" />
+          <circle class="flow-node" cx="720" cy="210" r="4" />
+          <circle class="flow-node flow-node-output" cx="1260" cy="408" r="5" />
+          <circle class="flow-pulse" r="4">
+            <animateMotion dur="8s" repeatCount="indefinite" path="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" />
+          </circle>
+          <circle class="flow-pulse flow-pulse-delayed" r="3">
+            <animateMotion dur="11s" begin="-5s" repeatCount="indefinite" path="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
+          </circle>
+        </svg>
         <div class="hero-copy">
           <p class="eyebrow"><span class="status-dot"></span> Early access</p>
           <h1 id="hero-title">Change the runtime.<br /><em>Keep the thread.</em></h1>
@@ -57,9 +71,9 @@
               <strong>Provider handoff</strong>
             </div>
             <div class="runtime-switcher" role="group" aria-label="Select runtime">
-              <button class="runtime-button is-active" type="button" data-runtime="Local model" data-runtime-detail="Local endpoint · on-device inference">Local</button>
-              <button class="runtime-button" type="button" data-runtime="OpenAI" data-runtime-detail="OpenAI API · hosted inference">OpenAI</button>
-              <button class="runtime-button" type="button" data-runtime="Anthropic" data-runtime-detail="Anthropic API · hosted inference">Anthropic</button>
+              <button class="runtime-button is-active" type="button" data-runtime="Local model" data-runtime-description="Local endpoint · on-device inference">Local</button>
+              <button class="runtime-button" type="button" data-runtime="OpenAI" data-runtime-description="OpenAI API · hosted inference">OpenAI</button>
+              <button class="runtime-button" type="button" data-runtime="Anthropic" data-runtime-description="Anthropic API · hosted inference">Anthropic</button>
             </div>
           </div>
 
@@ -68,7 +82,7 @@
             <div>
               <span class="label">Active runtime</span>
               <strong data-runtime-label>Local model</strong>
-              <span class="runtime-detail" data-runtime-detail>Local endpoint · on-device inference</span>
+              <span class="runtime-detail" data-runtime-detail-output>Local endpoint · on-device inference</span>
             </div>
             <span class="handoff-state" data-handoff-state>connected</span>
           </div>
@@ -99,7 +113,7 @@
         </div>
       </section>
 
-      <section class="runtime-marquee" aria-label="Runtime compatibility">
+      <section class="runtime-marquee" tabindex="0" aria-label="Runtime compatibility. Animation pauses while hovered or focused.">
         <p>One continuity layer across</p>
         <div class="marquee-window">
           <div class="marquee-track">
@@ -114,55 +128,55 @@
           <article class="feature-card feature-goal">
             <span class="card-number">01</span>
             <div class="feature-icon" aria-hidden="true">⌁</div>
-            <h3>Goal stays current</h3>
-            <p>The active objective and continuation state remain readable instead of disappearing into chat history.</p>
+            <h3>Context admission</h3>
+            <p>Select which project rules, instructions, user-maintained memory, GOAL.md, and ES.md enter the next request.</p>
             <div class="goal-meter"><span></span><span></span><span></span><span></span></div>
           </article>
           <article class="feature-card feature-context">
             <span class="card-number">02</span>
             <div class="feature-icon" aria-hidden="true">⊞</div>
-            <h3>Context is admitted</h3>
-            <p>Project instructions and user-maintained memory enter through a visible Context Ledger—not an invisible memory claim.</p>
+            <h3>Context observability</h3>
+            <p>Inspect admitted sources, per-source size estimates, and model-window usage in the Context Ledger.</p>
             <div class="context-chips"><span>AGENTS.md</span><span>GOAL.md</span><span>ES.md</span></div>
           </article>
           <article class="feature-card feature-evidence">
             <span class="card-number">03</span>
             <div class="feature-icon" aria-hidden="true">✓</div>
-            <h3>Evidence travels too</h3>
-            <p>Permissions, tool results, changed files, and verification remain part of the inspectable working state.</p>
-            <div class="evidence-line"><span>tests</span><b>12 / 12</b></div>
+            <h3>Auditable checkpoints</h3>
+            <p>Keep changed files, commands, verification results, and exact transcript evidence attached to the work.</p>
+            <div class="evidence-line"><span>checkpoint</span><b>evidence linked</b></div>
           </article>
         </div>
       </section>
 
       <section class="section ledger-section ledger-section--text-only" id="ledger" aria-labelledby="ledger-title">
         <div class="ledger-copy">
-          <p class="eyebrow">The Context Ledger</p>
-          <h2 id="ledger-title">Know what the agent knows.</h2>
+          <p class="eyebrow">Context observability</p>
+          <h2 id="ledger-title">Inspect the active context.</h2>
           <p>
-            Elpis separates available project material from what a runtime is actually allowed to see. Admission is visible, reversible, and tied to the session.
+            The Context Ledger shows each admitted source, its size estimate, and how much of the model window is in use before the next request.
           </p>
           <ul class="plain-list">
-            <li><span>01</span> Inspect active instructions before a run</li>
-            <li><span>02</span> Keep project memory manual and auditable</li>
-            <li><span>03</span> Resume from a concise execution state</li>
+            <li><span>01</span> See each context source and whether it is admitted</li>
+            <li><span>02</span> Compare per-source estimates with total model-window use</li>
+            <li><span>03</span> Change admission before the next request</li>
           </ul>
         </div>
       </section>
 
       <section class="section handoff-section" aria-labelledby="handoff-title">
         <div class="handoff-heading">
-          <p class="eyebrow">A legible handoff</p>
-          <h2 id="handoff-title">Resume the work,<br />not the warm-up.</h2>
+          <p class="eyebrow">Session continuity</p>
+          <h2 id="handoff-title">Exact resume or<br />lean continuation.</h2>
         </div>
         <div class="handoff-flow">
-          <article><span>01</span><h3>Record</h3><p>The goal and execution state stay in small, readable project files.</p></article>
+          <article><span>01</span><h3>Exact resume</h3><p>Continue the provider's native thread with its full history.</p></article>
           <div class="flow-link" aria-hidden="true"><i></i></div>
-          <article><span>02</span><h3>Switch</h3><p>Choose a reachable hosted or local runtime explicitly.</p></article>
+          <article><span>02</span><h3>Goal checkpoint</h3><p>GOAL.md carries the current objective and status.</p></article>
           <div class="flow-link" aria-hidden="true"><i></i></div>
-          <article><span>03</span><h3>Admit</h3><p>Review the context that will cross the boundary.</p></article>
+          <article><span>03</span><h3>Execution checkpoint</h3><p>ES.md records the latest result, changed files, commands, and exact evidence.</p></article>
           <div class="flow-link" aria-hidden="true"><i></i></div>
-          <article><span>04</span><h3>Continue</h3><p>Carry forward decisions, constraints, and verification evidence.</p></article>
+          <article><span>04</span><h3>Lean continuation</h3><p>Start a fresh provider-neutral thread from the admitted checkpoints and rules.</p></article>
         </div>
       </section>
 
