@@ -75,6 +75,16 @@ kind = "cargo"
 mode = "test"
 argv = ["test", "-p", "codex-features", "--lib", "--locked", "automatic_context_pruning_is_experimental_and_opt_in"]
 
+[commands.core-smart-prune]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-core", "--test", "all", "--locked", "suite::smart_prune::"]
+
+[commands.tui-smart-prune-controls]
+kind = "cargo"
+mode = "test"
+argv = ["test", "-p", "codex-tui", "--lib", "--locked", "slash_smart_prune"]
+
 [commands.core-context-cleaner]
 kind = "cargo"
 mode = "test"
@@ -223,6 +233,8 @@ name = "context-compaction"
 commands = [
     "fmt-check",
     "features-automatic-pruning",
+    "core-smart-prune",
+    "tui-smart-prune-controls",
     "core-context-cleaner",
     "core-elpis-context",
     "core-context-prune",
@@ -284,6 +296,8 @@ commands = [
     "tui-thread-setting-model-reasoning",
     "tui-enabled-skills",
     "features-automatic-pruning",
+    "core-smart-prune",
+    "tui-smart-prune-controls",
     "core-context-cleaner",
     "core-elpis-context",
     "core-context-prune",

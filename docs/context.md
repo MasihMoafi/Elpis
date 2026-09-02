@@ -35,9 +35,9 @@ necessarily changes the cacheable prefix after the first changed item. See
 | **3. Smart Prune** | After sibling tools and post-tool hooks, before first main-model exposure, when enabled | Fresh textual function/custom-tool results of at least 1,024 estimated tokens, up to a 24k-token batch | Ace returns `compact` or `unchanged` for every result. Elpis admits a compact body only when it saves at least 256 estimated tokens and 20%; the original envelope and call id remain. | Any timeout, malformed response, audit failure, unsupported body, or weak saving admits the exact original result. |
 | **4. Explicit recovery** | `/force-prune <1-100>` or `/compact` | Already-recorded history | `/force-prune` selectively rewrites eligible old tool-result bodies; `/compact` performs Codex's broader documented rollover. | Incomplete or invalid decisions leave history unchanged. |
 
-RTK is a separate binary and an optional `PreToolUse` hook. `scripts/install-elpis.sh`
-installs it alongside Elpis unless `ELPIS_SKIP_RTK=1` is set. On a launch that finds `rtk`
-on `PATH` and no user-owned `~/.elpis/hooks.json`, Elpis writes the hook and subjects it to
+RTK is a separate binary and an optional `PreToolUse` hook. Elpis does not install it. On a
+launch that finds a user-installed `rtk` on `PATH` and no user-owned
+`~/.elpis/hooks.json`, Elpis writes the hook and subjects it to
 the normal startup review. An existing hooks file is never modified, so `{"hooks":{}}`
 opts out permanently. Elpis's hook runtime accepts RTK's rewrite response. RTK and Smart
 Prune may coexist: RTK changes supported shell execution before it runs; Smart Prune

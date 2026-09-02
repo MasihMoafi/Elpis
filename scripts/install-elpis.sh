@@ -34,19 +34,3 @@ mkdir -p "$install_dir"
 install -m 0755 "$temporary_dir/$asset" "$install_dir/.elpis.installing"
 mv -f "$install_dir/.elpis.installing" "$install_dir/elpis"
 printf 'Installed Elpis at %s\n' "$install_dir/elpis"
-
-# Layer 1 of Elpis's context pruning rewrites shell commands through RTK, so RTK is part
-# of a complete install. Elpis registers its hook on first launch once RTK is on PATH.
-# Set ELPIS_SKIP_RTK=1 to install Elpis alone.
-if [ "${ELPIS_SKIP_RTK:-0}" = "1" ]; then
-  printf 'Skipped RTK; shell-output filtering stays off.\n'
-elif command -v rtk >/dev/null 2>&1; then
-  printf 'RTK already installed at %s\n' "$(command -v rtk)"
-else
-  printf 'Installing RTK for shell-output filtering...\n'
-  if curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh; then
-    printf 'Installed RTK.\n'
-  else
-    printf 'RTK install failed; Elpis works without it, with shell-output filtering off.\n' >&2
-  fi
-fi

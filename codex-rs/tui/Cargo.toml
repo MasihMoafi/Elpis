@@ -15,7 +15,7 @@ path = "src/bin/md-events.rs"
 
 [package.metadata.deb]
 name = "elpis"
-maintainer = "Masih Moafi <masihmoafi12@gmail.com>"
+maintainer = "Masih Moafi <MasihMoafi@users.noreply.github.com>"
 copyright = "2026, Masih Moafi"
 license-file = ["../../LICENSE", "0"]
 extended-description = "Elpis is a terminal coding agent with portable context, durable memory, and session continuity."

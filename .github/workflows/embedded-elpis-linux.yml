@@ -11,14 +11,18 @@ on:
   pull_request:
     paths:
       - .github/workflows/embedded-elpis-linux.yml
+      - .github/RELEASE_NOTES.md
       - .github/workflows/launcher-diagnostics.yml
+      - CHANGELOG.md
       - codex-rs/**
       - docs/**
+      - readme.md
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
       - scripts/verify-elpis
       - tests/verify-elpis/test_verify_elpis.sh
       - tools/verify-elpis/surfaces.toml
+      - website/**
   push:
     branches:
       - main
@@ -26,14 +30,18 @@ on:
       - "v*"
     paths:
       - .github/workflows/embedded-elpis-linux.yml
+      - .github/RELEASE_NOTES.md
       - .github/workflows/launcher-diagnostics.yml
+      - CHANGELOG.md
       - codex-rs/**
       - docs/**
+      - readme.md
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
       - scripts/verify-elpis
       - tests/verify-elpis/test_verify_elpis.sh
       - tools/verify-elpis/surfaces.toml
+      - website/**
   schedule:
     - cron: "17 3 * * 1"
 
@@ -182,6 +190,10 @@ jobs:
       - name: Verify selector harness
         run: bash tests/verify-elpis/test_verify_elpis.sh
 
+      - name: Verify standalone website
+        working-directory: website
+        run: npm test
+
       - name: Restore Cargo downloads
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
@@ -282,6 +294,15 @@ jobs:
         working-directory: codex-rs
         run: strip target/release/elpis
 
+      - name: Reject developer paths in release binary
+        working-directory: codex-rs
+        run: |
+          developer_user=masih
+          if strings target/release/elpis | grep -E "/home/${developer_user}|Desktop/p/"; then
+            echo 'Developer-specific path found in release binary.' >&2
+            exit 1
+          fi
+
       - name: Upload Elpis binary
         if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -295,7 +316,7 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
         working-directory: codex-rs
         run: |
-          cargo install cargo-deb --locked
+          cargo install cargo-deb --version 3.7.0 --locked
           cargo deb --no-build -p codex-tui
 
       - name: Upload Elpis .deb
@@ -315,6 +336,53 @@ jobs:
           path: codex-rs/target/cargo-timings/cargo-timing.html
           if-no-files-found: warn
           retention-days: 7
+
+  install-release-artifacts:
+    name: Install release artifacts in a clean container
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out release manifest
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Download verified Elpis binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: elpis-linux-x86_64
+          path: dist
+
+      - name: Download Elpis .deb
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: elpis-deb
+          path: dist
+
+      - name: Install and launch both artifacts
+        run: |
+          set -euo pipefail
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' codex-rs/tui/Cargo.toml | head -1)"
+          test -n "$expected"
+          docker run --rm \
+            --env EXPECTED_VERSION="$expected" \
+            --mount "type=bind,src=$PWD/dist,dst=/dist,readonly" \
+            ubuntu:24.04 sh -euxc '
+              run_smoke() {
+                binary=$1
+                root=$2
+                test "$("$binary" --version)" = "elpis $EXPECTED_VERSION"
+                mkdir -p "$root/home" "$root/elpis" "$root/codex"
+                HOME="$root/home" ELPIS_HOME="$root/elpis" CODEX_HOME="$root/codex" \
+                  "$binary" --migrate-from-codex > "$root/output.txt"
+                grep -q "Preview only. Nothing is selected or copied." "$root/output.txt"
+              }
+              cp /dist/elpis /tmp/elpis
+              chmod 0755 /tmp/elpis
+              run_smoke /tmp/elpis /tmp/raw-smoke
+              dpkg -i /dist/*.deb
+              run_smoke /usr/bin/elpis /tmp/deb-smoke
+            '
 
   build-macos:
     name: Build and verify Elpis on macOS (Apple Silicon)
@@ -526,7 +594,7 @@ jobs:
             make_shims "$dir/bin" "$sysname" "$machine" "$flavor"
             : > "$work/curl.log"
             if env -i HOME="$dir" PATH="$dir/bin" TMPDIR="$dir" \
-                ELPIS_SKIP_RTK=1 ELPIS_INSTALL_DIR="$dir/install" \
+                ELPIS_INSTALL_DIR="$dir/install" \
                 bash "$script" > "$dir/out" 2> "$dir/err"; then
               if [ "$(cat "$dir/install/elpis")" != "payload-for-$expected" ]; then
                 printf 'FAIL %-14s installed the wrong asset\n' "$label"
@@ -554,7 +622,7 @@ jobs:
             make_shims "$dir/bin" "$2" "$3" "$4"
             : > "$work/curl.log"
             if env -i HOME="$dir" PATH="$dir/bin" TMPDIR="$dir" \
-                ELPIS_SKIP_RTK=1 ELPIS_INSTALL_DIR="$dir/install" \
+                ELPIS_INSTALL_DIR="$dir/install" \
                 bash "$script" > "$dir/out" 2> "$dir/err"; then
               printf 'FAIL %-14s %s-%s was accepted but must be rejected\n' "$label" "$2" "$3"
               failures=$((failures + 1))
@@ -576,7 +644,7 @@ jobs:
   release:
     name: Publish tagged binaries
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, installer-platform-detection]
+    needs: [build, install-release-artifacts, installer-platform-detection]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

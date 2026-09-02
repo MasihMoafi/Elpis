@@ -11,7 +11,7 @@ async function read(path) {
 test("publishes the continuity promise and install path", async () => {
   const html = await read("index.html");
   assert.match(html, /Change the runtime\.\s*Keep the thread\./i);
-  assert.match(html, /install-elpis\.sh/);
+  assert.match(html, /v0\.2\.0\/scripts\/install-elpis\.sh/);
 });
 
 test("keeps memory and experiments honest", async () => {
@@ -40,9 +40,13 @@ test("ships the current SVG evidence set", async () => {
     "assets/elpis-context-control.svg",
     "assets/elpis-normalized-overlay-highcontrast.svg",
     "assets/sankey_context_flow.svg",
+    "assets/elpis_empirical_evaluation_bars.svg",
   ]) {
     await access(new URL(path, root));
   }
+  const html = await read("index.html");
+  assert.match(html, /42 retrospective passes/i);
+  assert.match(html, /elpis_empirical_evaluation_bars\.svg/);
 });
 
 test("has working anchor navigation and a sticky header", async () => {

@@ -256,8 +256,12 @@ later requests append</code></pre>
             <figcaption>Normalized context trajectories · three repetitions of one identical task</figcaption>
           </figure>
           <figure>
-            <img src="./assets/sankey_context_flow.svg" alt="Historical Sankey flow for one retrospective pruning pass" loading="lazy" />
-            <figcaption>One recorded retrospective pass · preserved as historical evidence</figcaption>
+            <img src="./assets/sankey_context_flow.svg" alt="Historical Sankey flow for one recorded retrospective-pruning run" loading="lazy" />
+            <figcaption>One recorded run with 42 retrospective passes · preserved as historical evidence</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/elpis_empirical_evaluation_bars.svg" alt="Historical peak context comparison across three Elpis and Codex runs" loading="lazy" />
+            <figcaption>Historical peak context · three repetitions of one identical task</figcaption>
           </figure>
         </div>
         <a class="text-link evidence-link" href="https://github.com/MasihMoafi/Elpis/blob/main/paper/paper.md">Read the technical preprint <span aria-hidden="true">↗</span></a>
@@ -267,17 +271,17 @@ later requests append</code></pre>
         <div class="install-copy">
           <p class="eyebrow">Linux-first preview</p>
           <h2 id="install-title">Put continuity<br />in the loop.</h2>
-          <p>Install the current early-access release, then launch Elpis from your terminal. Inspect the source before you run the script.</p>
+          <p>Install the v0.2.0 early-access build, then launch Elpis from your terminal. Inspect the source before you run the script.</p>
           <a class="text-link" href="https://github.com/MasihMoafi/Elpis">Read installation and source <span aria-hidden="true">↗</span></a>
         </div>
         <div class="terminal" data-terminal>
           <div class="terminal-bar"><span></span><span></span><span></span><p>shell</p></div>
           <div class="terminal-body">
             <span class="prompt">$</span>
-            <code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code>
+            <code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code>
             <button type="button" class="copy-button" data-copy-button>Copy</button>
           </div>
-          <p class="terminal-note">Current release: v0.2.0 · Linux x86_64 · early access</p>
+          <p class="terminal-note">v0.2.0 · Linux x86_64 · early access</p>
         </div>
       </section>
 
@@ -290,7 +294,7 @@ later requests append</code></pre>
           <details><summary>Does Elpis replace the model provider?<span>+</span></summary><p>No. Elpis manages the session boundary around inference; the selected provider or local runtime still performs generation.</p></details>
           <details><summary>Does Elpis remember everything automatically?<span>+</span></summary><p>No. Project memory is user-maintained and only enters a session when it is admitted through the Context Ledger.</p></details>
           <details><summary>Is Smart Prune enabled?<span>+</span></summary><p>No. It is Experimental and off by default. `/force-prune` is separate emergency recovery; `/compact` remains native compaction.</p></details>
-          <details><summary>Is this production-ready?<span>+</span></summary><p>Not yet. The current build is an early-access, Linux-first candidate while daily-driver acceptance continues.</p></details>
+          <details><summary>Is this production-ready?<span>+</span></summary><p>Not yet. v0.2.0 is an early-access, Linux-first release while daily-driver acceptance continues.</p></details>
         </div>
       </section>
     </main>

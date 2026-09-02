@@ -574,6 +574,16 @@ assert_status 0
 assert_argv_occurrences 1 fmt --all --check
 assert_safe_cargo_log
 
+new_fixture smart-prune-gate
+run_selector --surface context-compaction
+assert_status 0
+assert_output 'core-smart-prune'
+assert_output 'tui-smart-prune-controls'
+
+if grep -q 'rtk-ai/rtk/refs/heads/master/install.sh' "$SOURCE_ROOT/scripts/install-elpis.sh"; then
+    fail "default installer must not execute an unpinned RTK installer"
+fi
+
 python3 - \
     "$SOURCE_ROOT/.github/workflows/embedded-elpis-linux.yml" \
     "$SOURCE_ROOT/.github/workflows/launcher-diagnostics.yml" <<'PY'
@@ -597,11 +607,18 @@ for trigger_path in (
     "tools/verify-elpis/surfaces.toml",
     "tests/verify-elpis/test_verify_elpis.sh",
     "docs/**",
+    "readme.md",
+    "website/**",
 ):
     require(main.count(f"      - {trigger_path}\n") == 2, f"missing PR/push path {trigger_path}")
 
 require(linux.count("fetch-depth: 0") >= 2, "both Linux checkouts must fetch exact diff endpoints")
 require("bash tests/verify-elpis/test_verify_elpis.sh" in linux, "Linux must run the fake-Cargo harness")
+require(
+    "      - name: Verify standalone website\n        working-directory: website\n        run: npm test\n"
+    in linux,
+    "Linux must run the standalone website tests",
+)
 require(
     'git diff --name-only -z "$base" "$head" > "$RUNNER_TEMP/elpis-changed-paths"' in linux,
     "Linux must write a NUL-delimited changed-path list",
@@ -668,7 +685,7 @@ for root_step in (
 for retained in (
     "cargo build -p codex-tui --bin elpis --locked --timings --release",
     "target/release/elpis --help",
-    "cargo install cargo-deb --locked",
+    "cargo install cargo-deb --version 3.7.0 --locked",
     "cargo deb --no-build -p codex-tui",
     "name: elpis-linux-x86_64",
     "name: elpis-deb",
@@ -690,6 +707,18 @@ require(
 require(
     "      - name: Package .deb\n        if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}\n        working-directory: codex-rs\n" in linux,
     "package step must retain codex-rs working directory",
+)
+for artifact_check in (
+    "name: Install release artifacts in a clean container",
+    "--mount \"type=bind,src=$PWD/dist,dst=/dist,readonly\"",
+    "dpkg -i /dist/*.deb",
+    "run_smoke /tmp/elpis /tmp/raw-smoke",
+    "run_smoke /usr/bin/elpis /tmp/deb-smoke",
+):
+    require(artifact_check in linux, f"missing release artifact check: {artifact_check}")
+require(
+    "needs: [build, install-release-artifacts, installer-platform-detection]" in main,
+    "release must wait for installed artifact checks",
 )
 require("cargo test -p codex-tui --bin elpis --locked --target" in macos_and_later, "macOS checks changed")
 

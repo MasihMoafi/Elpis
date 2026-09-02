@@ -229,6 +229,7 @@ h2 { margin-bottom: 0; font-size: clamp(3rem, 5vw, 5.9rem); font-weight: 500; li
 .evidence-section { background: #0b0a09; }
 .evidence-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 18px; }
 .evidence-grid figure { margin: 0; border: 1px solid var(--line); background: var(--ink-soft); }
+.evidence-grid figure:last-child { grid-column: 1 / -1; }
 .evidence-grid img { width: 100%; min-height: 320px; padding: 18px; object-fit: contain; }
 .evidence-grid figcaption { padding: 15px 18px; border-top: 1px solid var(--line); color: #8f837c; font-size: .67rem; }
 .evidence-link { display: inline-block; margin-top: 28px; }
@@ -283,6 +284,7 @@ footer > div:first-child p { margin: 12px 0 0; color: #716761; font-size: .72rem
   .admission-button b { transform: rotate(90deg); }
   .admission-demo.is-active .admission-button b { transform: rotate(90deg) translateX(6px); }
   .admission-evidence, .evidence-grid { grid-template-columns: 1fr; }
+  .evidence-grid figure:last-child { grid-column: auto; }
 }
 
 @media (max-width: 720px) {

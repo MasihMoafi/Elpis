@@ -23,11 +23,16 @@ The governing question is always: **what does this do on a machine that is not M
 - The project's GitHub URL and authorship notes in comments are fine. They do not
   change what the program touches at runtime.
 
-Before tagging, this must return only repo URLs:
+Before tagging, this must return no developer-specific path:
 
 ```bash
-grep -rn 'Desktop/\|/home/[a-z]' codex-rs --include='*.rs' | grep -v MasihMoafi
+developer_user=masih
+rg -n "/home/${developer_user}|Desktop/p/" codex-rs --glob '*.rs'
 ```
+
+Generic paths such as `/home/alice` inside test fixtures are allowed. After the release build,
+also inspect the binary with
+`strings target/release/elpis | rg "/home/${developer_user}|Desktop/p/"`.
 
 ## 2. Verify on a machine that is not this one
 
@@ -52,8 +57,9 @@ grep -rn 'Desktop/\|/home/[a-z]' codex-rs --include='*.rs' | grep -v MasihMoafi
   gh release list --limit 3
   ```
 
-- A version number that never reached a user is not spent. Reuse it; the workflow
-  replaces a re-tagged release rather than failing on it.
+- A version number that never reached a user is not spent, but the workflow refuses to
+  overwrite an existing GitHub release. Remove or replace a failed tag only after an explicit,
+  reviewed recovery decision.
 - The version in `codex-rs/tui/Cargo.toml`, the assertion in the workflow's
   "Verify executable identity" step, and `Cargo.lock` must move together, or the tag
   run fails on the version check.

@@ -31,7 +31,7 @@ separate; no provider cache/cost benefit is claimed from the local tests.
 - Do not touch, install, restart, or attach to the running Elpis process.
 - Do not edit another worktree, generated user config, benchmark result, or credential.
 - Prefix every Cargo command with `CODEX_SKIP_BWRAP_BUILD=1` and use
-  `CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target`.
+  `CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target`.
 - Format only explicit edited Rust files; never run workspace-wide formatting.
 - Keep Smart Prune default off.
 - Automatic Smart Prune never deletes a whole event and never rewrites admitted history.
@@ -65,7 +65,7 @@ Command:
 
 ```bash
 cd codex-rs
-CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target \
+CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target \
   cargo test -p codex-core --lib -- smart_prune:: --nocapture
 ```
 
@@ -284,7 +284,7 @@ Focused command family:
 ```bash
 cd codex-rs
 export CODEX_SKIP_BWRAP_BUILD=1
-export CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target
+export CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target
 cargo test -p codex-core --lib -- smart_prune:: --nocapture
 cargo test -p codex-core --test all -- suite::smart_prune:: --nocapture
 cargo test -p codex-core --test all -- suite::context_prune:: --nocapture

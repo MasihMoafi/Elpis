@@ -7,7 +7,7 @@ Elpis v0.2.0 is a Linux-first release centered on explicit context control and c
 Linux x86_64:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
 ## What changed

@@ -52,7 +52,7 @@ Assert API-key authorization and only `OpenAI-Organization` / `OpenAI-Project` p
 Run:
 
 ```bash
-CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-backend-client --test turn_usage --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-backend-client --test turn_usage --locked -- --nocapture
 ```
 
 Expected: compilation fails because the module, exported types, and methods do not exist.
@@ -101,7 +101,7 @@ Add an in-memory metric test that records `0.0001245` and asserts exactly `125` 
 Run:
 
 ```bash
-CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-otel --test tests turn_cost --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-otel --test tests turn_cost --locked -- --nocapture
 ```
 
 Expected: compilation fails because `record_turn_cost` and the metric name do not exist.
@@ -125,7 +125,7 @@ Add tests for these literal behaviors:
 Run:
 
 ```bash
-CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-app-server turn_cost_worker --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-app-server turn_cost_worker --locked -- --nocapture
 ```
 
 Expected: compilation fails because the worker and event wiring do not exist.
@@ -188,7 +188,7 @@ Add separate compaction exclusivity, sum-equals-duration, repeated-completion, p
 Run:
 
 ```bash
-CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-core turn_timing --lib --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-core turn_timing --lib --locked -- --nocapture
 ```
 
 Expected: compilation fails because the profile API does not exist.
@@ -210,7 +210,7 @@ Record a literal profile and assert six `codex.turn.profile.duration_ms` points 
 Run:
 
 ```bash
-CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=/home/masih/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-otel --test tests turn_profile --locked -- --nocapture
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 CARGO_TARGET_DIR=~/Desktop/p/Elpis/codex-rs/target nice -n 10 cargo test -p codex-otel --test tests turn_profile --locked -- --nocapture
 ```
 
 Expected: compilation fails because profile metric names and recording method do not exist.
@@ -233,7 +233,7 @@ Stage only the Task 3 files and commit `feat(telemetry): profile turn latency ph
 
 **Files:**
 - Inspect: all files changed by Tasks 1-3
-- Update local-only coordinator record: `/home/masih/Desktop/p/Elpis/TASKS.md`
+- Update local-only coordinator record: `~/Desktop/p/Elpis/TASKS.md`
 
 **Interfaces:**
 - Consumes: Tasks 1-3 and the committed OpenAI model/reasoning picker baseline.
@@ -253,7 +253,7 @@ Run checks for `codex-backend-client`, `codex-otel`, `codex-core`, `codex-app-se
 
 - [ ] **Step 4: Build a separate Elpis binary**
 
-Build only the package that produces `elpis` into the shared target directory. Copy or link it to a new test-only launcher path; do not replace `/home/masih/.local/bin/elpis` and do not restart any process.
+Build only the package that produces `elpis` into the shared target directory. Copy or link it to a new test-only launcher path; do not replace `~/.local/bin/elpis` and do not restart any process.
 
 - [ ] **Step 5: Verify opt-in and opt-out behavior**
 

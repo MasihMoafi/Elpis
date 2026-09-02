@@ -45,14 +45,14 @@
 Linux x86_64:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
-The installer picks the right binary for your machine and installs
-[RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
-choose a provider and sign in or enter its API key.
+The installer installs Elpis only. [RTK](https://github.com/rtk-ai/rtk) is an optional,
+separate shell-output filter; if it is already on `PATH`, Elpis can offer its reviewed hook
+on first launch. Then choose a provider and sign in or enter its API key.
 
-`v0.2.0` is the current release.
+`v0.2.0` is the Linux x86_64 release described by this source tree.
 
 ## What is Elpis
 
@@ -304,7 +304,7 @@ covered by that 7/9 result.
 
 ## Documentation
 
-- [Context and pruning](docs/context.md) — admission, lifetimes, manual pruning, and audit records
+- [Context and pruning](docs/context.md) — admission, persistence, manual pruning, and audit records
 - [Smart Prune and cache stability](docs/cache-friendly-pruning.md) — admission-time optimization, evidence, overhead, and open questions
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md`, and `ES.md`
 - [Deterministic work graphs](docs/WORK_GRAPHS.md) — plan validation, write scopes, concurrency, and evidence gates
@@ -312,6 +312,7 @@ covered by that 7/9 result.
 - [Evals & benchmarks](docs/evals/) — source data, procedures, scorers, and results
 - [Technical guide](docs/GUIDE.md) — product thesis, requirements, and architecture
 - [Research paper](paper/paper.md) — admission-time context optimization, mechanism proof, live evidence, and limitations
+- [Changelog](CHANGELOG.md) — release-level changes
 
 ## License
 
