@@ -20,4 +20,4 @@ Out of scope:
 - Publishing or pushing repository commits.
 - Editing `docs/USER_REQUESTS.md` or `docs/WORK_GRAPHS.md`.
 
-Status: local implementation verified. Five content/structure checks pass; the runtime handoff, sticky navigation, mobile menu, responsive layout, and image assets were exercised in the browser at desktop and 375px widths with no console errors or horizontal overflow. Production deployment remains.
+Status: deployed and verified at https://elpis.masihmoafi.com on Vercel deployment `dpl_AJabaoHnQKe8s3TDAyVhgM44jEzJ`. Five content/structure checks pass. The runtime handoff, sticky navigation, mobile menu, 375px layout, and lazy-loaded image assets were exercised against both local and production builds with no current-page console errors or horizontal overflow. Vercel SSO protection was disabled for this isolated website project after the first public check correctly exposed the login gate.
