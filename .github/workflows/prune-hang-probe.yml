@@ -1,0 +1,70 @@
+name: Prune hang probe
+
+on:
+  push:
+    branches:
+      - ci/prune-hang-probe
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Run each prune test under a hard timeout
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      CARGO_INCREMENTAL: "1"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_TERM_COLOR: always
+      CODEX_SKIP_BWRAP_BUILD: "1"
+      RUST_BACKTRACE: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            bubblewrap libcap-dev libssl-dev pkg-config
+
+      - name: Install pinned Rust toolchain
+        working-directory: codex-rs
+        run: |
+          rustup set profile minimal
+          rustup toolchain install 1.95.0 --component rustfmt --no-self-update
+
+      - name: Build the codex-core integration test binary
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --test all --locked --no-run --message-format=json \
+            | jq -r 'select(.reason=="compiler-artifact" and .target.name=="all" and .executable!=null) | .executable' \
+            > "$RUNNER_TEMP/test-binary"
+          test -s "$RUNNER_TEMP/test-binary"
+          cat "$RUNNER_TEMP/test-binary"
+
+      - name: Run each prune test alone with a 240s kill timeout
+        working-directory: codex-rs
+        run: |
+          set -u
+          bin="$(cat "$RUNNER_TEMP/test-binary")"
+          summary="$RUNNER_TEMP/summary.txt"
+          : > "$summary"
+          mapfile -t tests < <("$bin" --list 2>/dev/null | grep -E '^suite::(context_prune|smart_prune)::' | sed 's/: test$//')
+          echo "found ${#tests[@]} tests"
+          for t in "${tests[@]}"; do
+            echo "::group::$t"
+            start=$(date +%s)
+            timeout -s KILL 240 "$bin" --exact "$t" --nocapture --test-threads=1
+            rc=$?
+            elapsed=$(( $(date +%s) - start ))
+            if [ "$rc" -eq 0 ]; then verdict="ok"; elif [ "$rc" -eq 137 ]; then verdict="HUNG (killed after ${elapsed}s)"; else verdict="FAILED rc=$rc"; fi
+            echo "RESULT $t: $verdict (${elapsed}s)" | tee -a "$summary"
+            echo "::endgroup::"
+          done
+          echo "===== SUMMARY ====="
+          cat "$summary"
+          ! grep -qE 'HUNG|FAILED' "$summary"
