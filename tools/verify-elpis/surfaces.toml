@@ -168,7 +168,7 @@ argv = ["test", "-p", "codex-tui", "--lib", "--locked", "work_graph"]
 [commands.app-server-memory-recall]
 kind = "cargo"
 mode = "test"
-argv = ["test", "-p", "codex-app-server", "--test", "all", "--locked", "durable_memory_reaches_the_model_only_once_the_ledger_admits_it"]
+argv = ["test", "-p", "codex-app-server", "--test", "all", "--locked", "memory_recall"]
 
 [commands.core-memory-dir-bounds]
 kind = "cargo"
