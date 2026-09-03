@@ -725,13 +725,6 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
     let test = builder.build_with_streaming_server(&server).await?;
     let codex = Arc::clone(&test.codex);
 
-    test.submit_turn("generate the first oversized diagnostic output")
-        .await?;
-    test.submit_turn("generate the second oversized diagnostic output")
-        .await?;
-    codex.flush_rollout().await?;
-
-    let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     let dump = |label: &str, items: &[codex_protocol::models::ResponseItem]| {
         eprintln!("[probe] {label}: {} items", items.len());
         for (index, item) in items.iter().enumerate() {
@@ -739,6 +732,28 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
             eprintln!("[probe]   {index}: {text}");
         }
     };
+    for prompt in [
+        "generate the first oversized diagnostic output",
+        "generate the second oversized diagnostic output",
+    ] {
+        test.submit_turn(prompt).await?;
+        eprintln!(
+            "[probe] turn done: {prompt}; requests so far={}",
+            server.requests().await.len()
+        );
+        let state = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+        dump("history after turn", &state.raw_history);
+        codex.flush_rollout().await?;
+        let rollout = codex.load_history(/*include_archived*/ false).await?.items;
+        eprintln!("[probe] rollout items after turn: {}", rollout.len());
+        for (index, item) in rollout.iter().enumerate() {
+            let text: String = format!("{item:?}").chars().take(170).collect();
+            eprintln!("[probe]   r{index}: {text}");
+        }
+    }
+    codex.flush_rollout().await?;
+
+    let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
     dump("history before prune", &state_before.raw_history);
     let applied_passes_before = codex_core::context_pruner::pass_count();
     let saved_chars_before = codex_core::context_pruner::saved_chars();
