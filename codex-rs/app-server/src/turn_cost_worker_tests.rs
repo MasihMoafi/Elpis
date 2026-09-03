@@ -517,8 +517,7 @@ async fn subscription_to_api_key_keeps_a_post_change_start_eligible() {
             .await;
     });
     wait_for_request_count(&server, 1).await;
-    tokio::time::advance(POLL_INTERVAL).await;
-    wait_for_request_count(&server, 2).await;
+    advance_until_request_count(&server, 2).await;
 
     let notification = recv_turn_cost_notification(&mut notifications).await;
     assert_eq!(notification.turn_id, turn_id);
@@ -637,8 +636,7 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
     );
     assert_eq!(turn_cost_metric_value(&old_metrics), None);
     wait_for_request_count(&server, 1).await;
-    tokio::time::advance(POLL_INTERVAL).await;
-    wait_for_request_count(&server, 2).await;
+    advance_until_request_count(&server, 2).await;
 
     let current_notification = recv_turn_cost_notification(&mut notifications).await;
     assert_eq!(current_notification.turn_id, current_turn_id);
@@ -1953,7 +1951,6 @@ async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> 
     // Wall-clock deadline for the same reason as `wait_for_request_count`: a tokio timeout
     // under a paused clock fires as soon as the runtime idles on the worker's real HTTP.
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
-    let mut iterations: u64 = 0;
     let envelope = loop {
         match rx.try_recv() {
             Ok(envelope) => break envelope,
@@ -1961,10 +1958,6 @@ async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> 
                 panic!("cost notification channel closed")
             }
             Err(mpsc::error::TryRecvError::Empty) => {
-                iterations += 1;
-                if iterations % 20_000 == 0 {
-                    eprintln!("[probe-test] waiting for notification; iterations={iterations}");
-                }
                 assert!(
                     std::time::Instant::now() < deadline,
                     "timed out waiting for cost notification"
@@ -2022,6 +2015,35 @@ fn turn_cost_metric_value(metrics: &MetricsClient) -> Option<u64> {
             sum.data_points().next().map(|point| point.value())
         }
         _ => panic!("unexpected turn-cost metric data type"),
+    }
+}
+
+/// Advances the paused clock towards `POLL_INTERVAL` one second at a time, yielding between
+/// steps, until the mock has seen `expected` requests. Jumping the whole interval at once
+/// races an in-flight probe response against the worker's request timeout: on a slow
+/// runner the timeout fires first, the worker drops to retry mode, and its next tick
+/// re-probes instead of polling the cost.
+async fn advance_until_request_count(server: &MockServer, expected: usize) {
+    let step = Duration::from_secs(1);
+    let mut advanced = Duration::ZERO;
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        let requests = server.received_requests().await.unwrap_or_default();
+        if requests.len() >= expected {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for {expected} turn-cost requests; saw {}",
+            requests.len()
+        );
+        if advanced < POLL_INTERVAL {
+            tokio::time::advance(step).await;
+            advanced += step;
+        }
     }
 }
 

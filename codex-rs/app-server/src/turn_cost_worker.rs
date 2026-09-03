@@ -304,7 +304,6 @@ impl TurnCostLateNotifier {
             .thread_state_manager
             .subscribed_connection_ids(thread_id)
             .await;
-        eprintln!("[probe-worker] notify: {} connections", connection_ids.len());
         if connection_ids.is_empty() {
             return;
         }
@@ -546,7 +545,6 @@ impl WorkerRuntime {
                     self.record_observation(observation).await;
                 }
                 _ = ticker.tick() => {
-                    eprintln!("[probe-worker] tick; ready={} entries={}", matches!(backend_availability, BackendAvailability::Ready), self.turns.len());
                     match backend_availability {
                         BackendAvailability::Ready => self.poll_due().await,
                         BackendAvailability::RetryProbe => {
@@ -720,7 +718,6 @@ impl WorkerRuntime {
             .take(MAX_QUERY_TURNS)
             .map(|(turn_id, _)| turn_id.clone())
             .collect();
-        eprintln!("[probe-worker] poll_due: due={} of {}", due_turn_ids.len(), self.turns.len());
         if !due_turn_ids.is_empty() {
             self.poll_api_key_entries(&due_turn_ids).await;
         }
@@ -731,26 +728,22 @@ impl WorkerRuntime {
             match tokio::time::timeout(REQUEST_TIMEOUT, self.query_turn_costs(turn_ids)).await {
                 Ok(Ok(Some(costs))) => costs,
                 Ok(Ok(None)) => {
-                    eprintln!("[probe-worker] query returned None");
                     for turn_id in turn_ids {
                         self.discard_entry_if_auth_changed(turn_id).await;
                     }
                     return;
                 }
                 Ok(Err(error)) => {
-                    eprintln!("[probe-worker] query error: {error}");
                     warn!("failed to query API-key turn costs: {error}");
                     self.retry_entries(turn_ids).await;
                     return;
                 }
                 Err(_) => {
-                    eprintln!("[probe-worker] query timed out");
                     warn!("timed out querying API-key turn costs");
                     self.retry_entries(turn_ids).await;
                     return;
                 }
             };
-        eprintln!("[probe-worker] query returned {} costs for {} turns", costs.len(), turn_ids.len());
         let costs_by_turn: HashMap<String, ApiKeyTurnCost> = costs
             .into_iter()
             .map(|cost| (cost.turn_id.clone(), cost))
@@ -818,9 +811,7 @@ impl WorkerRuntime {
     }
 
     async fn process_api_key_cost(&mut self, turn_id: &str, cost: &ApiKeyTurnCost) {
-        eprintln!("[probe-worker] process cost turn={turn_id} priced={} total={:?} events={:?} responses={:?}", cost.status == ApiKeyTurnCostStatus::Priced, cost.total_usd, cost.event_count, cost.responses.as_ref().map(|r| r.len()));
         if self.discard_if_invalidated(turn_id) {
-            eprintln!("[probe-worker] discarded invalidated turn={turn_id}");
             return;
         }
         if cost.status != ApiKeyTurnCostStatus::Priced {
@@ -867,7 +858,6 @@ impl WorkerRuntime {
             cost.speed.as_deref(),
             cost.reasoning_effort.as_deref(),
         );
-        eprintln!("[probe-worker] notifying priced turn={turn_id}");
         self.late_notifier
             .notify(
                 thread_id,
