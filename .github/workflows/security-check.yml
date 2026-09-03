@@ -24,5 +24,4 @@ jobs:
 
       - name: Audit dependencies
         working-directory: codex-rs
-        # Run audit with informational reporting so CI stays green while highlighting upstream advisories
-        run: cargo audit || true
+        run: cargo audit
