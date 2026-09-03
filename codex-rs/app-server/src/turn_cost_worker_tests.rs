@@ -1953,6 +1953,7 @@ async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> 
     // Wall-clock deadline for the same reason as `wait_for_request_count`: a tokio timeout
     // under a paused clock fires as soon as the runtime idles on the worker's real HTTP.
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut iterations: u64 = 0;
     let envelope = loop {
         match rx.try_recv() {
             Ok(envelope) => break envelope,
@@ -1960,6 +1961,10 @@ async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> 
                 panic!("cost notification channel closed")
             }
             Err(mpsc::error::TryRecvError::Empty) => {
+                iterations += 1;
+                if iterations % 20_000 == 0 {
+                    eprintln!("[probe-test] waiting for notification; iterations={iterations}");
+                }
                 assert!(
                     std::time::Instant::now() < deadline,
                     "timed out waiting for cost notification"
