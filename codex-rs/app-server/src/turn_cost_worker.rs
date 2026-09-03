@@ -616,10 +616,12 @@ impl WorkerRuntime {
         match tokio::time::timeout(REQUEST_TIMEOUT, self.query_turn_costs(&probe_turn_ids)).await {
             Ok(Ok(Some(_))) => BackendAvailability::Ready,
             Ok(Ok(None)) => match &self.backend {
+                _ if { eprintln!("[probe-worker] probe returned None"); false } => unreachable!(),
                 TurnCostBackend::OpenAiApiKey(_) => BackendAvailability::AwaitingAuthChange,
                 TurnCostBackend::ModelProvider(_) => BackendAvailability::Disabled,
             },
             Ok(Err(error)) => match error.status().map(|status| status.as_u16()) {
+                _ if { eprintln!("[probe-worker] probe error status={:?} error={error}", error.status()); false } => unreachable!(),
                 Some(401 | 403) if matches!(&self.backend, TurnCostBackend::OpenAiApiKey(_)) => {
                     tracing::debug!(
                         "turn cost worker waiting for auth change after backend availability check: {error}"
