@@ -732,6 +732,14 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
     codex.flush_rollout().await?;
 
     let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+    let dump = |label: &str, items: &[codex_protocol::models::ResponseItem]| {
+        eprintln!("[probe] {label}: {} items", items.len());
+        for (index, item) in items.iter().enumerate() {
+            let text: String = format!("{item:?}").chars().take(110).collect();
+            eprintln!("[probe]   {index}: {text}");
+        }
+    };
+    dump("history before prune", &state_before.raw_history);
     let applied_passes_before = codex_core::context_pruner::pass_count();
     let saved_chars_before = codex_core::context_pruner::saved_chars();
     let checkpoints_before =
@@ -749,11 +757,14 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
         if std::time::Instant::now() > deadline {
             let state = codex_core::test_support::context_prune_state_snapshot(&codex).await;
             eprintln!(
-                "[probe] stuck: covered={:?} saved_tokens={} history_len={}",
-                state.covered_call_ids,
-                state.saved_tokens,
-                state.raw_history.len()
+                "[probe] stuck: covered={:?} saved_tokens={}",
+                state.covered_call_ids, state.saved_tokens
             );
+            dump("history after first pass", &state.raw_history);
+            let prune_request: serde_json::Value =
+                serde_json::from_slice(&server.requests().await[4]).expect("parse prune request");
+            let prune_text: String = prune_request["input"].to_string().chars().take(400).collect();
+            eprintln!("[probe] first prune request input (truncated): {prune_text}");
             while let Ok(Ok(event)) =
                 tokio::time::timeout(std::time::Duration::from_millis(500), codex.next_event())
                     .await
