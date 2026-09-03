@@ -24,6 +24,10 @@ use tempfile::TempDir;
 use tokio::sync::oneshot;
 
 const CONTEXT_WINDOW: i64 = 10_000;
+/// Window for the multi-batch sweeps. Each of their two tool outputs is ~30k tokens, so a
+/// 10k window trips the context-limit check after the first output and native compaction
+/// consumes the scripted replies before the second turn ever lands in history.
+const MULTI_BATCH_CONTEXT_WINDOW: i64 = 200_000;
 const MAIN_MODEL: &str = "gpt-5.4";
 const PRUNE_MODEL: &str = "gpt-5.6-luna";
 const OLD_CALL_ID: &str = "old-pressure-output";
@@ -718,7 +722,7 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
     ])
     .await;
     let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
-        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.model_context_window = Some(MULTI_BATCH_CONTEXT_WINDOW);
         config.tool_output_token_limit = Some(30_000);
         config.agent_interrupt_message_enabled = false;
     });
@@ -897,7 +901,7 @@ async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> R
     ])
     .await;
     let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
-        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.model_context_window = Some(MULTI_BATCH_CONTEXT_WINDOW);
         config.tool_output_token_limit = Some(30_000);
         config.agent_interrupt_message_enabled = false;
     });
