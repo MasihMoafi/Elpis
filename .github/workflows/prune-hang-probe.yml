@@ -20,7 +20,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
       CODEX_SKIP_BWRAP_BUILD: "1"
-      RUST_BACKTRACE: "1"
+      # Mirrors codex-rs/.cargo/config.toml [env], which cargo applies to test binaries.
+      RUST_MIN_STACK: "16777216"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
@@ -49,6 +50,7 @@ jobs:
       - name: Run each prune test alone with a 240s kill timeout
         working-directory: codex-rs
         run: |
+          set +e
           set -u
           bin="$(cat "$RUNNER_TEMP/test-binary")"
           summary="$RUNNER_TEMP/summary.txt"
@@ -67,4 +69,15 @@ jobs:
           done
           echo "===== SUMMARY ====="
           cat "$summary"
-          ! grep -qE 'HUNG|FAILED' "$summary"
+          if grep -qE 'HUNG|FAILED' "$summary"; then exit 1; fi
+
+      - name: Run the exact gate command for the prune suite with a 900s kill timeout
+        if: always()
+        working-directory: codex-rs
+        run: |
+          set +e
+          CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
+            timeout -s KILL 900 cargo test -p codex-core --test all --locked suite::context_prune:: -- --nocapture
+          rc=$?
+          echo "gate-command exit=$rc"
+          exit $rc
