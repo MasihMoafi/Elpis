@@ -304,6 +304,7 @@ impl TurnCostLateNotifier {
             .thread_state_manager
             .subscribed_connection_ids(thread_id)
             .await;
+        eprintln!("[probe-worker] notify turn={turn_id}: {} connections", connection_ids.len());
         if connection_ids.is_empty() {
             return;
         }
@@ -545,6 +546,7 @@ impl WorkerRuntime {
                     self.record_observation(observation).await;
                 }
                 _ = ticker.tick() => {
+                    eprintln!("[probe-worker] tick; ready={} entries={}", matches!(backend_availability, BackendAvailability::Ready), self.turns.len());
                     match backend_availability {
                         BackendAvailability::Ready => self.poll_due().await,
                         BackendAvailability::RetryProbe => {
@@ -596,6 +598,12 @@ impl WorkerRuntime {
     }
 
     async fn probe_backend(&self) -> BackendAvailability {
+        let availability = self.probe_backend_inner().await;
+        eprintln!("[probe-worker] probe -> {}", match availability { BackendAvailability::Ready => "ready", BackendAvailability::RetryProbe => "retry", BackendAvailability::AwaitingAuthChange => "awaiting-auth", BackendAvailability::Disabled => "disabled" });
+        availability
+    }
+
+    async fn probe_backend_inner(&self) -> BackendAvailability {
         if current_unavailable_auth_reason(
             self.auth_manager.as_ref(),
             self.config.model_provider.requires_openai_auth,
@@ -718,6 +726,7 @@ impl WorkerRuntime {
             .take(MAX_QUERY_TURNS)
             .map(|(turn_id, _)| turn_id.clone())
             .collect();
+        eprintln!("[probe-worker] poll_due: due={} of {}", due_turn_ids.len(), self.turns.len());
         if !due_turn_ids.is_empty() {
             self.poll_api_key_entries(&due_turn_ids).await;
         }
@@ -734,16 +743,19 @@ impl WorkerRuntime {
                     return;
                 }
                 Ok(Err(error)) => {
+                    eprintln!("[probe-worker] poll error {error}");
                     warn!("failed to query API-key turn costs: {error}");
                     self.retry_entries(turn_ids).await;
                     return;
                 }
                 Err(_) => {
+                    eprintln!("[probe-worker] poll timed out");
                     warn!("timed out querying API-key turn costs");
                     self.retry_entries(turn_ids).await;
                     return;
                 }
             };
+        eprintln!("[probe-worker] poll returned {} costs", costs.len());
         let costs_by_turn: HashMap<String, ApiKeyTurnCost> = costs
             .into_iter()
             .map(|cost| (cost.turn_id.clone(), cost))
@@ -811,7 +823,9 @@ impl WorkerRuntime {
     }
 
     async fn process_api_key_cost(&mut self, turn_id: &str, cost: &ApiKeyTurnCost) {
+        eprintln!("[probe-worker] cost turn={turn_id} priced={} total={:?} events={:?}", cost.status == ApiKeyTurnCostStatus::Priced, cost.total_usd, cost.event_count);
         if self.discard_if_invalidated(turn_id) {
+            eprintln!("[probe-worker] cost discarded (invalidated)");
             return;
         }
         if cost.status != ApiKeyTurnCostStatus::Priced {
@@ -836,13 +850,16 @@ impl WorkerRuntime {
             return;
         };
         if response_count < entry.expected_response_count {
+            eprintln!("[probe-worker] cost retry: responses {response_count} < expected {}", entry.expected_response_count);
             self.retry_entry(turn_id).await;
             return;
         }
         if self.discard_entry_if_auth_changed(turn_id).await {
+            eprintln!("[probe-worker] cost discarded (auth changed)");
             return;
         }
         let Some(entry) = self.turns.get(turn_id) else {
+            eprintln!("[probe-worker] cost entry missing");
             return;
         };
         let mut session_telemetry = entry.session_telemetry.clone();

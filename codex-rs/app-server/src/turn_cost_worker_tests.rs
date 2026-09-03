@@ -1950,6 +1950,7 @@ async fn recv_turn_cost_notification(
 async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> ServerNotification {
     // Wall-clock deadline for the same reason as `wait_for_request_count`: a tokio timeout
     // under a paused clock fires as soon as the runtime idles on the worker's real HTTP.
+    eprintln!("[probe-test] waiting for a notification");
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     let envelope = loop {
         match rx.try_recv() {
@@ -2033,6 +2034,7 @@ async fn advance_until_request_count(server: &MockServer, expected: usize) {
         }
         let requests = server.received_requests().await.unwrap_or_default();
         if requests.len() >= expected {
+            eprintln!("[probe-test] reached {expected} requests after advancing {:?}", advanced);
             return;
         }
         assert!(
