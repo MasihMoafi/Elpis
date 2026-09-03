@@ -570,20 +570,6 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
             kind: TurnCostObservationKind::Finished { interrupted: false },
         })
         .await;
-    eprintln!(
-        "[probe] env HOME={:?} CODEX_API_KEY={:?} OPENAI_API_KEY={:?} auth_home={}",
-        std::env::var("HOME"),
-        std::env::var("CODEX_API_KEY").map(|v| v.len()),
-        std::env::var("OPENAI_API_KEY").map(|v| v.len()),
-        auth_home.path().display()
-    );
-    eprintln!(
-        "[probe] cached before write: {:?}",
-        auth_manager
-            .auth()
-            .await
-            .map(|a| a.api_key().map(str::to_string))
-    );
     login_with_api_key(
         auth_home.path(),
         "sk-current",
@@ -591,23 +577,16 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
         AuthKeyringBackendKind::default(),
     )
     .expect("write rotated API key");
-    let auth_file = auth_home.path().join("auth.json");
-    eprintln!(
-        "[probe] auth.json exists={} content={:?}",
-        auth_file.exists(),
-        std::fs::read_to_string(&auth_file)
-            .ok()
-            .map(|c| c.chars().take(200).collect::<String>())
+    let revision_before_rotation = current_auth_revision(auth_manager.as_ref());
+    // `reload()` reports equality by auth mode, so one API key replacing another is "no
+    // change" to it even though it loads the new key. The worker keys off the auth
+    // revision, which the reload bumps, so that is the contract to assert.
+    let _ = auth_manager.reload().await;
+    assert_ne!(
+        current_auth_revision(auth_manager.as_ref()),
+        revision_before_rotation,
+        "rotating the API key must bump the auth revision"
     );
-    let reloaded = auth_manager.reload().await;
-    eprintln!(
-        "[probe] reload -> {reloaded}; cached after: {:?}",
-        auth_manager
-            .auth()
-            .await
-            .map(|a| a.api_key().map(str::to_string))
-    );
-    assert!(reloaded);
     let current_auth_revision = current_auth_revision(auth_manager.as_ref());
     let (current_session_telemetry, current_metrics) = test_session_telemetry(thread_id);
     let (sender, receiver) = mpsc::channel(4);
@@ -796,7 +775,13 @@ async fn api_key_rotation_suppresses_an_already_tracked_price() {
         AuthKeyringBackendKind::default(),
     )
     .expect("write rotated API key");
-    assert!(auth_manager.reload().await);
+    let revision_before_rotation = current_auth_revision(auth_manager.as_ref());
+    let _ = auth_manager.reload().await;
+    assert_ne!(
+        current_auth_revision(auth_manager.as_ref()),
+        revision_before_rotation,
+        "rotating the API key must bump the auth revision"
+    );
 
     runtime
         .process_api_key_cost(turn_id, &priced_cost(turn_id, "0.25"))
@@ -2022,16 +2007,22 @@ fn turn_cost_metric_value(metrics: &MetricsClient) -> Option<u64> {
     }
 }
 
+/// Polls the mock server for `expected` requests against a wall-clock deadline. Several
+/// callers run on a paused tokio clock while the worker does real HTTP to the mock, and a
+/// tokio `timeout` there fires as soon as the runtime idles on that I/O, which made these
+/// tests flaky on slow runners. A wall-clock deadline cannot be auto-advanced.
 async fn wait_for_request_count(server: &MockServer, expected: usize) {
-    timeout(Duration::from_secs(15), async {
-        loop {
-            let requests = server.received_requests().await.unwrap_or_default();
-            if requests.len() >= expected {
-                break;
-            }
-            tokio::task::yield_now().await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let requests = server.received_requests().await.unwrap_or_default();
+        if requests.len() >= expected {
+            return;
         }
-    })
-    .await
-    .expect("timed out waiting for turn-cost request");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for {expected} turn-cost requests; saw {}",
+            requests.len()
+        );
+        tokio::task::yield_now().await;
+    }
 }

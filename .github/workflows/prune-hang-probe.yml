@@ -55,7 +55,7 @@ jobs:
           bin="$(cat "$RUNNER_TEMP/test-binary")"
           summary="$RUNNER_TEMP/summary.txt"
           : > "$summary"
-          mapfile -t tests < <("$bin" --list 2>/dev/null | grep -E '^turn_cost_worker::tests::(api_key_rotation|subscription_change_during|subscription_to_api_key)' | sed 's/: test$//')
+          mapfile -t tests < <("$bin" --list 2>/dev/null | grep -E '^turn_cost_worker::tests::' | sed 's/: test$//')
           echo "found ${#tests[@]} tests"
           for t in "${tests[@]}"; do
             echo "::group::$t"
