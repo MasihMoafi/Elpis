@@ -1,6 +1,9 @@
 # Elpis Context Sovereignty
 
-Elpis enforces **Context Sovereignty**: the principle that context is a strictly budgeted working set, not a dumped chat transcript. The user maintains live visibility and explicit control over every byte admitted to the agent's context window.
+Elpis uses **Context Sovereignty**: context is a budgeted working set, not a dumped chat
+transcript. The user gets live visibility into total use and explicit admission control over
+portable sources; conversation, tool, and built-in context remain governed by the runtime.
+
 ---
 
 ![Elpis context control pipeline](assets/elpis-context-control.svg)
@@ -149,9 +152,10 @@ state and capped estimate without exposing the file contents or path.
 ### `/context` — where the window went
 
 The ledger answers *what is admitted*. `/context` answers *what filled the window*: token
-usage as a grid broken down by category — user messages, agent responses, tool calls,
-system prompt, Development rules, and free space — alongside the backtrack checkpoints available via
-`Esc Esc`. The two are separate surfaces and neither replaces the other.
+usage as a grid broken down into user messages, agent responses, tool activity, workspace
+instructions, development rules, portable context, a built-in/estimate gap, and free space —
+alongside the backtrack checkpoints available via `Esc Esc`. The two are separate surfaces
+and neither replaces the other.
 
 ### Context Accounting Contract
 

@@ -156,5 +156,7 @@ own pruning, not a head-to-head comparison with compaction's information loss.
   session ran 36 tool calls with context climbing 22k → 217k and zero tokens reclaimed.
   Pruning inside an unfinished turn is what makes it effective, and is also where the cost
   in RQ4 comes from.
-- All figures come from one workload on one model. Nothing here has been replicated
-  elsewhere.
+- RQ1 repeats one workload on `gpt-5.6-luna`. RQ2 audits one controlled
+  `gpt-5.6-luna` session; RQ5 audits a distinct manual Ace pass whose optimizer was
+  `gpt-5.6-luna`. RQ4 observes a separate, unmatched `gpt-5.3-codex-spark` session. None
+  has been replicated across diverse tasks or models.

@@ -73,13 +73,15 @@ Long sessions fill up with transcripts, file reads, searches, command output, an
 The useful state gets buried in the story of how the agent reached it, while every request pays
 for more context.
 
-Elpis separates the active working set from durable evidence. The next request receives a small,
-inspectable context; the exact record stays on disk and can be retrieved when it is needed.
+Elpis separates control of active working context from durable evidence. Portable admission
+makes selected sources inspectable. When enabled and successfully applied, Smart Prune shrinks
+eligible fresh tool results before first main-model exposure; source files and audit records
+remain on disk.
 
 Three paired configured historical runs with automatic pruning enabled under the superseded
 high-frequency setup used one byte-identical prompt, the same model, and the same source commit
 on both arms. In those runs, peak context per request fell **47–65%**; median context stabilized
-at **26.6–27.1%**. Codex peaked above 90% of the window in each run, while Elpis stayed safely
+at **26.6–27.0%**. Codex peaked above 90% of the window in each run, while Elpis stayed safely
 bounded in the green zone.
 
 Elpis never modifies a model's own output or a request already in flight. Pruning rewrites only
@@ -167,14 +169,15 @@ appear separately and are never added to a category row.
 
 Keep the working context across model switches, compaction, and restarts:
 
-- **`GOAL.md`** holds the current task. It is carried into each request, stays visible across
-  compaction, and is editable during a run.
+- **`GOAL.md`** holds the current task and is editable during a run. When admitted in the
+  Context Ledger, it is carried into subsequent requests and stays visible across compaction.
 - **`ES.md`** is an event-derived executive summary. It records modified files, commands run,
-  blockers, and next steps, and is updated as the run progresses.
+  blockers, and next steps, and is updated as the run progresses. When admitted, it is carried
+  into subsequent requests.
 - **Exact resume** continues an existing thread with its full history, using the provider-native
   session when one is available.
-- **Lean continuation** starts a clean thread from the current `GOAL.md`, `ES.md`, and active
-  rules. This sheds old exploration without losing the objective.
+- **Lean continuation** starts a clean thread from the currently admitted `GOAL.md`, `ES.md`,
+  and applicable rules. This sheds old exploration without losing the admitted objective.
 
 ### Memory
 
@@ -277,7 +280,7 @@ Across those configured historical requests, Elpis spent over 95% of its operati
 
 ### RQ2 & RQ3: Target Retention & Task Quality
 
-- **RQ2 (Information Retention)**: In benchmark audits testing recall of key file paths, schemas, and error signatures after pruning, **100% of tested targets (6/6)** were retained intact in active context.
+- **RQ2 (Information Retention)**: In one controlled post-prune context audit, **all six planted requirements and exact values (6/6)** remained intact in active context.
 - **RQ3 (Task Performance)**: **Not established.** The executed runs are incomplete and unreplicated, so they do not support a comparative correctness claim in either direction. No per-arm score is reported, and there is no evidence that pruning improves task completion or output quality.
 
 ### RQ4: Cache Preservation & Token Economics
@@ -296,7 +299,7 @@ covered by that 7/9 result.
 
 | Research Question | Empirical Finding |
 | --- | --- |
-| **RQ1 — Context Efficiency** | Historical superseded high-frequency setup: peak reduction of 47–65%; median context stabilized at 26.6–27.1% of the 258k window. |
+| **RQ1 — Context Efficiency** | Historical superseded high-frequency setup: peak reduction of 47–65%; median context stabilized at 26.6–27.0% of the 258k window. |
 | **RQ2 — Information Retention** | 6/6 tested post-prune targets preserved intact (100% retention). |
 | **RQ3 — Task Performance** | Not established. The available runs do not support a comparative correctness claim. |
 | **RQ4 — Overhead and Cache** | Cache-preserving mechanism supported; comparative cost and latency remain open. |

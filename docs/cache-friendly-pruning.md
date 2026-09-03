@@ -168,8 +168,9 @@ shadow the active question that `latest_user_message_text` feeds to the pruning 
 
 ## The prompt-cache boundary
 
-Requests to OpenAI GPT-5.6+ carry up to two explicit breakpoints and stay on **implicit** mode
-(one before the first epoch exists):
+Direct OpenAI Responses API requests on GPT-5.6+ carry up to two explicit breakpoints and
+stay on **implicit** mode (one before the first epoch exists). The ChatGPT/Codex
+`/backend-api` path does not receive these fields:
 
 | position | what it pins | survives |
 |---|---|---|
@@ -192,8 +193,9 @@ request now falls back to instead of the initial prefix.
   prefix, and `model_auto_compact_enabled = false` keeps the documented context-window error
   path instead.
 - Every applied manual Ace pass writes a full audit record (`~/.elpis/logs/pruning/`) and
-  a rollout checkpoint. Applied Smart Prune admissions use the separate
-  `~/.elpis/logs/smart-prune/admissions/` tree. Raw evidence remains intact in the rollout.
+  a rollout checkpoint; its raw tool evidence remains in the rollout. Applied Smart Prune
+  admissions instead preserve their pre-admission source and admitted form under
+  `~/.elpis/logs/smart-prune/admissions/`; the rollout records the admitted form.
 - `/force-prune` passes an explicit trigger, so it never consults the cycle gate. Its
   `pressure` audit value names its targeted selection strategy, not automatic invocation.
 
