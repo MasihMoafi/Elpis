@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" style="background-color: #0d1117; border-radius: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <title>Elpis Context Ledger admission flow</title>
+  <desc>Available portable context sources, including GOAL.md, ES.md, development rules, and user-maintained MEMORY.md, pass through an explicit reversible admission decision before entering the next model request. Per-source token counts are capped estimates, not tokenizer measurements.</desc>
+  <rect width="1200" height="820" rx="16" fill="#0d1117"/>
+  <defs>
+    <marker id="ledger-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#f97316"/>
+    </marker>
+  </defs>
+
+  <rect x="48" y="28" width="168" height="30" rx="15" fill="#251810" stroke="#ea580c"/>
+  <text x="132" y="48" fill="#fb923c" font-size="12.5" font-weight="700" text-anchor="middle" letter-spacing="0.5">CURRENT PRODUCT</text>
+  <text x="48" y="102" fill="#f8fafc" font-size="30" font-weight="750">Context Ledger admission</text>
+  <text x="48" y="134" fill="#94a3b8" font-size="16">Available does not mean admitted. You choose what enters the next request.</text>
+
+  <line x1="48" y1="168" x2="1152" y2="168" stroke="#273244"/>
+  <circle cx="76" cy="201" r="15" fill="#202938" stroke="#64748b"/>
+  <text x="76" y="206" fill="#f8fafc" font-size="12" font-weight="700" text-anchor="middle">1</text>
+  <text x="102" y="206" fill="#cbd5e1" font-size="13" font-weight="700" letter-spacing="0.8">AVAILABLE SOURCES</text>
+  <circle cx="480" cy="201" r="15" fill="#2b1d12" stroke="#f97316"/>
+  <text x="480" y="206" fill="#fb923c" font-size="12" font-weight="700" text-anchor="middle">2</text>
+  <text x="506" y="206" fill="#fed7aa" font-size="13" font-weight="700" letter-spacing="0.8">EXPLICIT ADMISSION</text>
+  <circle cx="872" cy="201" r="15" fill="#102824" stroke="#2dd4bf"/>
+  <text x="872" y="206" fill="#5eead4" font-size="12" font-weight="700" text-anchor="middle">3</text>
+  <text x="898" y="206" fill="#99f6e4" font-size="13" font-weight="700" letter-spacing="0.8">NEXT REQUEST</text>
+
+  <rect x="48" y="230" width="340" height="456" rx="14" fill="#151b24" stroke="#334155"/>
+  <text x="76" y="266" fill="#f8fafc" font-size="18" font-weight="700">Portable context found</text>
+  <text x="76" y="291" fill="#94a3b8" font-size="13">Visible first; no source is silently promoted.</text>
+
+  <g transform="translate(72 318)">
+    <rect width="292" height="72" rx="10" fill="#1d2633" stroke="#3b4758"/>
+    <rect x="16" y="17" width="36" height="36" rx="8" fill="#2a3545"/>
+    <text x="34" y="41" fill="#cbd5e1" font-size="17" font-weight="700" text-anchor="middle">G</text>
+    <text x="68" y="29" fill="#f8fafc" font-size="14" font-weight="700">GOAL.md</text>
+    <text x="68" y="50" fill="#94a3b8" font-size="12">Active workspace goal</text>
+    <text x="276" y="61" fill="#94a3b8" font-size="11.5" text-anchor="end">≈ capped estimate</text>
+  </g>
+  <g transform="translate(72 402)">
+    <rect width="292" height="72" rx="10" fill="#1d2633" stroke="#3b4758"/>
+    <rect x="16" y="17" width="36" height="36" rx="8" fill="#2a3545"/>
+    <text x="34" y="41" fill="#cbd5e1" font-size="17" font-weight="700" text-anchor="middle">E</text>
+    <text x="68" y="29" fill="#f8fafc" font-size="14" font-weight="700">ES.md</text>
+    <text x="68" y="50" fill="#94a3b8" font-size="12">Lean session checkpoint</text>
+    <text x="276" y="61" fill="#94a3b8" font-size="11.5" text-anchor="end">≈ capped estimate</text>
+  </g>
+  <g transform="translate(72 486)">
+    <rect width="292" height="72" rx="10" fill="#1d2633" stroke="#3b4758"/>
+    <rect x="16" y="17" width="36" height="36" rx="8" fill="#2a3545"/>
+    <text x="34" y="41" fill="#cbd5e1" font-size="15" font-weight="700" text-anchor="middle">{ }</text>
+    <text x="68" y="29" fill="#f8fafc" font-size="14" font-weight="700">Development rules</text>
+    <text x="68" y="50" fill="#94a3b8" font-size="12">Individual portable rule files</text>
+    <text x="276" y="61" fill="#94a3b8" font-size="11.5" text-anchor="end">≈ capped estimate</text>
+  </g>
+  <g transform="translate(72 570)">
+    <rect width="292" height="88" rx="10" fill="#1b2725" stroke="#2dd4bf"/>
+    <rect x="16" y="25" width="36" height="36" rx="8" fill="#12322d"/>
+    <text x="34" y="49" fill="#5eead4" font-size="16" font-weight="700" text-anchor="middle">M</text>
+    <text x="68" y="28" fill="#f8fafc" font-size="14" font-weight="700">MEMORY.md</text>
+    <text x="68" y="49" fill="#5eead4" font-size="12">User-maintained manual memory</text>
+    <text x="68" y="70" fill="#94a3b8" font-size="11.5">Never promoted automatically</text>
+    <text x="276" y="82" fill="#94a3b8" font-size="11.5" text-anchor="end">≈ capped estimate</text>
+  </g>
+
+  <path d="M404 458 C422 458 428 458 442 458" fill="none" stroke="#f97316" stroke-width="2.5" marker-end="url(#ledger-arrow)"/>
+  <rect x="442" y="230" width="330" height="456" rx="14" fill="#1b1817" stroke="#9a4b22"/>
+  <text x="472" y="266" fill="#f8fafc" font-size="18" font-weight="700">You decide</text>
+  <text x="472" y="291" fill="#fdba74" font-size="13">Each row is explicit and reversible.</text>
+
+  <rect x="472" y="326" width="270" height="78" rx="12" fill="#241c19" stroke="#6f381f"/>
+  <text x="494" y="353" fill="#94a3b8" font-size="12" font-weight="700">LEDGER ROW</text>
+  <text x="494" y="380" fill="#f8fafc" font-size="14" font-weight="700">Source name</text>
+  <rect x="657" y="342" width="64" height="34" rx="17" fill="#9a3412"/>
+  <circle cx="704" cy="359" r="12" fill="#fff7ed"/>
+  <text x="689" y="397" fill="#fb923c" font-size="11.5" text-anchor="middle">INCLUDE</text>
+
+  <path d="M508 442 H706" stroke="#f97316" stroke-width="2" marker-end="url(#ledger-arrow)"/>
+  <text x="607" y="433" fill="#94a3b8" font-size="11.5" text-anchor="middle">toggle either direction</text>
+  <rect x="492" y="458" width="104" height="34" rx="17" fill="#2b1d12" stroke="#c2410c"/>
+  <text x="544" y="480" fill="#fdba74" font-size="12" font-weight="700" text-anchor="middle">EXCLUDE</text>
+  <rect x="618" y="458" width="104" height="34" rx="17" fill="#12322d" stroke="#0f766e"/>
+  <text x="670" y="480" fill="#99f6e4" font-size="12" font-weight="700" text-anchor="middle">INCLUDE</text>
+
+  <rect x="472" y="528" width="270" height="64" rx="10" fill="#161f2b" stroke="#334155"/>
+  <text x="492" y="554" fill="#cbd5e1" font-size="12.5" font-weight="700">admission.toml records the choice</text>
+  <text x="492" y="576" fill="#94a3b8" font-size="11.5">One authority for subsequent admission.</text>
+  <rect x="472" y="608" width="270" height="50" rx="10" fill="#2b1d12" stroke="#9a4b22"/>
+  <text x="607" y="638" fill="#fdba74" font-size="12.5" font-weight="700" text-anchor="middle">Changes apply to the next request</text>
+
+  <path d="M788 458 C806 458 812 458 826 458" fill="none" stroke="#2dd4bf" stroke-width="2.5" marker-end="url(#ledger-arrow)"/>
+  <rect x="826" y="230" width="326" height="456" rx="14" fill="#121f20" stroke="#0f766e"/>
+  <text x="856" y="266" fill="#f8fafc" font-size="18" font-weight="700">Working context</text>
+  <text x="856" y="291" fill="#5eead4" font-size="13">Only rows marked INCLUDED enter.</text>
+
+  <rect x="856" y="326" width="266" height="220" rx="12" fill="#102725" stroke="#1b625a"/>
+  <text x="878" y="356" fill="#99f6e4" font-size="12" font-weight="700" letter-spacing="0.6">NEXT MODEL REQUEST</text>
+  <line x1="878" y1="374" x2="1100" y2="374" stroke="#1b625a"/>
+  <text x="878" y="405" fill="#f8fafc" font-size="13">✓ GOAL.md when included</text>
+  <text x="878" y="437" fill="#f8fafc" font-size="13">✓ ES.md when included</text>
+  <text x="878" y="469" fill="#f8fafc" font-size="13">✓ Selected development rules</text>
+  <text x="878" y="501" fill="#f8fafc" font-size="13">✓ Manual MEMORY.md when included</text>
+  <text x="878" y="528" fill="#5eead4" font-size="11.5">Excluded rows remain available to re-enable.</text>
+
+  <rect x="856" y="568" width="266" height="90" rx="10" fill="#152028" stroke="#334155"/>
+  <text x="878" y="596" fill="#cbd5e1" font-size="12.5" font-weight="700">Inspectable cost before admission</text>
+  <text x="878" y="620" fill="#94a3b8" font-size="11.5">Per-source ≈ token estimates are shown</text>
+  <text x="878" y="641" fill="#94a3b8" font-size="11.5">beside each available Ledger row.</text>
+
+  <rect x="48" y="716" width="1104" height="68" rx="12" fill="#141a22" stroke="#2b3545"/>
+  <text x="72" y="744" fill="#f8fafc" font-size="13" font-weight="700">Estimate contract</text>
+  <text x="72" y="768" fill="#94a3b8" font-size="12.5">Trimmed characters ÷ 4, capped by the source limit — an inspectable estimate, not a tokenizer measurement.</text>
+  <text x="1128" y="756" fill="#5eead4" font-size="12.5" font-weight="700" text-anchor="end">Available → explicit choice → next request</text>
+</svg>

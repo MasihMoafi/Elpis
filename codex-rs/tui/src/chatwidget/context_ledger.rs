@@ -5,8 +5,64 @@ use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 
+use crate::color::is_light;
+use crate::terminal_palette::StdoutColorLevel;
+use crate::terminal_palette::best_color_for_level;
+use crate::terminal_palette::default_bg;
+use crate::terminal_palette::stdout_color_level;
+
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
+
+/// User-facing grouping for portable sources. Core categories retain their
+/// admission semantics; this layer only keeps manually selected files from
+/// being presented as Elpis-owned session continuity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LedgerSourceGroup {
+    SessionContinuity,
+    UserFiles,
+    DurableMemory,
+    Instructions,
+}
+
+impl LedgerSourceGroup {
+    pub(super) const ALL: [Self; 4] = [
+        Self::SessionContinuity,
+        Self::UserFiles,
+        Self::DurableMemory,
+        Self::Instructions,
+    ];
+
+    pub(super) fn for_source(source: &crate::legacy_core::elpis_context::ContinuitySource) -> Self {
+        use crate::legacy_core::elpis_context::ContinuitySourceCategory as C;
+        if source.origin == "manual addition" {
+            return Self::UserFiles;
+        }
+        match source.category {
+            C::Files => Self::SessionContinuity,
+            C::Memory => Self::DurableMemory,
+            C::Instructions => Self::Instructions,
+        }
+    }
+
+    pub(super) fn display_name(self) -> &'static str {
+        match self {
+            Self::SessionContinuity => "SESSION CONTINUITY",
+            Self::UserFiles => "USER FILES",
+            Self::DurableMemory => "DURABLE MEMORY",
+            Self::Instructions => "INSTRUCTIONS",
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            Self::SessionContinuity => Color::Rgb(52, 168, 83),
+            Self::UserFiles => Color::Rgb(59, 130, 246),
+            Self::DurableMemory => Color::Rgb(215, 119, 87),
+            Self::Instructions => Color::Rgb(255, 193, 7),
+        }
+    }
+}
 
 /// The ledger's rendered content: the lines themselves, the line range each source
 /// occupies (for selection scrolling), and `(line index, file:// destination)` for
@@ -15,6 +71,14 @@ pub(super) struct LedgerLines {
     lines: Vec<Line<'static>>,
     source_line_ranges: Vec<std::ops::Range<usize>>,
     source_links: Vec<(usize, String)>,
+    smart_prune_line: usize,
+    smart_prune_columns: std::ops::Range<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct PendingContextAdmission {
+    original: bool,
+    desired: bool,
 }
 
 pub(super) struct ContextLedgerState {
@@ -26,6 +90,13 @@ pub(super) struct ContextLedgerState {
     last_area: std::cell::Cell<Option<Rect>>,
     last_scroll: std::cell::Cell<u16>,
     last_source_ranges: std::cell::RefCell<Vec<(usize, std::ops::Range<usize>)>>,
+    last_smart_prune_row: std::cell::Cell<Option<u16>>,
+    last_smart_prune_columns: std::cell::Cell<Option<(u16, u16)>>,
+    pub(super) pending_smart_prune_enabled: Option<bool>,
+    pub(super) projected_token_delta: i64,
+    pub(super) projection_baseline_turn_id: Option<String>,
+    pub(super) pending_context_admissions:
+        std::collections::BTreeMap<String, PendingContextAdmission>,
 }
 
 impl Default for ContextLedgerState {
@@ -40,18 +111,31 @@ impl Default for ContextLedgerState {
             last_area: std::cell::Cell::new(None),
             last_scroll: std::cell::Cell::new(0),
             last_source_ranges: std::cell::RefCell::new(Vec::new()),
+            last_smart_prune_row: std::cell::Cell::new(None),
+            last_smart_prune_columns: std::cell::Cell::new(None),
+            pending_smart_prune_enabled: None,
+            projected_token_delta: 0,
+            projection_baseline_turn_id: None,
+            pending_context_admissions: std::collections::BTreeMap::new(),
         }
+    }
+}
+
+impl ContextLedgerState {
+    fn clear_rendered_geometry(&self) {
+        self.last_area.set(None);
+        self.last_scroll.set(0);
+        self.last_source_ranges.borrow_mut().clear();
+        self.last_smart_prune_row.set(None);
+        self.last_smart_prune_columns.set(None);
     }
 }
 
 impl ChatWidget {
     /// The ledger is a sidebar shown by default and toggled with `Tab` or `Alt+C`:
-    /// one press hides it, the next shows and focuses it. `Tab` defers to the
-    /// composer's queue-the-draft action while a turn is running (or during the
-    /// startup queueing window), since that binding needs `Tab` too; `Alt+C`
-    /// always toggles the ledger regardless. On narrower terminals the ledger
-    /// takes a proportional slice instead of a fixed 52 columns so the composer
-    /// keeps room.
+    /// one press hides it, the next shows and focuses it. On narrower terminals
+    /// the ledger takes a proportional slice instead of a fixed 52 columns so the
+    /// composer keeps room.
     pub(super) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
         if !self.context_ledger.visible || terminal_width < LEDGER_MIN_TERMINAL_WIDTH {
             return 0;
@@ -74,6 +158,7 @@ impl ChatWidget {
         ledger_width: u16,
     ) -> Option<(u16, LedgerLines)> {
         if !self.context_ledger.visible || ledger_width == 0 {
+            self.context_ledger.clear_rendered_geometry();
             return None;
         }
         // Build the real lines and measure them with the same wrap settings the
@@ -95,9 +180,8 @@ impl ChatWidget {
         if key_event.kind != KeyEventKind::Press {
             return false;
         }
-        let is_toggle_key = (matches!(key_event.code, KeyCode::Tab)
-            && key_event.modifiers.is_empty()
-            && !self.bottom_pane.should_queue_on_tab())
+        let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
+        let is_toggle_key = (is_tab && !self.bottom_pane.should_queue_on_tab())
             || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
         if is_toggle_key
             && self.bottom_pane.no_modal_or_popup_active()
@@ -113,7 +197,7 @@ impl ChatWidget {
             } else if self.context_ledger.focused {
                 self.context_ledger.visible = false;
                 self.context_ledger.focused = false;
-                self.context_ledger.last_area.set(None);
+                self.context_ledger.clear_rendered_geometry();
             } else {
                 self.context_ledger.focused = true;
             }
@@ -121,8 +205,22 @@ impl ChatWidget {
             self.request_redraw();
             return true;
         }
-        if !self.context_ledger.focused {
+        let ledger_is_rendered = self.context_ledger.visible
+            && self
+                .last_rendered_width
+                .get()
+                .is_some_and(|width| width >= LEDGER_MIN_TERMINAL_WIDTH as usize);
+        if !self.context_ledger.focused || !ledger_is_rendered {
             return false;
+        }
+        if !key_event.modifiers.is_empty() {
+            self.context_ledger.pending_g = false;
+            return false;
+        }
+
+        if matches!(key_event.code, KeyCode::Char('p')) {
+            self.toggle_smart_prune();
+            return true;
         }
 
         let sources = self.continuity_sources();
@@ -147,12 +245,16 @@ impl ChatWidget {
             self.context_ledger.pending_g = false;
             match key_event.code {
                 KeyCode::Char('i') => {
-                    let selectable_sources = sources
-                        .iter()
-                        .filter(|source| source.selectable)
-                        .collect::<Vec<_>>();
-                    let all_admitted = !selectable_sources.is_empty()
-                        && selectable_sources.iter().all(|source| source.admitted);
+                    let manual_memory_path = self
+                        .manual_memory_cache
+                        .bound_target
+                        .as_ref()
+                        .map(|target| target.view.memory_path.clone());
+                    let all_admitted = all_bulk_context_sources_admitted(
+                        &sources,
+                        manual_memory_path.as_deref(),
+                        self.manual_memory_can_toggle(),
+                    );
                     self.set_all_context_sources_admitted(&sources, !all_admitted);
                     self.request_redraw();
                     return true;
@@ -171,12 +273,16 @@ impl ChatWidget {
                 self.context_ledger.focused = false;
             }
             KeyCode::Char('i') => {
-                let selectable_sources = sources
-                    .iter()
-                    .filter(|source| source.selectable)
-                    .collect::<Vec<_>>();
-                let all_admitted = !selectable_sources.is_empty()
-                    && selectable_sources.iter().all(|source| source.admitted);
+                let manual_memory_path = self
+                    .manual_memory_cache
+                    .bound_target
+                    .as_ref()
+                    .map(|target| target.view.memory_path.clone());
+                let all_admitted = all_bulk_context_sources_admitted(
+                    &sources,
+                    manual_memory_path.as_deref(),
+                    self.manual_memory_can_toggle(),
+                );
                 self.set_all_context_sources_admitted(&sources, !all_admitted);
             }
             KeyCode::Char('g') => {
@@ -194,6 +300,22 @@ impl ChatWidget {
             KeyCode::Char(' ') | KeyCode::Enter => {
                 let source = &sources[self.context_ledger.selected];
                 self.set_context_source_admitted(source, !source.admitted);
+            }
+            KeyCode::Char('c') => {
+                let source = &sources[self.context_ledger.selected];
+                let is_manual_memory = is_manual_memory_source(
+                    source,
+                    self.manual_memory_cache
+                        .bound_target
+                        .as_ref()
+                        .map(|target| target.view.memory_path.as_path()),
+                );
+                if is_manual_memory {
+                    self.begin_manual_memory_create();
+                } else {
+                    self.context_ledger.focused = false;
+                    return false;
+                }
             }
             KeyCode::Backspace | KeyCode::Delete => {
                 let source = sources[self.context_ledger.selected].clone();
@@ -220,13 +342,10 @@ impl ChatWidget {
     fn ledger_lines(&self, content_width: usize) -> LedgerLines {
         let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
-        let total_tokens = sources
+        let accounting_sources = self.accounted_continuity_sources();
+        let total_tokens = accounting_sources
             .iter()
-            .filter(|source| {
-                source.admitted
-                    && source.category
-                        != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
-            })
+            .filter(|source| source.admitted)
             .map(|source| source.estimated_tokens)
             .sum::<u64>();
         // Plain ANSI cyan so the ledger matches the teal used by the identity line,
@@ -234,7 +353,7 @@ impl ChatWidget {
         let cyan = Style::default().fg(Color::Cyan);
         let amber = Style::default().fg(Color::Rgb(245, 158, 11));
         let muted = Style::default().fg(Color::Rgb(100, 116, 139));
-        let messages_color = Color::Rgb(130, 125, 189);
+        let conversation_color = Color::Gray;
         let context_window = self
             .status_line_context_window_size()
             .unwrap_or(258_400)
@@ -242,39 +361,60 @@ impl ChatWidget {
         // Use the same measured request-context value as `/context` and the status
         // line.  Portable source estimates are attribution only; they must not
         // inflate the headline or percentage beyond what is actually in context.
-        let used_tokens = (self
+        let measured_used_tokens = (self
             .token_info
             .as_ref()
             .map(|info| info.last_token_usage.tokens_in_context_window())
             .unwrap_or(0)
             .max(0) as u64)
             .min(context_window);
+        let used_tokens = apply_token_delta(
+            measured_used_tokens,
+            self.context_ledger.projected_token_delta,
+        )
+        .min(context_window);
         let has_request_snapshot = self.token_info.is_some();
         let admitted_display_tokens = total_tokens.min(used_tokens);
-        // Everything in the window that isn't admitted portable context is the
-        // conversation itself — the biggest consumer, previously invisible here.
+        // The Ledger accounts for portable sources. Everything else is the
+        // conversation plus built-in request context; the provider does not split it.
         let conversation_tokens = used_tokens.saturating_sub(admitted_display_tokens);
-        let used_percent = self.status_line_context_used_percent().unwrap_or(0);
-        let admitted_segments = crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL
+        let used_percent = used_tokens
+            .saturating_mul(100)
+            .saturating_add(context_window / 2)
+            / context_window;
+        let admitted_segments = LedgerSourceGroup::ALL
             .into_iter()
-            .filter(|category| {
-                *category != crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
-            })
-            .map(|category| {
-                let admitted = sources
+            .map(|group| {
+                let admitted = accounting_sources
                     .iter()
-                    .filter(|source| source.category == category && source.admitted)
+                    .filter(|source| {
+                        LedgerSourceGroup::for_source(source) == group && source.admitted
+                    })
                     .map(|source| source.estimated_tokens)
                     .sum::<u64>();
-                (admitted, category_color(category))
+                (admitted, group.color())
             })
             .collect::<Vec<_>>();
-        let mut bar_segments = vec![(conversation_tokens, messages_color)];
+        let mut bar_segments = vec![(conversation_tokens, conversation_color)];
         bar_segments.extend(scale_usage_segments(
             &admitted_segments,
             admitted_display_tokens,
         ));
-        let context_header = if has_request_snapshot {
+        let source_change_status = if !self.context_ledger.pending_context_admissions.is_empty() {
+            Some("changes queued")
+        } else if matches!(
+            self.manual_memory_cache.pending_mutation,
+            Some(ManualMemoryMutation::Admission { .. })
+        ) {
+            Some("saving change")
+        } else {
+            None
+        };
+        let context_header = if has_request_snapshot && let Some(status) = source_change_status {
+            format!("≈{} tokens now · {status}", format_tokens(used_tokens))
+        } else if has_request_snapshot && self.context_ledger.projected_token_delta != 0 {
+            format!("next request ≈{} tokens", format_tokens(used_tokens))
+        } else if has_request_snapshot {
             format!("≈{} tokens in context", format_tokens(used_tokens))
         } else if total_tokens == 0 {
             // Keep the compact idle layout used by the existing popups while making
@@ -287,7 +427,7 @@ impl ChatWidget {
             )
         };
         let interaction_hint = if self.context_ledger.focused {
-            "Up/Down move · Space/Enter toggle · i all · w why · Backspace remove · Esc exit"
+            "p Smart Prune · Up/Down move · Space/Enter toggle · i all · w why · Esc exit"
         } else {
             "Tab focus · Alt+C focus/hide · Ctrl+click open file"
         };
@@ -299,6 +439,98 @@ impl ChatWidget {
             ]),
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
+        ];
+        // A pending request is shown immediately, then reconciled with the next
+        // authoritative core snapshot after persistence.
+        let pending_smart_prune_enabled = self.context_ledger.pending_smart_prune_enabled;
+        let smart_prune_enabled = pending_smart_prune_enabled.unwrap_or(self.smart_prune.enabled);
+        let smart_prune_button =
+            if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
+                "[···] SYNC"
+            } else if smart_prune_enabled {
+                "[━━━●] ON"
+            } else {
+                "[●━━━] OFF"
+            };
+        let smart_prune_label = "SMART PRUNE";
+        let smart_prune_pad = content_width
+            .saturating_sub(smart_prune_label.chars().count() + smart_prune_button.chars().count())
+            .max(1);
+        let smart_prune_line = lines.len();
+        let smart_prune_column_start = smart_prune_label.chars().count() + smart_prune_pad;
+        let smart_prune_columns =
+            smart_prune_column_start..smart_prune_column_start + smart_prune_button.chars().count();
+        let [violet, teal, emerald, green] =
+            smart_prune_on_colors(default_bg(), stdout_color_level());
+        let switch_spans = if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
+            vec![Span::styled(
+                smart_prune_button,
+                Style::default().fg(teal).bold(),
+            )]
+        } else if smart_prune_enabled {
+            vec![
+                Span::styled("[", Style::default().fg(teal)),
+                Span::styled("━", Style::default().fg(violet)),
+                Span::styled("━", Style::default().fg(teal)),
+                Span::styled("━", Style::default().fg(emerald)),
+                Span::styled("●] ON", Style::default().fg(green).bold()),
+            ]
+        } else {
+            vec![Span::styled(smart_prune_button, muted)]
+        };
+        let mut smart_prune_spans = vec![
+            Span::styled(smart_prune_label, Style::default().fg(teal).bold()),
+            Span::raw(" ".repeat(smart_prune_pad)),
+        ];
+        smart_prune_spans.extend(switch_spans);
+        lines.push(Line::from(smart_prune_spans));
+        let smart_prune_detail = if pending_smart_prune_enabled.is_some() {
+            "Saving setting · the active turn keeps its current policy".to_string()
+        } else if !self.smart_prune_synced {
+            "Reading current thread state".to_string()
+        } else if self.smart_prune.examined_outputs > 0 {
+            format!(
+                "{} of {} eligible outputs shortened · ≈{} tokens saved",
+                self.smart_prune.admitted_outputs,
+                self.smart_prune.examined_outputs,
+                format_tokens(self.smart_prune.approx_saved_tokens),
+            )
+        } else if smart_prune_enabled {
+            "Before first main-model send · sent history stays stable".to_string()
+        } else {
+            "Tool results pass through unchanged".to_string()
+        };
+        lines.push(Line::from(Span::styled(smart_prune_detail, muted)));
+        if self.smart_prune_synced
+            && let Some(latest) = self.smart_prune.latest.as_ref()
+        {
+            let short_id = latest.admission_id.get(..8).unwrap_or(&latest.admission_id);
+            let status = if latest.response_linkage_verified {
+                "response linked"
+            } else if latest.request_linkage_verified {
+                "request linked"
+            } else if latest.request_sequence.is_some() {
+                "request evidence pending"
+            } else {
+                "awaiting first main send"
+            };
+            lines.push(Line::from(Span::styled(
+                format!("Latest {short_id} · {status}"),
+                muted,
+            )));
+        }
+        let smart_prune_hint = if pending_smart_prune_enabled.is_some() {
+            "Saving… · applies next turn; active turn unchanged"
+        } else if !self.smart_prune_synced {
+            "Syncing… · /smart-prune on|off sets an explicit state"
+        } else if self.is_user_turn_pending_or_running() {
+            "p toggle · applies next turn; active turn unchanged"
+        } else {
+            "p toggle · /smart-prune on|off"
+        };
+        lines.push(Line::from(Span::styled(smart_prune_hint, muted)));
+        lines.push(Line::from(""));
+        lines.extend([
             Line::from(vec![
                 Span::styled("CONTEXT WINDOW", cyan.bold()),
                 Span::raw("  "),
@@ -313,7 +545,7 @@ impl ChatWidget {
             ]),
             usage_bar_line(content_width, context_window, &bar_segments),
             {
-                let name = "Conversation (messages)";
+                let name = "Conversation + built-in context";
                 // Same unit as every other row and header; without it this row reads
                 // "≈0" two lines under a total reading "≈4.4k tokens".
                 let right = format!("≈{} tokens", format_tokens(conversation_tokens));
@@ -322,24 +554,24 @@ impl ChatWidget {
                     .max(1);
                 Line::from(vec![
                     Span::raw("  "),
-                    Span::styled("■ ", Style::default().fg(messages_color)),
+                    Span::styled("■ ", Style::default().fg(conversation_color)),
                     Span::raw(name),
                     Span::raw(" ".repeat(pad)),
                     Span::styled(right, muted),
                 ])
             },
             Line::from(""),
-        ];
+        ]);
 
         if sources.is_empty() {
             lines.push(Line::from("No portable context is available.".dim()));
         }
         let mut source_line_ranges = vec![0..0; sources.len()];
-        for category in crate::legacy_core::elpis_context::ContinuitySourceCategory::ALL {
+        for group in LedgerSourceGroup::ALL {
             let category_sources = sources
                 .iter()
                 .enumerate()
-                .filter(|(_, source)| source.category == category)
+                .filter(|(_, source)| LedgerSourceGroup::for_source(source) == group)
                 .collect::<Vec<_>>();
             if category_sources.is_empty() {
                 continue;
@@ -349,10 +581,10 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let cat_style = Style::default().fg(category_color(category));
+            let cat_style = Style::default().fg(group.color());
             lines.push(Line::from(vec![
                 Span::styled("■ ", cat_style),
-                Span::styled(category.display_name(), cat_style.bold()),
+                Span::styled(group.display_name(), cat_style.bold()),
                 Span::raw("  "),
                 Span::styled(
                     format!("≈{} tokens admitted", format_tokens(admitted_tokens)),
@@ -375,10 +607,12 @@ impl ChatWidget {
                 let state_style = if source.admitted { cyan } else { amber };
                 let marker_style = if source.admitted { cat_style } else { muted };
                 let prefix = if selected { "› " } else { "  " };
-                // The unit belongs on the row, not only on the category header: a row
-                // reading "≈52" under a header reading "≈0 tokens admitted" reads as a
-                // contradiction rather than as "this file is 52 tokens, none admitted".
-                let right = format!("≈{} tokens {state}", format_tokens(source.estimated_tokens));
+                // Per-source estimates stay exact so similarly sized files remain
+                // distinguishable; category and context totals remain compact.
+                let right = format!(
+                    "≈{} est. tokens {state}",
+                    format_source_count(source.estimated_tokens),
+                );
                 // "› " + "[x]" + " " ahead of the name; truncate long names from the
                 // left with '…' so the token count and state stay right-aligned.
                 let fixed = prefix.chars().count() + marker.chars().count() + 1;
@@ -417,7 +651,10 @@ impl ChatWidget {
                     ),
                     Span::raw(" ".repeat(pad)),
                     Span::styled(
-                        format!("≈{} tokens ", format_tokens(source.estimated_tokens)),
+                        format!(
+                            "≈{} est. tokens ",
+                            format_source_count(source.estimated_tokens),
+                        ),
                         muted,
                     ),
                     Span::styled(state, state_style),
@@ -434,13 +671,18 @@ impl ChatWidget {
                     lines.push(Line::from(
                         format!("{inclusion} because {}.", source.reason).dim(),
                     ));
+                    lines.push(Line::from(format!("Lifetime: {}", source.lifetime).dim()));
+                    lines.push(Line::from(format!("Origin: {}", source.origin).dim()));
                     lines.push(Line::from(
                         format!(
-                            "Lifetime: {} · Source: {}",
-                            source.lifetime,
-                            source.path.display()
+                            "Size: {} bytes · Estimate: ≈{} tokens (trimmed characters ÷ 4, capped)",
+                            format_source_count(source.bytes),
+                            format_source_count(source.estimated_tokens),
                         )
                         .dim(),
+                    ));
+                    lines.push(Line::from(
+                        format!("Source: {}", source.path.display()).dim(),
                     ));
                     // Only the expanded block needs separating from the next row;
                     // rows sit adjacent so the categories do not dominate the panel.
@@ -466,6 +708,8 @@ impl ChatWidget {
             lines,
             source_line_ranges,
             source_links,
+            smart_prune_line,
+            smart_prune_columns,
         }
     }
 
@@ -486,6 +730,8 @@ impl ChatWidget {
             lines,
             source_line_ranges,
             source_links,
+            smart_prune_line,
+            smart_prune_columns,
         } = ledger_lines;
         let cyan = Style::default().fg(Color::Cyan);
 
@@ -508,10 +754,36 @@ impl ChatWidget {
             .unwrap_or(0);
         self.context_ledger.last_area.set(Some(area));
         self.context_ledger.last_scroll.set(scroll_lines);
+        let rows_before_smart_prune = Paragraph::new(lines[..smart_prune_line].to_vec())
+            .wrap(Wrap { trim: true })
+            .line_count(content_width);
+        let visible_smart_prune_row = u16::try_from(rows_before_smart_prune)
+            .ok()
+            .and_then(|row| row.checked_sub(scroll_lines))
+            .filter(|row| *row < area.height)
+            .map(|row| area.y.saturating_add(row));
+        self.context_ledger
+            .last_smart_prune_row
+            .set(visible_smart_prune_row);
+        let switch_start = u16::try_from(smart_prune_columns.start)
+            .ok()
+            .map(|column| area.x.saturating_add(1).saturating_add(column));
+        let switch_end = u16::try_from(smart_prune_columns.end)
+            .ok()
+            .map(|column| area.x.saturating_add(1).saturating_add(column));
+        self.context_ledger
+            .last_smart_prune_columns
+            .set(switch_start.zip(switch_end));
         let tracked_ranges = source_line_ranges
             .into_iter()
             .enumerate()
             .filter(|(_, r)| !r.is_empty())
+            .map(|(index, range)| {
+                let start =
+                    wrapped_line_count(&lines[..range.start.min(lines.len())], content_width);
+                let end = wrapped_line_count(&lines[..range.end.min(lines.len())], content_width);
+                (index, usize::from(start)..usize::from(end))
+            })
             .collect();
         *self.context_ledger.last_source_ranges.borrow_mut() = tracked_ranges;
 
@@ -562,7 +834,17 @@ impl ChatWidget {
         }
 
         let scroll = self.context_ledger.last_scroll.get();
-        let relative_line = (row.saturating_sub(area.y).saturating_sub(1) + scroll) as usize;
+        if self.context_ledger.last_smart_prune_row.get() == Some(row)
+            && self
+                .context_ledger
+                .last_smart_prune_columns
+                .get()
+                .is_some_and(|(start, end)| col >= start && col < end)
+        {
+            self.toggle_smart_prune();
+            return true;
+        }
+        let relative_line = (row.saturating_sub(area.y) + scroll) as usize;
 
         let target_index = {
             let ranges = self.context_ledger.last_source_ranges.borrow();
@@ -588,19 +870,293 @@ impl ChatWidget {
         false
     }
 
-    pub(super) fn continuity_sources(
+    pub(crate) fn continuity_sources(
         &self,
     ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
-        crate::legacy_core::elpis_context::continuity_sources(
-            Some(self.config.memory_dir.as_path()),
-            self.config.cwd.as_path(),
-            &self.instruction_source_paths_as_path_bufs(),
+        let mut sources = self.manual_memory_cache.sources.clone();
+        for source in &mut sources {
+            if let Some(pending) = self
+                .context_ledger
+                .pending_context_admissions
+                .get(&source.name)
+            {
+                source.admitted = pending.desired;
+            }
+        }
+        if let Some(ManualMemoryMutation::Admission { admitted }) =
+            self.manual_memory_cache.pending_mutation
+            && let Some(memory_path) = self
+                .manual_memory_cache
+                .bound_target
+                .as_ref()
+                .map(|target| target.view.memory_path.as_path())
+            && let Some(source) = sources.iter_mut().find(|source| source.path == memory_path)
+        {
+            source.admitted = admitted;
+        }
+        sources
+    }
+
+    fn accounted_continuity_sources(
+        &self,
+    ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
+        let mut sources = self.manual_memory_cache.sources.clone();
+        for source in &mut sources {
+            if let Some(pending) = self
+                .context_ledger
+                .pending_context_admissions
+                .get(&source.name)
+            {
+                source.admitted = pending.original;
+            }
+        }
+        sources
+    }
+
+    pub(crate) fn manual_memory_bound_target(&self) -> Option<&ManualMemoryRequestTarget> {
+        self.manual_memory_cache.bound_target.as_ref()
+    }
+
+    pub(crate) fn manual_memory_phase(&self) -> ManualMemoryPhase {
+        self.manual_memory_cache.phase
+    }
+
+    pub(crate) fn manual_memory_status(
+        &self,
+    ) -> Option<&crate::legacy_core::elpis_context::ManualMemoryStatus> {
+        self.manual_memory_cache.status.as_ref()
+    }
+
+    pub(crate) fn manual_memory_unavailable_reason(&self) -> Option<ManualMemoryUnavailableReason> {
+        self.manual_memory_cache.unavailable_reason
+    }
+
+    pub(crate) fn manual_memory_refresh_requested(&self) -> bool {
+        self.manual_memory_cache.refresh_requested
+    }
+
+    pub(crate) fn manual_memory_context_report_pending(&self) -> bool {
+        self.manual_memory_cache.pending_context_report
+    }
+
+    pub(crate) fn manual_memory_pending_mutation(&self) -> Option<ManualMemoryMutation> {
+        self.manual_memory_cache.pending_mutation
+    }
+
+    pub(crate) fn manual_memory_submission_blocked(&self) -> bool {
+        matches!(
+            self.manual_memory_cache.pending_mutation,
+            Some(ManualMemoryMutation::Admission { .. })
         )
+    }
+
+    pub(crate) fn seed_manual_memory_pending_mutation(
+        &mut self,
+        pending_mutation: Option<ManualMemoryMutation>,
+    ) {
+        self.manual_memory_cache.pending_mutation = pending_mutation;
+        match pending_mutation {
+            Some(ManualMemoryMutation::Create) => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Creating;
+            }
+            Some(ManualMemoryMutation::Admission { .. }) => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+                self.manual_memory_cache.status = None;
+                self.manual_memory_cache.sources.clear();
+                self.manual_memory_cache.unavailable_reason = None;
+            }
+            None if self.manual_memory_cache.phase == ManualMemoryPhase::Creating => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+                self.manual_memory_cache.status = None;
+                self.manual_memory_cache.sources.clear();
+                self.manual_memory_cache.unavailable_reason = None;
+            }
+            None => {}
+        }
+        self.request_redraw();
+    }
+
+    pub(crate) fn bind_manual_memory_loading(
+        &mut self,
+        target: ManualMemoryRequestTarget,
+        pending_context_report: bool,
+        pending_mutation: Option<ManualMemoryMutation>,
+    ) {
+        self.manual_memory_cache = ManualMemoryCache {
+            bound_target: Some(target),
+            phase: if pending_mutation == Some(ManualMemoryMutation::Create) {
+                ManualMemoryPhase::Creating
+            } else {
+                ManualMemoryPhase::Loading
+            },
+            pending_mutation,
+            pending_context_report,
+            ..ManualMemoryCache::default()
+        };
+        self.request_redraw();
+    }
+
+    fn mark_manual_memory_loading(&mut self) -> Option<ManualMemoryRequestTarget> {
+        let target = self.manual_memory_cache.bound_target.clone()?;
+        self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+        self.manual_memory_cache.status = None;
+        self.manual_memory_cache.unavailable_reason = None;
+        self.manual_memory_cache.refresh_requested = true;
+        if self.manual_memory_cache.pending_mutation == Some(ManualMemoryMutation::Create) {
+            self.manual_memory_cache.phase = ManualMemoryPhase::Creating;
+        }
+        self.request_redraw();
+        Some(target)
+    }
+
+    pub(crate) fn begin_manual_memory_create(&mut self) -> bool {
+        if self.manual_memory_cache.pending_mutation.is_some()
+            || self
+                .manual_memory_cache
+                .status
+                .as_ref()
+                .is_none_or(|status| {
+                    status.state
+                        != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+                })
+        {
+            return false;
+        }
+        let Some(target) = self.manual_memory_cache.bound_target.clone() else {
+            return false;
+        };
+        self.manual_memory_cache.pending_mutation = Some(ManualMemoryMutation::Create);
+        self.manual_memory_cache.phase = ManualMemoryPhase::Creating;
+        self.request_redraw();
+        self.app_event_tx
+            .send(AppEvent::ManualMemoryCreateRequested(target));
+        true
+    }
+
+    pub(crate) fn begin_manual_memory_admission(&mut self, admitted: bool) -> bool {
+        if self.manual_memory_cache.pending_mutation.is_some() {
+            return false;
+        }
+        let Some(status) = self.manual_memory_cache.status.as_ref() else {
+            return false;
+        };
+        let current = match status.state {
+            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing => return false,
+            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::AvailableNotAdmitted => {
+                false
+            }
+            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted => true,
+        };
+        if current == admitted {
+            return false;
+        }
+        let Some(target) = self.manual_memory_cache.bound_target.clone() else {
+            return false;
+        };
+        self.manual_memory_cache.pending_mutation =
+            Some(ManualMemoryMutation::Admission { admitted });
+        self.manual_memory_cache.phase = ManualMemoryPhase::Loading;
+        self.manual_memory_cache.unavailable_reason = None;
+        self.request_redraw();
+        self.app_event_tx
+            .send(AppEvent::ManualMemoryAdmissionRequested(target, admitted));
+        true
+    }
+
+    pub(crate) fn clear_manual_memory_pending_mutation(&mut self) {
+        self.manual_memory_cache.pending_mutation = None;
+        self.request_redraw();
+    }
+
+    pub(crate) fn request_manual_memory_status_refresh(&mut self) {
+        if self.manual_memory_cache.refresh_requested {
+            return;
+        }
+        if let Some(target) = self.mark_manual_memory_loading() {
+            self.app_event_tx
+                .send(AppEvent::ManualMemoryStatusRefreshRequested(target));
+        }
+    }
+
+    pub(crate) fn request_fresh_context_usage_report(&mut self) {
+        if self.manual_memory_cache.pending_context_report {
+            return;
+        }
+        let Some(target) = self.mark_manual_memory_loading() else {
+            self.add_info_message(
+                "Context status is still initializing.".to_string(),
+                /*hint*/ None,
+            );
+            return;
+        };
+        self.manual_memory_cache.pending_context_report = true;
+        self.app_event_tx
+            .send(AppEvent::RequestContextUsageReport(target));
+    }
+
+    pub(crate) fn apply_manual_memory_status_completion(
+        &mut self,
+        target: &ManualMemoryRequestTarget,
+        completion: ManualMemoryStatusCompletion,
+    ) -> bool {
+        if self.manual_memory_cache.bound_target.as_ref() != Some(target)
+            || self.manual_memory_cache.refresh_requested
+        {
+            return false;
+        }
+        let memory_projection = match (self.manual_memory_cache.pending_mutation, &completion) {
+            (
+                Some(ManualMemoryMutation::Admission { admitted }),
+                ManualMemoryStatusCompletion::Ready { sources, .. },
+            ) => {
+                let before = self
+                    .manual_memory_cache
+                    .sources
+                    .iter()
+                    .find(|source| source.path == target.view.memory_path);
+                let after = sources
+                    .iter()
+                    .find(|source| source.path == target.view.memory_path);
+                match (before, after) {
+                    (Some(before), Some(after))
+                        if before.admitted != admitted && after.admitted == admitted =>
+                    {
+                        let tokens = i64::try_from(after.estimated_tokens).unwrap_or(i64::MAX);
+                        Some(if admitted { tokens } else { -tokens })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        match completion {
+            ManualMemoryStatusCompletion::Ready { status, sources } => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Ready;
+                self.manual_memory_cache.status = Some(status);
+                self.manual_memory_cache.sources = sources;
+                self.manual_memory_cache.unavailable_reason = None;
+            }
+            ManualMemoryStatusCompletion::Unavailable(reason) => {
+                self.manual_memory_cache.phase = ManualMemoryPhase::Unavailable;
+                self.manual_memory_cache.status = None;
+                self.manual_memory_cache.sources.clear();
+                self.manual_memory_cache.unavailable_reason = Some(reason);
+            }
+        }
+        if let Some(delta) = memory_projection {
+            self.adjust_context_projection(delta, self.turn_lifecycle.last_turn_id.clone());
+        }
+        self.request_redraw();
+        true
+    }
+
+    pub(crate) fn take_pending_context_report(&mut self) -> bool {
+        std::mem::take(&mut self.manual_memory_cache.pending_context_report)
     }
 
     /// The server-reported instruction sources, converted for `elpis_context` — the
     /// same list `/usage` renders, so the ledger cannot disagree with it.
-    pub(super) fn instruction_source_paths_as_path_bufs(&self) -> Vec<std::path::PathBuf> {
+    pub(crate) fn instruction_source_paths_as_path_bufs(&self) -> Vec<std::path::PathBuf> {
         self.instruction_source_paths
             .iter()
             .filter_map(|uri| uri.to_abs_path().ok())
@@ -622,10 +1178,54 @@ impl ChatWidget {
         sources: &[crate::legacy_core::elpis_context::ContinuitySource],
         admitted: bool,
     ) {
-        for source in sources.iter().filter(|source| source.selectable) {
-            if !self.set_context_source_admitted(source, admitted) {
-                break;
+        if self.reject_manual_memory_writer_conflict() {
+            return;
+        }
+        let manual_memory_path = self
+            .manual_memory_cache
+            .bound_target
+            .as_ref()
+            .map(|target| target.view.memory_path.clone());
+        if self.is_user_turn_pending_or_running() {
+            let manual_memory_actionable = self.manual_memory_can_toggle();
+            for source in sources.iter().filter(|source| {
+                is_bulk_context_source_actionable(
+                    source,
+                    manual_memory_path.as_deref(),
+                    manual_memory_actionable,
+                ) && source.admitted != admitted
+            }) {
+                self.stage_context_source_admission(source, admitted);
             }
+            return;
+        }
+        let mut ordinary_write_attempted = false;
+        for source in sources.iter().filter(|source| {
+            source.selectable
+                && !is_manual_memory_source(source, manual_memory_path.as_deref())
+                && source.admitted != admitted
+        }) {
+            ordinary_write_attempted = true;
+            if let Err(error) = crate::legacy_core::elpis_context::set_continuity_source_admitted(
+                Some(self.config.memory_dir.as_path()),
+                self.config.cwd.as_path(),
+                &source.name,
+                admitted,
+            ) {
+                self.add_error_message(format!("Could not update context admission: {error}"));
+                self.request_manual_memory_status_refresh();
+                return;
+            }
+            self.apply_cached_context_source_admission(source, admitted);
+        }
+        let memory_enqueued = self.manual_memory_can_toggle()
+            && sources.iter().any(|source| {
+                is_manual_memory_source(source, manual_memory_path.as_deref())
+                    && source.admitted != admitted
+            })
+            && self.begin_manual_memory_admission(admitted);
+        if ordinary_write_attempted && !memory_enqueued {
+            self.request_manual_memory_status_refresh();
         }
     }
 
@@ -637,17 +1237,45 @@ impl ChatWidget {
         source: &crate::legacy_core::elpis_context::ContinuitySource,
         selectable: &[usize],
     ) {
+        if self.reject_manual_memory_writer_conflict() {
+            return;
+        }
+        if self.is_user_turn_pending_or_running() {
+            self.add_info_message(
+                "Remove files after the active turn; Space can queue an exclusion now.".to_string(),
+                None,
+            );
+            return;
+        }
+        let is_manual_memory = is_manual_memory_source(
+            source,
+            self.manual_memory_cache
+                .bound_target
+                .as_ref()
+                .map(|target| target.view.memory_path.as_path()),
+        );
+        if is_manual_memory {
+            self.add_info_message(
+                "Manual Memory cannot be removed here; exclude it or edit its file.".to_string(),
+                /*hint*/ None,
+            );
+            return;
+        }
         match crate::legacy_core::elpis_context::remove_continuity_source(
             Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
             &source.name,
         ) {
             Ok(true) => {
+                self.apply_cached_context_source_admission(source, /*admitted*/ false);
+                self.manual_memory_cache
+                    .sources
+                    .retain(|cached| cached.name != source.name);
                 // The removed row is gone, so keep the cursor inside the shorter list.
                 if self.context_ledger.selected >= selectable.len() {
                     self.move_context_ledger_selection(selectable, -1);
                 }
-                self.refresh_context_window_display();
+                self.request_manual_memory_status_refresh();
             }
             Ok(false) => {
                 self.add_info_message(
@@ -660,6 +1288,7 @@ impl ChatWidget {
             }
             Err(error) => {
                 self.add_error_message(format!("Could not remove context source: {error}"));
+                self.request_manual_memory_status_refresh();
             }
         }
     }
@@ -669,30 +1298,215 @@ impl ChatWidget {
         source: &crate::legacy_core::elpis_context::ContinuitySource,
         admitted: bool,
     ) -> bool {
-        match crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        if self.reject_manual_memory_writer_conflict() {
+            return false;
+        }
+        if self.is_user_turn_pending_or_running() {
+            return self.stage_context_source_admission(source, admitted);
+        }
+        let is_manual_memory = is_manual_memory_source(
+            source,
+            self.manual_memory_cache
+                .bound_target
+                .as_ref()
+                .map(|target| target.view.memory_path.as_path()),
+        );
+        if is_manual_memory {
+            if self.manual_memory_can_toggle() {
+                return self.begin_manual_memory_admission(admitted);
+            }
+            self.add_info_message(
+                "Manual Memory does not exist yet; press c to create it.".to_string(),
+                /*hint*/ None,
+            );
+            return false;
+        }
+        let updated = match crate::legacy_core::elpis_context::set_continuity_source_admitted(
             Some(self.config.memory_dir.as_path()),
             self.config.cwd.as_path(),
             &source.name,
             admitted,
         ) {
-            Ok(()) => {
-                self.refresh_context_window_display();
-                true
-            }
+            Ok(()) => true,
             Err(error) => {
                 self.add_error_message(format!("Could not update context admission: {error}"));
                 false
             }
+        };
+        if updated {
+            self.apply_cached_context_source_admission(source, admitted);
         }
+        self.request_manual_memory_status_refresh();
+        updated
+    }
+
+    fn apply_cached_context_source_admission(
+        &mut self,
+        source: &crate::legacy_core::elpis_context::ContinuitySource,
+        admitted: bool,
+    ) {
+        let delta = self.update_cached_context_source_admission(&source.name, admitted);
+        self.adjust_context_projection(delta, self.turn_lifecycle.last_turn_id.clone());
+    }
+
+    fn update_cached_context_source_admission(&mut self, name: &str, admitted: bool) -> i64 {
+        let mut delta = 0i64;
+        for cached in self
+            .manual_memory_cache
+            .sources
+            .iter_mut()
+            .filter(|cached| cached.name == name)
+        {
+            if cached.admitted == admitted {
+                continue;
+            }
+            cached.admitted = admitted;
+            let tokens = i64::try_from(cached.estimated_tokens).unwrap_or(i64::MAX);
+            delta = delta.saturating_add(if admitted { tokens } else { -tokens });
+        }
+        delta
+    }
+
+    fn stage_context_source_admission(
+        &mut self,
+        source: &crate::legacy_core::elpis_context::ContinuitySource,
+        admitted: bool,
+    ) -> bool {
+        if source.admitted == admitted {
+            return false;
+        }
+        let name = source.name.clone();
+        if let Some(pending) = self
+            .context_ledger
+            .pending_context_admissions
+            .get_mut(&name)
+        {
+            pending.desired = admitted;
+            if pending.desired == pending.original {
+                self.context_ledger.pending_context_admissions.remove(&name);
+            }
+        } else {
+            self.context_ledger.pending_context_admissions.insert(
+                name,
+                PendingContextAdmission {
+                    original: source.admitted,
+                    desired: admitted,
+                },
+            );
+        }
+        true
+    }
+
+    pub(super) fn commit_staged_context_admissions(&mut self, completed_turn_id: &str) {
+        let pending = std::mem::take(&mut self.context_ledger.pending_context_admissions);
+        if pending.is_empty() {
+            return;
+        }
+        let mut projected_delta = 0i64;
+        for (name, change) in pending {
+            match crate::legacy_core::elpis_context::set_continuity_source_admitted(
+                Some(self.config.memory_dir.as_path()),
+                self.config.cwd.as_path(),
+                &name,
+                change.desired,
+            ) {
+                Ok(()) => {
+                    projected_delta = projected_delta.saturating_add(
+                        self.update_cached_context_source_admission(&name, change.desired),
+                    );
+                }
+                Err(error) => self.add_error_message(format!(
+                    "Could not apply queued context admission for {name}: {error}"
+                )),
+            }
+        }
+        self.adjust_context_projection(projected_delta, Some(completed_turn_id.to_string()));
+        self.request_manual_memory_status_refresh();
+    }
+
+    pub(super) fn reconcile_context_projection_for_turn(&mut self, turn_id: &str) {
+        if self.context_ledger.projected_token_delta == 0
+            || self.context_ledger.projection_baseline_turn_id.as_deref() == Some(turn_id)
+        {
+            return;
+        }
+        self.context_ledger.projected_token_delta = 0;
+        self.context_ledger.projection_baseline_turn_id = None;
+        self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+        self.request_redraw();
+    }
+
+    fn adjust_context_projection(&mut self, delta: i64, baseline_turn_id: Option<String>) {
+        if delta == 0 {
+            return;
+        }
+        self.context_ledger.projected_token_delta = self
+            .context_ledger
+            .projected_token_delta
+            .saturating_add(delta);
+        if self.context_ledger.projected_token_delta == 0 {
+            self.context_ledger.projection_baseline_turn_id = None;
+        } else {
+            self.context_ledger.projection_baseline_turn_id = baseline_turn_id;
+        }
+    }
+
+    fn manual_memory_can_toggle(&self) -> bool {
+        self.manual_memory_cache
+            .status
+            .as_ref()
+            .is_some_and(|status| {
+                status.state
+                    != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+            })
+    }
+
+    pub(super) fn reject_manual_memory_writer_conflict(&mut self) -> bool {
+        if self.manual_memory_cache.pending_mutation.is_none() {
+            return false;
+        }
+        self.add_info_message(
+            "Context admission is busy while Manual Memory is changing.".to_string(),
+            /*hint*/ None,
+        );
+        true
     }
 }
 
-fn category_color(category: crate::legacy_core::elpis_context::ContinuitySourceCategory) -> Color {
-    use crate::legacy_core::elpis_context::ContinuitySourceCategory as C;
-    match category {
-        C::Files => Color::Rgb(52, 168, 83),
-        C::Memory => Color::Rgb(215, 119, 87),
-        C::Instructions => Color::Rgb(255, 193, 7),
+fn is_manual_memory_source(
+    source: &crate::legacy_core::elpis_context::ContinuitySource,
+    manual_memory_path: Option<&std::path::Path>,
+) -> bool {
+    manual_memory_path == Some(source.path.as_path())
+}
+
+fn is_bulk_context_source_actionable(
+    source: &crate::legacy_core::elpis_context::ContinuitySource,
+    manual_memory_path: Option<&std::path::Path>,
+    manual_memory_actionable: bool,
+) -> bool {
+    source.selectable
+        && (!is_manual_memory_source(source, manual_memory_path) || manual_memory_actionable)
+}
+
+fn all_bulk_context_sources_admitted(
+    sources: &[crate::legacy_core::elpis_context::ContinuitySource],
+    manual_memory_path: Option<&std::path::Path>,
+    manual_memory_actionable: bool,
+) -> bool {
+    let mut actionable = sources.iter().filter(|source| {
+        is_bulk_context_source_actionable(source, manual_memory_path, manual_memory_actionable)
+    });
+    actionable
+        .next()
+        .is_some_and(|first| first.admitted && actionable.all(|source| source.admitted))
+}
+
+fn apply_token_delta(tokens: u64, delta: i64) -> u64 {
+    if delta < 0 {
+        tokens.saturating_sub(delta.unsigned_abs())
+    } else {
+        tokens.saturating_add(delta as u64)
     }
 }
 
@@ -705,16 +1519,31 @@ fn usage_bar_line(
 ) -> Line<'static> {
     let bar_width = content_width.saturating_sub(2).max(10);
     let mut spans = vec![Span::raw("  ")];
-    let mut cells_used = 0usize;
-    for (tokens, color) in segments {
-        if *tokens == 0 || cells_used >= bar_width {
-            continue;
+    let total_tokens = segments
+        .iter()
+        .map(|(tokens, _)| *tokens)
+        .sum::<u64>()
+        .min(context_window);
+    let cells_used = ((total_tokens as u128 * bar_width as u128
+        + u128::from(context_window.max(1)) / 2)
+        / u128::from(context_window.max(1))) as usize;
+    let mut previous_boundary = 0usize;
+    let mut cumulative_tokens = 0u64;
+    for (index, (tokens, color)) in segments.iter().enumerate() {
+        cumulative_tokens = cumulative_tokens.saturating_add(*tokens);
+        let boundary = if index + 1 == segments.len() {
+            cells_used
+        } else if total_tokens == 0 {
+            0
+        } else {
+            ((cumulative_tokens.min(total_tokens) as u128 * cells_used as u128)
+                / total_tokens as u128) as usize
+        };
+        let cells = boundary.saturating_sub(previous_boundary);
+        if cells > 0 {
+            spans.push(Span::styled("█".repeat(cells), Style::default().fg(*color)));
         }
-        let cells = ((*tokens as usize * bar_width) / context_window.max(1) as usize)
-            .max(1)
-            .min(bar_width - cells_used);
-        spans.push(Span::styled("█".repeat(cells), Style::default().fg(*color)));
-        cells_used += cells;
+        previous_boundary = boundary;
     }
     if cells_used < bar_width {
         spans.push(Span::styled(
@@ -763,6 +1592,46 @@ fn format_tokens(tokens: u64) -> String {
     }
 }
 
+fn format_source_count(value: u64) -> String {
+    let digits = value.to_string();
+    let first = digits.len() % 3;
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    if first != 0 {
+        grouped.push_str(&digits[..first]);
+    }
+    for chunk in digits.as_bytes()[first..].chunks(3) {
+        if !grouped.is_empty() {
+            grouped.push(',');
+        }
+        grouped.push_str(std::str::from_utf8(chunk).expect("digits are UTF-8"));
+    }
+    grouped
+}
+
+fn smart_prune_on_colors(
+    terminal_bg: Option<(u8, u8, u8)>,
+    color_level: StdoutColorLevel,
+) -> [Color; 4] {
+    if matches!(
+        color_level,
+        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown
+    ) {
+        return [Color::Green; 4];
+    }
+
+    let palette = if terminal_bg.is_some_and(is_light) {
+        [(109, 40, 217), (13, 116, 144), (5, 122, 85), (21, 128, 61)]
+    } else {
+        [
+            (139, 92, 246),
+            (20, 184, 166),
+            (16, 185, 129),
+            (74, 222, 128),
+        ]
+    };
+    palette.map(|color| best_color_for_level(color, color_level))
+}
+
 fn selected_source_scroll_offset(
     lines: &[Line<'_>],
     source_range: std::ops::Range<usize>,
@@ -790,6 +1659,33 @@ fn wrapped_line_count(lines: &[Line<'_>], width: u16) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn smart_prune_palette_uses_a_readable_low_color_fallback() {
+        assert_eq!(
+            smart_prune_on_colors(
+                Some((0, 0, 0)),
+                crate::terminal_palette::StdoutColorLevel::Ansi16,
+            ),
+            [Color::Green; 4]
+        );
+    }
+
+    #[test]
+    fn smart_prune_palette_adapts_for_a_light_terminal() {
+        assert_eq!(
+            smart_prune_on_colors(
+                Some((255, 255, 255)),
+                crate::terminal_palette::StdoutColorLevel::TrueColor,
+            ),
+            [
+                Color::Rgb(109, 40, 217),
+                Color::Rgb(13, 116, 144),
+                Color::Rgb(5, 122, 85),
+                Color::Rgb(21, 128, 61),
+            ]
+        );
+    }
 
     #[test]
     fn selected_source_scrolls_into_a_short_ledger() {
@@ -821,5 +1717,25 @@ mod tests {
     fn scaled_usage_segments_match_measured_context() {
         let scaled = scale_usage_segments(&[(70, Color::Green), (30, Color::Yellow)], 25);
         assert_eq!(scaled.iter().map(|(tokens, _)| *tokens).sum::<u64>(), 25);
+    }
+
+    #[test]
+    fn usage_bar_never_fills_more_cells_than_total_usage() {
+        let line = usage_bar_line(
+            12,
+            1_000,
+            &[
+                (25, Color::Blue),
+                (25, Color::Green),
+                (25, Color::Yellow),
+                (25, Color::Magenta),
+            ],
+        );
+        let filled = line
+            .spans
+            .iter()
+            .map(|span| span.content.matches('█').count())
+            .sum::<usize>();
+        assert_eq!(filled, 1, "100/1000 of a ten-cell bar is one cell");
     }
 }

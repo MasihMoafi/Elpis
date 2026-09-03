@@ -54,10 +54,11 @@ Constraints that shape everything below:
 
 ## Elpis's cache boundary
 
-Breakpoints are gated two ways, both of which must hold:
+Breakpoints are gated three ways, all of which must hold:
 
 1. the provider is OpenAI, and
-2. the model slug parses as `gpt-<major>.<minor>` at or past `5.6` (`gpt-5.6-sol`,
+2. the request uses the direct OpenAI Responses API, not the ChatGPT/Codex `/backend-api`, and
+3. the model slug parses as `gpt-<major>.<minor>` at or past `5.6` (`gpt-5.6-sol`,
    `gpt-5.6-terra`, `gpt-5.6-luna`, and later families).
 
 Within that gate they ship **on by default**: they ride alongside the server's implicit
@@ -111,9 +112,11 @@ anything.
   pruning, compaction, and every other history rewrite leave it untouched. Only the prefix
   changes, which is exactly what the cache is meant to notice.
 - **Background requests that reuse the session's client** get their own namespace:
-  `<session-id>:context-prune` and `<session-id>:memory`. Their prefix is unrelated to the
-  conversation, so sharing the turn's slot could only evict the turn prefix for no possible
-  hit. Each namespace is itself constant per session and kind.
+  `<session-id>:context-prune` and `<session-id>:smart-prune`. (A `<session-id>:memory`
+  namespace is still defined in code but has no live caller; the automatic memory pipeline was removed.)
+  Their prefixes are unrelated to the conversation, so sharing the turn's slot could only
+  evict the turn prefix for no possible hit. Each namespace is itself constant per session
+  and kind.
 - A `prompt_cache_key` override (guardian review sessions) still wins over both.
 
 ## Cache-write accounting
@@ -138,28 +141,31 @@ does, the running total is a number and later silent requests add nothing.
 `cache_write_tokens` are breakdowns *of* it, not additions *to* it — nothing sums them into
 input.
 
-The field flows to the rollout `token_count` records, the pruning audit archive
-(`~/.elpis/logs/pruning/`), and the `rollout-trace` inference records. It is **not** carried
-by the app-server `TokenUsageBreakdown` wire type, so the TUI status card does not show it;
-extending that type means regenerating its TypeScript and JSON schema artifacts.
+The field flows to rollout `token_count` records, pruning/Smart Prune audit evidence,
+`rollout-trace` inference records, and the app-server `TokenUsageBreakdown` wire type. The
+dashboard preserves `null` as `not reported`; it never turns a missing field into a measured
+zero.
 
 ## How pruning interacts with cached prefixes
 
-A pruning pass rewrites the oldest rewritable items, so every prefix past its first
-rewritten item diverges. **No breakpoint can prevent that** — removing content from the
-middle of a prompt changes every prefix after it. Two things are done about it instead, both
-described in `docs/cache-friendly-pruning.md`:
+A retrospective pruning pass rewrites old items, so every prefix past its first rewritten
+item diverges. **No breakpoint can prevent that** — changing content in the middle of a
+prompt changes every prefix after it.
 
-1. **Prune far less often.** Automatic pruning runs as a hysteresis cycle: 30% used → one
-   cycle → ~20% used → no further pass until use regrows to 30%. The backlog-sized "steady"
-   trigger, which fired independently of how full the window was, is gone.
-2. **Raise the floor each pass falls back to.** Each applied pass seals its region with a
-   byte-stable epoch marker and a breakpoint is placed on it, so the *next* pass falls back
-   to that boundary instead of to the initial prefix.
+Elpis therefore no longer runs Ace retrospectively as its optional automatic path. Smart
+Prune decides the body of a fresh client-side textual tool result before the main model
+first sees it. From then on, the admitted logical input is append-only. HTTP sends that
+full input; the WebSocket path may send only the new delta with `previous_response_id`, but
+only after comparing it with the same unchanged full logical prefix.
+
+Emergency `/force-prune` remains an explicit retrospective rewrite. Each applied pass seals
+its region with a byte-stable epoch marker and places a breakpoint there, so a later pass can
+fall back to that boundary rather than only the initial prefix. See
+`docs/cache-friendly-pruning.md`.
 
 ### The measurement that motivated this
 
-Session `019fe741` (2026-08-09, `gpt-5.6-sol`), before either change:
+Session `019fe741` (2026-08-09, `gpt-5.6-sol`), before Smart Prune:
 
 | | |
 |---|---|
@@ -175,8 +181,17 @@ that prefix and the divergence point was already large and already stable across
 it simply had never been *written* as a cache entry, because implicit caching only writes
 near the end of each prompt. The epoch breakpoint is what makes that region an entry.
 
-**Both effects are predictions, not results.** No run has been made against the new
-layout. See "What to inspect" below for how to check.
+This historical run explains why automatic retrospective rewriting was removed. It is not
+evidence that Smart Prune improves cost or task quality. See "What to inspect" below.
+
+### First Smart Prune live observation
+
+A [2026-09-01 normal-work pilot](evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md)
+reported 95.85% cached input overall. The first main responses linked to its two applied
+admissions reported 98.96% and 98.89% cached input; both preceded a later compaction. This
+observes provider reuse at the admission boundaries. Without a private full-request trace
+or matched OFF arm, it does not establish the full live sequence or a causal cost, latency,
+or quality change.
 
 ## What to inspect
 
@@ -188,18 +203,20 @@ Per request, from the rollout `token_count` records:
 
 Signals worth watching:
 
-- **A repeating low `cached_input_tokens` value** is a prefix invalidation, and its value
-  tells you where the surviving boundary is. Correlate the count against
-  `elpis.context-prune.v1:` checkpoints in the rollout.
-- **The plateau value should now climb over a session.** Each pruning event should fall back
-  to the newest epoch boundary, not to a fixed initial prefix. A *constant* plateau across
-  many passes means the epoch breakpoint is not being written — check that the frozen prefix
-  exceeds 1,024 tokens and that the marker is present in the request body.
-- **The number of pruning events should be roughly (peak use − 20%) / 10% per session**, not
-  one per turn. Count `"trigger": "pressure"` manifests in `~/.elpis/logs/pruning/passes/`.
-- **`cached_input_tokens: 0` on pruning calls** is expected: each pruning batch is unique
-  content, so it can never hit. The namespaced key keeps that miss from costing the turn
-  loop its slot.
+- **Smart Prune mechanism evidence** lives under
+  `~/.elpis/logs/smart-prune/admissions/`: exact source/admitted envelopes, a canonical
+  logical-input hash for the next main request, and the linked provider response/usage when
+  available. The hash is not a claim about byte-identical HTTP versus WebSocket framing.
+- **Main request sequences should stay append-only.** After an admitted result appears,
+  every later logical main input must retain it exactly and the main `prompt_cache_key` must
+  stay stable. The optimizer request must use `:smart-prune` instead.
+- **A repeating low `cached_input_tokens` value** can indicate prefix invalidation, but
+  provider telemetry and matched OFF/ON runs are required before attributing it to Smart
+  Prune or claiming a cost change.
+- **Emergency `/force-prune` checkpoints** identify an intentional retrospective rewrite. Correlate
+  `elpis.context-prune.v1:` checkpoints separately from Smart Prune admissions. Across
+  successive manual passes, the fallback boundary should move to the newest cacheable epoch;
+  a constant plateau can indicate a missing marker or breakpoint.
 - **A prefix under 1,024 tokens** never caches on GPT-5.6, so a small stable prefix is
   worth nothing whichever mode is on.
 
@@ -211,33 +228,13 @@ explicit_prompt_cache = true
 ```
 
 This switches `prompt_cache_options.mode` to `"explicit"` and adds a rolling-tail
-breakpoint to replace the automatic one it disables. It affects only GPT-5.6+ requests to
-OpenAI, and it is **not** needed to get Elpis's breakpoints — those ship on by default. See
-"Why implicit rather than explicit" above; keep it off unless a paired run shows otherwise.
+breakpoint to replace the automatic one it disables. It affects only supported GPT-5.6+
+requests to the direct OpenAI API, not the ChatGPT/Codex backend, and it is **not** needed to
+get Elpis's breakpoints — those ship on by default. See "Why implicit rather than explicit"
+above; keep it off unless a paired run shows otherwise.
 
-## Provider Prompt-Cache Lifecycle Awareness
+## Dormant cache-lifecycle utilities
 
-In addition to breakpoint placement, Elpis manages provider-specific prompt-cache lifecycles (`codex-model-provider::cache_lifecycle`):
-
-### 1. Anthropic TTL Tracking (5-minute ephemeral window)
-
-Anthropic Claude enforces a 5-minute (300-second) TTL on cached prompt prefixes:
-- **`Hot` / `Fresh`:** Elapsed time since last request < 270s (well within TTL).
-- **`NearExpiry`:** Elapsed time between 270s and 300s (warning window, 30s remaining).
-- **`Cold` / `Expired`:** Elapsed time >= 300s (cache evicted by provider; requires full write).
-
-Subsequent requests within the active TTL window refresh the 5-minute timer from the newest request timestamp.
-
-### 2. Cache-Miss Detection & Metrics
-
-The tracker records per-thread/session and per-provider metrics:
-- **Miss Categorization:** Differentiates `ColdStart`, `TtlExpired`, `BelowTokenThreshold` (< 1,024 tokens), and `PrefixInvalidated`.
-- **Metrics Tracked:** Total requests, hits, misses, creations, total input tokens, cached tokens, created tokens, `hit_rate()`, and `token_cached_ratio()`.
-
-### 3. Safe Input Queueing
-
-To prevent busting cached prompt prefixes during rapid user interaction or multi-turn bursts:
-- **Prefix Preservation:** Enforces append-only invariants on queued inputs, ensuring existing prompt history is not mutated or reordered.
-- **Turn Coalescing:** Batches rapid micro-inputs arriving during active tool runs into a single consolidated turn payload to avoid cache thrashing.
-- **TTL-Aware Urgency:** Evaluates `should_flush_urgently` when queued messages exist and cache state enters `NearExpiry` (e.g. at 270s+ for Anthropic), dispatching immediately before the 5-minute window expires.
-
+`codex-model-provider::cache_lifecycle` contains unit-tested provider-cache tracking and input
+queue types, but no production request path currently calls them. Elpis therefore does not
+claim runtime TTL management, cache-miss categorization, or TTL-aware input coalescing.

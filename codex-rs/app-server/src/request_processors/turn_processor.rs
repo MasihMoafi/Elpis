@@ -84,6 +84,8 @@ pub(crate) struct TurnRequestProcessor {
     thread_watch_manager: ThreadWatchManager,
     thread_list_state_permit: Arc<Semaphore>,
     skills_watcher: Arc<SkillsWatcher>,
+    turn_cost_policy: crate::turn_cost_worker::TurnCostAvailabilityPolicy,
+    turn_cost_worker: Option<crate::turn_cost_worker::TurnCostWorkerHandle>,
 }
 
 fn map_additional_context(
@@ -140,6 +142,8 @@ impl TurnRequestProcessor {
         thread_watch_manager: ThreadWatchManager,
         thread_list_state_permit: Arc<Semaphore>,
         skills_watcher: Arc<SkillsWatcher>,
+        turn_cost_policy: crate::turn_cost_worker::TurnCostAvailabilityPolicy,
+        turn_cost_worker: Option<crate::turn_cost_worker::TurnCostWorkerHandle>,
     ) -> Self {
         let agent_runner = AgentRunner::new(Arc::downgrade(&thread_manager));
         Self {
@@ -155,6 +159,8 @@ impl TurnRequestProcessor {
             thread_watch_manager,
             thread_list_state_permit,
             skills_watcher,
+            turn_cost_policy,
+            turn_cost_worker,
         }
     }
 
@@ -1381,6 +1387,8 @@ impl TurnRequestProcessor {
             fallback_model_provider: self.config.model_provider_id.clone(),
             codex_home: self.config.codex_home.to_path_buf(),
             skills_watcher: Arc::clone(&self.skills_watcher),
+            turn_cost_policy: self.turn_cost_policy.clone(),
+            turn_cost_worker: self.turn_cost_worker.clone(),
         }
     }
 

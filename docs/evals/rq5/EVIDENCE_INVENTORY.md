@@ -23,4 +23,4 @@
 3. **Structured Audit Viewer**: Existing visualization HTMLs (`elpis-rq1-rq4-analysis.html`) focus on cost/cache rather than explicit audit inspection of pruned vs retained items per turn.
 
 > **Directive**:
-> Worktree `/home/masih/Desktop/p/elpis-rq5-final` is designated for **EVIDENCE CONSOLIDATION ONLY**. No new expensive live experiments are permitted unless existing log evidence is audited and proven insufficient.
+> Worktree `~/Desktop/p/elpis-rq5-final` is designated for **EVIDENCE CONSOLIDATION ONLY**. No new expensive live experiments are permitted unless existing log evidence is audited and proven insufficient.

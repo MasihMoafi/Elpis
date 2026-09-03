@@ -1,114 +1,97 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="100%" height="100%" style="background-color: #0d1117; border-radius: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-<rect x="0" y="0" width="960" height="420" fill="#0d1117" rx="10" />
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" style="background-color: #0d1117; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <title>Historical context-flow Sankey for one recorded Elpis run</title>
+  <desc>A left-to-right Sankey showing rounded token estimates from one retrospective run: 658 thousand tool-output tokens, 19.2 thousand dialogue tokens, and 6.3 thousand rule tokens flowed through 42 Ace passes to removed context, disk evidence, and an approximately 47.5-thousand-token active working set. The run used a superseded automatic-pruning configuration.</desc>
+  <rect width="1200" height="560" rx="12" fill="#0d1117"/>
   <defs>
-    <linearGradient id="grad-amber-red" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#ef4444" stop-opacity="0.6"/>
+    <linearGradient id="tool-to-ace" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d97706" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#f59e0b" stop-opacity="0.62"/>
     </linearGradient>
-    <linearGradient id="grad-amber-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#10b981" stop-opacity="0.6"/>
+    <linearGradient id="tool-to-floor" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d97706" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#14b8a6" stop-opacity="0.62"/>
     </linearGradient>
-    <linearGradient id="grad-tool-ace" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#d97706" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.6"/>
+    <linearGradient id="ace-to-removed" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f59e0b" stop-opacity="0.56"/>
+      <stop offset="1" stop-color="#ef4444" stop-opacity="0.58"/>
     </linearGradient>
-    <linearGradient id="grad-tool-floor" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#d97706" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#14b8a6" stop-opacity="0.6"/>
+    <linearGradient id="ace-to-evidence" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f59e0b" stop-opacity="0.54"/>
+      <stop offset="1" stop-color="#34d399" stop-opacity="0.62"/>
     </linearGradient>
-    <linearGradient id="grad-blue-blue" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#0284c7" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#0284c7" stop-opacity="0.6"/>
-    </linearGradient>
-    <linearGradient id="grad-slate-slate" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#64748b" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#64748b" stop-opacity="0.6"/>
-    </linearGradient>
-    <linearGradient id="grad-to-active" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.6"/>
+    <linearGradient id="to-active" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#14b8a6" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0.66"/>
     </linearGradient>
   </defs>
 
-  <!-- Title & Header -->
-  <text x="32" y="38" fill="#f8fafc" font-size="16" font-weight="700">Task 1: Context Flow &amp; Pruning Lifecycle (Sankey)</text>
-  <text x="32" y="60" fill="#94a3b8" font-size="13">Flow of 683k candidate tokens through Ace selective pruning down to active working set and disk evidence.</text>
+  <rect x="42" y="18" width="476" height="28" rx="14" fill="#2b1d12" stroke="#d97706"/>
+  <text x="58" y="37" fill="#fbbf24" font-size="12.5" font-weight="700">Historical - superseded automatic-pruning configuration</text>
+  <rect x="966" y="18" width="192" height="28" rx="14" fill="#16202b" stroke="#475569"/>
+  <text x="1062" y="37" fill="#cbd5e1" font-size="12.5" font-weight="700" text-anchor="middle">One recorded run</text>
 
-  <!-- Column Headers -->
-  <text x="50" y="95" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.5">INGESTION SOURCES</text>
-  <text x="400" y="95" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.5">ADMISSION &amp; PRUNING ENGINE</text>
-  <text x="740" y="95" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.5">FINAL DESTINATION</text>
+  <text x="42" y="82" fill="#f8fafc" font-size="23" font-weight="700">Context flow through 42 Ace passes</text>
+  <text x="42" y="108" fill="#94a3b8" font-size="14">Retrospective Run 1 · rounded token estimates from the archived evaluation, not current product defaults</text>
 
-  <!-- Ribbons (Curved Paths) -->
-  <!-- Tool (636k) -> Ace (636k) -->
-  <path d="M 64 125 C 240 125, 240 125, 414 125 L 414 315 C 240 315, 240 305, 64 305 Z" fill="url(#grad-tool-ace)" />
-  <!-- Tool (22k) -> Floor (22k) -->
-  <path d="M 64 305 C 240 305, 240 330, 414 330 L 414 345 C 240 345, 240 315, 64 315 Z" fill="url(#grad-tool-floor)" />
-  <!-- Turn (19.2k) -> Intact Stream (19.2k) -->
-  <path d="M 64 335 C 240 335, 240 360, 414 360 L 414 374 C 240 374, 240 349, 64 349 Z" fill="url(#grad-blue-blue)" />
-  <!-- System (6.3k) -> Fixed Rules (6.3k) -->
-  <path d="M 64 369 C 240 369, 240 388, 414 388 L 414 394 C 240 394, 240 375, 64 375 Z" fill="url(#grad-slate-slate)" />
+  <text x="58" y="152" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.7">INGESTION SOURCES</text>
+  <text x="465" y="152" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.7">ACE REVIEW</text>
+  <text x="850" y="152" fill="#cbd5e1" font-size="12" font-weight="700" letter-spacing="0.7">RECORDED DESTINATIONS</text>
 
-  <!-- Ace (621k) -> Evicted Noise (621k) -->
-  <path d="M 428 125 C 580 125, 580 125, 754 125 L 754 310 C 580 310, 580 305, 428 305 Z" fill="url(#grad-amber-red)" />
-  <!-- Ace (15k) -> Durable Evidence (15k) -->
-  <path d="M 428 305 C 580 305, 580 325, 754 325 L 754 338 C 580 338, 580 315, 428 315 Z" fill="url(#grad-amber-emerald)" />
-  <!-- Protected Floor (22k) -> Active Context (22k) -->
-  <path d="M 428 330 C 580 330, 580 350, 754 350 L 754 366 C 580 366, 580 345, 428 345 Z" fill="url(#grad-to-active)" />
-  <!-- Intact Stream (19.2k) -> Active Context (19.2k) -->
-  <path d="M 428 360 C 580 360, 580 366, 754 366 L 754 380 C 580 380, 580 374, 428 374 Z" fill="url(#grad-blue-blue)" />
-  <!-- Fixed Rules (6.3k) -> Active Context (6.3k) -->
-  <path d="M 428 388 C 580 388, 580 380, 754 380 L 754 386 C 580 386, 580 394, 428 394 Z" fill="url(#grad-slate-slate)" />
+  <!-- Left-to-right Sankey ribbons. Values are unchanged; widths are explanatory. -->
+  <path d="M72 178 C250 178 282 178 465 178 L465 358 C282 358 250 345 72 345 Z" fill="url(#tool-to-ace)"/>
+  <path d="M72 345 C250 345 282 374 465 374 L465 392 C282 392 250 357 72 357 Z" fill="url(#tool-to-floor)"/>
+  <path d="M72 382 C250 382 282 410 465 410 L465 428 C282 428 250 402 72 402 Z" fill="#0284c7" fill-opacity="0.46"/>
+  <path d="M72 427 C250 427 282 446 465 446 L465 458 C282 458 250 441 72 441 Z" fill="#64748b" fill-opacity="0.5"/>
 
-  <!-- Column 0 Nodes -->
-  <!-- Node 0: Tool Outputs -->
-  <rect x="50" y="115" width="14" height="200" rx="3" fill="#d97706" />
-  <text x="72" y="195" fill="#f8fafc" font-size="12" font-weight="700">Tool Outputs (CLI / AST)</text>
-  <text x="72" y="212" fill="#cbd5e1" font-size="11">658k raw candidate tokens (96.3%)</text>
+  <path d="M479 178 C650 178 679 178 850 178 L850 348 C679 348 650 343 479 343 Z" fill="url(#ace-to-removed)"/>
+  <path d="M479 343 C650 343 679 370 850 370 L850 388 C679 388 650 358 479 358 Z" fill="url(#ace-to-evidence)"/>
+  <path d="M479 374 C650 374 679 404 850 404 L850 422 C679 422 650 392 479 392 Z" fill="url(#to-active)"/>
+  <path d="M479 410 C650 410 679 422 850 422 L850 440 C679 440 650 428 479 428 Z" fill="#0284c7" fill-opacity="0.5"/>
+  <path d="M479 446 C650 446 679 440 850 440 L850 452 C679 452 650 458 479 458 Z" fill="#64748b" fill-opacity="0.52"/>
 
-  <!-- Node 1: Turn Dialogue -->
-  <rect x="50" y="325" width="14" height="24" rx="3" fill="#0284c7" />
-  <text x="72" y="337" fill="#f8fafc" font-size="11" font-weight="700">Turn Dialogue (User / Agent)</text>
-  <text x="72" y="348" fill="#cbd5e1" font-size="10">19.2k tokens (2.8%)</text>
+  <rect x="58" y="168" width="14" height="189" rx="4" fill="#d97706"/>
+  <text x="84" y="249" fill="#f8fafc" font-size="13" font-weight="700">Tool outputs</text>
+  <text x="84" y="270" fill="#cbd5e1" font-size="12">658k candidate tokens</text>
+  <text x="84" y="288" fill="#94a3b8" font-size="11.5">636k reviewed · 22k protected recent floor</text>
 
-  <!-- Node 2: System Rules & Goal -->
-  <rect x="50" y="359" width="14" height="16" rx="3" fill="#64748b" />
-  <text x="72" y="368" fill="#f8fafc" font-size="11" font-weight="700">System Rules &amp; Goal</text>
-  <text x="72" y="379" fill="#cbd5e1" font-size="10">6.3k tokens (0.9%)</text>
+  <rect x="58" y="374" width="14" height="28" rx="4" fill="#0284c7"/>
+  <text x="84" y="387" fill="#f8fafc" font-size="12" font-weight="700">Turn dialogue</text>
+  <text x="84" y="402" fill="#cbd5e1" font-size="11">19.2k tokens</text>
 
-  <!-- Column 1 Nodes -->
-  <!-- Node 3: Ace Pruning Filter -->
-  <rect x="414" y="115" width="14" height="200" rx="3" fill="#f59e0b" />
-  <text x="436" y="195" fill="#f8fafc" font-size="12" font-weight="700">Ace Pruning Filter (42 Passes)</text>
-  <text x="436" y="212" fill="#cbd5e1" font-size="11">636k evaluated tool tokens</text>
+  <rect x="58" y="419" width="14" height="22" rx="4" fill="#64748b"/>
+  <text x="84" y="432" fill="#f8fafc" font-size="12" font-weight="700">System rules + goal</text>
+  <text x="84" y="447" fill="#cbd5e1" font-size="11">6.3k tokens</text>
 
-  <!-- Node 4: Protected Floor -->
-  <rect x="414" y="325" width="14" height="20" rx="3" fill="#14b8a6" />
-  <text x="436" y="338" fill="#f8fafc" font-size="11" font-weight="600">Protected Recent Floor (10%)</text>
+  <rect x="465" y="168" width="14" height="190" rx="4" fill="#f59e0b"/>
+  <text x="491" y="249" fill="#f8fafc" font-size="13" font-weight="700">Ace pruning filter</text>
+  <text x="491" y="270" fill="#cbd5e1" font-size="12">636k evaluated tool tokens</text>
+  <text x="491" y="288" fill="#94a3b8" font-size="11.5">42 passes in this recorded run</text>
 
-  <!-- Node 5: Intact Stream -->
-  <rect x="414" y="355" width="14" height="19" rx="3" fill="#0284c7" />
-  <text x="436" y="367" fill="#f8fafc" font-size="11" font-weight="600">Intact Conversation Stream</text>
+  <rect x="465" y="370" width="14" height="22" rx="4" fill="#14b8a6"/>
+  <text x="491" y="385" fill="#f8fafc" font-size="12" font-weight="700">Protected recent floor</text>
+  <text x="682" y="385" fill="#94a3b8" font-size="11">22k tokens</text>
 
-  <!-- Node 6: Fixed Baseline -->
-  <rect x="414" y="384" width="14" height="10" rx="3" fill="#64748b" />
-  <text x="436" y="393" fill="#f8fafc" font-size="11" font-weight="600">Fixed Baseline Rules</text>
+  <rect x="465" y="404" width="14" height="24" rx="4" fill="#0284c7"/>
+  <text x="491" y="420" fill="#f8fafc" font-size="12" font-weight="700">Intact dialogue stream</text>
 
-  <!-- Column 2 Nodes -->
-  <!-- Node 7: Evicted Dead-End Noise -->
-  <rect x="754" y="115" width="14" height="195" rx="3" fill="#ef4444" />
-  <text x="776" y="195" fill="#f87171" font-size="12" font-weight="700">Evicted Dead-End Noise (621k)</text>
-  <text x="776" y="212" fill="#cbd5e1" font-size="11">90.9% discarded unreferenced bytes</text>
+  <rect x="465" y="442" width="14" height="16" rx="4" fill="#64748b"/>
+  <text x="491" y="455" fill="#f8fafc" font-size="12" font-weight="700">Fixed baseline rules</text>
 
-  <!-- Node 8: Durable Evidence Pointers -->
-  <rect x="754" y="320" width="14" height="18" rx="3" fill="#10b981" />
-  <text x="776" y="328" fill="#34d399" font-size="11" font-weight="700">Durable Evidence Pointers (15k)</text>
-  <text x="776" y="339" fill="#cbd5e1" font-size="10">Saved to disk (rollout:// evidence)</text>
+  <rect x="850" y="168" width="14" height="180" rx="4" fill="#ef4444"/>
+  <text x="878" y="247" fill="#f87171" font-size="13" font-weight="700">Removed from working context</text>
+  <text x="878" y="269" fill="#f8fafc" font-size="12">621k tokens</text>
+  <text x="878" y="287" fill="#94a3b8" font-size="11.5">Archived run estimate; not a byte count</text>
 
-  <!-- Node 9: Active Context Window -->
-  <rect x="754" y="348" width="14" height="38" rx="3" fill="#3b82f6" />
-  <text x="776" y="362" fill="#60a5fa" font-size="12" font-weight="700">Active Context Window (~47.5k)</text>
-  <text x="776" y="375" fill="#cbd5e1" font-size="11">Stayed in safe green zone (&lt;30% cap)</text>
+  <rect x="850" y="366" width="14" height="22" rx="4" fill="#34d399"/>
+  <text x="878" y="379" fill="#34d399" font-size="12" font-weight="700">Durable evidence / pointers</text>
+  <text x="1088" y="379" fill="#cbd5e1" font-size="11">15k-token flow</text>
 
+  <rect x="850" y="404" width="14" height="48" rx="4" fill="#38bdf8"/>
+  <text x="878" y="423" fill="#7dd3fc" font-size="13" font-weight="700">Active working context</text>
+  <text x="878" y="444" fill="#f8fafc" font-size="12">≈47.5k tokens</text>
+  <text x="985" y="444" fill="#94a3b8" font-size="11">22k + 19.2k + 6.3k</text>
+
+  <line x1="42" y1="492" x2="1158" y2="492" stroke="#273244"/>
+  <text x="42" y="519" fill="#94a3b8" font-size="11.5">All quantities are rounded token estimates already reported for this run; ribbon widths are explanatory.</text>
+  <text x="1158" y="519" fill="#64748b" font-size="11.5" text-anchor="end">Source: archived RQ1 Run 1</text>
 </svg>

@@ -48,6 +48,9 @@ use crate::thread_state::ConnectionCapabilities;
 use crate::thread_state::ThreadStateManager;
 use crate::transport::AppServerTransport;
 use crate::transport::RemoteControlHandle;
+use crate::turn_cost_worker::TurnCostAvailabilityPolicy;
+use crate::turn_cost_worker::TurnCostLateNotifier;
+use crate::turn_cost_worker::TurnCostWorker;
 use codex_app_server_protocol::ClientNotification;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
@@ -99,6 +102,7 @@ fn deserialize_client_request(
 pub(crate) struct MessageProcessor {
     outgoing: Arc<OutgoingMessageSender>,
     models_refresh_worker: ModelsRefreshWorker,
+    turn_cost_worker: Option<TurnCostWorker>,
     skills_watcher: Arc<SkillsWatcher>,
     account_processor: AccountRequestProcessor,
     apps_processor: AppsRequestProcessor,
@@ -291,6 +295,13 @@ impl MessageProcessor {
         let models_manager = thread_manager.get_models_manager();
         let models_refresh_worker =
             crate::models_refresh_worker::spawn(&models_manager, config.http_client_factory());
+        let turn_cost_policy =
+            TurnCostAvailabilityPolicy::new(Arc::clone(&config), Arc::clone(&auth_manager));
+        let turn_cost_worker = TurnCostWorker::spawn(
+            Arc::clone(&config),
+            Arc::clone(&auth_manager),
+            TurnCostLateNotifier::new(outgoing.clone(), thread_state_manager.clone()),
+        );
         let skills_watcher = SkillsWatcher::new(thread_manager.skills_service(), outgoing.clone());
 
         let pending_thread_unloads = Arc::new(Mutex::new(HashSet::new()));
@@ -400,6 +411,8 @@ impl MessageProcessor {
             state_db.clone(),
             log_db,
             Arc::clone(&skills_watcher),
+            turn_cost_policy.clone(),
+            turn_cost_worker.as_ref().map(TurnCostWorker::handle),
             config_warnings,
         );
         let turn_processor = TurnRequestProcessor::new(
@@ -414,6 +427,8 @@ impl MessageProcessor {
             thread_watch_manager,
             thread_list_state_permit,
             Arc::clone(&skills_watcher),
+            turn_cost_policy,
+            turn_cost_worker.as_ref().map(TurnCostWorker::handle),
         );
         if matches!(plugin_startup_tasks, crate::PluginStartupTasks::Start) {
             // Keep plugin startup warmups aligned at app-server startup.
@@ -453,6 +468,7 @@ impl MessageProcessor {
         Self {
             outgoing,
             models_refresh_worker,
+            turn_cost_worker,
             skills_watcher,
             account_processor,
             apps_processor,
@@ -659,6 +675,9 @@ impl MessageProcessor {
 
     pub(crate) async fn drain_background_tasks(&self) {
         self.models_refresh_worker.shutdown();
+        if let Some(worker) = &self.turn_cost_worker {
+            worker.shutdown();
+        }
         self.thread_processor.drain_background_tasks().await;
     }
 

@@ -3,6 +3,7 @@
 
 #[path = "tests/advanced_reasoning_tests.rs"]
 mod advanced_reasoning_tests;
+mod manual_memory;
 mod model_catalog;
 mod plugin_catalog;
 mod rate_limits;
@@ -76,7 +77,12 @@ use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
 use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnActivityStatus;
+use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnCostAvailability;
+use codex_app_server_protocol::TurnCostState;
+use codex_app_server_protocol::TurnCostUpdatedNotification;
 use codex_app_server_protocol::TurnError as AppServerTurnError;
 use codex_app_server_protocol::TurnStartedNotification;
 use codex_app_server_protocol::TurnStatus;
@@ -1204,6 +1210,7 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
         thread_id,
         "turn-1",
         Some(950_000),
+        /*context_prune_saved_tokens*/ 0,
     )));
 
     let roomy = app.chat_widget.status_line_text().unwrap_or_default();
@@ -1212,6 +1219,7 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
         thread_id,
         "turn-1",
         Some(20),
+        /*context_prune_saved_tokens*/ 0,
     )));
 
     let cramped = app.chat_widget.status_line_text().unwrap_or_default();
@@ -1887,6 +1895,86 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
     assert!(config.contains("approvals_reviewer = \"auto_review\""));
     assert!(config.contains("approval_policy = \"on-request\""));
     assert!(config.contains("sandbox_mode = \"workspace-write\""));
+    app_server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_feature_flags_persists_automatic_pruning_for_next_conversation() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let codex_home = tempdir()?;
+    let cwd = codex_home.path().to_path_buf();
+    let default_config = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(cwd.clone()))
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert!(
+        !default_config
+            .features
+            .enabled(Feature::AutomaticContextPruning)
+    );
+
+    app.config.codex_home = codex_home.path().to_path_buf().abs();
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+
+    app.chat_widget.open_experimental_popup();
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Down));
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let updates = std::iter::from_fn(|| app_event_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::UpdateFeatureFlags { updates } => Some(updates),
+            _ => None,
+        })
+        .expect("automatic pruning enable update");
+    assert_eq!(updates, vec![(Feature::AutomaticContextPruning, true)]);
+    app.update_feature_flags(&mut app_server, updates).await;
+
+    let config_path = codex_home.path().join("config.toml");
+    let enabled_config = std::fs::read_to_string(&config_path)?;
+    assert!(enabled_config.contains("automatic_context_pruning = true"));
+    assert_eq!(
+        app.chat_widget.current_thread_smart_prune_enabled(),
+        None,
+        "a persisted preference must not replace the core-effective thread snapshot"
+    );
+
+    app.chat_widget.open_experimental_popup();
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Down));
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let updates = std::iter::from_fn(|| app_event_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::UpdateFeatureFlags { updates } => Some(updates),
+            _ => None,
+        })
+        .expect("automatic pruning disable update");
+    assert_eq!(updates, vec![(Feature::AutomaticContextPruning, false)]);
+    app.update_feature_flags(&mut app_server, updates).await;
+
+    let disabled_config = std::fs::read_to_string(&config_path)?;
+    assert!(!disabled_config.contains("automatic_context_pruning"));
+    assert_eq!(
+        app.chat_widget.current_thread_smart_prune_enabled(),
+        None,
+        "the current thread stays core-authoritative until its snapshot changes"
+    );
+    let reloaded = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(cwd))
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert!(!reloaded.features.enabled(Feature::AutomaticContextPruning));
+
     app_server.shutdown().await?;
     Ok(())
 }
@@ -4061,6 +4149,7 @@ async fn make_test_app() -> App {
         pending_primary_events: VecDeque::new(),
         pending_app_server_requests: PendingAppServerRequests::default(),
         pending_startup_thread_start: false,
+        manual_memory_status: ManualMemoryStatusCoordinator::default(),
         rate_limit_hard_stop_generation: 0,
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
@@ -4126,6 +4215,7 @@ async fn make_test_app_with_channels() -> (
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_startup_thread_start: false,
+            manual_memory_status: ManualMemoryStatusCoordinator::default(),
             rate_limit_hard_stop_generation: 0,
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
@@ -4689,6 +4779,277 @@ fn turn_completed_notification(
     })
 }
 
+fn seed_live_activity(chat_widget: &mut ChatWidget, thread_id: ThreadId, turn_id: &str) {
+    chat_widget.handle_server_notification(
+        turn_started_notification(thread_id, turn_id),
+        /*replay_kind*/ None,
+    );
+    chat_widget.handle_server_notification(
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: Some(0),
+            duration_ms: Some(1),
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        /*replay_kind*/ None,
+    );
+}
+
+#[tokio::test]
+async fn new_primary_session_attachment_resets_activity_and_requests_publication() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let previous_thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        previous_thread_id,
+        test_path_buf("/tmp/previous"),
+    ));
+    seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
+    app.chat_widget.handle_server_notification(
+        token_usage_notification(
+            previous_thread_id,
+            "turn-previous",
+            Some(1_000),
+            /*context_prune_saved_tokens*/ 40,
+        ),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(app.chat_widget.dashboard_activity_state().recent.len(), 1);
+    assert_eq!(
+        app.chat_widget.dashboard_usage_state_for_test(),
+        (Some(10), Some(10), Some(40))
+    );
+    while app_event_rx.try_recv().is_ok() {}
+
+    let next_thread_id = ThreadId::new();
+    app.enqueue_primary_thread_session(
+        test_thread_session(next_thread_id, test_path_buf("/tmp/next")),
+        Vec::new(),
+    )
+    .await?;
+
+    let activity = app.chat_widget.dashboard_activity_state();
+    assert_eq!(activity.current, None);
+    assert!(activity.recent.is_empty());
+    let (used_tokens, session_total, saved_tokens) =
+        app.chat_widget.dashboard_usage_state_for_test();
+    assert_eq!((used_tokens, session_total), (None, None));
+    assert_eq!(saved_tokens, None);
+    assert_eq!(
+        saved_tokens.unwrap_or(0),
+        0,
+        "the dashboard projects absent thread savings as zero"
+    );
+    assert_eq!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn resumed_primary_session_attachment_resets_activity_before_history_replay() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let resumed_thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        resumed_thread_id,
+        test_path_buf("/tmp/resumed"),
+    ));
+    seed_live_activity(&mut app.chat_widget, resumed_thread_id, "turn-previous");
+    while app_event_rx.try_recv().is_ok() {}
+
+    app.enqueue_primary_thread_session(
+        test_thread_session(resumed_thread_id, test_path_buf("/tmp/resumed")),
+        vec![test_turn(
+            "replayed-turn",
+            TurnStatus::Completed,
+            Vec::new(),
+        )],
+    )
+    .await?;
+
+    let activity = app.chat_widget.dashboard_activity_state();
+    assert_eq!(activity.current, None);
+    assert!(activity.recent.is_empty());
+    assert_eq!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn visible_thread_snapshot_switch_resets_activity_before_replay() {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let previous_thread_id = ThreadId::new();
+    app.chat_widget.handle_thread_session(test_thread_session(
+        previous_thread_id,
+        test_path_buf("/tmp/previous"),
+    ));
+    seed_live_activity(&mut app.chat_widget, previous_thread_id, "turn-previous");
+    while app_event_rx.try_recv().is_ok() {}
+
+    app.replay_thread_snapshot(
+        ThreadEventSnapshot {
+            session: Some(test_thread_session(
+                ThreadId::new(),
+                test_path_buf("/tmp/next"),
+            )),
+            turns: vec![test_turn(
+                "replayed-turn",
+                TurnStatus::Completed,
+                Vec::new(),
+            )],
+            events: Vec::new(),
+            input_state: None,
+        },
+        /*resume_restored_queue*/ false,
+    );
+
+    let activity = app.chat_widget.dashboard_activity_state();
+    assert_eq!(activity.current, None);
+    assert!(activity.recent.is_empty());
+    assert_eq!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn ephemeral_activity_notifications_are_live_delivered_but_not_buffered() -> Result<()> {
+    let mut app = make_test_app().await;
+    let thread_id = ThreadId::new();
+    app.thread_event_channels
+        .insert(thread_id, ThreadEventChannel::new(/*capacity*/ 8));
+    app.set_thread_active(thread_id, /*active*/ true).await;
+    let notifications = [
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::BackendUnavailable,
+            },
+        }),
+    ];
+
+    for notification in notifications {
+        app.enqueue_thread_notification(thread_id, notification)
+            .await?;
+    }
+
+    let channel = app
+        .thread_event_channels
+        .get_mut(&thread_id)
+        .expect("thread channel should exist");
+    assert!(channel.store.lock().await.snapshot().events.is_empty());
+    let receiver = channel
+        .receiver
+        .as_mut()
+        .expect("active test channel receiver");
+    let received_activity = receiver
+        .try_recv()
+        .expect("live activity notification should be delivered");
+    let received_cost = receiver
+        .try_recv()
+        .expect("live cost notification should be delivered");
+    assert!(matches!(
+        received_activity,
+        ThreadBufferedEvent::Notification(ServerNotification::TurnActivityUpdated(_))
+    ));
+    assert!(matches!(
+        received_cost,
+        ThreadBufferedEvent::Notification(ServerNotification::TurnCostUpdated(_))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_thread_channel_drops_ephemeral_activity_without_pending_send() -> Result<()> {
+    let mut app = make_test_app().await;
+    let thread_id = ThreadId::new();
+    app.thread_event_channels
+        .insert(thread_id, ThreadEventChannel::new(/*capacity*/ 1));
+    app.set_thread_active(thread_id, /*active*/ true).await;
+
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            status: TurnActivityStatus::Completed,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+    )
+    .await?;
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::TurnCostUpdated(TurnCostUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            cost: TurnCostState::Unavailable {
+                reason: TurnCostAvailability::ObservationDropped,
+            },
+        }),
+    )
+    .await?;
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::TurnActivityUpdated(TurnActivityUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "turn-2".to_string(),
+            status: TurnActivityStatus::Interrupted,
+            started_at: None,
+            duration_ms: None,
+            time_to_first_token_ms: None,
+            profile: None,
+        }),
+    )
+    .await?;
+
+    let channel = app
+        .thread_event_channels
+        .get_mut(&thread_id)
+        .expect("thread channel should exist");
+    assert!(channel.store.lock().await.snapshot().events.is_empty());
+    let receiver = channel
+        .receiver
+        .as_mut()
+        .expect("active test channel receiver");
+    assert!(matches!(
+        receiver.try_recv(),
+        Ok(ThreadBufferedEvent::Notification(
+            ServerNotification::TurnActivityUpdated(_)
+        ))
+    ));
+    assert!(
+        time::timeout(Duration::from_millis(50), receiver.recv())
+            .await
+            .is_err(),
+        "full-channel ephemeral update must not leave a pending send task",
+    );
+    Ok(())
+}
+
 fn thread_closed_notification(thread_id: ThreadId) -> ServerNotification {
     ServerNotification::ThreadClosed(ThreadClosedNotification {
         thread_id: thread_id.to_string(),
@@ -4699,6 +5060,7 @@ fn token_usage_notification(
     thread_id: ThreadId,
     turn_id: &str,
     model_context_window: Option<i64>,
+    context_prune_saved_tokens: u64,
 ) -> ServerNotification {
     ServerNotification::ThreadTokenUsageUpdated(ThreadTokenUsageUpdatedNotification {
         thread_id: thread_id.to_string(),
@@ -4721,7 +5083,8 @@ fn token_usage_notification(
                 reasoning_output_tokens: 0,
             },
             model_context_window,
-            context_prune_saved_tokens: 0,
+            context_prune_saved_tokens,
+            smart_prune: Default::default(),
         },
     })
 }
@@ -5726,6 +6089,7 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
         app.enqueue_primary_thread_session(started.session, started.turns)
             .await
             .expect("primary thread should be registered");
+        app.backtrack.primed = true;
         let op = AppCommand::interrupt();
 
         let handled = Box::pin(app.try_submit_active_thread_op_via_app_server(
@@ -5737,8 +6101,49 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
         .expect("interrupt submission should not fail");
 
         assert_eq!(handled, true);
+        assert!(!app.backtrack.primed);
     })
     .await;
+}
+
+#[tokio::test]
+async fn rejected_provider_model_selection_does_not_mutate_or_persist() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let initial_model = app.chat_widget.current_model().to_string();
+    let initial_provider = app.chat_widget.active_model_provider_id().to_string();
+    let initial_effort = app.chat_widget.current_reasoning_effort();
+    app.active_thread_id = Some(ThreadId::new());
+
+    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let config_path = app.config.codex_home.join("config.toml");
+    let config_before = std::fs::read(&config_path).ok();
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let control = Box::pin(app.handle_event(
+        &mut tui,
+        &mut app_server,
+        AppEvent::ApplyProviderModelSelection {
+            model: "rejected-model".to_string(),
+            provider_id: codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+            effort: Some(ReasoningEffortConfig::High),
+        },
+    ))
+    .await?;
+
+    assert!(matches!(control, AppRunControl::Continue));
+    assert_eq!(app.chat_widget.current_model(), initial_model);
+    assert_eq!(app.chat_widget.active_model_provider_id(), initial_provider);
+    assert_eq!(app.chat_widget.current_reasoning_effort(), initial_effort);
+    assert_eq!(std::fs::read(&config_path).ok(), config_before);
+    assert!(
+        std::iter::from_fn(|| app_event_rx.try_recv().ok()).any(|event| {
+            matches!(event, AppEvent::InsertHistoryCell(cell)
+                if lines_to_single_string(&cell.display_lines(/*width*/ 120))
+                    .contains("Failed to update thread settings"))
+        }),
+        "thread-settings rejection should remain visible"
+    );
+    app_server.shutdown().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -5899,6 +6304,32 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
             .settings
             .model,
         "gpt-5.4"
+    );
+
+    app.chat_widget.set_auto_model_routing_enabled(true);
+    let provider_params = app
+        .active_thread_provider_model_setting_update_params(
+            "openai-reasoning-model".to_string(),
+            "openai".to_string(),
+            Some(ReasoningEffortConfig::High),
+        )
+        .expect("active thread should produce provider model update params");
+    assert_eq!(
+        (
+            provider_params.model.as_deref(),
+            provider_params.model_provider.as_deref(),
+            provider_params.effort,
+        ),
+        (
+            Some("openai-reasoning-model"),
+            Some("openai"),
+            Some(ReasoningEffortConfig::High),
+        )
+    );
+    assert_eq!(
+        provider_params.automatic_model_routing,
+        Some(false),
+        "an explicit provider/model choice must disable automatic routing"
     );
 
     app.chat_widget

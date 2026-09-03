@@ -100,6 +100,7 @@ pub fn create_fake_rollout_with_token_usage(
         }),
         rate_limits: None,
         context_prune_saved_tokens: 0,
+        smart_prune: Default::default(),
     }))?;
     let file_path = rollout_path(codex_home, filename_ts, &thread_id);
     let line = json!({

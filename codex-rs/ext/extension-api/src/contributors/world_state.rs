@@ -77,6 +77,8 @@ pub struct WorldStateSectionContribution {
     render_diff: Arc<RenderDiff>,
     matches_legacy_fragment: Arc<LegacyFragmentMatcher>,
     matches_retained_fragment: Option<Arc<LegacyFragmentMatcher>>,
+    owns_single_history_slot: bool,
+    has_model_visible_content: bool,
 }
 
 impl WorldStateSectionContribution {
@@ -96,6 +98,8 @@ impl WorldStateSectionContribution {
             render_diff: Arc::new(render_diff),
             matches_legacy_fragment: Arc::new(|_, _| false),
             matches_retained_fragment: None,
+            owns_single_history_slot: false,
+            has_model_visible_content: true,
         }
     }
 
@@ -113,6 +117,13 @@ impl WorldStateSectionContribution {
         matcher: impl Fn(&str, &str) -> bool + Send + Sync + 'static,
     ) -> Self {
         self.matches_retained_fragment = Some(Arc::new(matcher));
+        self
+    }
+
+    /// Opts into one replaceable history slot and states whether it is currently occupied.
+    pub fn with_single_history_slot(mut self, has_model_visible_content: bool) -> Self {
+        self.owns_single_history_slot = true;
+        self.has_model_visible_content = has_model_visible_content;
         self
     }
 
@@ -137,6 +148,14 @@ impl WorldStateSectionContribution {
 
     pub fn has_retained_fragment_matcher(&self) -> bool {
         self.matches_retained_fragment.is_some()
+    }
+
+    pub fn owns_single_history_slot(&self) -> bool {
+        self.owns_single_history_slot
+    }
+
+    pub fn has_model_visible_content(&self) -> bool {
+        self.has_model_visible_content
     }
 
     pub fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {

@@ -73,7 +73,11 @@ use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnActivityStatus;
+use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnCostState;
+use codex_app_server_protocol::TurnCostUpdatedNotification;
 use codex_app_server_protocol::TurnDiffUpdatedNotification;
 use codex_app_server_protocol::TurnError;
 use codex_app_server_protocol::TurnInterruptResponse;
@@ -106,6 +110,7 @@ use codex_protocol::protocol::TokenCountEvent;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnDiffEvent;
+use codex_protocol::protocol::TurnProfileOutcome;
 use codex_protocol::request_permissions::PermissionGrantScope as CorePermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsResponse as CoreRequestPermissionsResponse;
@@ -146,6 +151,7 @@ pub(crate) async fn apply_bespoke_event_handling(
     thread_watch_manager: ThreadWatchManager,
     thread_list_state_permit: Arc<tokio::sync::Semaphore>,
     fallback_model_provider: String,
+    initial_turn_cost: Option<TurnCostState>,
 ) {
     let Event {
         id: event_turn_id,
@@ -181,6 +187,9 @@ pub(crate) async fn apply_bespoke_event_handling(
             outgoing
                 .send_server_notification(ServerNotification::TurnStarted(notification))
                 .await;
+            if let Some(cost) = initial_turn_cost {
+                send_turn_cost_updated(&outgoing, conversation_id, &payload.turn_id, cost).await;
+            }
         }
         EventMsg::TurnComplete(turn_complete_event) => {
             // All per-thread requests are bound to a turn, so abort them.
@@ -198,6 +207,26 @@ pub(crate) async fn apply_bespoke_event_handling(
                 &thread_state,
             )
             .await;
+        }
+        EventMsg::TurnProfile(event) => {
+            let status = match event.outcome {
+                TurnProfileOutcome::Completed => TurnActivityStatus::Completed,
+                TurnProfileOutcome::Failed => TurnActivityStatus::Failed,
+                TurnProfileOutcome::Interrupted => TurnActivityStatus::Interrupted,
+            };
+            outgoing
+                .send_server_notification(ServerNotification::TurnActivityUpdated(
+                    TurnActivityUpdatedNotification {
+                        thread_id: conversation_id.to_string(),
+                        turn_id: event.turn_id,
+                        status,
+                        started_at: event.started_at,
+                        duration_ms: event.duration_ms,
+                        time_to_first_token_ms: event.time_to_first_token_ms,
+                        profile: event.profile,
+                    },
+                ))
+                .await;
         }
         EventMsg::McpStartupUpdate(update) => {
             let (status, error, failure_reason) = match update.status {
@@ -1209,6 +1238,23 @@ pub(crate) async fn apply_bespoke_event_handling(
     }
 }
 
+pub(crate) async fn send_turn_cost_updated(
+    outgoing: &ThreadScopedOutgoingMessageSender,
+    thread_id: ThreadId,
+    turn_id: &str,
+    cost: TurnCostState,
+) {
+    outgoing
+        .send_server_notification(ServerNotification::TurnCostUpdated(
+            TurnCostUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: turn_id.to_string(),
+                cost,
+            },
+        ))
+        .await;
+}
+
 async fn handle_turn_diff(
     conversation_id: ThreadId,
     event_turn_id: &str,
@@ -1555,10 +1601,12 @@ async fn handle_token_count_event(
         info,
         rate_limits,
         context_prune_saved_tokens,
+        smart_prune,
     } = token_count_event;
     if let Some(info) = info {
         let mut token_usage = ThreadTokenUsage::from(info);
         token_usage.context_prune_saved_tokens = context_prune_saved_tokens;
+        token_usage.smart_prune = smart_prune.into();
         let notification = ThreadTokenUsageUpdatedNotification {
             thread_id: conversation_id.to_string(),
             turn_id,
@@ -2090,9 +2138,11 @@ mod tests {
     use codex_app_server_protocol::GuardianApprovalReviewStatus;
     use codex_app_server_protocol::JSONRPCErrorError;
     use codex_app_server_protocol::ServerRequest;
+    use codex_app_server_protocol::TurnActivityStatus;
     use codex_app_server_protocol::TurnPlanStepStatus;
     use codex_login::CodexAuth;
     use codex_protocol::AgentPath;
+    use codex_protocol::TurnProfileSummary;
     use codex_protocol::items::DynamicToolCallItem;
     use codex_protocol::items::DynamicToolCallStatus as CoreDynamicToolCallStatus;
     use codex_protocol::items::SubAgentActivityItem;
@@ -2120,6 +2170,8 @@ mod tests {
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::TokenUsage;
     use codex_protocol::protocol::TokenUsageInfo;
+    use codex_protocol::protocol::TurnProfileEvent;
+    use codex_protocol::protocol::TurnProfileOutcome;
     use codex_protocol::protocol::UserMessageEvent;
     use codex_thread_store::StoredThread;
     use codex_thread_store::StoredThreadHistory;
@@ -2257,6 +2309,204 @@ mod tests {
         }
     }
 
+    fn turn_profile_event(
+        turn_id: &str,
+        outcome: TurnProfileOutcome,
+        started_at: i64,
+        time_to_first_token_ms: Option<i64>,
+        profile: Option<TurnProfileSummary>,
+    ) -> TurnProfileEvent {
+        TurnProfileEvent {
+            turn_id: turn_id.to_string(),
+            outcome,
+            started_at: Some(started_at),
+            duration_ms: Some(231),
+            time_to_first_token_ms,
+            profile,
+        }
+    }
+
+    fn turn_profile_summary() -> TurnProfileSummary {
+        TurnProfileSummary {
+            before_first_sampling_ms: 11,
+            sampling_ms: 22,
+            compaction_ms: 33,
+            between_sampling_overhead_ms: 44,
+            tool_blocking_ms: 55,
+            after_last_sampling_ms: 66,
+            sampling_request_count: 7,
+            sampling_retry_count: 8,
+        }
+    }
+
+    #[tokio::test]
+    async fn turn_activity_live_route_is_scalar_only_and_replay_safe() -> Result<()> {
+        let codex_home = TempDir::new()?;
+        let config = load_default_config_for_test(&codex_home).await;
+        let thread_manager = Arc::new(
+            codex_core::test_support::thread_manager_with_models_provider_and_home(
+                CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+                config.model_provider.clone(),
+                config.codex_home.to_path_buf(),
+                Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+            ),
+        );
+        let codex_core::NewThread {
+            thread_id: conversation_id,
+            thread: conversation,
+            ..
+        } = thread_manager.start_thread(config).await?;
+        let (tx, mut rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let outgoing = Arc::new(OutgoingMessageSender::new(tx));
+        let outgoing = ThreadScopedOutgoingMessageSender::new(
+            outgoing,
+            vec![ConnectionId(1)],
+            conversation_id,
+        );
+        let thread_state = new_thread_state();
+        let thread_watch_manager = ThreadWatchManager::new();
+
+        for (event, expected_status, expected) in [
+            (
+                turn_profile_event(
+                    "turn-complete",
+                    TurnProfileOutcome::Completed,
+                    100,
+                    Some(12),
+                    Some(turn_profile_summary()),
+                ),
+                TurnActivityStatus::Completed,
+                json!({
+                    "method": "turn/activityUpdated",
+                    "params": {
+                        "threadId": conversation_id.to_string(),
+                        "turnId": "turn-complete",
+                        "status": "completed",
+                        "startedAt": 100,
+                        "durationMs": 231,
+                        "timeToFirstTokenMs": 12,
+                        "profile": {
+                            "beforeFirstSamplingMs": 11,
+                            "samplingMs": 22,
+                            "compactionMs": 33,
+                            "betweenSamplingOverheadMs": 44,
+                            "toolBlockingMs": 55,
+                            "afterLastSamplingMs": 66,
+                            "samplingRequestCount": 7,
+                            "samplingRetryCount": 8
+                        }
+                    }
+                }),
+            ),
+            (
+                turn_profile_event(
+                    "turn-abort",
+                    TurnProfileOutcome::Interrupted,
+                    300,
+                    None,
+                    Some(turn_profile_summary()),
+                ),
+                TurnActivityStatus::Interrupted,
+                json!({
+                    "method": "turn/activityUpdated",
+                    "params": {
+                        "threadId": conversation_id.to_string(),
+                        "turnId": "turn-abort",
+                        "status": "interrupted",
+                        "startedAt": 300,
+                        "durationMs": 231,
+                        "timeToFirstTokenMs": null,
+                        "profile": {
+                            "beforeFirstSamplingMs": 11,
+                            "samplingMs": 22,
+                            "compactionMs": 33,
+                            "betweenSamplingOverheadMs": 44,
+                            "toolBlockingMs": 55,
+                            "afterLastSamplingMs": 66,
+                            "samplingRequestCount": 7,
+                            "samplingRetryCount": 8
+                        }
+                    }
+                }),
+            ),
+            (
+                turn_profile_event(
+                    "turn-profile-unavailable",
+                    TurnProfileOutcome::Failed,
+                    500,
+                    None,
+                    None,
+                ),
+                TurnActivityStatus::Failed,
+                json!({
+                    "method": "turn/activityUpdated",
+                    "params": {
+                        "threadId": conversation_id.to_string(),
+                        "turnId": "turn-profile-unavailable",
+                        "status": "failed",
+                        "startedAt": 500,
+                        "durationMs": 231,
+                        "timeToFirstTokenMs": null,
+                        "profile": null
+                    }
+                }),
+            ),
+        ] {
+            apply_bespoke_event_handling(
+                Event {
+                    id: event.turn_id.clone(),
+                    msg: EventMsg::TurnProfile(event),
+                },
+                conversation_id,
+                conversation.clone(),
+                thread_manager.clone(),
+                outgoing.clone(),
+                thread_state.clone(),
+                thread_watch_manager.clone(),
+                Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
+                "test-provider".to_string(),
+                None,
+            )
+            .await;
+
+            let notification = recv_broadcast_notification(&mut rx).await?;
+            let ServerNotification::TurnActivityUpdated(payload) = &notification else {
+                bail!("unexpected message: {notification:?}");
+            };
+            assert_eq!(payload.status, expected_status);
+            assert_eq!(serde_json::to_value(notification)?, expected);
+        }
+
+        for msg in [
+            EventMsg::TurnComplete(turn_complete_event("replayed-complete")),
+            EventMsg::TurnAborted(turn_aborted_event("replayed-abort")),
+        ] {
+            apply_bespoke_event_handling(
+                Event {
+                    id: "replayed-turn".to_string(),
+                    msg,
+                },
+                conversation_id,
+                conversation.clone(),
+                thread_manager.clone(),
+                outgoing.clone(),
+                thread_state.clone(),
+                thread_watch_manager.clone(),
+                Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
+                "test-provider".to_string(),
+                None,
+            )
+            .await;
+
+            assert!(matches!(
+                recv_broadcast_notification(&mut rx).await?,
+                ServerNotification::TurnCompleted(_)
+            ));
+        }
+        assert!(rx.try_recv().is_err(), "terminal replay emitted activity");
+        Ok(())
+    }
+
     fn command_execution_completion_item(command: &str) -> CommandExecutionCompletionItem {
         CommandExecutionCompletionItem {
             command: command.to_string(),
@@ -2340,6 +2590,7 @@ mod tests {
                 self.thread_watch_manager.clone(),
                 Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
                 "test-provider".to_string(),
+                None,
             )
             .await;
         }
@@ -3208,7 +3459,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn turn_started_omits_active_snapshot_items() -> Result<()> {
+    async fn activity_notifications_send_turn_started_before_initial_cost() -> Result<()> {
         let codex_home = TempDir::new()?;
         let config = load_default_config_for_test(&codex_home).await;
         let thread_manager = Arc::new(
@@ -3277,6 +3528,9 @@ mod tests {
             thread_watch_manager,
             Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
             "test-provider".to_string(),
+            Some(codex_app_server_protocol::TurnCostState::Unavailable {
+                reason: codex_app_server_protocol::TurnCostAvailability::SubscriptionAuthentication,
+            }),
         )
         .await;
 
@@ -3289,6 +3543,22 @@ mod tests {
             }
             other => bail!("unexpected message: {other:?}"),
         }
+        let msg = recv_broadcast_notification(&mut rx).await?;
+        assert_eq!(
+            serde_json::to_value(msg)?,
+            json!({
+                "method": "turn/costUpdated",
+                "params": {
+                    "threadId": conversation_id.to_string(),
+                    "turnId": "turn-1",
+                    "cost": {
+                        "type": "unavailable",
+                        "reason": "subscriptionAuthentication"
+                    }
+                }
+            })
+        );
+        assert!(rx.try_recv().is_err());
         Ok(())
     }
 
@@ -3348,6 +3618,7 @@ mod tests {
             thread_watch_manager.clone(),
             Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
             "test-provider".to_string(),
+            None,
         )
         .await;
 
@@ -3432,6 +3703,7 @@ mod tests {
             ThreadWatchManager::new(),
             Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
             "test-provider".to_string(),
+            None,
         )
         .await;
 
@@ -3721,6 +3993,50 @@ mod tests {
                 info: Some(info),
                 rate_limits: Some(rate_limits),
                 context_prune_saved_tokens: 0,
+                smart_prune: codex_protocol::protocol::SmartPruneSnapshot {
+                    enabled: true,
+                    examined_outputs: 2,
+                    admitted_outputs: 1,
+                    unchanged_outputs: 1,
+                    failed_batches: 0,
+                    approx_source_tokens: 4_000,
+                    approx_admitted_tokens: 700,
+                    approx_saved_tokens: 3_300,
+                    optimizer_requests: 2,
+                    optimizer_usage_reports: 1,
+                    optimizer_usage: TokenUsage {
+                        cache_write_tokens: None,
+                        input_tokens: 1_200,
+                        cached_input_tokens: 300,
+                        output_tokens: 80,
+                        reasoning_output_tokens: 20,
+                        total_tokens: 1_280,
+                    },
+                    optimizer_latency_ms: 750,
+                    main_request_sequence: 3,
+                    latest: Some(codex_protocol::protocol::SmartPruneAdmissionSnapshot {
+                        admission_id: "admission-1".to_string(),
+                        audit_path: "smart-prune/admissions/admission-1".to_string(),
+                        examined_outputs: 2,
+                        admitted_outputs: 1,
+                        approx_source_tokens: 4_000,
+                        approx_admitted_tokens: 700,
+                        approx_saved_tokens: 3_300,
+                        request_sequence: Some(3),
+                        request_input_sha256: Some("abc123".to_string()),
+                        request_linkage_verified: true,
+                        response_id: Some("response-3".to_string()),
+                        response_usage: Some(TokenUsage {
+                            cache_write_tokens: Some(0),
+                            input_tokens: 800,
+                            cached_input_tokens: 700,
+                            output_tokens: 20,
+                            reasoning_output_tokens: 5,
+                            total_tokens: 825,
+                        }),
+                        response_linkage_verified: true,
+                    }),
+                },
             },
             &outgoing,
         )
@@ -3736,6 +4052,23 @@ mod tests {
                 assert_eq!(usage.total.cached_input_tokens, 25);
                 assert_eq!(usage.last.output_tokens, 7);
                 assert_eq!(usage.model_context_window, Some(4096));
+                assert!(usage.smart_prune.enabled);
+                assert_eq!(usage.smart_prune.admitted_outputs, 1);
+                assert_eq!(usage.smart_prune.optimizer_requests, 2);
+                assert_eq!(usage.smart_prune.optimizer_usage_reports, 1);
+                assert_eq!(usage.smart_prune.optimizer_usage.total_tokens, 1_280);
+                assert_eq!(usage.smart_prune.optimizer_usage.cache_write_tokens, None);
+                assert_eq!(usage.smart_prune.optimizer_latency_ms, 750);
+                let latest = usage.smart_prune.latest.expect("Smart Prune linkage");
+                assert_eq!(latest.request_input_sha256.as_deref(), Some("abc123"));
+                assert_eq!(latest.response_id.as_deref(), Some("response-3"));
+                assert_eq!(
+                    latest
+                        .response_usage
+                        .expect("provider usage")
+                        .cache_write_tokens,
+                    Some(0)
+                );
             }
             other => bail!("unexpected notification: {other:?}"),
         }
@@ -3772,6 +4105,7 @@ mod tests {
                 info: None,
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
+                smart_prune: Default::default(),
             },
             &outgoing,
         )

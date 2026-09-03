@@ -23,6 +23,13 @@ pub(super) enum ThreadBufferedEvent {
     HistoryEntryResponse(HistoryLookupResponse),
 }
 
+pub(super) fn notification_is_ephemeral(notification: &ServerNotification) -> bool {
+    matches!(
+        notification,
+        ServerNotification::TurnActivityUpdated(_) | ServerNotification::TurnCostUpdated(_)
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ThreadEventAttachment {
     Live,
@@ -36,6 +43,7 @@ pub(super) struct ThreadEventStore {
     pub(super) buffer: VecDeque<ThreadBufferedEvent>,
     pub(super) pending_interactive_replay: PendingInteractiveReplayState,
     pub(super) active_turn_id: Option<String>,
+    pub(super) pending_interrupt_turn_id: Option<String>,
     pub(super) input_state: Option<ThreadInputState>,
     pub(super) capacity: usize,
     pub(super) active: bool,
@@ -59,6 +67,7 @@ impl ThreadEventStore {
             buffer: VecDeque::new(),
             pending_interactive_replay: PendingInteractiveReplayState::default(),
             active_turn_id: None,
+            pending_interrupt_turn_id: None,
             input_state: None,
             capacity,
             active: false,
@@ -96,19 +105,26 @@ impl ThreadEventStore {
     }
 
     pub(super) fn push_notification(&mut self, notification: ServerNotification) {
+        if notification_is_ephemeral(&notification) {
+            return;
+        }
         self.pending_interactive_replay
             .note_server_notification(&notification);
         match &notification {
             ServerNotification::TurnStarted(turn) => {
                 self.active_turn_id = Some(turn.turn.id.clone());
             }
-            ServerNotification::TurnCompleted(turn)
-                if self.active_turn_id.as_deref() == Some(turn.turn.id.as_str()) =>
-            {
-                self.active_turn_id = None;
+            ServerNotification::TurnCompleted(turn) => {
+                if self.active_turn_id.as_deref() == Some(turn.turn.id.as_str()) {
+                    self.active_turn_id = None;
+                }
+                if self.pending_interrupt_turn_id.as_deref() == Some(turn.turn.id.as_str()) {
+                    self.pending_interrupt_turn_id = None;
+                }
             }
             ServerNotification::ThreadClosed(_) => {
                 self.active_turn_id = None;
+                self.pending_interrupt_turn_id = None;
             }
             _ => {}
         }
@@ -330,7 +346,13 @@ mod tests {
     use codex_app_server_protocol::HookScope as AppServerHookScope;
     use codex_app_server_protocol::HookStartedNotification;
     use codex_app_server_protocol::RequestId as AppServerRequestId;
+    use codex_app_server_protocol::ThreadClosedNotification;
+    use codex_app_server_protocol::TurnActivityStatus;
+    use codex_app_server_protocol::TurnActivityUpdatedNotification;
     use codex_app_server_protocol::TurnCompletedNotification;
+    use codex_app_server_protocol::TurnCostAvailability;
+    use codex_app_server_protocol::TurnCostState;
+    use codex_app_server_protocol::TurnCostUpdatedNotification;
     use codex_app_server_protocol::TurnStartedNotification;
     use codex_config::types::ApprovalsReviewer;
     use codex_protocol::models::PermissionProfile;
@@ -505,6 +527,67 @@ mod tests {
             TurnStatus::Interrupted,
         ));
         assert_eq!(store.active_turn_id(), None);
+    }
+
+    #[test]
+    fn thread_event_store_never_persists_ephemeral_activity_notifications() {
+        let thread_id = ThreadId::new();
+        let mut store = ThreadEventStore::new(/*capacity*/ 8);
+
+        store.push_notification(ServerNotification::TurnActivityUpdated(
+            TurnActivityUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: "turn-1".to_string(),
+                status: TurnActivityStatus::Completed,
+                started_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+                profile: None,
+            },
+        ));
+        store.push_notification(ServerNotification::TurnCostUpdated(
+            TurnCostUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: "turn-1".to_string(),
+                cost: TurnCostState::Unavailable {
+                    reason: TurnCostAvailability::BackendUnavailable,
+                },
+            },
+        ));
+
+        assert!(store.snapshot().events.is_empty());
+    }
+
+    #[test]
+    fn thread_event_store_clears_only_matching_pending_interrupt_lifecycle() {
+        let mut store = ThreadEventStore::new(/*capacity*/ 8);
+        let thread_id = ThreadId::new();
+        store.push_notification(turn_started_notification(thread_id, "turn-new"));
+        store.pending_interrupt_turn_id = Some("turn-new".to_string());
+
+        store.push_notification(turn_completed_notification(
+            thread_id,
+            "turn-old",
+            TurnStatus::Completed,
+        ));
+        assert_eq!(store.active_turn_id(), Some("turn-new"));
+        assert_eq!(store.pending_interrupt_turn_id.as_deref(), Some("turn-new"));
+
+        store.push_notification(turn_completed_notification(
+            thread_id,
+            "turn-new",
+            TurnStatus::Interrupted,
+        ));
+        assert_eq!(store.active_turn_id(), None);
+        assert_eq!(store.pending_interrupt_turn_id, None);
+
+        store.push_notification(turn_started_notification(thread_id, "turn-close"));
+        store.pending_interrupt_turn_id = Some("turn-close".to_string());
+        store.push_notification(ServerNotification::ThreadClosed(ThreadClosedNotification {
+            thread_id: thread_id.to_string(),
+        }));
+        assert_eq!(store.active_turn_id(), None);
+        assert_eq!(store.pending_interrupt_turn_id, None);
     }
 
     #[test]

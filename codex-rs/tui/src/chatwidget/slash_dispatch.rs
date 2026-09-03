@@ -55,6 +55,7 @@ fn clean_dropped_path(raw: &str) -> String {
     without_scheme.replace("\\ ", " ")
 }
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
+const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off]";
 
 impl ChatWidget {
     /// Dispatch a bare slash command and record its staged local-history entry.
@@ -258,19 +259,14 @@ impl ChatWidget {
                 const INIT_PROMPT: &str = include_str!("../../prompt_for_init_command.md");
                 self.submit_user_message(INIT_PROMPT.to_string().into());
             }
-            SlashCommand::Prune => {
-                self.begin_context_prune_tracking();
-                self.clear_token_usage();
-                if !self.bottom_pane.is_task_running() {
-                    self.bottom_pane.set_task_running(/*running*/ true);
-                }
-                self.app_event_tx.prune(None);
+            SlashCommand::SmartPrune => {
+                self.toggle_smart_prune();
             }
             // `/force-prune` needs its target; without one there is nothing to force,
-            // so say so rather than silently running an ordinary prune.
+            // so say so rather than starting a targetless rewrite.
             SlashCommand::ForcePrune => {
                 self.add_error_message(
-                    "Usage: /force-prune <1-100> — the percentage of the context window to prune down to. Use /prune for an ordinary pass."
+                    "Usage: /force-prune <1-100> — the percentage of the context window to prune down to."
                         .to_string(),
                 );
             }
@@ -465,13 +461,10 @@ impl ChatWidget {
                 }
             }
             SlashCommand::Context => {
-                self.app_event_tx.send(AppEvent::RequestContextUsageReport);
+                self.request_fresh_context_usage_report();
             }
             SlashCommand::Dashboard => {
                 self.app_event_tx.send(AppEvent::OpenContextDashboard);
-            }
-            SlashCommand::Ide => {
-                self.handle_ide_command();
             }
             SlashCommand::DebugConfig => {
                 self.add_debug_config_output();
@@ -637,6 +630,9 @@ impl ChatWidget {
         let trimmed = args.trim();
         match cmd {
             SlashCommand::Add => {
+                if self.reject_manual_memory_writer_conflict() {
+                    return;
+                }
                 let cleaned = clean_dropped_path(trimmed);
                 match crate::legacy_core::elpis_context::add_continuity_sources(
                     Some(self.config.memory_dir.as_path()),
@@ -664,6 +660,7 @@ impl ChatWidget {
                         self.add_error_message(format!("Could not add context source: {error}"))
                     }
                 }
+                self.request_manual_memory_status_refresh();
             }
             SlashCommand::Usage => {
                 self.add_status_output(
@@ -671,14 +668,20 @@ impl ChatWidget {
                 );
             }
             SlashCommand::Context => {
-                self.app_event_tx.send(AppEvent::RequestContextUsageReport);
+                self.request_fresh_context_usage_report();
             }
             SlashCommand::Dashboard => {
                 self.app_event_tx.send(AppEvent::OpenContextDashboard);
             }
-            SlashCommand::Ide => {
-                self.handle_ide_command_args(trimmed);
-            }
+            SlashCommand::SmartPrune => match trimmed.to_ascii_lowercase().as_str() {
+                "on" => {
+                    self.request_smart_prune_enabled(/*enabled*/ true);
+                }
+                "off" => {
+                    self.request_smart_prune_enabled(/*enabled*/ false);
+                }
+                _ => self.add_error_message(SMART_PRUNE_USAGE.to_string()),
+            },
             SlashCommand::Mcp => match trimmed.to_ascii_lowercase().as_str() {
                 "verbose" => self.add_mcp_output(McpServerStatusDetail::Full),
                 _ => self.add_error_message("Usage: /mcp [verbose]".to_string()),
@@ -882,7 +885,7 @@ impl ChatWidget {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
                 self.add_info_message(
-                    format!("Force pruning down to {target_pct}% of the context window..."),
+                    format!("Manual pruning toward {target_pct}% of the context window..."),
                     None,
                 );
                 self.app_event_tx.prune(Some(target_pct));
@@ -1041,8 +1044,7 @@ impl ChatWidget {
             return QueueDrain::Stop;
         }
         match cmd {
-            SlashCommand::Ide
-            | SlashCommand::Usage
+            SlashCommand::Usage
             | SlashCommand::Context
             | SlashCommand::Dashboard
             | SlashCommand::DebugConfig
@@ -1065,7 +1067,7 @@ impl ChatWidget {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Prune
+            | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Review
             | SlashCommand::Model

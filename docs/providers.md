@@ -44,7 +44,7 @@ Elpis supports **Bring Your Own Key (BYOK)** across all major foundation provide
 - **Google Gemini:**
   ```bash
   export GEMINI_API_KEY="..."
-  elpis --model-provider google-gemini --model gemini-2.5-pro
+  elpis --provider google-gemini --model gemini-2.5-pro
   ```
 - **OpenAI API Key:**
   ```bash
@@ -58,9 +58,9 @@ You can verify model switching, UI model banner rendering, and TUI state changes
 
 1. **Local Engines (Ollama / LMStudio - No API Key Required):**
    ```bash
-   elpis --model-provider ollama --model llama3
+   elpis --provider ollama --model llama3
    # or
-   elpis --model-provider lmstudio --model local-model
+   elpis --provider lmstudio --model local-model
    ```
 2. **OpenRouter Free Tier Models:**
    ```bash

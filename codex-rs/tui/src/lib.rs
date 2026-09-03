@@ -84,6 +84,7 @@ use uuid::Uuid;
 
 pub(crate) use codex_app_server_client::legacy_core;
 
+mod activity_state;
 mod additional_dirs;
 mod app;
 mod app_backtrack;
@@ -128,7 +129,6 @@ mod goal_display;
 mod goal_files;
 mod history_cell;
 mod hooks_rpc;
-mod ide_context;
 pub(crate) mod insert_history;
 pub use insert_history::insert_history_lines;
 mod key_hint;

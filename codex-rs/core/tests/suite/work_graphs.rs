@@ -37,7 +37,7 @@ struct UnattributedChangeResponder {
     graph_args_json: String,
     seen_main: AtomicBool,
     assignment: Arc<Mutex<Option<(String, String)>>>,
-    write_tool_output: Arc<Mutex<Option<String>>>,
+    planted_path: std::path::PathBuf,
 }
 
 impl Respond for UnattributedChangeResponder {
@@ -49,14 +49,11 @@ impl Respond for UnattributedChangeResponder {
         if body_text.contains("call-worker-report") {
             return completed_response("resp-after-report");
         }
-        if body_text.contains("call-worker-write") {
-            *self.write_tool_output.lock().expect("write output mutex") = Some(body_text.clone());
-            let (graph_id, task_id) = self
-                .assignment
-                .lock()
-                .expect("assignment mutex")
-                .clone()
-                .expect("worker assignment should be recorded before the write");
+        if let Some((graph_id, task_id)) = extract_assignment(&body) {
+            *self.assignment.lock().expect("assignment mutex") =
+                Some((graph_id.clone(), task_id.clone()));
+            std::fs::write(&self.planted_path, "planted-evidence")
+                .expect("test fixture should plant the post-baseline change");
             let args = json!({
                 "graph_id": graph_id,
                 "task_id": task_id,
@@ -84,23 +81,6 @@ impl Respond for UnattributedChangeResponder {
         }
         if has_function_call_output(&body) {
             return completed_response("resp-after-tool");
-        }
-        if let Some((graph_id, task_id)) = extract_assignment(&body) {
-            *self.assignment.lock().expect("assignment mutex") = Some((graph_id, task_id));
-            let args = json!({
-                "cmd": "printf planted-evidence > evidence/planted.txt; base64 evidence/planted.txt"
-            });
-            return sse_response(sse(vec![
-                ev_response_created("resp-worker-write"),
-                ev_function_call(
-                    "call-worker-write",
-                    "exec_command",
-                    serde_json::to_string(&args)
-                        .expect("exec args should serialize")
-                        .as_str(),
-                ),
-                ev_completed("resp-worker-write"),
-            ]));
         }
         if !self.seen_main.swap(true, Ordering::SeqCst) {
             return sse_response(sse(vec![
@@ -425,7 +405,6 @@ async fn work_graph_failure_blocks_dependent_without_spawning_it() -> Result<()>
 async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Result<()> {
     let server = start_mock_server().await;
     let assignment = Arc::new(Mutex::new(None));
-    let write_tool_output = Arc::new(Mutex::new(None));
     let args = json!({
         "name": "unattributed change negative proof",
         "max_concurrency": 1,
@@ -448,12 +427,6 @@ async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Re
             "acceptance_criteria": ["marker and attribution are independently checked"]
         }]
     });
-    let responder = UnattributedChangeResponder {
-        graph_args_json: serde_json::to_string(&args)?,
-        seen_main: AtomicBool::new(false),
-        assignment: Arc::clone(&assignment),
-        write_tool_output: Arc::clone(&write_tool_output),
-    };
     let mut builder = test_codex().with_config(|config| {
         config
             .features
@@ -467,6 +440,12 @@ async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Re
     let test = builder.build(&server).await?;
     std::fs::create_dir(test.cwd_path().join("evidence"))?;
     std::fs::write(test.cwd_path().join("evidence/planted.txt"), "")?;
+    let responder = UnattributedChangeResponder {
+        graph_args_json: serde_json::to_string(&args)?,
+        seen_main: AtomicBool::new(false),
+        assignment: Arc::clone(&assignment),
+        planted_path: test.cwd_path().join("evidence/planted.txt"),
+    };
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
         .respond_with(responder)
@@ -486,13 +465,10 @@ async fn work_graph_rejects_a_real_change_omitted_from_the_worker_report() -> Re
         .await?
         .expect("work graph");
     let tasks = db.list_work_graph_tasks(graph_id.as_str()).await?;
-    assert!(
-        write_tool_output
-            .lock()
-            .expect("write output mutex")
-            .as_deref()
-            .is_some_and(|output| output.contains("cGxhbnRlZC1ldmlkZW5jZQ==")),
-        "the real worker path must emit the planted marker before accountability is evaluated"
+    assert_eq!(
+        std::fs::read_to_string(test.cwd_path().join("evidence/planted.txt"))?,
+        "planted-evidence",
+        "the real worker path must write the planted marker before accountability is evaluated"
     );
     assert_eq!(
         graph.status,
@@ -546,6 +522,7 @@ async fn work_graph_worker_cannot_write_outside_declared_scope() -> Result<()> {
             .expect("sqlite feature should enable");
     });
     let test = builder.build(&server).await?;
+    std::fs::create_dir(test.cwd_path().join("allowed"))?;
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
         .respond_with(responder)

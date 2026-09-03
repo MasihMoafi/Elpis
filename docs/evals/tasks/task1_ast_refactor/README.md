@@ -57,7 +57,10 @@ The task is designed to induce context pressure in three ways:
 2. **Verbose Test Output:** The test suite generates detailed AST dump traces and error diffs when partial implementations are tested.
 3. **Multi-Step Execution:** Requires iterative cycles of code edits, test runs, linting, and formatting.
 
-In standard Codex / baseline systems without selective context pruning, context quickly climbs past 150k+ tokens, leading to either hard context window errors or destructive compaction that summarizes away file signatures. In Elpis, the 4-layer pruning pipeline and hysteresis cycle maintain context in the 20%–30% window while preserving prompt cache hit rates.
+This workload was used in the historical high-frequency retrospective-pruning evaluation.
+Those configured Elpis runs held median context near 27% of the window; they did not prove
+prompt-cache preservation or describe the current default. Current automatic optimization
+is Smart Prune admission-time processing, evaluated under a separate protocol.
 
 ---
 

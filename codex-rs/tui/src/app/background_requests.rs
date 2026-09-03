@@ -36,6 +36,383 @@ const WORKSPACE_HEADLINE_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_millis(/*millis*/ 2000);
 
 impl App {
+    pub(super) fn current_manual_memory_target(
+        &self,
+        epoch: u64,
+    ) -> Option<ManualMemoryRequestTarget> {
+        let primary_root_thread_id = self.primary_thread_id?;
+        let displayed_thread_id = self.current_displayed_thread_id()?;
+        let config = self.chat_widget.config_ref();
+        let (admission_path, memory_path) =
+            crate::legacy_core::elpis_context::manual_memory_storage_paths(
+                Some(config.memory_dir.as_path()),
+                config.cwd.as_path(),
+            )?;
+        Some(ManualMemoryRequestTarget {
+            view: ManualMemoryViewKey {
+                epoch,
+                primary_root_thread_id,
+                displayed_thread_id,
+                cwd: config.cwd.to_path_buf(),
+                memory_path: memory_path.clone(),
+            },
+            storage: ManualMemoryStorageTarget {
+                admission_path,
+                memory_path,
+            },
+        })
+    }
+
+    pub(super) fn next_manual_memory_target(&mut self) -> Option<ManualMemoryRequestTarget> {
+        let Some(epoch) = self.manual_memory_status.epoch.checked_add(1) else {
+            tracing::error!("manual-memory view epoch exhausted");
+            return None;
+        };
+        self.manual_memory_status.epoch = epoch;
+        self.current_manual_memory_target(epoch)
+    }
+
+    pub(super) fn manual_memory_storage_target_for_cwd(
+        &self,
+        cwd: &Path,
+    ) -> Option<ManualMemoryStorageTarget> {
+        let config = self.chat_widget.config_ref();
+        let (admission_path, memory_path) =
+            crate::legacy_core::elpis_context::manual_memory_storage_paths(
+                Some(config.memory_dir.as_path()),
+                cwd,
+            )?;
+        Some(ManualMemoryStorageTarget {
+            admission_path,
+            memory_path,
+        })
+    }
+
+    pub(super) fn pending_manual_memory_mutation_for(
+        &self,
+        storage: &ManualMemoryStorageTarget,
+    ) -> Option<ManualMemoryMutation> {
+        self.manual_memory_status
+            .mutations
+            .get(storage)
+            .map(|owner| owner.mutation)
+    }
+
+    pub(super) fn seed_manual_memory_mutation_for_cwd(&mut self, cwd: &Path) {
+        let pending = self
+            .manual_memory_storage_target_for_cwd(cwd)
+            .as_ref()
+            .and_then(|storage| self.pending_manual_memory_mutation_for(storage));
+        self.chat_widget
+            .seed_manual_memory_pending_mutation(pending);
+    }
+
+    pub(super) fn prepare_manual_memory_lifecycle_change(
+        &mut self,
+    ) -> Option<crate::chatwidget::ThreadComposerState> {
+        if !self.chat_widget.manual_memory_submission_blocked() {
+            return None;
+        }
+        let storage = self
+            .chat_widget
+            .manual_memory_bound_target()
+            .map(|target| target.storage.clone());
+        self.chat_widget
+            .restore_admission_blocked_input_to_composer();
+        if let Some(storage) = storage
+            && let Some(owner) = self.manual_memory_status.mutations.get_mut(&storage)
+            && matches!(owner.mutation, ManualMemoryMutation::Admission { .. })
+        {
+            owner.allow_same_view_autosend = false;
+        }
+        self.chat_widget.manual_memory_lifecycle_composer_state()
+    }
+
+    pub(super) fn activate_manual_memory_view(&mut self) -> bool {
+        let Some(target) = self.next_manual_memory_target() else {
+            return false;
+        };
+        let pending_mutation = self.pending_manual_memory_mutation_for(&target.storage);
+        self.chat_widget.bind_manual_memory_loading(
+            target.clone(),
+            /*pending_context_report*/ false,
+            pending_mutation,
+        );
+        self.publish_current_dashboard_snapshot();
+        self.launch_manual_memory_status(target)
+    }
+
+    pub(super) fn activate_manual_memory_view_if_changed(&mut self) -> bool {
+        let Some(bound) = self.chat_widget.manual_memory_bound_target() else {
+            return self.activate_manual_memory_view();
+        };
+        let Some(current) = self.current_manual_memory_target(bound.view.epoch) else {
+            return false;
+        };
+        if current == *bound {
+            return false;
+        }
+        self.activate_manual_memory_view()
+    }
+
+    pub(super) fn publish_current_dashboard_snapshot(&self) {
+        let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+        self.chat_widget.publish_dashboard_snapshot(&totals);
+    }
+
+    pub(super) fn request_manual_memory_refresh_for_paths(
+        &mut self,
+        memories_root: &Path,
+        cwd: &Path,
+    ) -> bool {
+        let Some((admission_path, memory_path)) =
+            crate::legacy_core::elpis_context::manual_memory_storage_paths(
+                Some(memories_root),
+                cwd,
+            )
+        else {
+            return false;
+        };
+        let storage = ManualMemoryStorageTarget {
+            admission_path,
+            memory_path,
+        };
+        if self
+            .chat_widget
+            .manual_memory_bound_target()
+            .is_none_or(|target| target.storage != storage)
+        {
+            return false;
+        }
+        self.chat_widget.request_manual_memory_status_refresh();
+        true
+    }
+
+    pub(super) fn launch_manual_memory_status(
+        &mut self,
+        target: ManualMemoryRequestTarget,
+    ) -> bool {
+        if self.manual_memory_status.in_flight.as_ref() == Some(&target) {
+            return false;
+        }
+        let superseded_storage = self
+            .manual_memory_status
+            .in_flight
+            .as_ref()
+            .filter(|previous| previous.storage != target.storage)
+            .map(|previous| previous.storage.clone())
+            .filter(|storage| {
+                self.manual_memory_status
+                    .mutations
+                    .get(storage)
+                    .is_some_and(|owner| {
+                        matches!(owner.stage, ManualMemoryMutationStage::AwaitingStatus(_))
+                    })
+            });
+        if let Some(storage) = superseded_storage {
+            self.manual_memory_status.mutations.remove(&storage);
+        }
+        self.manual_memory_status.in_flight = Some(target.clone());
+
+        let instruction_source_paths = self.chat_widget.instruction_source_paths_as_path_bufs();
+        let dev_rule_roots = self.chat_widget.config_ref().dev_rule_roots();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let worker_target = target.clone();
+            let completion = match tokio::task::spawn_blocking(move || {
+                Self::load_manual_memory_status(
+                    &worker_target,
+                    &instruction_source_paths,
+                    &dev_rule_roots,
+                )
+            })
+            .await
+            {
+                Ok(completion) => completion,
+                Err(_) => {
+                    tracing::warn!("manual-memory status worker failed");
+                    ManualMemoryStatusCompletion::Unavailable(
+                        ManualMemoryUnavailableReason::WorkerFailed,
+                    )
+                }
+            };
+            app_event_tx.send(AppEvent::ManualMemoryStatusLoaded(target, completion));
+        });
+        true
+    }
+
+    pub(super) fn load_manual_memory_status(
+        target: &ManualMemoryRequestTarget,
+        instruction_source_paths: &[PathBuf],
+        dev_rule_roots: &[AbsolutePathBuf],
+    ) -> ManualMemoryStatusCompletion {
+        let Some(memories_root) = target.storage.memory_path.parent() else {
+            return ManualMemoryStatusCompletion::Unavailable(
+                ManualMemoryUnavailableReason::AdmissionUnavailable,
+            );
+        };
+        let status = match crate::legacy_core::elpis_context::manual_memory_status(
+            Some(memories_root),
+            &target.view.cwd,
+        ) {
+            Ok(Some(status)) => status,
+            Ok(None) => {
+                return ManualMemoryStatusCompletion::Unavailable(
+                    ManualMemoryUnavailableReason::AdmissionUnavailable,
+                );
+            }
+            Err(error) => {
+                return ManualMemoryStatusCompletion::Unavailable(error.reason.into());
+            }
+        };
+        match crate::legacy_core::elpis_context::continuity_sources_from_manual_memory_status(
+            Some(memories_root),
+            &target.view.cwd,
+            instruction_source_paths,
+            dev_rule_roots,
+            Some(&status),
+        ) {
+            Ok(sources) => ManualMemoryStatusCompletion::Ready { status, sources },
+            Err(_) => ManualMemoryStatusCompletion::Unavailable(
+                ManualMemoryUnavailableReason::SourcesUnavailable,
+            ),
+        }
+    }
+
+    fn manual_memory_root_for_target<'a>(
+        target: &'a ManualMemoryRequestTarget,
+    ) -> Option<&'a Path> {
+        let memories_root = target.storage.memory_path.parent()?;
+        let expected = crate::legacy_core::elpis_context::manual_memory_storage_paths(
+            Some(memories_root),
+            &target.view.cwd,
+        )?;
+        (target.view.memory_path.as_path() == target.storage.memory_path.as_path()
+            && expected.0.as_path() == target.storage.admission_path.as_path()
+            && expected.1.as_path() == target.storage.memory_path.as_path())
+        .then_some(memories_root)
+    }
+
+    fn manual_memory_mutation_failure(
+        mutation: ManualMemoryMutation,
+        error: &std::io::Error,
+    ) -> ManualMemoryMutationFailure {
+        match error.kind() {
+            std::io::ErrorKind::AlreadyExists => ManualMemoryMutationFailure::AlreadyExists,
+            std::io::ErrorKind::NotFound
+                if matches!(mutation, ManualMemoryMutation::Admission { .. }) =>
+            {
+                ManualMemoryMutationFailure::Missing
+            }
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
+                ManualMemoryMutationFailure::StorageUnavailable
+            }
+            _ => ManualMemoryMutationFailure::PersistenceFailed,
+        }
+    }
+
+    pub(super) fn perform_manual_memory_create(
+        target: &ManualMemoryRequestTarget,
+    ) -> ManualMemoryMutationCompletion {
+        let Some(memories_root) = Self::manual_memory_root_for_target(target) else {
+            return ManualMemoryMutationCompletion::Failed(
+                ManualMemoryMutationFailure::StorageUnavailable,
+            );
+        };
+        match crate::legacy_core::elpis_context::create_manual_memory(
+            Some(memories_root),
+            &target.view.cwd,
+        ) {
+            Ok(_) => ManualMemoryMutationCompletion::Succeeded,
+            Err(error) => ManualMemoryMutationCompletion::Failed(
+                Self::manual_memory_mutation_failure(ManualMemoryMutation::Create, &error),
+            ),
+        }
+    }
+
+    pub(super) fn perform_manual_memory_admission(
+        target: &ManualMemoryRequestTarget,
+        admitted: bool,
+    ) -> ManualMemoryMutationCompletion {
+        let Some(memories_root) = Self::manual_memory_root_for_target(target) else {
+            return ManualMemoryMutationCompletion::Failed(
+                ManualMemoryMutationFailure::StorageUnavailable,
+            );
+        };
+        let Some(source_name) = target
+            .storage
+            .memory_path
+            .file_name()
+            .and_then(|name| name.to_str())
+        else {
+            return ManualMemoryMutationCompletion::Failed(
+                ManualMemoryMutationFailure::StorageUnavailable,
+            );
+        };
+        match crate::legacy_core::elpis_context::set_continuity_source_admitted(
+            Some(memories_root),
+            &target.view.cwd,
+            source_name,
+            admitted,
+        ) {
+            Ok(()) => ManualMemoryMutationCompletion::Succeeded,
+            Err(error) => {
+                ManualMemoryMutationCompletion::Failed(Self::manual_memory_mutation_failure(
+                    ManualMemoryMutation::Admission { admitted },
+                    &error,
+                ))
+            }
+        }
+    }
+
+    pub(super) fn launch_manual_memory_create(&self, target: ManualMemoryRequestTarget) {
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let worker_target = target.clone();
+            let completion = match tokio::task::spawn_blocking(move || {
+                Self::perform_manual_memory_create(&worker_target)
+            })
+            .await
+            {
+                Ok(completion) => completion,
+                Err(_) => {
+                    tracing::warn!("manual-memory create worker failed");
+                    ManualMemoryMutationCompletion::Failed(
+                        ManualMemoryMutationFailure::WorkerFailed,
+                    )
+                }
+            };
+            app_event_tx.send(AppEvent::ManualMemoryCreateFinished(target, completion));
+        });
+    }
+
+    pub(super) fn launch_manual_memory_admission(
+        &self,
+        target: ManualMemoryRequestTarget,
+        admitted: bool,
+    ) {
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let worker_target = target.clone();
+            let completion = match tokio::task::spawn_blocking(move || {
+                Self::perform_manual_memory_admission(&worker_target, admitted)
+            })
+            .await
+            {
+                Ok(completion) => completion,
+                Err(_) => {
+                    tracing::warn!("manual-memory admission worker failed");
+                    ManualMemoryMutationCompletion::Failed(
+                        ManualMemoryMutationFailure::WorkerFailed,
+                    )
+                }
+            };
+            app_event_tx.send(AppEvent::ManualMemoryAdmissionFinished(
+                target, admitted, completion,
+            ));
+        });
+    }
+
     pub(super) fn fetch_mcp_inventory(
         &mut self,
         app_server: &AppServerSession,

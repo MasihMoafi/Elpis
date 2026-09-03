@@ -1,159 +1,1065 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Elpis · Context Dashboard</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Elpis · Live evidence</title>
 <style>
-:root{--ink:#15130f;--paper:#f7f4ee;--card:#fff;--line:#e3ddd1;--mut:#6b635a;--teal:#17a398;--red:#c8442c}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}}
-:root[data-theme=dark]{--ink:#efeae2;--paper:#100f0e;--card:#1a1816;--line:#2c2924;--mut:#9a9188;--teal:#28c2b5;--red:#e05a41}
-*{box-sizing:border-box}
-body{background:var(--paper);color:var(--ink);margin:0;padding:44px 22px 100px;font:16px/1.62 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
-h1{font:600 34px/1.1 ui-serif,Georgia,serif;letter-spacing:-.023em;margin:0}
-.sub{color:var(--mut);margin:6px 0 0;max-width:76ch;font-size:14px}
-.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-top:8px}
-.tab{background:none;border:none;color:var(--mut);font:600 13px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;padding:10px 4px;margin-right:18px;cursor:pointer;border-bottom:2px solid transparent}
-.tab.active{color:var(--ink);border-bottom-color:var(--teal)}
-.panel{display:none;flex-direction:column;gap:18px}
-.panel.active{display:flex}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px}
-.kpi .k{font:600 10.5px/1.3 ui-sans-serif,system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:var(--mut)}
-.kpi .n{font:600 26px/1.15 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.022em;margin-top:6px}
-.kpi .l{color:var(--mut);font-size:12px;margin-top:3px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:20px 22px;display:flex;flex-direction:column;gap:11px}
-.card h3{font:600 15px/1.25 ui-sans-serif,system-ui,sans-serif;margin:0}
-table{border-collapse:collapse;width:100%;font-size:13.5px}
-th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
-th:first-child,td:first-child{text-align:left;font-variant-numeric:normal;white-space:normal}
-th{color:var(--mut);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-.bar{height:8px;border-radius:5px;background:var(--line);overflow:hidden;display:flex}
-.bar i{display:block;height:100%}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut)}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-.foot{color:var(--mut);font-size:12px;text-align:right}
-.admitted{color:var(--teal)}
-.notadmitted{color:var(--mut)}
-</style></head><body>
-<div class="wrap">
-<header>
-<h1>Elpis context dashboard</h1>
-<p class="sub" id="model-line">connecting…</p>
-<div class="tabs">
-<button class="tab active" data-tab="context">Context</button>
-<button class="tab" data-tab="tokens">Tokens</button>
-</div>
-</header>
-
-<section class="panel active" id="panel-context">
-<div class="kpis">
-<div class="kpi"><div class="k">Used</div><div class="n" id="ctx-used">–</div><div class="l" id="ctx-used-pct"></div></div>
-<div class="kpi"><div class="k">Window</div><div class="n" id="ctx-window">–</div><div class="l">token budget</div></div>
-<div class="kpi"><div class="k">Pruned this session</div><div class="n" id="ctx-saved">–</div><div class="l">tokens reclaimed</div></div>
-<div class="kpi"><div class="k">Checkpoints</div><div class="n" id="ctx-checkpoints">–</div><div class="l">backtrack points</div></div>
-</div>
-<div class="card">
-<h3>Token usage by category</h3>
-<div class="bar" id="ctx-bar"></div>
-<div class="legend" id="ctx-legend"></div>
-</div>
-<div class="card">
-<h3>Admitted sources</h3>
-<div class="foot" id="src-summary"></div>
-<div style="max-height:340px;overflow-y:auto">
-<table>
-<thead><tr><th>Source</th><th>Category</th><th>Tokens</th><th>Status</th></tr></thead>
-<tbody id="src-rows"></tbody>
-</table>
-</div>
-</div>
-</section>
-
-<section class="panel" id="panel-tokens">
-<div class="kpis">
-<div class="kpi"><div class="k">Session input</div><div class="n" id="tok-input">–</div><div class="l" id="tok-cached"></div></div>
-<div class="kpi"><div class="k">Session output</div><div class="n" id="tok-output">–</div><div class="l" id="tok-reasoning"></div></div>
-<div class="kpi"><div class="k">Session total</div><div class="n" id="tok-total">–</div><div class="l">cumulative, all turns</div></div>
-<div class="kpi"><div class="k">Last turn</div><div class="n" id="tok-last">–</div><div class="l">most recent request</div></div>
-</div>
-<div class="card">
-<h3>About this tab</h3>
-<p class="sub" style="margin:0">Elpis is plan-based (ChatGPT/Codex subscription), not metered API billing, so
-there is no real $ cost figure to show here — only measured token counts.</p>
-</div>
-</section>
-
-<p class="foot" id="updated">–</p>
-</div>
-<script>
-const tabs = document.querySelectorAll('.tab');
-const panels = document.querySelectorAll('.panel');
-tabs.forEach(t => t.addEventListener('click', () => {
-  tabs.forEach(x => x.classList.remove('active'));
-  panels.forEach(x => x.classList.remove('active'));
-  t.classList.add('active');
-  document.getElementById('panel-' + t.dataset.tab).classList.add('active');
-}));
-
-function fmt(n) {
-  if (n === undefined || n === null) return '–';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-  return String(n);
+:root {
+  color-scheme: light;
+  --bg: #f7f4ee;
+  --surface: #fff;
+  --surface-raised: #f7f4ee;
+  --line: #e3ddd1;
+  --line-strong: #cfc6b8;
+  --text: #15130f;
+  --muted: #6b635a;
+  --quiet: #6b635a;
+  --ember: #0f766e;
+  --ember-bright: #047857;
+  --ember-soft: #edf9f5;
+  --teal: #0f766e;
+  --green: #047857;
+  --violet: #8b5cf6;
+  --amber: #9a5a0d;
+  --danger: #c8442c;
+  --focus: #0f766e;
 }
-
-async function refresh() {
-  try {
-    const res = await fetch('/data.json', { cache: 'no-store' });
-    const d = await res.json();
-    document.getElementById('model-line').textContent = d.model + ' · updated live from the running session';
-
-    document.getElementById('ctx-used').textContent = fmt(d.used_tokens);
-    document.getElementById('ctx-used-pct').textContent = d.used_percent + '% of window';
-    document.getElementById('ctx-window').textContent = fmt(d.window_tokens);
-    document.getElementById('ctx-saved').textContent = fmt(d.saved_tokens);
-    document.getElementById('ctx-checkpoints').textContent = d.backtrack_points;
-
-    const bar = document.getElementById('ctx-bar');
-    const legend = document.getElementById('ctx-legend');
-    bar.innerHTML = '';
-    legend.innerHTML = '';
-    const window = d.window_tokens || 1;
-    (d.categories || []).forEach(c => {
-      const pct = Math.max(0, Math.min(100, (c.tokens / window) * 100));
-      const seg = document.createElement('i');
-      seg.style.width = pct + '%';
-      seg.style.background = c.color;
-      bar.appendChild(seg);
-      const item = document.createElement('span');
-      item.innerHTML = '<i style="background:' + c.color + '"></i>' + c.label + ': ' + fmt(c.tokens);
-      legend.appendChild(item);
-    });
-
-    const sources = d.sources || [];
-    const admitted = sources.filter(s => s.admitted).length;
-    document.getElementById('src-summary').textContent = admitted + ' of ' + sources.length + ' discovered sources admitted to context';
-    const rows = document.getElementById('src-rows');
-    rows.innerHTML = '';
-    sources.forEach(s => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + s.name + '</td><td>' + s.category + '</td><td>' + fmt(s.estimated_tokens) +
-        '</td><td class="' + (s.admitted ? 'admitted' : 'notadmitted') + '">' + (s.admitted ? 'admitted' : '—') + '</td>';
-      rows.appendChild(tr);
-    });
-
-    const t = d.session_total || {};
-    const lt = d.last_turn || {};
-    document.getElementById('tok-input').textContent = fmt(t.input);
-    document.getElementById('tok-cached').textContent = fmt(t.cached_input) + ' cached';
-    document.getElementById('tok-output').textContent = fmt(t.output);
-    document.getElementById('tok-reasoning').textContent = fmt(t.reasoning_output) + ' reasoning';
-    document.getElementById('tok-total').textContent = fmt(t.total);
-    document.getElementById('tok-last').textContent = fmt(lt.total);
-
-    document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
-  } catch (e) {
-    document.getElementById('model-line').textContent = 'waiting for session data…';
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--bg); }
+body {
+  min-width: 280px;
+  min-height: 100vh;
+  margin: 0;
+  padding: 34px 22px 80px;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+button { font: inherit; }
+.shell { width: min(1080px, 100%); margin: 0 auto; }
+.masthead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  align-items: start;
+  padding: 8px 0 24px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.identity { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.brand-mark {
+  position: relative;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  margin-top: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.brand-mark::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  width: 2px;
+  height: 20px;
+  background: var(--ember);
+  box-shadow: 7px 4px 0 var(--ember-bright), 14px -2px 0 var(--quiet);
+}
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--ember);
+  font: 700 10px/1.3 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+h1, h2, h3, p { margin-top: 0; }
+h1 {
+  margin-bottom: 6px;
+  font: 600 clamp(28px, 4vw, 40px)/1.03 ui-serif, Georgia, serif;
+  letter-spacing: -.035em;
+}
+.subtitle { max-width: 70ch; margin-bottom: 0; color: var(--muted); font-size: 13px; }
+.transport-panel {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px;
+  min-width: 310px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.transport-copy { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.signal { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--quiet); }
+.signal.available { background: var(--ember); }
+.signal.unavailable { background: var(--danger); }
+.signal.paused { background: var(--amber); }
+.transport-state { color: var(--text); font-size: 12px; font-weight: 700; }
+.freshness { margin-left: auto; color: var(--muted); font: 600 11px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; text-align: right; }
+.freshness.fresh { color: var(--ember-bright); }
+.freshness.stale { color: var(--amber); }
+.control {
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+.control:hover:not(:disabled) { border-color: var(--ember); color: var(--ember-bright); }
+.control:disabled { cursor: wait; color: var(--quiet); }
+.model-line { margin: 12px 0 0 52px; color: var(--muted); font-size: 12px; }
+.tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0 0 24px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+.tab {
+  position: relative;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 14px 16px 13px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .05em;
+}
+.tab::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: -1px;
+  left: 16px;
+  height: 2px;
+  background: transparent;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); }
+.tab.active::after { background: var(--ember); }
+.tab.smart-tab.active::after { background: var(--teal); }
+.tab:focus-visible, .control:focus-visible, .panel:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.panel { display: flex; flex-direction: column; gap: 16px; }
+.panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.panel-heading h2 { margin-bottom: 0; font: 600 22px/1.15 ui-serif, Georgia, serif; letter-spacing: -.02em; }
+.panel-note { max-width: 58ch; margin-bottom: 0; color: var(--muted); font-size: 12px; text-align: right; }
+.card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.card-head h3 { margin-bottom: 0; font-size: 13px; letter-spacing: .01em; }
+.card-note { margin-bottom: 0; color: var(--muted); font-size: 11px; }
+.current-turn {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(180px, .9fr) minmax(0, 1.5fr);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--ember);
+  border-radius: 14px;
+  background: var(--surface-raised);
+}
+.current-copy { padding: 20px; border-right: 1px solid var(--line); }
+.current-copy h3 { margin: 7px 0 6px; font: 600 25px/1.15 ui-serif, Georgia, serif; }
+.current-copy p { margin-bottom: 0; color: var(--muted); font-size: 12px; }
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.status-running { border-color: var(--ember); color: var(--ember-bright); background: var(--ember-soft); }
+.status-completed { border-color: var(--line-strong); color: var(--ember-bright); }
+.status-failed { border-color: var(--danger); color: var(--danger); }
+.status-interrupted { border-color: var(--amber); color: var(--amber); }
+.status-idle { color: var(--muted); }
+.status-unknown { color: var(--muted); }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+.fact { min-width: 0; padding: 17px 18px; border-left: 1px solid var(--line); }
+.fact:first-child { border-left: 0; }
+.fact dt {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+.fact dd { margin: 0; overflow-wrap: anywhere; color: var(--text); font: 650 14px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.activity-list { display: flex; flex-direction: column; }
+.activity-row { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.activity-row:last-child { border-bottom: 0; }
+.activity-row-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.activity-row-head .cost { margin-left: auto; color: var(--muted); font-size: 12px; text-align: right; }
+.activity-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.activity-meta-item { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
+.activity-meta-item span:first-child { color: var(--muted); font-size: 11px; }
+.activity-meta-item span:last-child { font: 650 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; text-align: right; }
+details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+summary { width: fit-content; color: var(--ember-bright); cursor: pointer; font-size: 12px; font-weight: 700; }
+.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 18px; margin-top: 10px; }
+.profile-item { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; color: var(--muted); font-size: 11px; }
+.profile-item span:last-child { color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-align: right; }
+.empty { margin: 0; padding: 24px 18px; color: var(--muted); font-size: 12px; text-align: center; }
+.overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.overview .fact { border-left: 1px solid var(--line); }
+.overview .fact:first-child { border-left: 0; }
+.usage-bar { display: flex; flex-direction: column; margin: 8px 18px; }
+.category-row { display: flex; align-items: center; gap: 9px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.category-row:last-child { border-bottom: 0; }
+.category-label { min-width: 0; overflow-wrap: anywhere; }
+.category-value { margin-left: auto; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; min-height: 24px; padding: 0 18px 17px; color: var(--muted); font-size: 11px; }
+.legend-swatch { width: 8px; height: 8px; border-radius: 2px; }
+.category-blue { background: #3b82f6; }
+.category-green { background: #22c55e; }
+.category-yellow { background: #eab308; }
+.category-magenta { background: #d946ef; }
+.category-purple { background: #8b5cf6; }
+.category-portable { background: #d77757; }
+.category-cyan { background: #06b6d4; }
+.category-gray { background: #6b635a; }
+.category-muted { background: var(--quiet); }
+.table-wrap { width: 100%; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 10px 14px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+tr:last-child th, tr:last-child td { border-bottom: 0; }
+th:first-child, td:first-child { text-align: left; }
+thead th { color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+tbody th { color: var(--muted); font-weight: 600; }
+td { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.admitted { color: var(--ember-bright); }
+.not-admitted { color: var(--muted); }
+.token-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.smart-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.smart-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--violet), var(--teal) 48%, var(--green));
+}
+.smart-hero h2 { margin: 5px 0 8px; font: 600 25px/1.13 ui-serif, Georgia, serif; letter-spacing: -.025em; }
+.smart-hero .eyebrow { color: var(--teal); }
+.smart-copy { max-width: 66ch; margin-bottom: 0; color: var(--muted); font-size: 12px; }
+.smart-state { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; justify-content: center; }
+.smart-state p { margin: 0; color: var(--muted); font-size: 11px; text-align: right; }
+.smart-state .state-main { color: var(--text); font-size: 12px; font-weight: 700; }
+.smart-pill { border-color: var(--teal); color: var(--teal); }
+.smart-pill.enabled { border-color: var(--green); color: var(--green); }
+.smart-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.smart-grid .fact { border-top: 1px solid var(--line); }
+.smart-grid .fact:nth-child(-n+4) { border-top: 0; }
+.smart-grid .fact:nth-child(4n+1) { border-left: 0; }
+.smart-grid .fact dd { font-size: 13px; }
+.latest-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
+.latest-section { padding: 18px; }
+.latest-section + .latest-section { border-left: 1px solid var(--line); }
+.latest-section h3 { margin-bottom: 12px; font-size: 12px; }
+.evidence-list { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(0, 1.2fr); margin: 0; }
+.evidence-list dt, .evidence-list dd { margin: 0; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
+.evidence-list dt { color: var(--muted); }
+.evidence-list dd { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-align: right; }
+.evidence-list dt:last-of-type, .evidence-list dd:last-of-type { border-bottom: 0; }
+.verified { color: var(--green); }
+.not-verified { color: var(--amber); }
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--quiet);
+  font: 600 10px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+@media (max-width: 780px) {
+  .masthead { grid-template-columns: 1fr; }
+  .transport-panel { min-width: 0; width: 100%; }
+  .model-line { margin-left: 0; }
+  .current-turn { grid-template-columns: 1fr; }
+  .current-copy { border-right: 0; border-bottom: 1px solid var(--line); }
+  .overview, .smart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview .fact:nth-child(odd), .smart-grid .fact:nth-child(odd) { border-left: 0; }
+  .overview .fact:nth-child(n+3), .smart-grid .fact:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .smart-grid .fact:nth-child(-n+2) { border-top: 0; }
+  .token-columns, .latest-layout { grid-template-columns: 1fr; }
+  .latest-section + .latest-section { border-left: 0; border-top: 1px solid var(--line); }
+}
+@media (max-width: 560px) {
+  body { padding: 22px 13px 56px; }
+  .identity { gap: 10px; }
+  .brand-mark { flex-basis: 34px; width: 34px; height: 34px; }
+  .model-line { overflow-wrap: anywhere; }
+  .panel-heading { align-items: start; flex-direction: column; gap: 5px; }
+  .panel-note { text-align: left; }
+  .tab { padding-inline: 12px; }
+  .facts, .activity-meta, .profile-grid { grid-template-columns: 1fr; }
+  .facts .fact, .facts .fact:first-child { border-left: 0; border-top: 1px solid var(--line); }
+  .facts .fact:first-child { border-top: 0; }
+  .activity-row-head { align-items: flex-start; flex-wrap: wrap; }
+  .activity-row-head .cost { width: 100%; margin-left: 0; text-align: left; }
+  .overview, .smart-grid { grid-template-columns: 1fr; }
+  .overview .fact, .overview .fact:first-child, .smart-grid .fact, .smart-grid .fact:nth-child(-n+4) { border-left: 0; border-top: 1px solid var(--line); }
+  .overview .fact:first-child, .smart-grid .fact:first-child { border-top: 0; }
+  .smart-hero { grid-template-columns: 1fr; gap: 18px; }
+  .smart-state { align-items: flex-start; }
+  .smart-state p { text-align: left; }
+  .evidence-list { grid-template-columns: 1fr; }
+  .evidence-list dt { padding-bottom: 1px; border-bottom: 0; }
+  .evidence-list dd { padding-top: 1px; text-align: left; }
+  .footer { flex-direction: column; gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
-refresh();
-setInterval(refresh, 3000);
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+  <div class="masthead">
+    <div>
+      <div class="identity">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <p class="eyebrow">Elpis · live evidence</p>
+          <h1>The work, without the transcript.</h1>
+          <p class="subtitle">A local view of turn activity, admitted context, measured tokens, and pruning facts from the running Elpis thread.</p>
+        </div>
+      </div>
+      <p class="model-line" id="model-line">Waiting for the first valid dashboard state.</p>
+    </div>
+    <div class="transport-panel" aria-label="Dashboard polling controls">
+      <div class="transport-copy">
+        <span class="signal" id="transport-signal" aria-hidden="true"></span>
+        <span class="transport-state" id="transport-status" role="status" aria-live="polite">Connecting</span>
+        <span class="freshness" id="freshness-status">Freshness unavailable</span>
+      </div>
+      <button class="control" id="poll-toggle" type="button">Pause</button>
+      <button class="control" id="refresh-now" type="button">Refresh now</button>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Dashboard views" aria-orientation="horizontal">
+    <button class="tab active" id="tab-activity" type="button" role="tab" aria-selected="true" aria-controls="panel-activity" tabindex="0" data-tab="activity">Activity</button>
+    <button class="tab" id="tab-context" type="button" role="tab" aria-selected="false" aria-controls="panel-context" tabindex="-1" data-tab="context">Context</button>
+    <button class="tab" id="tab-tokens" type="button" role="tab" aria-selected="false" aria-controls="panel-tokens" tabindex="-1" data-tab="tokens">Tokens</button>
+    <button class="tab smart-tab" id="tab-smart-prune" type="button" role="tab" aria-selected="false" aria-controls="panel-smart-prune" tabindex="-1" data-tab="smart-prune">Smart Prune</button>
+  </nav>
+</header>
+
+<main>
+  <section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0">
+    <div class="panel-heading">
+      <div><p class="eyebrow">Turn activity</p><h2>Current and recent work</h2></div>
+      <p class="panel-note" id="activity-summary">Waiting for activity data.</p>
+    </div>
+    <article class="current-turn">
+      <div class="current-copy">
+        <span class="status-badge status-unknown" id="current-status">Unavailable</span>
+        <h3 id="current-title">No live turn reported</h3>
+        <p>Elapsed time freezes when polling is paused.</p>
+      </div>
+      <dl class="facts">
+        <div class="fact"><dt>Elapsed</dt><dd id="current-elapsed">Unavailable</dd></div>
+        <div class="fact"><dt>Started</dt><dd id="current-started">Unavailable</dd></div>
+        <div class="fact"><dt>Cost</dt><dd id="current-cost">Cost not reported</dd></div>
+      </dl>
+    </article>
+    <div class="card">
+      <div class="card-head"><h3>Recent turns</h3><p class="card-note" id="recent-count">No turns reported</p></div>
+      <div class="activity-list" id="activity-recent"><p class="empty">Recent activity is unavailable.</p></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-context" role="tabpanel" aria-labelledby="tab-context" tabindex="0" hidden>
+    <div class="panel-heading">
+      <div><p class="eyebrow">Working set</p><h2>Admitted context</h2></div>
+      <p class="panel-note">Measured request total with estimated category and pruning breakdowns.</p>
+    </div>
+    <dl class="overview">
+      <div class="fact"><dt>Used</dt><dd id="ctx-used">Unavailable</dd></div>
+      <div class="fact"><dt>Window</dt><dd id="ctx-window">Unavailable</dd></div>
+      <div class="fact"><dt>Approx. saved</dt><dd id="ctx-saved">Unavailable</dd></div>
+      <div class="fact"><dt>Backtrack points</dt><dd id="ctx-checkpoints">Unavailable</dd></div>
+    </dl>
+    <div class="card">
+      <div class="card-head"><h3>Estimated token usage by category</h3><p class="card-note" id="ctx-used-percent">Usage percentage unavailable</p></div>
+      <div class="usage-bar" id="ctx-bar" aria-label="Estimated token usage by category"></div>
+      <div class="legend" id="ctx-legend">Category usage unavailable.</div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Sources</h3><p class="card-note" id="source-summary">Source data unavailable</p></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Source</th><th scope="col">Category</th><th scope="col">Estimated tokens</th><th scope="col">State</th></tr></thead>
+          <tbody id="source-rows"><tr><td colspan="4">Source data unavailable</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-tokens" role="tabpanel" aria-labelledby="tab-tokens" tabindex="0" hidden>
+    <div class="panel-heading">
+      <div><p class="eyebrow">Provider usage</p><h2>Measured tokens</h2></div>
+      <p class="panel-note">Unknown provider facts stay unavailable; reported zero remains zero.</p>
+    </div>
+    <div class="token-columns">
+      <div class="card">
+        <div class="card-head"><h3>Thread total</h3><p class="card-note">Cumulative</p></div>
+        <div class="table-wrap"><table><tbody>
+          <tr><th scope="row">Input</th><td id="session-input">Unavailable</td></tr>
+          <tr><th scope="row">Cached input</th><td id="session-cached">Unavailable</td></tr>
+          <tr><th scope="row">Cache write</th><td id="session-cache-write">Unavailable</td></tr>
+          <tr><th scope="row">Output</th><td id="session-output">Unavailable</td></tr>
+          <tr><th scope="row">Reasoning output</th><td id="session-reasoning">Unavailable</td></tr>
+          <tr><th scope="row">Total</th><td id="session-total">Unavailable</td></tr>
+        </tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Last turn</h3><p class="card-note">Latest report</p></div>
+        <div class="table-wrap"><table><tbody>
+          <tr><th scope="row">Input</th><td id="last-input">Unavailable</td></tr>
+          <tr><th scope="row">Cached input</th><td id="last-cached">Unavailable</td></tr>
+          <tr><th scope="row">Cache write</th><td id="last-cache-write">Unavailable</td></tr>
+          <tr><th scope="row">Output</th><td id="last-output">Unavailable</td></tr>
+          <tr><th scope="row">Reasoning output</th><td id="last-reasoning">Unavailable</td></tr>
+          <tr><th scope="row">Total</th><td id="last-total">Unavailable</td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-smart-prune" role="tabpanel" aria-labelledby="tab-smart-prune" tabindex="0" hidden>
+    <div class="smart-hero">
+      <div>
+        <p class="eyebrow">Fresh-output admission</p>
+        <h2>Smart Prune — Experimental</h2>
+        <p class="smart-copy">Observed reductions, optimizer overhead, and local linkage checks. This view receives aggregate facts only; message and tool contents are excluded.</p>
+      </div>
+      <div class="smart-state">
+        <span class="status-badge smart-pill" id="smart-state-pill">Unavailable</span>
+        <p class="state-main" id="smart-configured">Configured preference: Unavailable · Experimental</p>
+        <p id="smart-thread">This thread: syncing</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Observed aggregates</h3><p class="card-note">Current dashboard state</p></div>
+      <dl class="smart-grid">
+        <div class="fact"><dt>Examined outputs</dt><dd id="smart-examined">Unavailable</dd></div>
+        <div class="fact"><dt>Admitted outputs</dt><dd id="smart-admitted">Unavailable</dd></div>
+        <div class="fact"><dt>Unchanged outputs</dt><dd id="smart-unchanged">Unavailable</dd></div>
+        <div class="fact"><dt>Approx. source</dt><dd id="smart-source">Unavailable</dd></div>
+        <div class="fact"><dt>Approx. admitted</dt><dd id="smart-kept">Unavailable</dd></div>
+        <div class="fact"><dt>Approx. saved</dt><dd id="smart-saved">Unavailable</dd></div>
+        <div class="fact"><dt>Optimizer wait</dt><dd id="smart-latency">Unavailable</dd></div>
+      </dl>
+    </div>
+    <div class="token-columns">
+      <div class="card">
+        <div class="card-head"><h3>Optimizer overhead</h3><p class="card-note" id="optimizer-coverage">Usage unavailable</p></div>
+        <div class="table-wrap"><table><tbody>
+          <tr><th scope="row">Requests</th><td id="optimizer-requests">Unavailable</td></tr>
+          <tr><th scope="row">Input</th><td id="optimizer-input">Unavailable</td></tr>
+          <tr><th scope="row">Cached input</th><td id="optimizer-cached">Unavailable</td></tr>
+          <tr><th scope="row">Cache write</th><td id="optimizer-cache-write">Unavailable</td></tr>
+          <tr><th scope="row">Output</th><td id="optimizer-output">Unavailable</td></tr>
+          <tr><th scope="row">Reasoning output</th><td id="optimizer-reasoning">Unavailable</td></tr>
+          <tr><th scope="row">Total</th><td id="optimizer-total">Unavailable</td></tr>
+        </tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Latest observed admission</h3><p class="card-note">Safe linkage facts</p></div>
+        <p class="empty" id="smart-latest-empty">No admission observed in this dashboard state.</p>
+        <div class="latest-layout" id="smart-latest" hidden>
+          <div class="latest-section">
+            <h3>Reduction</h3>
+            <dl class="evidence-list">
+              <dt>Admitted / examined</dt><dd id="latest-outputs">Unavailable</dd>
+              <dt>Approx. source</dt><dd id="latest-source">Unavailable</dd>
+              <dt>Approx. admitted</dt><dd id="latest-admitted">Unavailable</dd>
+              <dt>Approx. saved</dt><dd id="latest-saved">Unavailable</dd>
+              <dt>Request linkage</dt><dd id="latest-request-link">Unavailable</dd>
+              <dt>Response linkage</dt><dd id="latest-response-link">Unavailable</dd>
+            </dl>
+          </div>
+          <div class="latest-section">
+            <h3>Response usage</h3>
+            <dl class="evidence-list">
+              <dt>Input</dt><dd id="response-input">Unavailable</dd>
+              <dt>Cached input</dt><dd id="response-cached">Unavailable</dd>
+              <dt>Cache write</dt><dd id="response-cache-write">Unavailable</dd>
+              <dt>Output</dt><dd id="response-output">Unavailable</dd>
+              <dt>Reasoning output</dt><dd id="response-reasoning">Unavailable</dd>
+              <dt>Total</dt><dd id="response-total">Unavailable</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span id="state-meta">No valid state received</span>
+  <span>Local-only · read-only · no external assets</span>
+</footer>
+</div>
+
+<script>
+const POLL_INTERVAL_MS = 3_000;
+const FRESHNESS_LIMIT_MS = 10_000;
+const CATEGORY_COLORS = Object.freeze({
+  '#3b82f6': 'category-blue',
+  '#22c55e': 'category-green',
+  '#eab308': 'category-yellow',
+  '#d946ef': 'category-magenta',
+  '#8b5cf6': 'category-purple',
+  '#d77757': 'category-portable',
+  '#06b6d4': 'category-cyan',
+  '#6b635a': 'category-gray'
+});
+const CATEGORY_COLOR_FALLBACK = 'category-muted';
+const STATUS_META = Object.freeze({
+  idle: { label: 'Idle', className: 'status-idle' },
+  running: { label: 'Running', className: 'status-running' },
+  completed: { label: 'Completed', className: 'status-completed' },
+  failed: { label: 'Failed', className: 'status-failed' },
+  interrupted: { label: 'Interrupted', className: 'status-interrupted' }
+});
+const COST_UNAVAILABLE = Object.freeze({
+  subscription_authentication: 'Cost unavailable for subscription authentication',
+  cost_observation_disabled: 'Cost unavailable — observation disabled',
+  provider_unsupported: 'Cost unavailable — provider unsupported',
+  awaiting_backend_price: 'Cost unavailable — awaiting backend price',
+  backend_unavailable: 'Cost unavailable — backend unavailable',
+  observation_dropped: 'Cost unavailable — observation dropped'
+});
+const PROFILE_FIELDS = Object.freeze([
+  ['Before first sampling', 'before_first_sampling_ms'],
+  ['Sampling', 'sampling_ms'],
+  ['Compaction', 'compaction_ms'],
+  ['Between-sampling overhead', 'between_sampling_overhead_ms'],
+  ['Tool blocking', 'tool_blocking_ms'],
+  ['After last sampling', 'after_last_sampling_ms']
+]);
+
+let pollTimer = null;
+let inFlight = false;
+let paused = false;
+let lastValidState = null;
+let lastValidHeartbeat = null;
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isFiniteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isValidTimestamp(value) {
+  return isFiniteNumber(value) && value > 0;
+}
+
+function isValidState(value) {
+  return isObject(value)
+    && value.schema_version === 1
+    && isFiniteNumber(value.revision)
+    && isFiniteNumber(value.generated_at)
+    && isObject(value.context)
+    && isObject(value.tokens)
+    && isObject(value.activity)
+    && isObject(value.smart_prune);
+}
+
+function setText(id, value) {
+  byId(id).textContent = value;
+}
+
+function makeNode(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function formatNumber(value) {
+  return isFiniteNumber(value) ? value.toLocaleString() : 'Unavailable';
+}
+
+function formatPercent(value, total) {
+  if (!isFiniteNumber(value) || !isFiniteNumber(total) || total <= 0) return null;
+  const boundedValue = Math.min(Math.max(value, 0), total);
+  return (boundedValue * 100 / total).toFixed(1) + '%';
+}
+
+function formatMilliseconds(value) {
+  return isFiniteNumber(value) ? value.toLocaleString() + ' ms' : 'Unavailable';
+}
+
+function formatElapsed(value) {
+  if (!isFiniteNumber(value)) return 'Elapsed unavailable';
+  const seconds = Math.floor(Math.max(0, value) / 1_000);
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  const remainder = seconds % 60;
+  if (hours > 0) return hours + 'h ' + minutes + 'm ' + remainder + 's';
+  if (minutes > 0) return minutes + 'm ' + remainder + 's';
+  return remainder + 's';
+}
+
+function formatTimestamp(value) {
+  if (!isValidTimestamp(value)) return 'Unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unavailable' : date.toLocaleTimeString();
+}
+
+function formatCost(cost) {
+  if (!isObject(cost)) return 'Cost not reported';
+  if (cost.type === 'priced' && typeof cost.backend_total_usd === 'string') {
+    return 'Backend-reported $' + cost.backend_total_usd;
+  }
+  if (cost.type === 'unavailable') {
+    return COST_UNAVAILABLE[cost.reason] || 'Cost unavailable';
+  }
+  return 'Cost unavailable';
+}
+
+function categoryColorClass(value) {
+  return CATEGORY_COLORS[value] || CATEGORY_COLOR_FALLBACK;
+}
+
+function statusMeta(value) {
+  return STATUS_META[value] || { label: 'Unknown', className: 'status-unknown' };
+}
+
+function setStatusBadge(node, status) {
+  const meta = statusMeta(status);
+  node.className = 'status-badge ' + meta.className;
+  node.textContent = meta.label;
+}
+
+function setTransport(label, state) {
+  setText('transport-status', label);
+  byId('transport-signal').className = 'signal ' + state;
+}
+
+function markTransportUnavailable() {
+  setTransport('Transport unavailable', 'unavailable');
+}
+
+function updateFreshness() {
+  const node = byId('freshness-status');
+  node.classList.remove('fresh', 'stale');
+  if (!isValidTimestamp(lastValidHeartbeat)) {
+    node.textContent = 'Freshness unavailable';
+    return;
+  }
+  const age = Math.max(0, Date.now() - lastValidHeartbeat);
+  if (age <= FRESHNESS_LIMIT_MS) {
+    node.textContent = 'Fresh · ' + formatElapsed(age) + ' ago';
+    node.classList.add('fresh');
+  } else {
+    node.textContent = 'Stale · ' + formatElapsed(age) + ' ago';
+    node.classList.add('stale');
+  }
+}
+
+function updateCurrentElapsed() {
+  if (paused || !isObject(lastValidState)) return;
+  const current = lastValidState.activity && lastValidState.activity.current;
+  if (!isObject(current) || !isValidTimestamp(current.started_at)) return;
+  setText('current-elapsed', formatElapsed(Date.now() - current.started_at));
+}
+
+function tickClocks() {
+  updateFreshness();
+  updateCurrentElapsed();
+}
+
+function appendMeta(container, label, value) {
+  const item = makeNode('div', 'activity-meta-item');
+  item.append(makeNode('span', '', label), makeNode('span', '', value));
+  container.appendChild(item);
+}
+
+function renderProfile(container, profile) {
+  if (!isObject(profile)) {
+    container.appendChild(makeNode('p', 'card-note', 'Timing breakdown unavailable for this turn'));
+    return;
+  }
+  const details = makeNode('details');
+  details.appendChild(makeNode('summary', '', 'Timing breakdown'));
+  const grid = makeNode('div', 'profile-grid');
+  PROFILE_FIELDS.forEach(([label, field]) => {
+    const item = makeNode('div', 'profile-item');
+    item.append(makeNode('span', '', label), makeNode('span', '', formatMilliseconds(profile[field])));
+    grid.appendChild(item);
+  });
+  const requests = makeNode('div', 'profile-item');
+  requests.append(makeNode('span', '', 'Sampling requests'), makeNode('span', '', formatNumber(profile.sampling_request_count)));
+  grid.appendChild(requests);
+  const retries = makeNode('div', 'profile-item');
+  retries.append(makeNode('span', '', 'Sampling retries'), makeNode('span', '', formatNumber(profile.sampling_retry_count)));
+  grid.appendChild(retries);
+  details.appendChild(grid);
+  container.appendChild(details);
+}
+
+function renderCurrentTurn(current) {
+  const status = byId('current-status');
+  if (!isObject(current)) {
+    setStatusBadge(status, 'idle');
+    setText('current-title', 'No live turn reported');
+    setText('current-elapsed', 'Unavailable');
+    setText('current-started', 'Unavailable');
+    setText('current-cost', 'Cost not reported');
+    return;
+  }
+  setStatusBadge(status, current.status);
+  setText('current-title', current.status === 'running' ? 'A turn is in flight' : statusMeta(current.status).label + ' turn');
+  setText('current-elapsed', isValidTimestamp(current.started_at)
+    ? formatElapsed(Date.now() - current.started_at)
+    : 'Elapsed unavailable');
+  setText('current-started', formatTimestamp(current.started_at));
+  setText('current-cost', formatCost(current.cost));
+}
+
+function renderActivity(activity) {
+  const safeActivity = isObject(activity) ? activity : {};
+  renderCurrentTurn(safeActivity.current);
+  const recent = Array.isArray(safeActivity.recent) ? safeActivity.recent.slice(-20).reverse() : [];
+  setText('activity-summary', safeActivity.current ? 'Live turn plus bounded recent history.' : 'No current turn reported.');
+  setText('recent-count', recent.length === 1 ? '1 turn' : recent.length + ' turns');
+  const list = byId('activity-recent');
+  list.replaceChildren();
+  if (recent.length === 0) {
+    list.appendChild(makeNode('p', 'empty', 'No recent turns reported.'));
+    return;
+  }
+  recent.forEach(turn => {
+    const row = makeNode('article', 'activity-row');
+    const head = makeNode('div', 'activity-row-head');
+    const badge = makeNode('span');
+    setStatusBadge(badge, turn && turn.status);
+    head.append(badge, makeNode('span', 'cost', formatCost(turn && turn.cost)));
+    row.appendChild(head);
+    const meta = makeNode('div', 'activity-meta');
+    appendMeta(meta, 'Total', formatMilliseconds(turn && turn.duration_ms));
+    appendMeta(meta, 'Time to first token', formatMilliseconds(turn && turn.time_to_first_token_ms));
+    row.appendChild(meta);
+    renderProfile(row, turn && turn.profile);
+    list.appendChild(row);
+  });
+}
+
+function renderContext(context) {
+  const safeContext = isObject(context) ? context : {};
+  setText('ctx-used', formatNumber(safeContext.used_tokens));
+  setText('ctx-window', formatNumber(safeContext.window_tokens));
+  setText('ctx-saved', formatNumber(safeContext.saved_tokens));
+  setText('ctx-checkpoints', formatNumber(safeContext.backtrack_points));
+  const usedPercent = formatPercent(safeContext.used_tokens, safeContext.window_tokens);
+  setText('ctx-used-percent', usedPercent === null
+    ? 'Usage percentage unavailable'
+    : usedPercent + ' of window');
+
+  const bar = byId('ctx-bar');
+  const legend = byId('ctx-legend');
+  bar.replaceChildren();
+  legend.replaceChildren();
+  const categories = Array.isArray(safeContext.categories) ? safeContext.categories : null;
+  if (categories === null) {
+    legend.appendChild(makeNode('span', '', 'Category usage unavailable.'));
+  } else if (categories.length === 0) {
+    legend.appendChild(makeNode('span', '', 'No category usage reported.'));
+  } else {
+    categories.forEach(category => {
+      const colorClass = categoryColorClass(category && category.color);
+      const label = category && typeof category.label === 'string' ? category.label : 'Unknown category';
+      const row = makeNode('div', 'category-row');
+      const swatch = makeNode('i', 'legend-swatch ' + colorClass);
+      row.append(
+        swatch,
+        makeNode('span', 'category-label', label),
+        makeNode('span', 'category-value', formatNumber(category && category.tokens))
+      );
+      bar.appendChild(row);
+    });
+    legend.appendChild(makeNode('span', '', 'Estimated category totals for this request snapshot.'));
+  }
+
+  const sources = Array.isArray(safeContext.sources) ? safeContext.sources : [];
+  const admitted = sources.filter(source => isObject(source) && source.admitted === true).length;
+  setText('source-summary', Array.isArray(safeContext.sources)
+    ? admitted + ' of ' + sources.length + ' admitted'
+    : 'Source data unavailable');
+  const rows = byId('source-rows');
+  rows.replaceChildren();
+  if (!Array.isArray(safeContext.sources)) {
+    const row = makeNode('tr');
+    const cell = makeNode('td', '', 'Source data unavailable');
+    cell.colSpan = 4;
+    row.appendChild(cell);
+    rows.appendChild(row);
+    return;
+  }
+  if (sources.length === 0) {
+    const row = makeNode('tr');
+    const cell = makeNode('td', '', 'No sources reported');
+    cell.colSpan = 4;
+    row.appendChild(cell);
+    rows.appendChild(row);
+    return;
+  }
+  sources.forEach(source => {
+    const safeSource = isObject(source) ? source : {};
+    const row = makeNode('tr');
+    row.append(
+      makeNode('td', '', typeof safeSource.name === 'string' ? safeSource.name : 'Unavailable'),
+      makeNode('td', '', typeof safeSource.category === 'string' ? safeSource.category : 'Unavailable'),
+      makeNode('td', '', formatNumber(safeSource.estimated_tokens))
+    );
+    const admittedCell = makeNode('td', safeSource.admitted === true ? 'admitted' : 'not-admitted', safeSource.admitted === true ? 'Admitted' : 'Not admitted');
+    row.appendChild(admittedCell);
+    rows.appendChild(row);
+  });
+}
+
+function renderTokenTotals(prefix, totals) {
+  const safeTotals = isObject(totals) ? totals : {};
+  setText(prefix + '-input', formatNumber(safeTotals.input));
+  setText(prefix + '-cached', formatNumber(safeTotals.cached_input));
+  setText(prefix + '-cache-write', safeTotals.cache_write === null || safeTotals.cache_write === undefined
+    ? 'Unavailable'
+    : formatNumber(safeTotals.cache_write));
+  setText(prefix + '-output', formatNumber(safeTotals.output));
+  setText(prefix + '-reasoning', formatNumber(safeTotals.reasoning_output));
+  setText(prefix + '-total', formatNumber(safeTotals.total));
+}
+
+function renderTokens(tokens) {
+  const safeTokens = isObject(tokens) ? tokens : {};
+  renderTokenTotals('session', safeTokens.session_total);
+  renderTokenTotals('last', safeTokens.last_turn);
+}
+
+function setLinkage(id, verified) {
+  const node = byId(id);
+  node.classList.remove('verified', 'not-verified');
+  if (verified === true) {
+    node.textContent = 'Verified locally';
+    node.classList.add('verified');
+  } else if (verified === false) {
+    node.textContent = 'Not verified';
+    node.classList.add('not-verified');
+  } else {
+    node.textContent = 'Unavailable';
+  }
+}
+
+function renderSmartPrune(smart) {
+  const safeSmart = isObject(smart) ? smart : {};
+  const configured = safeSmart.configured_enabled;
+  const pill = byId('smart-state-pill');
+  pill.classList.toggle('enabled', configured === true);
+  pill.textContent = configured === true ? 'On' : configured === false ? 'Off' : 'Unavailable';
+  setText('smart-configured', 'Configured preference: '
+    + (configured === true ? 'On' : configured === false ? 'Off' : 'Unavailable')
+    + ' · Experimental');
+  const threadState = safeSmart.current_thread_next_turn_enabled;
+  setText('smart-thread', threadState === null || threadState === undefined
+    ? 'This thread: syncing'
+    : 'This thread — next turn: ' + (threadState === true ? 'On' : 'Off'));
+
+  setText('smart-examined', formatNumber(safeSmart.examined_outputs));
+  setText('smart-admitted', formatNumber(safeSmart.admitted_outputs));
+  setText('smart-unchanged', formatNumber(safeSmart.unchanged_outputs));
+  setText('smart-source', formatNumber(safeSmart.approx_source_tokens));
+  setText('smart-kept', formatNumber(safeSmart.approx_admitted_tokens));
+  setText('smart-saved', formatNumber(safeSmart.approx_saved_tokens));
+  setText('smart-latency', formatMilliseconds(safeSmart.optimizer_latency_ms));
+  setText('optimizer-requests', formatNumber(safeSmart.optimizer_requests));
+  setText('optimizer-coverage', isFiniteNumber(safeSmart.optimizer_usage_reports) && isFiniteNumber(safeSmart.optimizer_requests)
+    ? safeSmart.optimizer_usage_reports + ' reports / ' + safeSmart.optimizer_requests + ' requests'
+    : 'Usage unavailable');
+  renderTokenTotals('optimizer', safeSmart.optimizer_usage_reports > 0 ? safeSmart.optimizer_usage : null);
+
+  const latest = isObject(safeSmart.latest) ? safeSmart.latest : null;
+  byId('smart-latest-empty').hidden = latest !== null;
+  byId('smart-latest').hidden = latest === null;
+  if (latest === null) return;
+  setText('latest-outputs', formatNumber(latest.admitted_outputs) + ' / ' + formatNumber(latest.examined_outputs));
+  setText('latest-source', formatNumber(latest.approx_source_tokens));
+  setText('latest-admitted', formatNumber(latest.approx_admitted_tokens));
+  setText('latest-saved', formatNumber(latest.approx_saved_tokens));
+  setLinkage('latest-request-link', latest.request_linkage_verified);
+  setLinkage('latest-response-link', latest.response_linkage_verified);
+  renderTokenTotals('response', latest.response_usage);
+}
+
+function renderState(state) {
+  lastValidState = state;
+  const context = isObject(state.context) ? state.context : {};
+  setText('model-line', (typeof context.model === 'string' && context.model.length > 0 ? context.model : 'Model unavailable')
+    + ' · state revision ' + formatNumber(state.revision));
+  renderActivity(state.activity);
+  renderContext(state.context);
+  renderTokens(state.tokens);
+  renderSmartPrune(state.smart_prune);
+  setText('state-meta', 'State generated ' + formatTimestamp(state.generated_at)
+    + ' · schema ' + formatNumber(state.schema_version)
+    + ' · revision ' + formatNumber(state.revision));
+}
+
+function schedulePoll(delay) {
+  if (pollTimer !== null) clearTimeout(pollTimer);
+  pollTimer = paused ? null : setTimeout(() => { void poll(); }, delay);
+}
+
+async function poll(force = false) {
+  if (inFlight || (paused && !force)) return;
+  inFlight = true;
+  byId('refresh-now').disabled = true;
+  setTransport(paused ? 'Refreshing once while paused' : 'Refreshing', paused ? 'paused' : '');
+  try {
+    const response = await fetch('/data.json', { cache: 'no-store' });
+    if (!response.ok) {
+      markTransportUnavailable();
+      return;
+    }
+    const envelope = await response.json();
+    const nextState = isObject(envelope) ? envelope.state : null;
+    const nextHeartbeat = isObject(envelope) ? envelope.heartbeat_at : null;
+    if (!isValidState(nextState) || !isValidTimestamp(nextHeartbeat)) {
+      markTransportUnavailable();
+      return;
+    }
+    lastValidHeartbeat = nextHeartbeat;
+    if (lastValidState === null || nextState.revision !== lastValidState.revision) {
+      renderState(nextState);
+    }
+    updateFreshness();
+    setTransport(paused ? 'Paused · refresh succeeded' : 'Live transport', paused ? 'paused' : 'available');
+  } catch (error) {
+    markTransportUnavailable();
+  } finally {
+    inFlight = false;
+    byId('refresh-now').disabled = false;
+    if (!paused) schedulePoll(POLL_INTERVAL_MS);
+  }
+}
+
+function setPaused(nextPaused) {
+  paused = nextPaused;
+  if (paused) {
+    if (pollTimer !== null) clearTimeout(pollTimer);
+    pollTimer = null;
+    setText('poll-toggle', 'Resume');
+    setTransport('Polling paused', 'paused');
+    return;
+  }
+  setText('poll-toggle', 'Pause');
+  updateCurrentElapsed();
+  void poll();
+}
+
+const tabs = Array.from(document.querySelectorAll('.tab'));
+function activateTab(nextTab, focusTab) {
+  tabs.forEach(tab => {
+    const selected = tab === nextTab;
+    tab.classList.toggle('active', selected);
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    byId(tab.getAttribute('aria-controls')).hidden = !selected;
+  });
+  if (focusTab) nextTab.focus();
+}
+
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => activateTab(tab, false));
+  tab.addEventListener('keydown', event => {
+    const currentIndex = tabs.indexOf(tab);
+    let nextIndex = null;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = tabs.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    activateTab(tabs[nextIndex], true);
+  });
+});
+
+byId('poll-toggle').addEventListener('click', () => setPaused(!paused));
+byId('refresh-now').addEventListener('click', () => { void poll(true); });
+
+setInterval(tickClocks, 1_000);
+void poll();
 </script>
-</body></html>
+</body>
+</html>

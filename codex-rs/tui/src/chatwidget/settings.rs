@@ -6,6 +6,43 @@ use crate::app_event::AppEvent;
 use crate::chatwidget::rate_limits::RATE_LIMIT_SWITCH_PROMPT_VIEW_ID;
 
 impl ChatWidget {
+    pub(super) fn request_smart_prune_enabled(&mut self, enabled: bool) -> bool {
+        if self.context_ledger.pending_smart_prune_enabled.is_some() {
+            return false;
+        }
+        self.context_ledger.pending_smart_prune_enabled = Some(enabled);
+        self.app_event_tx.send(AppEvent::UpdateFeatureFlags {
+            updates: vec![(Feature::AutomaticContextPruning, enabled)],
+        });
+        self.request_redraw();
+        true
+    }
+
+    pub(super) fn toggle_smart_prune(&mut self) -> bool {
+        if !self.smart_prune_synced && self.context_ledger.pending_smart_prune_enabled.is_none() {
+            self.add_info_message(
+                "Smart Prune state is still syncing.".to_string(),
+                Some("Use /smart-prune on|off to set an explicit state now.".to_string()),
+            );
+            self.request_redraw();
+            return false;
+        }
+        let enabled = !self
+            .context_ledger
+            .pending_smart_prune_enabled
+            .unwrap_or(self.smart_prune.enabled);
+        self.request_smart_prune_enabled(enabled)
+    }
+
+    pub(crate) fn cancel_pending_smart_prune_update(&mut self) {
+        self.context_ledger.pending_smart_prune_enabled = None;
+        self.request_redraw();
+    }
+
+    pub(crate) fn current_thread_smart_prune_enabled(&self) -> Option<bool> {
+        self.smart_prune_synced.then_some(self.smart_prune.enabled)
+    }
+
     /// Set the approval policy in the widget's config copy.
     pub(crate) fn set_approval_policy(&mut self, policy: AskForApproval) {
         if let Err(err) = self
@@ -69,6 +106,7 @@ impl ChatWidget {
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(crate) fn set_feature_enabled(&mut self, feature: Feature, enabled: bool) -> bool {
+        let previously_enabled = self.config.features.enabled(feature);
         if let Err(err) = self.config.features.set_enabled(feature, enabled) {
             tracing::warn!(
                 error = %err,
@@ -103,6 +141,12 @@ impl ChatWidget {
         }
         if feature == Feature::PreventIdleSleep {
             self.turn_lifecycle.set_prevent_idle_sleep(enabled);
+        }
+        if feature == Feature::AutomaticContextPruning {
+            if enabled != previously_enabled {
+                self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+            }
+            self.request_redraw();
         }
         #[cfg(target_os = "windows")]
         if matches!(

@@ -118,11 +118,8 @@ struct StatusHistoryCell {
     forked_from: Option<String>,
     token_usage: StatusTokenUsageData,
     rate_limit_state: Arc<RwLock<StatusRateLimitState>>,
-    /// Layer 3: count of agent-authored prune passes and cumulative chars saved by
-    /// them (`context_pruner::pass_count`/`saved_chars`).
-    context_pruner_passes: usize,
-    context_pruner_saved_chars: usize,
-    prune_report_path: PathBuf,
+    /// Thread-scoped cumulative approximate token savings reported by the core.
+    context_prune_saved_tokens: u64,
 }
 
 #[cfg(test)]
@@ -195,10 +192,9 @@ pub(crate) fn new_status_output_with_rate_limits(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
-        /*instruction_source_paths*/ &[],
+        /*continuity_sources*/ &[],
         refreshing_rate_limits,
-        /*context_pruner_passes*/ 0,
-        /*context_pruner_saved_chars*/ 0,
+        /*context_prune_saved_tokens*/ 0,
     )
     .0
 }
@@ -220,10 +216,9 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     model_name: &str,
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
-    instruction_source_paths: &[std::path::PathBuf],
+    continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
     refreshing_rate_limits: bool,
-    context_pruner_passes: usize,
-    context_pruner_saved_chars: usize,
+    context_prune_saved_tokens: u64,
 ) -> (CompositeHistoryCell, StatusHistoryHandle) {
     let command = PlainHistoryCell::new(vec!["/usage".magenta().into()]);
     let (card, handle) = StatusHistoryCell::new(
@@ -242,10 +237,9 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
-        instruction_source_paths,
+        continuity_sources,
         refreshing_rate_limits,
-        context_pruner_passes,
-        context_pruner_saved_chars,
+        context_prune_saved_tokens,
     );
 
     (
@@ -272,10 +266,9 @@ impl StatusHistoryCell {
         model_name: &str,
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
-        instruction_source_paths: &[std::path::PathBuf],
+        continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
         refreshing_rate_limits: bool,
-        context_pruner_passes: usize,
-        context_pruner_saved_chars: usize,
+        context_prune_saved_tokens: u64,
     ) -> (Self, StatusHistoryHandle) {
         let approval_policy = AskForApproval::from(config.permissions.approval_policy.value());
         let permission_profile = config.permissions.effective_permission_profile();
@@ -361,12 +354,6 @@ impl StatusHistoryCell {
             rate_limits,
             refreshing_rate_limits,
         }));
-        let continuity_sources = crate::legacy_core::elpis_context::continuity_sources(
-            Some(config.memory_dir.as_path()),
-            config.cwd.as_path(),
-            instruction_source_paths,
-        );
-
         (
             Self {
                 model_name,
@@ -381,11 +368,9 @@ impl StatusHistoryCell {
                 session_id,
                 forked_from,
                 token_usage,
-                continuity_sources,
+                continuity_sources: continuity_sources.to_vec(),
                 rate_limit_state: rate_limit_state.clone(),
-                context_pruner_passes,
-                context_pruner_saved_chars,
-                prune_report_path: config.codex_home.join("logs/prune_report.md").to_path_buf(),
+                context_prune_saved_tokens,
             },
             StatusHistoryHandle { rate_limit_state },
         )
@@ -433,39 +418,18 @@ impl StatusHistoryCell {
         ])
     }
 
-    /// Savings from applied Ace pruning passes.
+    /// Cumulative history-pruning savings for this thread.
     fn context_pruning_spans(&self) -> Option<Vec<Span<'static>>> {
-        let ace_tokens = i64::try_from(codex_utils_string::approx_tokens_from_byte_count(
-            self.context_pruner_saved_chars,
-        ))
-        .unwrap_or(0);
-        if ace_tokens == 0 && self.context_pruner_passes == 0 {
-            return Some(vec![
-                Span::from("~0 tokens saved"),
-                Span::from(" — 0 Ace passes").dim(),
-            ]);
+        if self.context_prune_saved_tokens == 0 {
+            return Some(vec![Span::from("~0 tokens removed in this history")]);
         }
 
-        let total_fmt = format_tokens_compact(ace_tokens);
-
-        let mut spans = vec![
-            Span::from(format!("~{total_fmt} tokens saved")),
-            Span::from(format!(
-                " — {} Ace pass{}",
-                self.context_pruner_passes,
-                if self.context_pruner_passes == 1 {
-                    ""
-                } else {
-                    "es"
-                }
-            ))
-            .dim(),
-        ];
-        spans.push(Span::from(format!(
-            " | file://{}",
-            self.prune_report_path.display()
-        )));
-        Some(spans)
+        let total_fmt = format_tokens_compact(
+            i64::try_from(self.context_prune_saved_tokens).unwrap_or(i64::MAX),
+        );
+        Some(vec![Span::from(format!(
+            "~{total_fmt} tokens removed earlier in this history"
+        ))])
     }
 
     fn rate_limit_lines(

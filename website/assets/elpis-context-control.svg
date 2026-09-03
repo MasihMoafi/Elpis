@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc" style="font-family: Inter, ui-sans-serif, system-ui, sans-serif;">
+  <title id="title">Elpis first-exposure context-control pipeline</title>
+  <desc id="desc">Selected shell requests may be rewritten by RTK before execution. Tool results then pass through a deterministic safety cap and post-tool hooks. When enabled, experimental Smart Prune may compact a fresh textual result after hooks but before its first main-model exposure; it never revisits admitted history. Emergency force-prune and native compact are separate explicit recovery paths.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#101824"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="900" rx="14" fill="url(#background)"/>
+
+  <text x="80" y="48" fill="#8ea2b8" font-size="13" font-weight="700" letter-spacing="2.2">CONTEXT CONTROL</text>
+  <text x="80" y="88" fill="#f8fafc" font-size="30" font-weight="750">Before a fresh tool result enters history</text>
+  <text x="80" y="118" fill="#94a3b8" font-size="16">Prevention and first-exposure admission stay separate from explicit recovery.</text>
+
+  <rect x="80" y="150" width="1040" height="470" rx="16" fill="#141c27" stroke="#334155"/>
+  <text x="108" y="186" fill="#cbd5e1" font-size="12.5" font-weight="700" letter-spacing="1">FIRST-EXPOSURE PIPELINE</text>
+  <rect x="902" y="166" width="188" height="28" rx="14" fill="#162b29" stroke="#0f766e"/>
+  <text x="996" y="185" fill="#99f6e4" font-size="12" font-weight="700" text-anchor="middle">Fresh results only</text>
+
+  <g stroke="#64748b" stroke-width="2" marker-end="url(#arrow)">
+    <line x1="600" y1="286" x2="600" y2="312"/>
+    <line x1="600" y1="394" x2="600" y2="420"/>
+    <line x1="600" y1="502" x2="600" y2="528"/>
+  </g>
+
+  <rect x="108" y="214" width="984" height="72" rx="12" fill="#172534" stroke="#3b82f6" stroke-width="1.5"/>
+  <circle cx="142" cy="250" r="15" fill="#3b82f6"/>
+  <text x="142" y="255" fill="#eff6ff" font-size="13" font-weight="800" text-anchor="middle">1</text>
+  <text x="174" y="244" fill="#f8fafc" font-size="18" font-weight="700">RTK filter</text>
+  <text x="174" y="267" fill="#bfdbfe" font-size="13.5">Optional PreToolUse rewrite for supported shell requests — before the command executes.</text>
+  <rect x="875" y="232" width="187" height="34" rx="17" fill="#16263b" stroke="#2563eb"/>
+  <text x="968" y="254" fill="#93c5fd" font-size="12" font-weight="700" text-anchor="middle">PRE-EXECUTION</text>
+
+  <rect x="108" y="322" width="984" height="72" rx="12" fill="#172534" stroke="#3b82f6" stroke-width="1.5"/>
+  <circle cx="142" cy="358" r="15" fill="#3b82f6"/>
+  <text x="142" y="363" fill="#eff6ff" font-size="13" font-weight="800" text-anchor="middle">2</text>
+  <text x="174" y="352" fill="#f8fafc" font-size="18" font-weight="700">Tool result + deterministic safety cap</text>
+  <text x="174" y="375" fill="#bfdbfe" font-size="13.5">Exceptionally large output is hard-truncated with a notice; this is not semantic pruning.</text>
+  <rect x="875" y="340" width="187" height="34" rx="17" fill="#16263b" stroke="#2563eb"/>
+  <text x="968" y="362" fill="#93c5fd" font-size="12" font-weight="700" text-anchor="middle">DETERMINISTIC</text>
+
+  <rect x="108" y="430" width="984" height="72" rx="12" fill="#1d2530" stroke="#64748b" stroke-width="1.5"/>
+  <circle cx="142" cy="466" r="15" fill="#64748b"/>
+  <text x="142" y="471" fill="#f8fafc" font-size="13" font-weight="800" text-anchor="middle">3</text>
+  <text x="174" y="460" fill="#f8fafc" font-size="18" font-weight="700">Sibling tools and post-tool hooks finish</text>
+  <text x="174" y="483" fill="#cbd5e1" font-size="13.5">Smart Prune sees the final textual result that would otherwise enter model history.</text>
+  <rect x="875" y="448" width="187" height="34" rx="17" fill="#202938" stroke="#475569"/>
+  <text x="968" y="470" fill="#cbd5e1" font-size="12" font-weight="700" text-anchor="middle">HOOK BOUNDARY</text>
+
+  <rect x="108" y="538" width="984" height="60" rx="12" fill="#2b1d12" stroke="#ea580c" stroke-width="1.8"/>
+  <circle cx="142" cy="568" r="15" fill="#ea580c"/>
+  <text x="142" y="573" fill="#fff7ed" font-size="13" font-weight="800" text-anchor="middle">4</text>
+  <text x="174" y="562" fill="#fff7ed" font-size="18" font-weight="700">Smart Prune — Experimental, off by default</text>
+  <text x="174" y="584" fill="#fed7aa" font-size="13">After hooks, before first exposure; may compact a fresh textual result, never revisit admitted history.</text>
+  <rect x="875" y="551" width="187" height="34" rx="17" fill="#43210f" stroke="#c2410c"/>
+  <text x="968" y="573" fill="#fdba74" font-size="12" font-weight="700" text-anchor="middle">OPTIONAL ADMISSION</text>
+
+  <rect x="420" y="606" width="360" height="42" rx="21" fill="#102824" stroke="#0f766e" stroke-width="1.5"/>
+  <text x="600" y="633" fill="#99f6e4" font-size="13" font-weight="700" text-anchor="middle">FIRST MAIN-MODEL EXPOSURE → HISTORY</text>
+
+  <text x="80" y="696" fill="#cbd5e1" font-size="12.5" font-weight="700" letter-spacing="1">SEPARATE EXPLICIT RECOVERY</text>
+  <text x="1120" y="696" fill="#94a3b8" font-size="12" text-anchor="end">Neither path is a Smart Prune fallback.</text>
+
+  <rect x="80" y="720" width="500" height="126" rx="14" fill="#2a2118" stroke="#d97706" stroke-width="1.5"/>
+  <text x="108" y="758" fill="#fbbf24" font-size="18" font-weight="700">/force-prune &lt;pct&gt;</text>
+  <text x="108" y="786" fill="#fde68a" font-size="13.5">Emergency Ace pass over eligible older tool-result bodies.</text>
+  <text x="108" y="811" fill="#d6b98a" font-size="12.5">Works while Smart Prune is off; may rewrite already-recorded history.</text>
+  <rect x="430" y="742" width="122" height="30" rx="15" fill="#3b2b17" stroke="#b45309"/>
+  <text x="491" y="762" fill="#fcd34d" font-size="11.5" font-weight="700" text-anchor="middle">EMERGENCY</text>
+
+  <rect x="620" y="720" width="500" height="126" rx="14" fill="#25231d" stroke="#c9a45c" stroke-width="1.5"/>
+  <text x="648" y="758" fill="#fff7e6" font-size="18" font-weight="700">/compact</text>
+  <text x="648" y="786" fill="#ead5aa" font-size="13.5">Immediate native Codex compaction / summarization.</text>
+  <text x="648" y="811" fill="#c9b68e" font-size="12.5">Own threshold and headroom lifecycle; it does not run Ace first.</text>
+  <rect x="970" y="742" width="122" height="30" rx="15" fill="#373020" stroke="#a88745"/>
+  <text x="1031" y="762" fill="#f3d49b" font-size="11.5" font-weight="700" text-anchor="middle">NATIVE</text>
+</svg>

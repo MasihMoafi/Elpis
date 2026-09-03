@@ -550,6 +550,7 @@ use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadState;
 use crate::thread_state::ThreadStateManager;
 use token_usage_replay::latest_token_usage_turn_id_from_rollout_items;
+use token_usage_replay::send_thread_smart_prune_update_to_connection;
 use token_usage_replay::send_thread_token_usage_update_to_connection;
 
 fn resolve_request_cwd(cwd: Option<PathBuf>) -> Result<Option<AbsolutePathBuf>, JSONRPCErrorError> {
@@ -635,6 +636,10 @@ use self::thread_resume_redaction::*;
 use self::thread_summary::*;
 
 pub(crate) use self::thread_lifecycle::populate_thread_turns_from_history;
+#[cfg(test)]
+pub(crate) use self::thread_lifecycle::{
+    observe_initial_turn_cost_after_forwarding, prepare_turn_cost_event,
+};
 pub(crate) use self::thread_processor::thread_from_stored_thread;
 #[cfg(test)]
 pub(crate) use self::thread_summary::read_summary_from_rollout;

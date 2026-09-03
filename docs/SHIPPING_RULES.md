@@ -23,11 +23,16 @@ The governing question is always: **what does this do on a machine that is not M
 - The project's GitHub URL and authorship notes in comments are fine. They do not
   change what the program touches at runtime.
 
-Before tagging, this must return only repo URLs:
+Before tagging, this must return no developer-specific path:
 
 ```bash
-grep -rn 'Desktop/\|/home/[a-z]' codex-rs --include='*.rs' | grep -v MasihMoafi
+developer_user=masih
+rg -n "/home/${developer_user}|Desktop/p/" codex-rs --glob '*.rs'
 ```
+
+Generic paths such as `/home/alice` inside test fixtures are allowed. After the release build,
+also inspect the binary with
+`strings target/release/elpis | rg "/home/${developer_user}|Desktop/p/"`.
 
 ## 2. Verify on a machine that is not this one
 
@@ -52,8 +57,9 @@ grep -rn 'Desktop/\|/home/[a-z]' codex-rs --include='*.rs' | grep -v MasihMoafi
   gh release list --limit 3
   ```
 
-- A version number that never reached a user is not spent. Reuse it; the workflow
-  replaces a re-tagged release rather than failing on it.
+- A version number that never reached a user is not spent, but the workflow refuses to
+  overwrite an existing GitHub release. Remove or replace a failed tag only after an explicit,
+  reviewed recovery decision.
 - The version in `codex-rs/tui/Cargo.toml`, the assertion in the workflow's
   "Verify executable identity" step, and `Cargo.lock` must move together, or the tag
   run fails on the version check.
@@ -85,3 +91,20 @@ user-facing:
 - Never add a machine-learning dependency to this repository. Retrieval is an MCP server
   the user registers; the engine, its models, and their download size stay outside Elpis
   and outside the release artifact.
+
+## 7. Selector evidence is not shipping evidence
+
+`scripts/verify-elpis` is proportional local/Linux verification evidence, not shipping
+evidence. Even a passing `--surface full` run does not replace:
+
+- a release artifact build;
+- installing or packaging that artifact, or launching the installed result;
+- the tag-only workflow and confirmation that the release was published;
+- verification on a clean machine or clean container;
+- an authorized remote-CI run;
+- Masih's manual acceptance.
+
+The selector does not build or prove a shippable release artifact; it does not install,
+package, launch, tag, publish, or grant acceptance. Its Cargo check and test rows may
+still compile code and consume CPU and disk. Keep the release mechanics and
+clean-machine checks above.

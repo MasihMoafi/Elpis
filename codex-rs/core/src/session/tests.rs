@@ -47,6 +47,7 @@ use codex_protocol::AgentPath;
 use codex_protocol::ResponseItemId;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
+use codex_protocol::TurnProfileSummary;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::TrustLevel;
@@ -80,6 +81,8 @@ use crate::state::TaskKind;
 use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
 use crate::tasks::SessionTaskResult;
+use crate::tasks::TaskCancellationBoundary;
+use crate::tasks::TaskCompletionOutcome;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::execute_user_shell_command;
 use crate::tools::ToolRouter;
@@ -147,6 +150,8 @@ use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
+use codex_protocol::protocol::TurnProfileEvent;
+use codex_protocol::protocol::TurnProfileOutcome;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::protocol::W3cTraceContext;
@@ -222,6 +227,20 @@ fn user_message(text: &str) -> ResponseItem {
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     }
+}
+
+#[tokio::test]
+async fn automatic_context_pruning_is_local_only_in_beta_header() {
+    let mut config = test_config().await;
+    config.features.enable(Feature::AutomaticContextPruning);
+    config.features.enable(Feature::RemoteCompactionV2);
+
+    let header = Session::build_model_client_beta_features_header(&config)
+        .expect("remote compaction should remain advertised");
+    let advertised = header.split(',').collect::<Vec<_>>();
+
+    assert!(!advertised.contains(&Feature::AutomaticContextPruning.key()));
+    assert!(advertised.contains(&Feature::RemoteCompactionV2.key()));
 }
 
 #[test]
@@ -1637,6 +1656,55 @@ disabled_tools = [
 }
 
 #[tokio::test]
+async fn smart_prune_refresh_applies_to_next_turn_without_changing_active_turn() {
+    let (session, active_turn) = make_session_and_context().await;
+    let codex_home = session.codex_home().await;
+    std::fs::create_dir_all(&codex_home).expect("create codex home");
+    assert!(!session.smart_prune_enabled());
+    assert!(!active_turn.smart_prune_enabled);
+    assert!(
+        !session.features.enabled(Feature::AutomaticContextPruning),
+        "the session-static feature set starts disabled"
+    );
+
+    std::fs::write(
+        codex_home.join(CONFIG_TOML_FILE),
+        "[features]\nautomatic_context_pruning = true\n",
+    )
+    .expect("enable Smart Prune in user config");
+    session
+        .refresh_runtime_config(load_latest_config_for_session(&session).await)
+        .await;
+
+    assert!(session.smart_prune_enabled());
+    assert!(
+        !active_turn.smart_prune_enabled,
+        "a turn must retain the policy it started with"
+    );
+    assert!(
+        !session.features.enabled(Feature::AutomaticContextPruning),
+        "only the narrow runtime gate is refreshable"
+    );
+    let enabled_turn = session.new_default_turn().await;
+    assert!(enabled_turn.smart_prune_enabled);
+
+    std::fs::write(
+        codex_home.join(CONFIG_TOML_FILE),
+        "[features]\nautomatic_context_pruning = false\n",
+    )
+    .expect("disable Smart Prune in user config");
+    session
+        .refresh_runtime_config(load_latest_config_for_session(&session).await)
+        .await;
+    assert!(!session.smart_prune_enabled());
+    assert!(
+        enabled_turn.smart_prune_enabled,
+        "the already-created turn remains enabled"
+    );
+    assert!(!session.new_default_turn().await.smart_prune_enabled);
+}
+
+#[tokio::test]
 async fn reconstruct_history_matches_live_compactions() {
     let (session, turn_context) = make_session_and_context().await;
     let (rollout_items, expected) = sample_rollout(&session, &turn_context).await;
@@ -2287,6 +2355,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: Some(info1),
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2294,6 +2363,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: None,
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2301,6 +2371,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: Some(info2.clone()),
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2308,6 +2379,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             info: None,
             rate_limits: None,
             context_prune_saved_tokens: 0,
+            smart_prune: Default::default(),
         },
     )));
 
@@ -4185,6 +4257,67 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
         .expect("thread should have rollout path")
 }
 
+#[tokio::test]
+async fn transient_turn_profile_event_is_not_persisted() {
+    let (mut session, turn_context) = make_session_and_context().await;
+    let rollout_path = attach_thread_persistence(&mut session).await;
+    let profile_event = EventMsg::TurnProfile(TurnProfileEvent {
+        turn_id: turn_context.sub_id.clone(),
+        outcome: TurnProfileOutcome::Completed,
+        started_at: Some(100),
+        duration_ms: Some(231),
+        time_to_first_token_ms: Some(12),
+        profile: Some(TurnProfileSummary {
+            before_first_sampling_ms: 11,
+            sampling_ms: 22,
+            compaction_ms: 33,
+            between_sampling_overhead_ms: 44,
+            tool_blocking_ms: 55,
+            after_last_sampling_ms: 66,
+            sampling_request_count: 7,
+            sampling_retry_count: 8,
+        }),
+    });
+
+    session
+        .send_event_without_persistence(&turn_context, profile_event)
+        .await;
+    session
+        .send_event(
+            &turn_context,
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: turn_context.sub_id.clone(),
+                last_agent_message: None,
+                error: None,
+                started_at: Some(100),
+                completed_at: Some(200),
+                duration_ms: Some(231),
+                time_to_first_token_ms: Some(12),
+            }),
+        )
+        .await;
+    session.flush_rollout().await.expect("flush rollout");
+
+    let rollout = std::fs::read_to_string(rollout_path).expect("read rollout output");
+    assert!(rollout.contains("task_complete"));
+    for forbidden in [
+        "\"turn_profile\"",
+        "\"beforeFirstSamplingMs\"",
+        "\"samplingMs\"",
+        "\"compactionMs\"",
+        "\"betweenSamplingOverheadMs\"",
+        "\"toolBlockingMs\"",
+        "\"afterLastSamplingMs\"",
+        "\"samplingRequestCount\"",
+        "\"samplingRetryCount\"",
+    ] {
+        assert!(
+            !rollout.contains(forbidden),
+            "rollout unexpectedly contained transient profile field {forbidden}"
+        );
+    }
+}
+
 fn text_block(s: &str) -> serde_json::Value {
     json!({
         "type": "text",
@@ -5411,6 +5544,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
         skills_snapshot,
+        config.features.enabled(Feature::AutomaticContextPruning),
     );
     let session = Session {
         thread_id,
@@ -5420,6 +5554,9 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        smart_prune_enabled: std::sync::atomic::AtomicBool::new(
+            config.features.enabled(Feature::AutomaticContextPruning),
+        ),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
         conversation: Arc::new(RealtimeConversationManager::new()),
@@ -7519,6 +7656,7 @@ where
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
         skills_snapshot,
+        config.features.enabled(Feature::AutomaticContextPruning),
     ));
     let session = Arc::new(Session {
         thread_id,
@@ -7528,6 +7666,9 @@ where
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        smart_prune_enabled: std::sync::atomic::AtomicBool::new(
+            config.features.enabled(Feature::AutomaticContextPruning),
+        ),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
         conversation: Arc::new(RealtimeConversationManager::new()),
@@ -9083,6 +9224,46 @@ impl SessionTask for CompletingTask {
     }
 }
 
+struct PanickingBoundaryTask {
+    boundary: TaskCancellationBoundary,
+    started: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release: tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+impl SessionTask for PanickingBoundaryTask {
+    fn kind(&self) -> TaskKind {
+        TaskKind::Regular
+    }
+
+    fn span_name(&self) -> &'static str {
+        "session_task.panicking_boundary"
+    }
+
+    fn cancellation_boundary(&self) -> Option<TaskCancellationBoundary> {
+        Some(self.boundary.clone())
+    }
+
+    async fn run(
+        self: Arc<Self>,
+        _session: Arc<SessionTaskContext>,
+        _ctx: Arc<TurnContext>,
+        _input: Vec<TurnInput>,
+        _cancellation_token: CancellationToken,
+    ) -> SessionTaskResult {
+        if let Some(started) = self.started.lock().expect("started gate lock").take() {
+            let _ = started.send(());
+        }
+        let release = self
+            .release
+            .lock()
+            .await
+            .take()
+            .expect("release gate receiver");
+        let _ = release.await;
+        panic!("deterministic abnormal task completion");
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TerminalEventKind {
     TurnComplete,
@@ -9161,6 +9342,61 @@ async fn recv_terminal_event(
     })
     .await
     .expect("terminal event should be delivered")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn interrupt_recovers_latched_abnormal_task_without_turn_aborted() {
+    let (sess, tc, rx) = make_session_and_context_with_rx().await;
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    sess.spawn_task(
+        Arc::clone(&tc),
+        Vec::new(),
+        PanickingBoundaryTask {
+            boundary: TaskCancellationBoundary::default(),
+            started: std::sync::Mutex::new(Some(started_tx)),
+            release: tokio::sync::Mutex::new(Some(release_rx)),
+        },
+    )
+    .await;
+    timeout(StdDuration::from_secs(2), started_rx)
+        .await
+        .expect("panicking task should start")
+        .expect("started gate sender");
+
+    let completion = {
+        let active = sess.active_turn.lock().await;
+        Arc::clone(
+            &active
+                .as_ref()
+                .and_then(|active_turn| active_turn.task.as_ref())
+                .expect("panicking task should be active")
+                .completion,
+        )
+    };
+    let _ = release_tx.send(());
+    assert_eq!(
+        timeout(StdDuration::from_secs(2), completion.wait())
+            .await
+            .expect("abnormal completion should be latched"),
+        TaskCompletionOutcome::Abnormal
+    );
+
+    timeout(
+        StdDuration::from_secs(2),
+        sess.abort_all_tasks(TurnAbortReason::Interrupted),
+    )
+    .await
+    .expect("interrupt should recover the abnormal active task");
+
+    assert_eq!(completion.wait().await, TaskCompletionOutcome::Abnormal);
+    assert!(sess.active_turn.lock().await.is_none());
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event.msg, EventMsg::TurnAborted(_)),
+            "an already-abnormal task must not be reported as a user abort"
+        );
+    }
 }
 
 #[derive(Clone, Copy)]

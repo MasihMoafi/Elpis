@@ -52,6 +52,7 @@ use crate::stream_events_utils::record_completed_response_item_with_finalized_fa
 use crate::tasks::emit_compact_metric;
 use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
+use crate::tools::parallel::PendingToolOutput;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::router::ToolRouterParams;
@@ -81,7 +82,6 @@ use codex_protocol::items::build_hook_prompt_message;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
-use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AgentMessageContentDeltaEvent;
 use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
@@ -266,10 +266,6 @@ pub(crate) async fn run_turn(
                     .await;
             }
 
-            // Prune immediately before building the request.  The history sent to
-            // the provider, the context-limit check, and the UI snapshot must all
-            // describe the same model-visible state.
-            super::context_prune::prune_before_request(&sess, &turn_context).await;
             let token_status = super::context_window::context_window_token_status(
                 sess.as_ref(),
                 turn_context.as_ref(),
@@ -291,7 +287,6 @@ pub(crate) async fn run_turn(
             }
             .instrument(trace_span!("run_turn.prepare_sampling_request_input"))
             .await;
-
             let responses_metadata = turn_context.turn_metadata_state.to_responses_metadata(
                 sess.installation_id.clone(),
                 window_id,
@@ -328,10 +323,6 @@ pub(crate) async fn run_turn(
                 .await;
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
 
-                // Pressure pruning runs after every completed sampling step, not only
-                // at the end of the user turn. Long tool-driven turns therefore
-                // cannot silently grow past the 30%-used boundary between follow-ups.
-                super::context_prune::maybe_run_context_prune(&sess, &turn_context).await;
                 let token_status = super::context_window::context_window_token_status(
                     sess.as_ref(),
                     turn_context.as_ref(),
@@ -898,6 +889,7 @@ async fn run_auto_compact(
         );
         return Err(CodexErr::ContextWindowExceeded);
     }
+    let _profile_guard = turn_context.turn_timing_state.begin_compaction();
     if turn_context.config.features.enabled(Feature::TokenBudget) {
         // Compaction is the reset request, so force a new context window
         // instead of consuming a pending `new_context` tool request.
@@ -1040,6 +1032,10 @@ async fn run_sampling_request(
             turn_context.as_ref(),
             base_instructions.clone(),
         );
+        // Record each real attempt after its prompt is fixed. A failed stream may execute and
+        // admit a tool result before the retry, so recording only outside this loop misses the
+        // retry that first exposes that admission.
+        let smart_prune_request_link = sess.record_smart_prune_request(&prompt.input).await;
         let err = match try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
@@ -1049,6 +1045,7 @@ async fn run_sampling_request(
             responses_metadata,
             Arc::clone(&turn_diff_tracker),
             &prompt,
+            smart_prune_request_link,
             cancellation_token.child_token(),
         )
         .await
@@ -1088,6 +1085,7 @@ async fn run_sampling_request(
             ResponsesStreamRequest::Sampling,
         )
         .await?;
+        turn_context.turn_timing_state.record_sampling_retry();
     }
 }
 
@@ -1429,6 +1427,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
         | EventMsg::TurnStarted(_)
         | EventMsg::ThreadSettingsApplied(_)
         | EventMsg::TurnComplete(_)
+        | EventMsg::TurnProfile(_)
         | EventMsg::TokenCount(_)
         | EventMsg::UserMessage(_)
         | EventMsg::AgentReasoning(_)
@@ -1772,21 +1771,33 @@ async fn handle_assistant_item_done_in_plan_mode(
 
 #[instrument(level = "trace", skip_all)]
 async fn drain_in_flight(
-    in_flight: &mut FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>>,
+    in_flight: &mut FuturesOrdered<BoxFuture<'static, CodexResult<PendingToolOutput>>>,
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
+    cancellation_token: &CancellationToken,
 ) -> CodexResult<()> {
+    let mut pending_outputs = Vec::new();
     while let Some(res) = in_flight.next().await {
         match res {
-            Ok(response_input) => {
-                let response_item = response_input.into();
-                sess.record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
-                    .await;
+            Ok(pending_output) => {
+                pending_outputs.push(pending_output);
             }
             Err(err) => {
                 error_or_panic(format!("in-flight tool future failed during drain: {err}"));
             }
         }
+    }
+    let pending_outputs = super::smart_prune::optimize_pending_outputs(
+        &sess,
+        &turn_context,
+        pending_outputs,
+        cancellation_token,
+    )
+    .await;
+    for pending_output in pending_outputs {
+        let response_item = pending_output.response.into();
+        sess.record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
+            .await;
     }
     Ok(())
 }
@@ -1898,6 +1909,7 @@ async fn try_run_sampling_request(
     responses_metadata: &CodexResponsesMetadata,
     turn_diff_tracker: SharedTurnDiffTracker,
     prompt: &Prompt,
+    smart_prune_request_link: Option<super::smart_prune::SmartPruneRequestLink>,
     cancellation_token: CancellationToken,
 ) -> CodexResult<SamplingRequestResult> {
     let inference_trace = sess.services.rollout_thread_trace.inference_trace_context(
@@ -1905,6 +1917,7 @@ async fn try_run_sampling_request(
         turn_context.model_info.slug.as_str(),
         turn_context.provider.info().name.as_str(),
     );
+    let sampling_timing_guard = turn_context.turn_timing_state.begin_sampling();
     let uses_sequential_cutoff_reasoning_summaries = turn_context
         .config
         .features
@@ -1920,7 +1933,7 @@ async fn try_run_sampling_request(
         &cancellation_token,
     )
     .await?;
-    let mut in_flight: FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>> =
+    let mut in_flight: FuturesOrdered<BoxFuture<'static, CodexResult<PendingToolOutput>>> =
         FuturesOrdered::new();
     let mut needs_follow_up = false;
     let mut last_agent_message: Option<String> = None;
@@ -2197,6 +2210,14 @@ async fn try_run_sampling_request(
                     &mut assistant_message_stream_parsers,
                 )
                 .await;
+                if let Some(request_link) = smart_prune_request_link.as_ref() {
+                    sess.record_smart_prune_response(
+                        request_link,
+                        &response_id,
+                        token_usage.as_ref(),
+                    )
+                    .await;
+                }
                 sess.send_event(
                     &turn_context,
                     EventMsg::RawResponseCompleted(RawResponseCompletedEvent {
@@ -2370,6 +2391,7 @@ async fn try_run_sampling_request(
             }
         }
     };
+    drop(sampling_timing_guard);
 
     flush_assistant_text_segments_all(
         &sess,
@@ -2379,7 +2401,19 @@ async fn try_run_sampling_request(
     )
     .await;
 
-    drain_in_flight(&mut in_flight, sess.clone(), turn_context.clone()).await?;
+    let tool_blocking_timing_guard = if in_flight.is_empty() {
+        None
+    } else {
+        Some(turn_context.turn_timing_state.begin_tool_blocking())
+    };
+    drain_in_flight(
+        &mut in_flight,
+        sess.clone(),
+        turn_context.clone(),
+        &cancellation_token,
+    )
+    .await?;
+    drop(tool_blocking_timing_guard);
 
     if should_emit_token_count {
         // A tool call such as request_user_input can intentionally pause the turn. Emit token

@@ -41,6 +41,7 @@ pub(crate) struct ExperimentalFeatureItem {
 
 pub(crate) struct ExperimentalFeaturesView {
     features: Vec<ExperimentalFeatureItem>,
+    initial_enabled: Vec<bool>,
     state: ScrollState,
     complete: bool,
     app_event_tx: AppEventSender,
@@ -58,9 +59,11 @@ impl ExperimentalFeaturesView {
         let mut header = ColumnRenderable::new();
         header.push(Line::from("Settings".bold()));
         header.push(Line::from("Changes are saved to config.toml.".dim()));
+        let initial_enabled = features.iter().map(|item| item.enabled).collect();
 
         let mut view = Self {
             features,
+            initial_enabled,
             state: ScrollState::new(),
             complete: false,
             app_event_tx,
@@ -160,6 +163,21 @@ impl ExperimentalFeaturesView {
     fn rows_width(total_width: u16) -> u16 {
         total_width.saturating_sub(2)
     }
+
+    fn save(&mut self) {
+        let updates = self
+            .features
+            .iter()
+            .zip(&self.initial_enabled)
+            .filter(|(item, initial)| item.enabled != **initial)
+            .map(|(item, _)| (item.feature, item.enabled))
+            .collect::<Vec<_>>();
+        if !updates.is_empty() {
+            self.app_event_tx
+                .send(AppEvent::UpdateFeatureFlags { updates });
+        }
+        self.complete = true;
+    }
 }
 
 impl BottomPaneView for ExperimentalFeaturesView {
@@ -176,9 +194,8 @@ impl BottomPaneView for ExperimentalFeaturesView {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => self.toggle_selected(),
-            _ if self.keymap.accept.is_pressed(key_event)
-                || self.keymap.cancel.is_pressed(key_event) =>
-            {
+            _ if self.keymap.accept.is_pressed(key_event) => self.save(),
+            _ if self.keymap.cancel.is_pressed(key_event) => {
                 self.on_ctrl_c();
             }
             _ => {}
@@ -190,17 +207,6 @@ impl BottomPaneView for ExperimentalFeaturesView {
     }
 
     fn on_ctrl_c(&mut self) -> CancellationEvent {
-        // Save the updates
-        if !self.features.is_empty() {
-            let updates = self
-                .features
-                .iter()
-                .map(|item| (item.feature, item.enabled))
-                .collect();
-            self.app_event_tx
-                .send(AppEvent::UpdateFeatureFlags { updates });
-        }
-
         self.complete = true;
         CancellationEvent::Handled
     }

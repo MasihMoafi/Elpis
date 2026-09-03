@@ -10,13 +10,13 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
 [![Telemetry](https://img.shields.io/badge/telemetry-off%20by%20default-brightgreen?style=flat-square)](#privacy-and-ownership)
 
-[Install](#quickstart) • [Features](#core-features) • [Evaluation](#evaluation-status) • [Docs](#documentation)
+[Install](#quickstart) • [Features](#core-features) • [Evaluation](#evaluation-status) • [Paper](paper/paper.md) • [Docs](#documentation)
 
 </div>
 
-![Elpis interactive terminal demo](docs/assets/demo.gif)
+[Try the interactive Elpis demo →](https://elpis.masihmoafi.com)
 
-![Elpis context audit — selective pruning and evidence trail](docs/assets/evidence.gif)
+![Elpis session continuity modes](docs/assets/elpis-session-continuity.svg)
 
 ## Contents
 
@@ -35,24 +35,24 @@
 - [Evaluation status](#evaluation-status)
   - [RQ1: Context Reduction & Operating Hygiene](#rq1-context-reduction--operating-hygiene)
   - [RQ2 & RQ3: Target Retention & Task Quality](#rq2--rq3-target-retention--task-quality)
-  - [RQ4: Pruning Overhead & Token Economics](#rq4-pruning-overhead--token-economics)
+  - [RQ4: Cache Preservation & Token Economics](#rq4-cache-preservation--token-economics)
   - [RQ5: Forensic Auditability](#rq5-forensic-auditability)
 - [Documentation](#documentation)
 - [License](#license)
 
 ## Quickstart
 
-Linux x86_64 and macOS on Apple Silicon:
+Linux x86_64:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
-The installer picks the right binary for your machine and installs
-[RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
-choose a provider and sign in or enter its API key.
+The installer installs Elpis only. [RTK](https://github.com/rtk-ai/rtk) is an optional,
+separate shell-output filter; if it is already on `PATH`, Elpis can offer its reviewed hook
+on first launch. Then choose a provider and sign in or enter its API key.
 
-`v0.1.2` is the current release.
+`v0.2.0` is the Linux x86_64 release described by this source tree.
 
 ## What is Elpis
 
@@ -73,14 +73,15 @@ Long sessions fill up with transcripts, file reads, searches, command output, an
 The useful state gets buried in the story of how the agent reached it, while every request pays
 for more context.
 
-![Agents using excessive tool calls and tokens to gather redundant context](docs/assets/showcase-of-how-much-tool-calls.png)
+Elpis separates control of active working context from durable evidence. Portable admission
+makes selected sources inspectable. When enabled and successfully applied, Smart Prune shrinks
+eligible fresh tool results before first main-model exposure; source files and audit records
+remain on disk.
 
-Elpis separates the active working set from durable evidence. The next request receives a small,
-inspectable context; the exact record stays on disk and can be retrieved when it is needed.
-
-Three paired runs used one byte-identical prompt, the same model, and the same source commit on
-both arms. Peak context per request fell **47–65%** in all three runs; median context stabilized
-at **26.6–27.1%**. Codex peaked above 90% of the window in each run, while Elpis stayed safely
+Three paired configured historical runs with automatic pruning enabled under the superseded
+high-frequency setup used one byte-identical prompt, the same model, and the same source commit
+on both arms. In those runs, peak context per request fell **47–65%**; median context stabilized
+at **26.6–27.0%**. Codex peaked above 90% of the window in each run, while Elpis stayed safely
 bounded in the green zone.
 
 Elpis never modifies a model's own output or a request already in flight. Pruning rewrites only
@@ -99,17 +100,22 @@ uses a layered pipeline to keep useful findings while removing disposable explor
 | --- | --- | --- |
 | **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
 | **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
-| **3. Ace pressure cycle** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | When measured model-window use reaches the pressure threshold (30%) |
+| **3. Smart Prune — Experimental** | Shrinks eligible fresh textual tool results before their first main-model exposure while preserving the tool event and call ID. | When enabled with the Context Ledger `p` switch or `/smart-prune on` |
+| **4. Emergency Ace pruning** | Selectively rewrites eligible old tool evidence toward a requested working-set target, preserving the latest context and an evidence pointer. | Explicit `/force-prune <1-100>` only |
 
-`/prune` runs the audited Ace pass on demand without rewriting user instructions, assistant
-messages, or model reasoning. Elpis's `/compact` remains the conservative fallback when selective
-pruning cannot reclaim enough context; the raw transcript remains durable evidence.
+`/force-prune` is an explicit emergency Ace action and does not rewrite user instructions,
+assistant messages, or model reasoning. The ambiguous retrospective `/prune` command was removed.
+`/compact` immediately runs Codex native compaction and remains independent of Ace pruning.
+Automatic native compaction uses the model-window threshold and usable-window headroom. Smart
+Prune is Experimental and off by default; its Ledger switch and `/smart-prune on|off` command
+apply to subsequent turns without rewriting admitted history.
 
-#### What a pruning decision looks like
+#### What a historical pruning decision looked like
 
 ![Task 1 Context Flow and Pruning Lifecycle](docs/assets/sankey_context_flow.svg)
 
-One real pass from disk. A search command whose raw output ran to 18,930 characters — close to
+This is one recorded pass from the superseded retrospective-pruning evaluation, not current
+Smart Prune behavior. A search command whose raw output ran to 18,930 characters — close to
 5,000 tokens carried across requests:
 
 **Before** — what the model was carrying:
@@ -139,40 +145,49 @@ Findings:
 
 ### Context Ledger and observability
 
-The **Context Ledger** (`Tab`; during an active turn, `Alt+C` always toggles it) lists admitted goals, rules,
-memory, and other portable sources with their byte sizes and token budgets. Toggling a row writes
-`admission.toml`, which controls what the next turn receives.
+The **Context Ledger** (`Tab`; during an active turn, `Alt+C` toggles it from the normal chat screen) lists admitted goals, rules,
+memory, and other portable sources with their byte sizes and capped character-derived estimates. Toggling a row
+writes `admission.toml`, which controls what the next turn receives.
 
-![The Context Ledger listing admitted instruction files with their token counts and included state](docs/assets/context-ledger.webp)
+Development rules are ordinary Markdown Ledger rows, not skills: newly discovered rules start included and an
+explicit exclusion persists. A nonempty configured development-rule root list replaces the managed fallback; an
+empty list uses it. Elpis leaves ordinary and bundled skills off by product default, while deliberate user
+configuration can enable a selected skill. Enabled
+skills expose compact metadata and keep their bodies lazy; `/skills` shows available candidates and their origins,
+but mentions and the model-visible list contain enabled skills only. The Ledger has no skills-catalog token row;
+its per-source estimates are not tokenizer measurements.
 
-`/context` answers a different question: where the window went. It displays token usage by user
-messages, agent responses, tool calls, system prompt, skills, and free space, alongside available
-backtrack checkpoints.
+![The Context Ledger admission model](website/assets/elpis-context-ledger.svg)
 
-<img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
+`/context` answers a different question: how full the window is. Its provider-measured
+headline is separate from a rough attribution based on visible transcript and admitted files:
+user messages, agent responses, tool activity, workspace instructions, development rules,
+portable context, and a clearly labeled built-in/estimate gap. Historical pruning savings
+appear separately and are never added to a category row.
 
 ### Sessions and continuity
 
 Keep the working context across model switches, compaction, and restarts:
 
-- **`GOAL.md`** holds the current task. It is carried into each request, stays visible across
-  compaction, and is editable during a run.
+- **`GOAL.md`** holds the current task and is editable during a run. When admitted in the
+  Context Ledger, it is carried into subsequent requests and stays visible across compaction.
 - **`ES.md`** is an event-derived executive summary. It records modified files, commands run,
-  blockers, and next steps, and is updated as the run progresses.
+  blockers, and next steps, and is updated as the run progresses. When admitted, it is carried
+  into subsequent requests.
 - **Exact resume** continues an existing thread with its full history, using the provider-native
   session when one is available.
-- **Lean continuation** starts a clean thread from the current `GOAL.md`, `ES.md`, and active
-  rules. This sheds old exploration without losing the objective.
+- **Lean continuation** starts a clean thread from the currently admitted `GOAL.md`, `ES.md`,
+  and applicable rules. This sheds old exploration without losing the admitted objective.
 
 ### Memory
 
 Durable memory is one Markdown file, `MEMORY.md`, in the Elpis memory directory (derived
-from `CODEX_HOME`). The Context Ledger discovers it, lists it as a row, admits it by
-default, and lets you switch it off for the next turn.
+from `CODEX_HOME`). The Context Ledger discovers it and lists it as a row, switched **off**
+until you admit it: like every optional row, memory does not reach the model unasked.
 
 - **One visible file.** Plain text. Read it, edit it, commit it to git, or delete it.
 - **Admitted in the open.** Because it is a Ledger row, you can always see whether memory
-  reached the model, and drop it when you do not want it.
+  reached the model, switch it on when you want it, and drop it when you do not.
 - **Retrieval beyond that file is your choice.** Register an MCP server — for example
   [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) — and Elpis will use it.
 
@@ -206,20 +221,18 @@ Elpis never creates, merges, rebases, deletes, or pushes branches or worktrees. 
 and integrating them stays coordinator-owned, because those operations change durable user
 state and deserve deliberate review.
 
-Off by default. Enable with `enable_fanout = true` under `[features]`; there is no slash
-command. Full rules and the graph schema are in [docs/WORK_GRAPHS.md](docs/WORK_GRAPHS.md).
+Under development and off by default: the gates above are covered by negative tests on
+Linux, but the feature has not yet been accepted in live use. Enable with
+`enable_fanout = true` under `[features]`; there is no slash command. Full rules and the graph schema are in [docs/WORK_GRAPHS.md](docs/WORK_GRAPHS.md).
 
 ### Bring your own provider
 
-Elpis is not tied to a single model vendor:
+Elpis provides routes for OpenAI and OpenAI-compatible endpoints, native Anthropic Messages,
+native Gemini GenerateContent, OpenRouter, Amazon Bedrock, Ollama, and LM Studio. Model catalogs
+are provider-owned and can change; Elpis does not hard-code a marketing list here.
 
-- **OpenAI:** GPT-4o, GPT-5.6-Luna, o1, o3, and compatible endpoints.
-- **Anthropic:** Claude 3.5 Sonnet, Claude 3 Opus, Claude 3.5 Haiku.
-- **Google:** Gemini 2.0 Flash, Gemini 1.5 Pro.
-- **Local & self-hosted:** Ollama, vLLM, and any OpenAI-compatible server.
-
-Switch models mid-session without restarting. The working context, goal, and session memory are
-preserved across provider boundaries.
+Portable `GOAL.md`, `ES.md`, and admitted rules remain provider-neutral. Native Anthropic and
+Gemini adapters are implemented, while live vendor acceptance remains open.
 
 ### Integrations and tools
 
@@ -236,68 +249,74 @@ can inspect, edit, export, or delete.
 
 ## Evaluation status
 
-The published evaluation empirically benchmarks Elpis against OpenAI's Codex CLI across three paired, byte-identical workloads on `gpt-5.6-luna` (258,400 token context window).
+The published evaluation reports three paired, byte-identical configured historical workloads with automatic pruning enabled under the superseded high-frequency setup, on `gpt-5.6-luna` (258,400 token context window).
 
 ### RQ1: Context Reduction & Operating Hygiene
 
-Across all three independent runs, Elpis prevents context exhaustion by maintaining working sets within safe operational thresholds.
+Across those configured historical runs, Elpis maintained working sets within safe operational thresholds.
 
 #### Peak Context Utilization
 
-Codex expanded into the critical danger zone (>90% window) in every run, forcing 3 emergency compactions. Elpis maintained peak window utilization at **32.5–49.5%**, achieving a **47–65% reduction in peak context footprint**:
+In those configured historical runs, Codex expanded into the critical danger zone (>90% window) in every run, forcing 3 emergency compactions. Elpis maintained peak window utilization at **32.5–49.5%**, achieving a **47–65% reduction in peak context footprint**:
 
-![Peak Context Window Utilization by Workload (Elpis vs. Codex)](docs/assets/elpis_empirical_evaluation_bars.svg)
+![Peak Context Window Utilization (Elpis vs. Codex)](docs/assets/elpis_empirical_evaluation_bars.svg)
 
 #### Input Token Distribution & Interquartile Stability
 
-While Codex suffered wide distribution variance as transcripts accumulated, Elpis tightly stabilized median token input across all runs at **68.8k–69.6k tokens (26.6%–27.0% of the window)**:
+In those configured historical runs, Codex suffered wide distribution variance as transcripts accumulated, while Elpis tightly stabilized median token input at **68.8k–69.6k tokens (26.6%–27.0% of the window)**:
 
 ![Input Tokens per Model Call (Interquartile Range & Median across 3 Runs)](docs/assets/elpis-token-distribution-boxplots.svg)
 
 #### Trajectory Dynamics across Context Health Bands
 
-When normalized across the request lifecycle (0% to 100% completion), Codex exhibits unbounded monotonic growth until emergency rollover occurs. Elpis triggers the Ace cycle whenever context crosses the 30% boundary, steadily returning working state to the green target zone:
+When normalized across the request lifecycle (0% to 100% completion), Codex exhibits unbounded monotonic growth until emergency rollover occurs. The Elpis trace shown here is a configured historical run with automatic pruning enabled under the superseded high-frequency setup; it is not current default behavior:
 
 ![Normalized Task-Progress View (0%–100% Sequence Overlay)](docs/assets/elpis-normalized-overlay-highcontrast.svg)
 
 #### Operating Zone Breakdown
 
-Across all executed requests, Elpis spent over 95% of its operating lifespan inside the safe and healthy bands, with zero requests entering the critical danger zone:
+Across those configured historical requests, Elpis spent over 95% of its operating lifespan inside the safe and healthy bands, with zero requests entering the critical danger zone:
 
 ![Context operating zones by run](docs/assets/elpis-operating-zones.svg)
 
 ### RQ2 & RQ3: Target Retention & Task Quality
 
-- **RQ2 (Information Retention)**: In benchmark audits testing recall of key file paths, schemas, and error signatures after pruning, **100% of tested targets (6/6)** were retained intact in active context.
-- **RQ3 (Task Performance)**: Verified task completion was maintained across all arms. Both Elpis and Codex achieved equivalent task success with 0 functional regression.
+- **RQ2 (Information Retention)**: In one controlled post-prune context audit, **all six planted requirements and exact values (6/6)** remained intact in active context.
+- **RQ3 (Task Performance)**: **Not established.** The executed runs are incomplete and unreplicated, so they do not support a comparative correctness claim in either direction. No per-arm score is reported, and there is no evidence that pruning improves task completion or output quality.
 
-### RQ4: Pruning Overhead & Token Economics
+### RQ4: Cache Preservation & Token Economics
 
-Pruning adds an auxiliary model call sequenced against the main agent. In the 41-pass benchmark run, 730,810 auxiliary tokens were spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token):
+Smart Prune now optimizes a fresh tool result before first main-model exposure, so its automatic path does not rewrite already-sent history. One normal-work ON session reported 95.85% cached input overall; the first responses linked to two admissions reported 98.96% and 98.89%. Encoded-request tests separately establish stable prefix and cache-key construction on the tested path. This supports the cache-preserving mechanism, not a complete RQ4 result: there was no matched OFF arm or private full-request trace. The pilot also exposed a 45-second-timeout retry storm; in focused tests, the current code skips later Smart Prune batches in a turn after its first optimizer failure, but that fix has not yet been live-revalidated. The chart below is the 41-pass cost breakdown from the superseded 42-pass retrospective run, not current Smart Prune economics. See the [technical preprint](paper/paper.md), [mechanism-test record](docs/evals/tasks/smart_prune_cache_validation/2026-09-02-mechanism-tests.md), and [2026-09-01 live pilot](docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 
 ### RQ5: Forensic Auditability
 
-Every pruning event produces an immutable audit record on disk under `~/.elpis/logs/pruning/`. In full forensic reconstruction evaluations, **7 of 9 properties** were completely recoverable from disk, 2 partial, and 0 absent.
+Every applied manual Ace pass writes an audit record under `~/.elpis/logs/pruning/`;
+applied Smart Prune admissions use `~/.elpis/logs/smart-prune/admissions/`. In the manual
+pass reconstruction evaluation, **7 of 9 properties** were completely recoverable from
+disk, 2 partial, and 0 absent. The Smart Prune schema has separate focused tests and is not
+covered by that 7/9 result.
 
 | Research Question | Empirical Finding |
 | --- | --- |
-| **RQ1 — Context Efficiency** | Peak reduction of 47–65%; median context stabilized at 26.6–27.1% of the 258k window. |
+| **RQ1 — Context Efficiency** | Historical superseded high-frequency setup: peak reduction of 47–65%; median context stabilized at 26.6–27.0% of the 258k window. |
 | **RQ2 — Information Retention** | 6/6 tested post-prune targets preserved intact (100% retention). |
-| **RQ3 — Task Performance** | Equivalent verified completion rate maintained with 0 functional regressions. |
-| **RQ4 — Pruning Economics** | Auxiliary model cost measured at ~1.2 tokens spent per context token reclaimed. |
-| **RQ5 — Forensic Auditability** | 7/9 properties fully recoverable from local rollout evidence; 0 lost records. |
+| **RQ3 — Task Performance** | Not established. The available runs do not support a comparative correctness claim. |
+| **RQ4 — Overhead and Cache** | Cache-preserving mechanism supported; comparative cost and latency remain open. |
+| **RQ5 — Forensic Auditability** | Manual Ace schema: 7/9 properties fully recoverable from local evidence; 0 lost records. |
 
 ## Documentation
 
-- [Context and pruning](docs/context.md) — admission, lifetimes, pressure pruning, and audit records
+- [Context and pruning](docs/context.md) — admission, persistence, manual pruning, and audit records
+- [Smart Prune and cache stability](docs/cache-friendly-pruning.md) — admission-time optimization, evidence, overhead, and open questions
 - [Sessions and continuity](docs/sessions.md) — exact resume, lean continuation, `GOAL.md`, and `ES.md`
 - [Deterministic work graphs](docs/WORK_GRAPHS.md) — plan validation, write scopes, concurrency, and evidence gates
 - [Providers](docs/providers.md) — provider adapters, BYOK, and protocol limitations
 - [Evals & benchmarks](docs/evals/) — source data, procedures, scorers, and results
 - [Technical guide](docs/GUIDE.md) — product thesis, requirements, and architecture
-- [Research paper](paper/paper.md) — technical preprint and formal specifications
+- [Research paper](paper/paper.md) — admission-time context optimization, mechanism proof, live evidence, and limitations
+- [Changelog](CHANGELOG.md) — release-level changes
 
 ## License
 

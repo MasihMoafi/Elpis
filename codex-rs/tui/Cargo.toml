@@ -1,6 +1,6 @@
 [package]
 name = "codex-tui"
-version = "0.1.2"
+version = "0.2.0"
 edition.workspace = true
 license.workspace = true
 autobins = false
@@ -15,7 +15,7 @@ path = "src/bin/md-events.rs"
 
 [package.metadata.deb]
 name = "elpis"
-maintainer = "Masih Moafi <masihmoafi12@gmail.com>"
+maintainer = "Masih Moafi <MasihMoafi@users.noreply.github.com>"
 copyright = "2026, Masih Moafi"
 license-file = ["../../LICENSE", "0"]
 extended-description = "Elpis is a terminal coding agent with portable context, durable memory, and session continuity."

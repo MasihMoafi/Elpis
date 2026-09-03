@@ -11,9 +11,18 @@ on:
   pull_request:
     paths:
       - .github/workflows/embedded-elpis-linux.yml
+      - .github/RELEASE_NOTES.md
+      - .github/workflows/launcher-diagnostics.yml
+      - CHANGELOG.md
       - codex-rs/**
+      - docs/**
+      - readme.md
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
+      - scripts/verify-elpis
+      - tests/verify-elpis/test_verify_elpis.sh
+      - tools/verify-elpis/surfaces.toml
+      - website/**
   push:
     branches:
       - main
@@ -21,9 +30,18 @@ on:
       - "v*"
     paths:
       - .github/workflows/embedded-elpis-linux.yml
+      - .github/RELEASE_NOTES.md
+      - .github/workflows/launcher-diagnostics.yml
+      - CHANGELOG.md
       - codex-rs/**
+      - docs/**
+      - readme.md
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
+      - scripts/verify-elpis
+      - tests/verify-elpis/test_verify_elpis.sh
+      - tools/verify-elpis/surfaces.toml
+      - website/**
   schedule:
     - cron: "17 3 * * 1"
 
@@ -38,15 +56,13 @@ jobs:
   build:
     name: Build and verify Elpis
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: codex-rs
+    timeout-minutes: 180
     env:
       CARGO_INCREMENTAL: "1"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_TERM_COLOR: always
+      CODEX_SKIP_BWRAP_BUILD: "1"
 
     steps:
       - name: Checkout integration head
@@ -59,8 +75,11 @@ jobs:
       - name: Checkout source
         if: github.event_name != 'pull_request' || github.head_ref != 'agent/product-integration'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
 
       - name: Install Linux build dependencies
+        working-directory: codex-rs
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -70,6 +89,7 @@ jobs:
             pkg-config
 
       - name: Install pinned Rust toolchain
+        working-directory: codex-rs
         run: |
           rustup set profile minimal
           rustup toolchain install 1.95.0 --component rustfmt --no-self-update
@@ -167,10 +187,12 @@ jobs:
           )
           PY
 
-      - name: Check Rust formatting
-        run: |
-          cargo fmt --all
-          cargo fmt --all --check
+      - name: Verify selector harness
+        run: bash tests/verify-elpis/test_verify_elpis.sh
+
+      - name: Verify standalone website
+        working-directory: website
+        run: npm test
 
       - name: Restore Cargo downloads
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -192,44 +214,38 @@ jobs:
             elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
             elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-
 
-      - name: Verify Elpis launcher and provider entrypoints
-        run: cargo test -p codex-tui --bin elpis --locked
-
-      - name: Verify context lifecycle and archive failure safety
+      - name: Collect changed paths
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
+        shell: bash
         run: |
-          cargo test -p codex-core --lib --locked context_cleaner::tests
-          cargo test -p codex-core --lib --locked elpis_context::tests
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+          git diff --name-only -z "$base" "$head" > "$RUNNER_TEMP/elpis-changed-paths"
 
-      - name: Verify memory promotion, bounds, and retrieval
-        run: |
-          cargo test -p codex-state --locked record_stage1_output_usage_updates_usage_metadata
-          cargo test -p codex-config --locked memories_config_preserves_configured_root
-          cargo test -p codex-state --locked init_with_memories_state_root_separates_only_memories_db
+      - name: Verify changed Linux surfaces
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
+        run: scripts/verify-elpis --paths-file "$RUNNER_TEMP/elpis-changed-paths"
 
-      - name: Verify provider protocol and authentication boundaries
-        run: |
-          cargo test -p codex-model-provider-info --locked
-          cargo test -p codex-core --lib --locked chat_completions
-
-      - name: Verify runtime identity surfaces
-        run: |
-          cargo test -p codex-tui --lib --locked branding::tests
-          cargo test -p codex-tui --lib --locked slash_command::tests
+      - name: Verify conservative full Linux surface
+        if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+        run: scripts/verify-elpis --surface full
 
       - name: Run exhaustive continuity regression
         if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.full_regression) }}
-        run: |
-          cargo test -p codex-app-server --test all --locked memory_reset_clears_memory_files_and_rows_preserves_threads
-          cargo test -p codex-tui --lib --locked elpis_context::tests
-          cargo test -p codex-core --lib --locked elpis_context::tests
-          cargo test -p codex-tui --lib --locked --no-run
-          cargo test -p codex-tui --lib --locked onboarding::welcome::tests::welcome_renders_animation_on_first_draw -- --exact
-          cargo test -p codex-tui --lib --locked chatwidget::tests::slash_commands::rag_command_routes_
+        run: scripts/verify-elpis --surface nightly-release
 
       - name: Build Elpis binary and Cargo timing report
+        working-directory: codex-rs
         run: cargo build -p codex-tui --bin elpis --locked --timings --release
 
       - name: Verify executable identity
+        working-directory: codex-rs
         run: |
           target/release/elpis --help
           # Read the expected version from the manifest instead of pinning a literal:
@@ -237,6 +253,21 @@ jobs:
           expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' tui/Cargo.toml | head -1)"
           test -n "$expected"
           test "$(target/release/elpis --version)" = "elpis $expected"
+
+      - name: Launch the release binary in a clean Linux home
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          smoke_root="$(mktemp -d "$RUNNER_TEMP/elpis-release-smoke.XXXXXX")"
+          mkdir -p "$smoke_root/home" "$smoke_root/elpis" "$smoke_root/codex"
+          env -i \
+            HOME="$smoke_root/home" \
+            ELPIS_HOME="$smoke_root/elpis" \
+            CODEX_HOME="$smoke_root/codex" \
+            PATH="/usr/bin:/bin" \
+            target/release/elpis --migrate-from-codex > "$smoke_root/output.txt"
+          grep -q 'Preview only. Nothing is selected or copied.' "$smoke_root/output.txt"
+          test -d "$smoke_root/elpis"
 
       - name: Commit verified integration source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/product-integration' && hashFiles('.github/finalizer/chunk-00') != ''
@@ -260,7 +291,17 @@ jobs:
           git push origin HEAD:agent/product-integration
 
       - name: Reduce artifact size
+        working-directory: codex-rs
         run: strip target/release/elpis
+
+      - name: Reject developer paths in release binary
+        working-directory: codex-rs
+        run: |
+          developer_user=masih
+          if strings target/release/elpis | grep -E "/home/${developer_user}|Desktop/p/"; then
+            echo 'Developer-specific path found in release binary.' >&2
+            exit 1
+          fi
 
       - name: Upload Elpis binary
         if: ${{ github.event_name != 'pull_request' }}
@@ -272,17 +313,28 @@ jobs:
           retention-days: 7
 
       - name: Package .deb
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+        working-directory: codex-rs
         run: |
-          cargo install cargo-deb --locked
+          set -euo pipefail
+          cargo install cargo-deb --version 3.7.0 --locked
+          rm -f target/debian/*.deb
           cargo deb --no-build -p codex-tui
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' tui/Cargo.toml | head -1)"
+          mapfile -t debs < <(find target/debian -maxdepth 1 -type f -name '*.deb' -print)
+          test "${#debs[@]}" -eq 1
+          test "$(dpkg-deb -f "${debs[0]}" Package)" = elpis
+          deb_version="$(dpkg-deb -f "${debs[0]}" Version)"
+          [[ "$deb_version" == "$expected" || "$deb_version" == "$expected"-* ]]
+          mkdir -p "$RUNNER_TEMP/elpis-deb"
+          cp "${debs[0]}" "$RUNNER_TEMP/elpis-deb/"
 
       - name: Upload Elpis .deb
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: elpis-deb
-          path: codex-rs/target/debian/*.deb
+          path: ${{ runner.temp }}/elpis-deb/*.deb
           if-no-files-found: error
           retention-days: 7
 
@@ -295,8 +347,63 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  install-release-artifacts:
+    name: Install release artifacts in a clean container
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out release manifest
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Download verified Elpis binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: elpis-linux-x86_64
+          path: dist
+
+      - name: Download Elpis .deb
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: elpis-deb
+          path: dist
+
+      - name: Install and launch both artifacts
+        run: |
+          set -euo pipefail
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' codex-rs/tui/Cargo.toml | head -1)"
+          test -n "$expected"
+          mapfile -t debs < <(find dist -maxdepth 1 -type f -name '*.deb' -print)
+          test "${#debs[@]}" -eq 1
+          test "$(dpkg-deb -f "${debs[0]}" Package)" = elpis
+          deb_version="$(dpkg-deb -f "${debs[0]}" Version)"
+          [[ "$deb_version" == "$expected" || "$deb_version" == "$expected"-* ]]
+          docker run --rm \
+            --env EXPECTED_VERSION="$expected" \
+            --env DEB_NAME="$(basename "${debs[0]}")" \
+            --mount "type=bind,src=$PWD/dist,dst=/dist,readonly" \
+            ubuntu:24.04 sh -euxc '
+              run_smoke() {
+                binary=$1
+                root=$2
+                test "$("$binary" --version)" = "elpis $EXPECTED_VERSION"
+                mkdir -p "$root/home" "$root/elpis" "$root/codex"
+                HOME="$root/home" ELPIS_HOME="$root/elpis" CODEX_HOME="$root/codex" \
+                  "$binary" --migrate-from-codex > "$root/output.txt"
+                grep -q "Preview only. Nothing is selected or copied." "$root/output.txt"
+              }
+              cp /dist/elpis /tmp/elpis
+              chmod 0755 /tmp/elpis
+              run_smoke /tmp/elpis /tmp/raw-smoke
+              dpkg -i "/dist/$DEB_NAME"
+              run_smoke /usr/bin/elpis /tmp/deb-smoke
+            '
+
   build-macos:
     name: Build and verify Elpis on macOS (Apple Silicon)
+    # v0.2.0 is Linux-only; keep the old job readable until macOS support resumes.
+    if: ${{ false }}
     runs-on: macos-14
     timeout-minutes: 120
     defaults:
@@ -353,11 +460,22 @@ jobs:
           cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" context_cleaner::tests
           cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" elpis_context::tests
 
-      - name: Verify memory promotion, bounds, and retrieval
+      - name: Verify durable memory admission and filesystem bounds
         run: |
-          cargo test -p codex-state --locked --target "$MACOS_TARGET" record_stage1_output_usage_updates_usage_metadata
-          cargo test -p codex-config --locked --target "$MACOS_TARGET" memories_config_preserves_configured_root
-          cargo test -p codex-state --locked --target "$MACOS_TARGET" init_with_memories_state_root_separates_only_memories_db
+          set -euo pipefail
+          # See the Linux job: a filter matching zero tests must fail, not pass silently.
+          run_filter() {
+            local out
+            out=$(cargo test "$@" 2>&1) || { printf '%s\n' "$out"; exit 1; }
+            printf '%s\n' "$out"
+            if printf '%s\n' "$out" | grep -qE 'test result: ok\. 0 passed'; then
+              printf '::error::test filter matched zero tests: %s\n' "$*"
+              exit 1
+            fi
+          }
+          run_filter -p codex-app-server --test all --locked --target "$MACOS_TARGET" durable_memory_reaches_the_model_only_once_the_ledger_admits_it
+          run_filter -p codex-core --lib --locked --target "$MACOS_TARGET" memory_dir_is_readable_without_creating_or_widening_writes
+          run_filter -p codex-core --lib --locked --target "$MACOS_TARGET" permission_profile_override_keeps_memories_root_out_of_legacy_projection
 
       - name: Verify provider protocol and authentication boundaries
         run: |
@@ -440,7 +558,7 @@ jobs:
 
           release="$work/release"
           mkdir -p "$release"
-          for asset in elpis-linux-x86_64 elpis-macos-arm64; do
+          for asset in elpis-linux-x86_64; do
             printf 'payload-for-%s\n' "$asset" > "$release/$asset"
             (cd "$release" && sha256sum "$asset" > "$asset.sha256")
           done
@@ -492,7 +610,7 @@ jobs:
             make_shims "$dir/bin" "$sysname" "$machine" "$flavor"
             : > "$work/curl.log"
             if env -i HOME="$dir" PATH="$dir/bin" TMPDIR="$dir" \
-                ELPIS_SKIP_RTK=1 ELPIS_INSTALL_DIR="$dir/install" \
+                ELPIS_INSTALL_DIR="$dir/install" \
                 bash "$script" > "$dir/out" 2> "$dir/err"; then
               if [ "$(cat "$dir/install/elpis")" != "payload-for-$expected" ]; then
                 printf 'FAIL %-14s installed the wrong asset\n' "$label"
@@ -520,7 +638,7 @@ jobs:
             make_shims "$dir/bin" "$2" "$3" "$4"
             : > "$work/curl.log"
             if env -i HOME="$dir" PATH="$dir/bin" TMPDIR="$dir" \
-                ELPIS_SKIP_RTK=1 ELPIS_INSTALL_DIR="$dir/install" \
+                ELPIS_INSTALL_DIR="$dir/install" \
                 bash "$script" > "$dir/out" 2> "$dir/err"; then
               printf 'FAIL %-14s %s-%s was accepted but must be rejected\n' "$label" "$2" "$3"
               failures=$((failures + 1))
@@ -533,7 +651,7 @@ jobs:
           }
 
           check linux-x86_64 Linux x86_64 gnu elpis-linux-x86_64
-          check darwin-arm64 Darwin arm64 bsd elpis-macos-arm64
+          reject darwin-arm64 Darwin arm64 bsd
           reject darwin-x86_64 Darwin x86_64 bsd
           reject linux-aarch64 Linux aarch64 gnu
 
@@ -542,7 +660,7 @@ jobs:
   release:
     name: Publish tagged binaries
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, build-macos, installer-platform-detection]
+    needs: [build, install-release-artifacts, installer-platform-detection]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -556,12 +674,6 @@ jobs:
           name: elpis-linux-x86_64
           path: dist
 
-      - name: Download verified Elpis macOS binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: elpis-macos-arm64
-          path: dist-macos
-
       - name: Download Elpis .deb
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -572,26 +684,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' codex-rs/tui/Cargo.toml | head -1)"
+          mapfile -t debs < <(find dist -maxdepth 1 -type f -name '*.deb' -print)
+          test "${#debs[@]}" -eq 1
+          test "$(dpkg-deb -f "${debs[0]}" Package)" = elpis
+          deb_version="$(dpkg-deb -f "${debs[0]}" Version)"
+          [[ "$deb_version" == "$expected" || "$deb_version" == "$expected"-* ]]
+          deb="${debs[0]}"
           mv dist/elpis dist/elpis-linux-x86_64
-          # Both artifacts contain a file named `elpis`, so the macOS one is
-          # downloaded to its own directory and renamed before it joins dist/.
-          mv dist-macos/elpis dist/elpis-macos-arm64
           (cd dist && sha256sum elpis-linux-x86_64 > elpis-linux-x86_64.sha256)
-          (cd dist && sha256sum elpis-macos-arm64 > elpis-macos-arm64.sha256)
-          for deb in dist/*.deb; do
-            (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
-          done
-          # Re-tagging the same version must replace the release, not fail on it;
-          # this runs only after build+tests pass, so the old release stays live
-          # until a verified replacement is seconds away.
-          gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes || true
+          (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; refusing to replace it." >&2
+            exit 1
+          fi
           gh release create "$GITHUB_REF_NAME" \
             dist/elpis-linux-x86_64 \
             dist/elpis-linux-x86_64.sha256 \
-            dist/elpis-macos-arm64 \
-            dist/elpis-macos-arm64.sha256 \
-            dist/*.deb \
-            dist/*.deb.sha256 \
+            "$deb" \
+            "$deb.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --notes-file .github/RELEASE_NOTES.md \
             --title "Elpis $GITHUB_REF_NAME"

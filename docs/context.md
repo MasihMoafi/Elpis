@@ -1,6 +1,9 @@
-# Elpis Context Sovereignty & 4-Layer Pruning Pipeline
+# Elpis Context Sovereignty
 
-Elpis enforces **Context Sovereignty**: the principle that context is a strictly budgeted working set, not a dumped chat transcript. The user maintains live visibility and explicit control over every byte admitted to the agent's context window.
+Elpis uses **Context Sovereignty**: context is a budgeted working set, not a dumped chat
+transcript. The user gets live visibility into total use and explicit admission control over
+portable sources; conversation, tool, and built-in context remain governed by the runtime.
+
 ---
 
 ![Elpis context control pipeline](assets/elpis-context-control.svg)
@@ -11,84 +14,80 @@ Context management acts as the primary gatekeeper between raw workspace/session 
 
 ---
 
-## 2. The 4-Layer Pruning Pipeline
+## 2. Three context-control mechanisms and native compaction
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
-Layer 3 is a single trigger, run as a gated cycle rather than continuously. An earlier
-"steady" trigger also fired on backlog size alone, independently of how full the window was;
-it was removed because it produced runs of tiny passes inside the healthy 20-30% band, and
-every pass discards the reusable prompt-cache prefix past its first rewritten item. The case
-it was meant to cover -- a single turn that balloons past the boundary without ever ending --
-is already handled here, because the eligible region is cut by recency rather than at a turn
-boundary. See `cache-friendly-pruning.md`.
+Elpis separates prevention from retrospective cleanup. **Smart Prune** is the optional
+automatic path: it considers a fresh textual tool result after post-tool hooks finish but
+before that result is recorded or sent to the main model for the first time. It may replace
+only the result body with a smaller, evidence-linked body. It never removes the tool-call
+event, changes its call id, or rewrites an item that has already entered sent history.
+
+The ambiguous retrospective `/prune` command was removed. `/force-prune <1-100>` remains
+an explicit emergency Ace pass. It can rewrite older tool-result bodies on request, which
+necessarily changes the cacheable prefix after the first changed item. See
+[cache-friendly-pruning.md](cache-friendly-pruning.md).
 
 ### Pipeline Layer Comparison
 
 | Layer | Trigger | Scope | Behavior | Failure Recovery |
 | :--- | :--- | :--- | :--- | :--- |
-| **1. RTK Filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
-| **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header & footer with truncation notice. |
-| **3. Ace Pressure Cycle** | Exact model-window use reaches 30% (70% remaining), and a previous cycle has since been seen below 30% | Oldest eligible tool exploration, including the turn still running, but never a sealed epoch | Selects only enough old tool evidence to target roughly 20% use (80% remaining); the newest 10% of the window stays verbatim. Useful results become a compact conclusion plus an evidence pointer; dead ends leave working context entirely. It reaches into the current turn, because a single tool-driven turn can cross the boundary without ever ending. One cycle gets at most 2 Ace passes, spent back to back; the cycle then closes and cannot reopen until use has been measured below 30% and has climbed back to it. Each applied pass seals its region with an epoch marker that later passes may not touch. | A failed pass changes nothing. Once the cycle's 2-pass budget is spent, or when nothing reclaimable remains at this boundary, Elpis requests native compaction rather than let the window drift toward the model's hard limit. |
+| **1. RTK Filter** | Before selected shell tools execute | Shell command/request | Rewrites supported commands so the external RTK process can emit a smaller result. RTK is syntactic filtering, not semantic history pruning. | Hook rejection or tool failure leaves normal or unfiltered output available. |
+| **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
+| **3. Smart Prune** | After sibling tools and post-tool hooks, before first main-model exposure, when enabled | Fresh textual function/custom-tool results of at least 1,024 estimated tokens, up to a 24k-token batch | Ace returns `compact` or `unchanged` for every result. Elpis admits a compact body only when it saves at least 256 estimated tokens and 20%; the original envelope and call id remain. | Any timeout, malformed response, audit failure, unsupported body, or weak saving admits the exact original result. |
+| **4. Explicit recovery** | `/force-prune <1-100>` or `/compact` | Already-recorded history | `/force-prune` selectively rewrites eligible old tool-result bodies; `/compact` performs Codex's broader documented rollover. | Incomplete or invalid decisions leave history unchanged. |
 
-**All three layers ship with Elpis.** Layer 1 runs through RTK, which is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
+RTK is a separate binary and an optional `PreToolUse` hook. Elpis does not install it. On a
+launch that finds a user-installed `rtk` on `PATH` and no user-owned
+`~/.elpis/hooks.json`, Elpis writes the hook and subjects it to
+the normal startup review. An existing hooks file is never modified, so `{"hooks":{}}`
+opts out permanently. Elpis's hook runtime accepts RTK's rewrite response. RTK and Smart
+Prune may coexist: RTK changes supported shell execution before it runs; Smart Prune
+evaluates the final post-hook result that would otherwise enter model history.
 
-The Ace pass runs between model follow-ups as well as at the end of a turn, so one
-long-running tool-driven turn cannot skip the trigger. Each pass records which
-trigger fired (`manual` or `pressure`) in its manifest and report. OpenAI-backed passes use
-Luna at maximal reasoning effort (`PRUNE_REASONING_EFFORT = ReasoningEffort::Max`). Every successful pass immediately recomputes the working
-history estimate and writes `prune_report.md` alongside the session logs
-(`codex-rs/core/src/session/context_prune_audit.rs`).
-The pass may run during a current turn, but it only receives and rewrites tool evidence
-from earlier completed turns; current-turn observations remain intact for the next
-follow-up.
+Smart Prune is off by default. Toggle it for subsequent turns with the Context Ledger's
+`p` key/switch or `/smart-prune on|off`; the underlying persisted feature key remains
+`features.automatic_context_pruning`. A turn captures the setting once, so changing the
+configuration cannot change outputs halfway through an active turn. OpenAI-backed
+admission passes use Luna at maximal reasoning effort; other providers use the selected
+provider model. The admission call has its own `:smart-prune` prompt-cache namespace and
+does not consume the main turn's stable cache key.
 
-`/prune` runs the Ace pass on demand across eligible tool evidence from completed turns.
-It keeps user and assistant messages, the current turn, and durable rollout evidence.
-`/compact` is Elpis-owned conservative cleanup. It first runs the audited tool-evidence
-pass, then asks Luna Max to mark older whole conversation messages as `KEEP` or `DELETE`.
-The latest turn is protected; kept content is copied verbatim; incomplete, malformed, or
-uncertain decisions leave conversation history unchanged. A successful deletion starts a
-new window while the raw transcript remains intact. An explicit custom `compact_prompt`
-retains the upstream summary path as an opt-out. The Context Ledger's exact used-token
-number is authoritative after either path.
+`/force-prune <pct>` is an explicit emergency Ace action and works while Smart Prune is off.
+It records `pressure` in its audit to name the targeted selection strategy; that value does
+not establish automatic invocation.
 
-### Ace pass audit trail
+`/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
+does not run Ace first. Separately, automatic native compaction uses the donor model-window
+threshold and usable-window headroom. The Context Ledger's exact used-token number is
+authoritative after either mechanism. Ace saved-token totals are cumulative and origin-neutral:
+they do not identify a pass as manual or automatic.
 
-Every applied Ace pass writes an immutable audit before the working history changes. If that audit cannot be written, Elpis keeps the working history and does not record the pass as applied.
+### Audit trail
+
+Before a compact body can enter history, every applied Smart Prune admission writes its
+exact source, admitted envelope, source hash, and model decision under
+`~/.elpis/logs/smart-prune/admissions/<admission-id>/`. Elpis later appends hash-only
+main-request linkage and the matching response id/usage. If the initial audit cannot be
+written, Elpis admits the original output. Manual Ace passes retain their existing
+immutable pruning audit.
 
 ![Elpis immutable audit trail](assets/elpis-audit-trail-template.svg)
 
-You do not have to go looking for these: `prune_report.md` renders `ace.json` and `manifest.json` as clickable links (`context_prune_audit.rs`). The audit deliberately omits the system prompt, skills, and transcript, so it stays readable.
+For manual Ace, `prune_report.md` renders `ace.json` and `manifest.json` as clickable
+links (`context_prune_audit.rs`). Those manual reports deliberately omit the system prompt,
+skills, and transcript so they stay readable.
 
 ---
 
-## 3. Context Lifetimes
+## 3. What persists
 
-Every item admitted into Elpis context carries an explicit lifetime:
-
-```text
-+-----------------------------------------------------------------------------------+
-| DURABLE LIFETIME                                                                 |
-| - AGENTS.md rules, active GOAL.md, MEMORY.md, explicit user constraints           |
-+-----------------------------------------------------------------------------------+
-                                         |
-                                         v
-+-----------------------------------------------------------------------------------+
-| TASK LIFETIME                                                                     |
-| - Decisions, changed file paths, blockers, verification, ES.md checkpoint         |
-+-----------------------------------------------------------------------------------+
-                                         |
-                                         v
-+-----------------------------------------------------------------------------------+
-| TURN LIFETIME (Expires after turn question is answered)                           |
-| - Terminal reads, searches, directory listings, command probes, temporary diffs   |
-+-----------------------------------------------------------------------------------+
-```
-
-1. **Durable:** Survives across compaction, model switches, and restarts.
-2. **Task:** Survives across turn execution within the current task; summarized into `ES.md` upon task transition.
-3. **Turn:** Expires immediately after the active turn question is answered. Raw output is evicted from working context, leaving behind an exact evidence pointer (rollout ID / log path).
+Context Ledger settings decide which portable files enter subsequent requests. Conversation
+history, including admitted tool results, otherwise remains model-visible until a real lifecycle
+event changes it: native compaction, explicit `/force-prune`, backtracking, or a new/forked
+session. Smart Prune chooses a fresh result's first admitted form and does not revisit it later.
+Rollout and audit files preserve evidence separately from the active model context.
 
 ---
 
@@ -96,7 +95,7 @@ Every item admitted into Elpis context carries an explicit lifetime:
 
 Elpis provides interactive context admission control in the TUI:
 
-- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing every admitted portable context source with exact byte sizes and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. While a turn is running, `Tab` defers to the composer's queue-the-draft action; `Alt+C` always toggles the ledger.
+- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing portable context sources with their byte sizes, per-source estimates, and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. While a turn is running, `Tab` defers to the composer's queue-the-draft action; `Alt+C` always toggles the ledger.
 - **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)
@@ -104,22 +103,59 @@ Elpis provides interactive context admission control in the TUI:
   - Individual portable development rules installed by Elpis
     (`~/.elpis/skills/dev/*.md`)
 
-Elpis embeds and installs its portable development rules on first launch and refreshes
-the managed files when the binary changes. The installed directory is the single default
-source; a project-sibling `skills/dev` is not scanned, so a development checkout cannot
-double-admit the same rules. Machine-specific additions remain opt-in through
-`ELPIS_DEV_SKILLS_DIRS`.
+### Development rules and curated skills
 
-![The Context Ledger listing admitted instruction files with their token counts and included state](assets/context-ledger.webp)
+Development rules and skills have different admission contracts. Development rules are
+ordinary Markdown instruction rows in the Context Ledger; they are not skills. This portable
+configuration chooses development-rule roots and explicitly enables one skill:
+
+```toml
+[skills]
+default_enabled = false
+dev_rule_roots = ["/absolute/path/to/your/dev-rules"]
+
+[skills.bundled]
+enabled = false
+
+[[skills.config]]
+name = "one-selected-skill"
+enabled = true
+```
+
+When `skills.dev_rule_roots` contains one or more roots, those roots replace the managed
+development-rule fallback. With no configured roots, including an explicitly empty list, Elpis
+uses its managed rule directory and the optional
+`ELPIS_DEV_SKILLS_DIRS` additions. Configured roots are read in configuration order; Markdown
+files within each root are read in sorted order. The first file with a given filename wins.
+
+Fresh development-rule rows start included. An explicit Ledger exclusion is stored in
+`admission.toml` and continues to exclude that row. This default applies to development rules,
+not the skills catalog: Elpis product defaults leave ordinary and bundled skills off. Deliberate
+user configuration can enable them.
+
+Enabled skills expose compact metadata to the model, while skill bodies remain lazy and are read
+only when a selected skill is used. The `/skills` management surface shows enabled skills before
+available candidates and labels their origins. Mentions and the model-visible skills list include
+enabled skills only. The skills catalog itself is not a Context Ledger token row.
+
+![The Context Ledger admission model](../website/assets/elpis-context-ledger.svg)
+
+### Manual memory is explicit
+
+The `MEMORY.md` row is ordinary user-controlled context, not an automatic memory system.
+If the row says the file is missing, select it and press `c` to create an empty memory file;
+creation does not admit it. Press `Space` or `Enter` to include or exclude an existing file.
+The Ledger updates immediately during an active turn, while the context change takes effect
+on the next model request. At most 8,000 characters are admitted, and the Ledger shows the
+state and capped estimate without exposing the file contents or path.
 
 ### `/context` — where the window went
 
 The ledger answers *what is admitted*. `/context` answers *what filled the window*: token
-usage as a grid broken down by category — user messages, agent responses, tool calls,
-system prompt, skills, and free space — alongside the backtrack checkpoints available via
-`Esc Esc`. The two are separate surfaces and neither replaces the other.
-
-![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](assets/elpis-context-slash.webp)
+usage as a grid broken down into user messages, agent responses, tool activity, workspace
+instructions, development rules, portable context, a built-in/estimate gap, and free space —
+alongside the backtrack checkpoints available via `Esc Esc`. The two are separate surfaces
+and neither replaces the other.
 
 ### Context Accounting Contract
 
@@ -129,11 +165,14 @@ Elpis exposes **one single source of truth** for context measurement:
 - The percentage is computed against the model's own context window — used tokens over context window (`codex-rs/tui/src/chatwidget/context_ledger.rs`) — never against transcript length.
 - It is reported in the Context Ledger. The persistent identity header carries product, model, and location only (`Elpis · model {model} · location {cwd}`); the inherited footer status line is deliberately suppressed so there is exactly one place to read the number.
 - `/usage` enumerates admitted sources, byte sizes, and lifetime reasons.
+- Per-source Ledger counts are capped estimates from trimmed characters divided by four, not
+  tokenizer measurements. They make the admitted-file cost inspectable without assigning a
+  measured token value to the skills catalog.
 
 ---
 
 ## 5. Systemic Inter-Dependencies
 
 - **Integration with Sessions:** the admitted `GOAL.md` and `ES.md` sources are exactly what lean continuation carries into a fresh thread; see [Sessions](sessions.md).
-- **Integration with Memory:** durable memory is a separate subsystem. It reads completed rollout transcripts from disk rather than hooking into compaction, so it does not depend on when a thread compacts. A `PreCompact` hook event is available if you want to run your own work at that moment. 
+- **Integration with Memory:** durable memory is user-managed. Elpis can admit the user's `~/.elpis/memories/MEMORY.md` into context, but it does not automatically extract, consolidate, or promote memories from completed rollouts. A `PreCompact` hook event is available if you want to run your own work at that moment.
 - **Integration with Providers:** admitted context is normalized across provider wire formats while evidence pointers are preserved; see [Providers](providers.md).

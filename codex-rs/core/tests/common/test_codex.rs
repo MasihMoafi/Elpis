@@ -1253,7 +1253,6 @@ pub fn test_codex() -> TestCodexBuilder {
                 .features
                 .disable(Feature::Apps)
                 .expect("test config should allow Apps override");
-            config.elpis_compact_cleanup = false;
         })],
         auth: CodexAuth::from_api_key("dummy"),
         pre_build_hooks: vec![],

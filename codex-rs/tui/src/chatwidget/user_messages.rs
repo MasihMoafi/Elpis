@@ -27,6 +27,21 @@ use codex_utils_plugins::mention_syntax::TOOL_MENTION_SIGIL;
 
 use super::ChatWidget;
 
+// Keep resumed Codex-authored threads readable without retaining the TUI IDE-context feature.
+const LEGACY_CODEX_PROMPT_REQUEST_BEGIN: &str = "## My request for Codex:";
+
+fn extract_legacy_codex_prompt_request(message: &str) -> (&str, usize) {
+    let Some((before_request, request)) = message.rsplit_once(LEGACY_CODEX_PROMPT_REQUEST_BEGIN)
+    else {
+        return (message, 0);
+    };
+
+    let request_start = before_request.len() + LEGACY_CODEX_PROMPT_REQUEST_BEGIN.len();
+    let trimmed_request = request.trim();
+    let leading_trimmed_len = request.len() - request.trim_start().len();
+    (trimmed_request, request_start + leading_trimmed_len)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UserMessage {
     pub(crate) text: String,
@@ -101,7 +116,7 @@ pub(super) enum QueueDrain {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(super) struct ThreadComposerState {
+pub(crate) struct ThreadComposerState {
     pub(super) text: String,
     pub(super) local_images: Vec<LocalImageAttachment>,
     pub(super) remote_image_urls: Vec<String>,
@@ -612,8 +627,7 @@ impl ChatWidget {
         local_images: Vec<PathBuf>,
         remote_image_urls: Vec<String>,
     ) -> UserMessageDisplay {
-        let (message, prompt_request_offset) =
-            crate::ide_context::extract_prompt_request_with_offset(&message);
+        let (message, prompt_request_offset) = extract_legacy_codex_prompt_request(&message);
         let prompt_request_end = prompt_request_offset + message.len();
         // Prompt context uses the same delimiter and stripping behavior as the desktop app and IDE
         // extension. The raw user message goes to the agent, but every surface renders only the

@@ -1,6 +1,8 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+use codex_otel::SessionTelemetry;
 use codex_protocol::config_types::MultiAgentMode;
+use codex_protocol::protocol::Event;
 
 pub(super) const THREAD_UNLOADING_DELAY: Duration = Duration::from_secs(30 * 60);
 
@@ -15,6 +17,8 @@ pub(super) struct ListenerTaskContext {
     pub(super) fallback_model_provider: String,
     pub(super) codex_home: PathBuf,
     pub(super) skills_watcher: Arc<SkillsWatcher>,
+    pub(super) turn_cost_policy: crate::turn_cost_worker::TurnCostAvailabilityPolicy,
+    pub(super) turn_cost_worker: Option<crate::turn_cost_worker::TurnCostWorkerHandle>,
 }
 
 struct UnloadingState {
@@ -132,6 +136,101 @@ pub(super) enum EnsureConversationListenerResult {
     ConnectionClosed,
 }
 
+pub(crate) async fn prepare_turn_cost_event(
+    turn_cost_policy: &crate::turn_cost_worker::TurnCostAvailabilityPolicy,
+    turn_cost_worker: Option<&crate::turn_cost_worker::TurnCostWorkerHandle>,
+    thread_outgoing: &ThreadScopedOutgoingMessageSender,
+    conversation_id: ThreadId,
+    thread_config: &Config,
+    event: &Event,
+    session_telemetry: impl FnOnce() -> SessionTelemetry,
+    raw_events_enabled: bool,
+) -> (Option<codex_app_server_protocol::TurnCostState>, u64, bool) {
+    let (turn_cost, auth_revision) = turn_cost_policy.classify_with_revision(thread_config);
+    let awaiting_backend_price = matches!(
+        &turn_cost,
+        codex_app_server_protocol::TurnCostState::Unavailable {
+            reason: codex_app_server_protocol::TurnCostAvailability::AwaitingBackendPrice,
+        }
+    );
+    let initial_turn_cost = matches!(&event.msg, EventMsg::TurnStarted(_)).then_some(turn_cost);
+    if initial_turn_cost.is_none() && awaiting_backend_price {
+        observe_turn_cost_event(
+            turn_cost_worker,
+            thread_outgoing,
+            conversation_id,
+            thread_config,
+            event,
+            auth_revision,
+            session_telemetry,
+        )
+        .await;
+    }
+    let should_forward = raw_events_enabled
+        || !matches!(
+            &event.msg,
+            EventMsg::RawResponseItem(_) | EventMsg::RawResponseCompleted(_)
+        );
+    (initial_turn_cost, auth_revision, should_forward)
+}
+
+pub(crate) async fn observe_initial_turn_cost_after_forwarding(
+    initial_turn_cost: Option<&codex_app_server_protocol::TurnCostState>,
+    initial_auth_revision: u64,
+    turn_cost_worker: Option<&crate::turn_cost_worker::TurnCostWorkerHandle>,
+    thread_outgoing: &ThreadScopedOutgoingMessageSender,
+    conversation_id: ThreadId,
+    thread_config: &Config,
+    event: &Event,
+    session_telemetry: impl FnOnce() -> SessionTelemetry,
+) {
+    if matches!(
+        initial_turn_cost,
+        Some(codex_app_server_protocol::TurnCostState::Unavailable {
+            reason: codex_app_server_protocol::TurnCostAvailability::AwaitingBackendPrice,
+        })
+    ) {
+        observe_turn_cost_event(
+            turn_cost_worker,
+            thread_outgoing,
+            conversation_id,
+            thread_config,
+            event,
+            initial_auth_revision,
+            session_telemetry,
+        )
+        .await;
+    }
+}
+
+async fn observe_turn_cost_event(
+    turn_cost_worker: Option<&crate::turn_cost_worker::TurnCostWorkerHandle>,
+    thread_outgoing: &ThreadScopedOutgoingMessageSender,
+    conversation_id: ThreadId,
+    thread_config: &Config,
+    event: &Event,
+    auth_revision: u64,
+    session_telemetry: impl FnOnce() -> SessionTelemetry,
+) {
+    if let Some(worker) = turn_cost_worker
+        && let Some(cost) = worker.observe_event(
+            conversation_id,
+            thread_config,
+            event,
+            auth_revision,
+            session_telemetry,
+        )
+    {
+        crate::bespoke_event_handling::send_turn_cost_updated(
+            thread_outgoing,
+            conversation_id,
+            &event.id,
+            cost,
+        )
+        .await;
+    }
+}
+
 #[expect(
     clippy::await_holding_invalid_type,
     reason = "listener subscription must be serialized against pending unloads"
@@ -154,26 +253,26 @@ pub(super) async fn ensure_conversation_listener(
             )));
         }
     };
-    let thread_state = {
+    let (thread_state, newly_subscribed) = {
         let pending_thread_unloads = listener_task_context.pending_thread_unloads.lock().await;
         if pending_thread_unloads.contains(&conversation_id) {
             return Err(invalid_request(format!(
                 "thread {conversation_id} is closing; retry after the thread is closed"
             )));
         }
-        let Some(thread_state) = listener_task_context
+        let Some((thread_state, newly_subscribed)) = listener_task_context
             .thread_state_manager
             .try_ensure_connection_subscribed(conversation_id, connection_id, raw_events_enabled)
             .await
         else {
             return Ok(EnsureConversationListenerResult::ConnectionClosed);
         };
-        thread_state
+        (thread_state, newly_subscribed)
     };
     if let Err(error) = ensure_listener_task_running(
         listener_task_context.clone(),
         conversation_id,
-        conversation,
+        Arc::clone(&conversation),
         thread_state,
     )
     .await
@@ -183,6 +282,15 @@ pub(super) async fn ensure_conversation_listener(
             .unsubscribe_connection_from_thread(conversation_id, connection_id)
             .await;
         return Err(error);
+    }
+    if newly_subscribed {
+        send_thread_smart_prune_update_to_connection(
+            &listener_task_context.outgoing,
+            connection_id,
+            conversation_id,
+            conversation.as_ref(),
+        )
+        .await;
     }
     Ok(EnsureConversationListenerResult::Attached)
 }
@@ -272,6 +380,8 @@ pub(super) async fn ensure_listener_task_running(
         thread_list_state_permit,
         fallback_model_provider,
         codex_home,
+        turn_cost_policy,
+        turn_cost_worker,
         ..
     } = listener_task_context;
     let outgoing_for_task = Arc::clone(&outgoing);
@@ -317,13 +427,6 @@ pub(super) async fn ensure_listener_task_running(
                         thread_state.track_current_turn_event(&event.id, &event.msg);
                         thread_state.experimental_raw_events
                     };
-                    if matches!(
-                        &event.msg,
-                        EventMsg::RawResponseItem(_) | EventMsg::RawResponseCompleted(_)
-                    ) && !raw_events_enabled
-                    {
-                        continue;
-                    }
                     let subscribed_connection_ids = thread_state_manager
                         .subscribed_connection_ids(conversation_id)
                         .await;
@@ -332,17 +435,46 @@ pub(super) async fn ensure_listener_task_running(
                         subscribed_connection_ids,
                         conversation_id,
                     );
+                    let thread_config = conversation.config().await;
+                    let (initial_turn_cost, initial_auth_revision, should_forward) =
+                        prepare_turn_cost_event(
+                            &turn_cost_policy,
+                            turn_cost_worker.as_ref(),
+                            &thread_outgoing,
+                            conversation_id,
+                            thread_config.as_ref(),
+                            &event,
+                            || conversation.session_telemetry(),
+                            raw_events_enabled,
+                        )
+                        .await;
+                    if !should_forward {
+                        continue;
+                    }
 
                     apply_bespoke_event_handling(
                         event.clone(),
                         conversation_id,
                         conversation.clone(),
                         thread_manager.clone(),
-                        thread_outgoing,
+                        thread_outgoing.clone(),
                         thread_state.clone(),
                         thread_watch_manager.clone(),
                         thread_list_state_permit.clone(),
                         fallback_model_provider.clone(),
+                        initial_turn_cost.clone(),
+                    )
+                    .await;
+
+                    observe_initial_turn_cost_after_forwarding(
+                        initial_turn_cost.as_ref(),
+                        initial_auth_revision,
+                        turn_cost_worker.as_ref(),
+                        &thread_outgoing,
+                        conversation_id,
+                        thread_config.as_ref(),
+                        &event,
+                        || conversation.session_telemetry(),
                     )
                     .await;
                 }
@@ -596,7 +728,7 @@ pub(super) async fn handle_pending_thread_resume_request(
         }
     }
 
-    {
+    let newly_subscribed = {
         let pending_thread_unloads = pending_thread_unloads.lock().await;
         if pending_thread_unloads.contains(&conversation_id) {
             drop(pending_thread_unloads);
@@ -610,18 +742,23 @@ pub(super) async fn handle_pending_thread_resume_request(
                 .await;
             return;
         }
-        if !thread_state_manager
-            .try_add_connection_to_thread(conversation_id, connection_id)
+        let Some((_, newly_subscribed)) = thread_state_manager
+            .try_ensure_connection_subscribed(
+                conversation_id,
+                connection_id,
+                /*experimental_raw_events*/ false,
+            )
             .await
-        {
+        else {
             tracing::debug!(
                 thread_id = %conversation_id,
                 connection_id = ?connection_id,
                 "skipping running thread resume for closed connection"
             );
             return;
-        }
-    }
+        };
+        newly_subscribed
+    };
 
     let config_snapshot = pending.config_snapshot;
     let sandbox = config_snapshot.sandbox_policy().into();
@@ -660,6 +797,15 @@ pub(super) async fn handle_pending_thread_resume_request(
         initial_turns_page,
     };
     outgoing.send_response(request_id, response).await;
+    if newly_subscribed {
+        send_thread_smart_prune_update_to_connection(
+            outgoing,
+            connection_id,
+            conversation_id,
+            conversation.as_ref(),
+        )
+        .await;
+    }
     // Match cold resume: metadata-only resume should attach the listener without
     // paying the cost of turn reconstruction for historical usage replay.
     if let Some(token_usage_thread) = token_usage_thread {

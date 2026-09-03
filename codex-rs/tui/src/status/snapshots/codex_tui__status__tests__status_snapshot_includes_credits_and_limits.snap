@@ -5,13 +5,13 @@ expression: sanitized
 /usage
 
 ╭────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.1)                                                         │
+│  >_ Elpis (v0.1.2)                                                         │
 │  Model          : gpt-5.1-codex (reasoning none, summaries auto)           │
 │  Directory      : /workspace/tests                                         │
 │  Permissions    : Custom (workspace with network access, Ask for approval) │
 │  Token usage    : 2K total  (1.4K input + 600 output)                      │
 │  Context window : 99% left (2.2K used / 272K)                              │
-│  Context pruning: ~0 tokens saved — 0 Ace passes                           │
+│  Context pruning: ~0 tokens removed in this history                        │
 │  5h limit       : [███████████░░░░░░░░░] 55% left (resets 09:25)           │
 │  Weekly limit   : [██████████████░░░░░░] 70% left (resets 09:55)           │
 │  Credits        : Available                                                │

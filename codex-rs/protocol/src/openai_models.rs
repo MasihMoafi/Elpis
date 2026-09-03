@@ -455,6 +455,13 @@ impl ModelInfo {
         self.context_window.or(self.max_context_window)
     }
 
+    /// Context available to inference after reserving this model's configured headroom.
+    pub fn usable_context_window(&self) -> Option<i64> {
+        self.resolved_context_window().map(|context_window| {
+            context_window.saturating_mul(self.effective_context_window_percent) / 100
+        })
+    }
+
     pub fn auto_compact_token_limit(&self) -> Option<i64> {
         let context_limit = self
             .resolved_context_window()
@@ -1192,7 +1199,28 @@ mod tests {
         };
 
         assert_eq!(model.resolved_context_window(), Some(400_000));
+        assert_eq!(model.usable_context_window(), Some(380_000));
         assert_eq!(model.auto_compact_token_limit(), Some(360_000));
+    }
+
+    #[test]
+    fn model_context_window_limits_preserve_their_distinct_meanings() {
+        let model = ModelInfo {
+            context_window: Some(272_000),
+            max_context_window: Some(400_000),
+            auto_compact_token_limit: Some(250_000),
+            effective_context_window_percent: 95,
+            ..test_model(/*spec*/ None)
+        };
+
+        assert_eq!(
+            (
+                model.resolved_context_window(),
+                model.usable_context_window(),
+                model.auto_compact_token_limit(),
+            ),
+            (Some(272_000), Some(258_400), Some(244_800))
+        );
     }
 
     #[test]

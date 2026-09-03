@@ -14,7 +14,6 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
-    Ide,
     Permissions,
     #[strum(serialize = "hotkeys", serialize = "keymap")]
     Keymap,
@@ -42,7 +41,7 @@ pub enum SlashCommand {
     App,
     Init,
     Compact,
-    Prune,
+    SmartPrune,
     #[strum(to_string = "force-prune")]
     ForcePrune,
     Plan,
@@ -99,7 +98,9 @@ impl SlashCommand {
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Usage => "inspect current context, continuity, and token usage",
-            SlashCommand::Prune => "distill completed tool output out of the context window",
+            SlashCommand::SmartPrune => {
+                "optimize fresh tool results before their first model request"
+            }
             SlashCommand::ForcePrune => {
                 "force a prune down to a target of remaining context: /force-prune <1-100>"
             }
@@ -116,9 +117,6 @@ impl SlashCommand {
             SlashCommand::Ps => "list background terminals",
             SlashCommand::Stop => "kill all background terminals",
             SlashCommand::Model => "choose a provider-aware model and reasoning effort",
-            SlashCommand::Ide => {
-                "include current selection, open files, and other context from your IDE"
-            }
             SlashCommand::Personality => "choose a communication style for Elpis",
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Goal => "set or view the goal for a long-running task",
@@ -153,13 +151,13 @@ impl SlashCommand {
     pub fn supports_inline_args(self) -> bool {
         matches!(
             self,
-            SlashCommand::ForcePrune
+            SlashCommand::SmartPrune
+                | SlashCommand::ForcePrune
                 | SlashCommand::Review
                 | SlashCommand::Add
                 | SlashCommand::Rename
                 | SlashCommand::Plan
                 | SlashCommand::Goal
-                | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
                 | SlashCommand::Raw
@@ -181,7 +179,6 @@ impl SlashCommand {
                 | SlashCommand::Usage
                 | SlashCommand::Context
                 | SlashCommand::Dashboard
-                | SlashCommand::Ide
         )
     }
 
@@ -194,7 +191,7 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Prune
+            | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Keymap
             | SlashCommand::Vim
@@ -232,7 +229,6 @@ impl SlashCommand {
             | SlashCommand::Title
             | SlashCommand::Statusline
             | SlashCommand::AutoReview
-            | SlashCommand::Ide
             | SlashCommand::Quit
             | SlashCommand::Side
             | SlashCommand::Btw => true,
@@ -255,7 +251,7 @@ impl SlashCommand {
             | SlashCommand::Resume
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Prune
+            | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Diff
             | SlashCommand::Usage
@@ -269,12 +265,12 @@ impl SlashCommand {
             | SlashCommand::Goal
             | SlashCommand::Rename
             | SlashCommand::Copy
+            | SlashCommand::Experimental
             // Inherited Codex features being re-evaluated for the Elpis contract:
-            // multi-agent threads (I6 /multi-task), IDE context, and Plan mode
-            // (evaluated against I5 structured interactive clarification).
+            // multi-agent threads (I6 /multi-task) and Plan mode (evaluated
+            // against I5 structured interactive clarification).
             | SlashCommand::Agent
             | SlashCommand::MultiAgents
-            | SlashCommand::Ide
             | SlashCommand::Plan
             | SlashCommand::Clear => true,
             SlashCommand::Review
@@ -284,7 +280,6 @@ impl SlashCommand {
             | SlashCommand::Logout
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
-            | SlashCommand::Experimental
             | SlashCommand::AutoReview
             | SlashCommand::Import
             | SlashCommand::Archive
@@ -331,6 +326,35 @@ mod tests {
     }
 
     #[test]
+    fn codex_only_ide_command_is_not_available() {
+        assert!(SlashCommand::from_str("ide").is_err());
+        assert!(
+            !super::built_in_slash_commands()
+                .into_iter()
+                .any(|(name, _)| name == "ide")
+        );
+    }
+
+    #[test]
+    fn retrospective_prune_command_is_not_available() {
+        assert!(SlashCommand::from_str("prune").is_err());
+        assert_eq!(SlashCommand::from_str("compact"), Ok(SlashCommand::Compact));
+        assert_eq!(
+            SlashCommand::from_str("smart-prune"),
+            Ok(SlashCommand::SmartPrune)
+        );
+        assert_eq!(
+            SlashCommand::from_str("force-prune"),
+            Ok(SlashCommand::ForcePrune)
+        );
+        assert!(
+            !super::built_in_slash_commands()
+                .into_iter()
+                .any(|(name, _)| name == "prune")
+        );
+    }
+
+    #[test]
     fn renamed_commands_use_elpis_names() {
         assert_eq!(SlashCommand::Keymap.command(), "hotkeys");
         assert_eq!(SlashCommand::Delete.command(), "del");
@@ -365,7 +389,6 @@ mod tests {
             "plugins",
             "raw",
             "review",
-            "settings",
             "status",
             "statusline",
             "title",
@@ -375,15 +398,14 @@ mod tests {
         }
         assert!(visible.contains(&"add"));
         assert!(visible.contains(&"usage"));
+        assert!(visible.contains(&"settings"));
         assert!(visible.contains(&"fork"));
         assert!(visible.contains(&"goal"));
         assert!(visible.contains(&"hooks"));
         assert!(visible.contains(&"copy"));
-        // Unhidden 2026-07-25 for evaluation against the multi-agent backlog (I6) and
-        // the IDE-extension decision. Re-hide these here if either is dropped.
+        // Unhidden 2026-07-25 for evaluation against the multi-agent backlog (I6).
         assert!(visible.contains(&"agent"));
         assert!(visible.contains(&"subagents"));
-        assert!(visible.contains(&"ide"));
         // Unhidden 2026-07-26 so Masih can evaluate inherited Plan mode before any I5
         // structured-clarification work starts. Re-hide here if I5 supersedes it.
         assert!(visible.contains(&"plan"));
@@ -396,7 +418,6 @@ mod tests {
     #[test]
     fn certain_commands_are_available_during_task() {
         assert!(SlashCommand::Goal.available_during_task());
-        assert!(SlashCommand::Ide.available_during_task());
         assert!(SlashCommand::Title.available_during_task());
         assert!(SlashCommand::Statusline.available_during_task());
         assert!(SlashCommand::App.available_during_task());
@@ -417,6 +438,22 @@ mod tests {
                 .any(|(name, command)| name == "dashboard" && command == SlashCommand::Dashboard)
         );
         assert!(SlashCommand::Dashboard.description().contains("context"));
+    }
+
+    #[test]
+    fn smart_prune_is_visible_argument_aware_and_idle_only() {
+        assert_eq!(
+            SlashCommand::from_str("smart-prune"),
+            Ok(SlashCommand::SmartPrune)
+        );
+        assert!(SlashCommand::SmartPrune.supports_inline_args());
+        assert!(!SlashCommand::SmartPrune.available_during_task());
+        assert!(
+            super::built_in_slash_commands()
+                .into_iter()
+                .any(|(name, command)| name == "smart-prune"
+                    && command == SlashCommand::SmartPrune)
+        );
     }
 
     #[test]

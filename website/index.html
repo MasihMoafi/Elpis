@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Elpis keeps your coding-agent goal, admitted context, permissions, and evidence legible when you change AI runtimes."
+    />
+    <meta name="theme-color" content="#12100f" />
+    <title>Elpis — Change the runtime. Keep the thread.</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2312100f%22/><path d=%22M15 17h34v8H23v7h20v8H23v7h26v8H15z%22 fill=%22%23f26b4d%22/></svg>" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body id="top">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <a class="wordmark" href="#top" aria-label="Elpis home">Elpis<span>.</span></a>
+      <nav aria-label="Primary navigation">
+        <a href="#continuity">Continuity</a>
+        <a href="#ledger">Context</a>
+        <a href="#demo">Smart Prune</a>
+        <a href="#lab">Lab</a>
+        <a href="#install">Install</a>
+      </nav>
+      <a class="header-cta" href="https://github.com/MasihMoafi/Elpis">View source <span aria-hidden="true">↗</span></a>
+      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>
+        <span></span><span></span>
+      </button>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="ambient ambient-one" aria-hidden="true"></div>
+        <div class="ambient ambient-two" aria-hidden="true"></div>
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="status-dot"></span> v0.2.0 · Linux-first early access</p>
+          <h1 id="hero-title">Change the runtime.<br /><em>Keep the thread.</em></h1>
+          <p class="hero-lede">
+            Elpis keeps the goal, admitted context, permissions, and evidence visible while the AI runtime changes underneath.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#install">Install v0.2.0 <span aria-hidden="true">↓</span></a>
+            <a class="button button-secondary" href="#continuity">See what survives</a>
+          </div>
+          <div class="hero-proof" aria-label="Elpis product properties">
+            <span>Local, inspectable state</span>
+            <span>Bring your runtime</span>
+            <span>Cache-stable admission</span>
+          </div>
+        </div>
+
+        <div class="continuity-console" data-console aria-label="Interactive continuity demonstration">
+          <div class="console-topbar">
+            <div>
+              <span class="console-kicker">Session 04</span>
+              <strong>Provider handoff</strong>
+            </div>
+            <div class="runtime-switcher" role="group" aria-label="Select runtime">
+              <button class="runtime-button is-active" type="button" data-runtime="Local">Local</button>
+              <button class="runtime-button" type="button" data-runtime="Cloud A">Cloud A</button>
+              <button class="runtime-button" type="button" data-runtime="Cloud B">Cloud B</button>
+            </div>
+          </div>
+
+          <div class="console-runtime">
+            <div class="runtime-orbit" aria-hidden="true"><span></span></div>
+            <div>
+              <span class="label">Active runtime</span>
+              <strong data-runtime-label>Local</strong>
+            </div>
+            <span class="handoff-state" data-handoff-state>connected</span>
+          </div>
+
+          <div class="ledger-stack">
+            <article class="ledger-row" data-ledger-row>
+              <span class="ledger-index">01</span>
+              <div><span class="label">Goal</span><strong>Stabilize the release candidate</strong></div>
+              <span class="retained">retained</span>
+            </article>
+            <article class="ledger-row" data-ledger-row>
+              <span class="ledger-index">02</span>
+              <div><span class="label">Context</span><strong>3 instructions admitted</strong></div>
+              <span class="retained">retained</span>
+            </article>
+            <article class="ledger-row" data-ledger-row>
+              <span class="ledger-index">03</span>
+              <div><span class="label">Control</span><strong>Workspace writes only</strong></div>
+              <span class="retained">retained</span>
+            </article>
+            <article class="ledger-row" data-ledger-row>
+              <span class="ledger-index">04</span>
+              <div><span class="label">Evidence</span><strong>2 checks attached</strong></div>
+              <span class="retained">retained</span>
+            </article>
+          </div>
+          <p class="console-note"><span></span> Runtime changed. Working state remained explicit.</p>
+        </div>
+      </section>
+
+      <section class="runtime-marquee" aria-label="Runtime compatibility">
+        <p>One continuity layer across</p>
+        <div class="marquee-window">
+          <div class="marquee-track">
+            <span>Hosted providers</span><i></i><span>Local models</span><i></i><span>OpenAI-compatible APIs</span><i></i><span>Native runtimes</span><i></i>
+            <span aria-hidden="true">Hosted providers</span><i aria-hidden="true"></i><span aria-hidden="true">Local models</span><i aria-hidden="true"></i><span aria-hidden="true">OpenAI-compatible APIs</span><i aria-hidden="true"></i><span aria-hidden="true">Native runtimes</span><i aria-hidden="true"></i>
+          </div>
+        </div>
+      </section>
+
+      <section class="section continuity-section" id="continuity" aria-labelledby="continuity-title">
+        <div class="section-heading">
+          <p class="eyebrow">Continuity, not captivity</p>
+          <h2 id="continuity-title">The provider can change.<br />The agreement does not.</h2>
+          <p>Elpis owns the durable layer around inference, so a handoff does not have to become a reset.</p>
+        </div>
+        <div class="continuity-grid">
+          <article class="feature-card feature-goal">
+            <span class="card-number">01</span>
+            <div class="feature-icon" aria-hidden="true">⌁</div>
+            <h3>Goal stays current</h3>
+            <p>The active objective and continuation state remain readable instead of disappearing into chat history.</p>
+            <div class="goal-meter"><span></span><span></span><span></span><span></span></div>
+          </article>
+          <article class="feature-card feature-context">
+            <span class="card-number">02</span>
+            <div class="feature-icon" aria-hidden="true">⊞</div>
+            <h3>Context is admitted</h3>
+            <p>Project instructions and user-maintained memory enter through a visible Context Ledger—not an invisible memory claim.</p>
+            <div class="context-chips"><span>AGENTS.md</span><span>GOAL.md</span><span>ES.md</span></div>
+          </article>
+          <article class="feature-card feature-evidence">
+            <span class="card-number">03</span>
+            <div class="feature-icon" aria-hidden="true">✓</div>
+            <h3>Evidence travels too</h3>
+            <p>Permissions, tool results, changed files, and verification remain part of the inspectable working state.</p>
+            <div class="evidence-line"><span>tests</span><b>12 / 12</b></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section ledger-section" id="ledger" aria-labelledby="ledger-title">
+        <div class="ledger-copy">
+          <p class="eyebrow">The Context Ledger</p>
+          <h2 id="ledger-title">Know what the agent knows.</h2>
+          <p>
+            Elpis separates available project material from what a runtime is actually allowed to see. Admission is visible, reversible, and tied to the session.
+          </p>
+          <ul class="plain-list">
+            <li><span>01</span> Inspect active instructions before a run</li>
+            <li><span>02</span> Keep project memory manual and auditable</li>
+            <li><span>03</span> Resume from a concise execution state</li>
+          </ul>
+        </div>
+        <div class="ledger-visual">
+          <div class="ledger-caption"><span>Context Ledger</span><span class="verified">● admitted state</span></div>
+          <img src="./assets/elpis-context-ledger.svg" alt="Elpis Context Ledger admission flow from available files to the next request" loading="lazy" />
+        </div>
+      </section>
+
+      <section class="section smart-demo-section" id="demo" aria-labelledby="demo-title">
+        <div class="section-heading">
+          <p class="eyebrow">Admission-time optimization</p>
+          <h2 id="demo-title">Decide once.<br />Then keep appending.</h2>
+          <p>Smart Prune can shorten a fresh textual tool result before the main model first sees it. The admitted event keeps its call identity and is never revisited by Smart Prune.</p>
+        </div>
+
+        <div class="admission-demo" data-prune-demo>
+          <div class="admission-route" aria-label="Smart Prune request sequence">
+            <span>Tool finished</span><i></i><span>Hooks complete</span><i></i><span class="route-accent">Smart Prune</span><i></i><span>Main request</span>
+          </div>
+          <div class="admission-panels">
+            <article class="output-card output-source">
+              <div><span>Fresh source</span><strong>1,385 <small>approx. tokens</small></strong></div>
+              <pre><code>rg output
+231 matching lines
+repeated paths and symbols
+exact source preserved in audit</code></pre>
+            </article>
+            <button class="admission-button" type="button" data-prune-button aria-label="Replay Smart Prune admission">
+              <span data-prune-button-label>Run admission</span><b aria-hidden="true">→</b>
+            </button>
+            <article class="output-card output-admitted" data-prune-result>
+              <div><span>First admitted form</span><strong>472 <small>approx. tokens</small></strong></div>
+              <pre><code>Findings retained
+call id unchanged
+evidence bundle linked
+later requests append</code></pre>
+            </article>
+          </div>
+          <div class="admission-evidence">
+            <div><strong>66%</strong><span>smaller in this recorded admission</span></div>
+            <div><strong>98.96%</strong><span>cached input on its linked first response</span></div>
+            <p>One live observation, not a matched cost or quality comparison. Smart Prune is Experimental and off by default.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section handoff-section" aria-labelledby="handoff-title">
+        <div class="handoff-heading">
+          <p class="eyebrow">A legible handoff</p>
+          <h2 id="handoff-title">Resume the work,<br />not the warm-up.</h2>
+        </div>
+        <div class="handoff-flow">
+          <article><span>01</span><h3>Record</h3><p>The goal and execution state stay in small, readable project files.</p></article>
+          <div class="flow-link" aria-hidden="true"><i></i></div>
+          <article><span>02</span><h3>Switch</h3><p>Choose a reachable hosted or local runtime explicitly.</p></article>
+          <div class="flow-link" aria-hidden="true"><i></i></div>
+          <article><span>03</span><h3>Admit</h3><p>Review the context that will cross the boundary.</p></article>
+          <div class="flow-link" aria-hidden="true"><i></i></div>
+          <article><span>04</span><h3>Continue</h3><p>Carry forward decisions, constraints, and verification evidence.</p></article>
+        </div>
+      </section>
+
+      <section class="section lab-section" id="lab" aria-labelledby="lab-title">
+        <div class="section-heading compact">
+          <p class="eyebrow">Elpis Lab</p>
+          <h2 id="lab-title">Experiments stay labeled.</h2>
+          <p>Promising work is useful only when its maturity is visible. These controls are experimental and off by default.</p>
+        </div>
+        <div class="lab-grid">
+          <article class="lab-card">
+            <div class="lab-tag">Experimental</div>
+            <img src="./assets/elpis-context-control.svg" alt="Diagram of experimental Elpis context control" loading="lazy" />
+            <div><h3>Smart Prune</h3><p>Experimental first-exposure optimization. It fails open, stays off by default, and never rewrites a result after admission.</p></div>
+          </article>
+          <article class="lab-card">
+            <div class="lab-tag">Under development</div>
+            <img src="./assets/elpis-work-graph.svg" alt="Diagram of an experimental deterministic Elpis work graph" loading="lazy" />
+            <div><h3>Deterministic work graphs</h3><p>Under-development validated DAGs with write scopes, verifiers, and evidence gates—without automatic merging or pushing.</p></div>
+          </article>
+        </div>
+
+        <div class="evaluation-strip">
+          <div><span class="evaluation-label">Historical evaluation</span><strong>Recoverability before speed</strong></div>
+          <dl>
+            <div><dt>6 / 6</dt><dd>tested targets retained</dd></div>
+            <div><dt>7 / 9</dt><dd>properties fully recoverable</dd></div>
+            <div><dt>0</dt><dd>properties absent</dd></div>
+          </dl>
+          <p>These results describe a superseded high-frequency pruning setup. They do not establish a general task-quality improvement.</p>
+        </div>
+      </section>
+
+      <section class="section evidence-section" aria-labelledby="evidence-title">
+        <div class="section-heading compact">
+          <p class="eyebrow">Historical evaluation</p>
+          <h2 id="evidence-title">Show the traces.<br />Keep the caveats.</h2>
+          <p>These charts preserve the original three-run structure from a superseded high-frequency retrospective-pruning setup. They do not describe the v0.2.0 default or establish better task quality.</p>
+        </div>
+        <div class="evidence-grid">
+          <figure>
+            <img src="./assets/elpis-normalized-overlay-highcontrast.svg" alt="Historical normalized context trajectories for three Elpis and Codex runs" loading="lazy" />
+            <figcaption>Normalized context trajectories · three repetitions of one identical task</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/sankey_context_flow.svg" alt="Historical Sankey flow for one recorded retrospective-pruning run" loading="lazy" />
+            <figcaption>One recorded run with 42 retrospective passes · preserved as historical evidence</figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/elpis_empirical_evaluation_bars.svg" alt="Historical peak context comparison across three Elpis and Codex runs" loading="lazy" />
+            <figcaption>Historical peak context · three repetitions of one identical task</figcaption>
+          </figure>
+        </div>
+        <a class="text-link evidence-link" href="https://github.com/MasihMoafi/Elpis/blob/main/paper/paper.md">Read the technical preprint <span aria-hidden="true">↗</span></a>
+      </section>
+
+      <section class="section install-section" id="install" aria-labelledby="install-title">
+        <div class="install-copy">
+          <p class="eyebrow">Linux-first preview</p>
+          <h2 id="install-title">Put continuity<br />in the loop.</h2>
+          <p>Install the v0.2.0 early-access build, then launch Elpis from your terminal. Inspect the source before you run the script.</p>
+          <a class="text-link" href="https://github.com/MasihMoafi/Elpis">Read installation and source <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="terminal" data-terminal>
+          <div class="terminal-bar"><span></span><span></span><span></span><p>shell</p></div>
+          <div class="terminal-body">
+            <span class="prompt">$</span>
+            <code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code>
+            <button type="button" class="copy-button" data-copy-button>Copy</button>
+          </div>
+          <p class="terminal-note">v0.2.0 · Linux x86_64 · early access</p>
+        </div>
+      </section>
+
+      <section class="section faq-section" aria-labelledby="faq-title">
+        <div>
+          <p class="eyebrow">Before you switch</p>
+          <h2 id="faq-title">Straight answers.</h2>
+        </div>
+        <div class="faq-list">
+          <details><summary>Does Elpis replace the model provider?<span>+</span></summary><p>No. Elpis manages the session boundary around inference; the selected provider or local runtime still performs generation.</p></details>
+          <details><summary>Does Elpis remember everything automatically?<span>+</span></summary><p>No. Project memory is user-maintained and only enters a session when it is admitted through the Context Ledger.</p></details>
+          <details><summary>Is Smart Prune enabled?<span>+</span></summary><p>No. It is Experimental and off by default. `/force-prune` is separate emergency recovery; `/compact` remains native compaction.</p></details>
+          <details><summary>Is this production-ready?<span>+</span></summary><p>Not yet. v0.2.0 is an early-access, Linux-first release while daily-driver acceptance continues.</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div><a class="wordmark" href="#top">Elpis<span>.</span></a><p>Continuity for agentic work.</p></div>
+      <div class="footer-links"><a href="https://github.com/MasihMoafi/Elpis">GitHub</a><a href="#install">Install</a><a href="#top">Back to top ↑</a></div>
+      <p class="footer-meta">Open-source early access · Local state · Bring your runtime</p>
+    </footer>
+  </body>
+</html>

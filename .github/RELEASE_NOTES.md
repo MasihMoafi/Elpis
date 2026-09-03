@@ -1,26 +1,34 @@
-Elpis is a terminal environment for coding agents. The agent runs the model loop;
-Elpis owns context, memory, continuity, retrieval, permissions, and provider choice.
+# Elpis v0.2.0
 
-**Install** (Linux x86_64 or macOS Apple Silicon):
+Elpis v0.2.0 is a Linux-first release centered on explicit context control and cache-stable tool-output admission.
+
+## Install
+
+Linux x86_64:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
-Already running Elpis? Use `elpis --update`.
+## What changed
 
-**What's new since 0.1.1**
+- **Smart Prune (Experimental, off by default)** can optimize eligible textual tool results before the main model first sees them. Once admitted, Smart Prune does not revisit that history.
+- **Clear recovery boundaries:** the ambiguous retrospective `/prune` command is gone. `/force-prune <1-100>` remains an explicit emergency action that may reduce prompt-cache reuse; `/compact` remains native Codex compaction.
+- **Truthful context surfaces:** the Context Ledger, `/context`, and `/dashboard` distinguish current usage, estimated attribution, historical savings, Smart Prune admissions, and optimizer overhead.
+- **Explicit continuity and memory:** `GOAL.md`, `ES.md`, development rules, and the user-maintained `MEMORY.md` are visible admission choices. Elpis does not claim automatic memory extraction or promotion.
+- **Safer customization:** ordinary skills and plugins do not participate until deliberately enabled. Configured MCP servers remain independent of the plugin gate.
+- **Accountable work graphs (under development, off by default):** persisted DAGs validate dependencies, write scopes, evidence, and required verifier tasks before dispatch.
+- **Provider and activity improvements:** model/reasoning selection, live turn timing, cost availability, dashboard updates, and failure accounting are more explicit.
 
-- **Durable Ace pruning** — selective steady and pressure passes, configurable reclaim targets, `/prune` and `/force-prune`, animated savings, a `/context` breakdown, and saved totals that survive session resume. Luna runs the pruning pass at High reasoning effort.
-- **Provider routing** — explicit Anthropic, Gemini, and OpenRouter routing with corrected authentication boundaries and live model/status reporting.
-- **Accountable agent work graphs** — persisted task graphs, bounded roles and scopes, dependent verification, and an `/agent` view of task state and evidence.
-- **Permission and interface fixes** — permissions can cycle while work is running; hidden commands no longer intercept typed input; obsolete usage-limit reset UI was removed.
-- **Documentation and evaluation refresh** — the README now includes context-retention and tool-call evidence, with reproducible continuity and work-graph evals.
+## Evidence boundary
 
-**Known limits**
+Focused tests establish Smart Prune's first-exposure placement, exact fail-open behavior, and append-only tested request prefix. One normal-work ON session observed 95.85% cached input overall and high cache reuse at two admission boundaries. There is no matched OFF/ON study yet, so comparative cost, latency, and task quality remain open.
 
-- Durable memory extraction works, but promotion still requires recall evidence that has not been reached on Masih's install.
-- Work-graph and continuity evals are automated; Masih's final functional acceptance remains outstanding.
-- Windows, `/auto`, voice input, and LSP integration remain out of scope.
+## Known limits
 
-Verify each download with its matching `.sha256` asset. Full docs are in the [README](https://github.com/MasihMoafi/Elpis#readme).
+- Smart Prune uses an extra optimizer request and can add latency. It is Experimental and disabled by default.
+- Manual `MEMORY.md` admission works; automatic memory promotion does not exist.
+- Work graphs and native Anthropic/Gemini routes remain under live user acceptance.
+- This release publishes Linux x86_64 artifacts only.
+
+Read the [technical preprint](https://github.com/MasihMoafi/Elpis/blob/main/paper/paper.md), [evaluation results](https://github.com/MasihMoafi/Elpis/blob/main/docs/evals/RESULTS.md), and [full README](https://github.com/MasihMoafi/Elpis#readme).

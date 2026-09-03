@@ -1,6 +1,6 @@
 # Evaluation status
 
-Last revised 2026-08-12. Every figure here comes from a recorded run. Where a question is
+Last revised 2026-09-02. Every figure here comes from a recorded run. Where a question is
 open it says so, and nothing on this page is stated more strongly than the evidence carries.
 
 Raw records: [`final-rq1-rq4-data`](https://github.com/MasihMoafi/Elpis) ·
@@ -12,8 +12,8 @@ derived analysis with per-metric provenance and cross-checks:
 | RQ1 | Context efficiency | **Answered** |
 | RQ2 | Information retention | **Established for the tested post-prune targets** |
 | RQ3 | Task performance | Not established |
-| RQ4 | Overhead and cache | Cost and latency penalty established; current magnitude open |
-| RQ5 | Auditability | **Answered** |
+| RQ4 | Overhead and cache | **Cache reuse observed; comparative economics open** |
+| RQ5 | Manual Ace auditability | **Answered** |
 
 ---
 
@@ -68,37 +68,47 @@ The available runs do not support a comparative correctness or task-performance 
 No per-arm score from an incomplete, unreplicated benchmark is reported here. In
 particular, there is no evidence that pruning improves task completion or output quality.
 
-## RQ4 — Overhead and cache · penalty established; current magnitude open
+## RQ4 — Overhead and cache · cache reuse observed; comparative economics open
 
-Pruning is not free. It runs a second model call per pass, and rewriting history
-invalidates the provider's cached prefix, since [cache hits require an exact prefix
-match](https://developers.openai.com/api/docs/guides/prompt-caching). Both costs are real
-and measured.
+Retrospective pruning is not free. It runs an auxiliary model call, and changing
+already-sent history invalidates the cached suffix. The earlier 42-pass measurements
+establish that penalty for the superseded retrospective design; they do not describe Smart
+Prune.
 
-The measurements available describe a high-frequency configuration (42 passes in one run)
-that the implementation has since replaced with a low-frequency one built specifically to
-reduce prefix invalidation. **The current design has not been measured under the same
-protocol**, so publishing the old numbers as the cost of the current system would be
-misleading.
+Smart Prune instead decides a fresh tool result before the main model first sees it. In one
+normal-work Smart Prune-ON session, the provider reported 2,862,592 cached tokens out of
+2,986,458 input tokens (95.85%) across 68 main responses. The first main responses linked
+to the two applied admissions reported 98.96% and 98.89% cached input. Encoded
+mock-provider tests establish cache-preserving request construction on the tested HTTP
+path; the live pilot observed provider cache reuse at both admission boundaries. See the
+[2026-09-01 live pilot](tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
 
-We therefore report no cost figure for the current design. The direction of the trade-off
-is established: pruning adds model cost and wall-clock latency and can reduce cache reuse.
-Without a demonstrated task-performance benefit, context reduction alone does not justify
-that overhead. This remains the most important open question about the approach.
+This supports the cache-preserving mechanism, not a complete cost or quality result. No
+private full-request trace was captured, so later live logical-prefix stability is unknown.
+There was no matched OFF arm, so the pilot does not quantify Smart Prune's causal effect on
+cache rate, cost, or latency. The pilot also exposed a same-turn retry storm: 18 of 20
+optimizer attempts hit Elpis's 45-second deadline, and all attempts together accumulated
+860.732 seconds of optimizer latency before the per-turn failure guard was added. Current
+end-to-end economics and task quality remain open.
 
-## RQ5 — Auditability · answered
+## RQ5 — Manual Ace auditability · answered
 
 Nine reconstruction properties were audited against artifacts on disk: **7 yes, 2 partial,
 0 no**.
 
-An evaluator can recover, for any pruning pass: when it ran and under which trigger, what
-material it reviewed, the per-item keep/delete decision, the verbatim pre-mutation text,
-the replacement, a resolvable source pointer into the session rollout, and the pruning
-model's own token usage.
+For the evaluated manual Ace pass schema, an evaluator can recover when a pass ran and
+under which trigger, what material it reviewed, the per-item keep/delete decision, the
+verbatim pre-mutation text, the replacement, a resolvable source pointer into the session
+rollout, and the pruning model's own token usage.
 
 Partial on two counts: passes record character savings rather than exact token deltas, and
 session linkage is reconstructed indirectly through item `call_id` rather than stored
 directly.
+
+Smart Prune writes a separate admission schema under
+`~/.elpis/logs/smart-prune/admissions/`. Its focused tests cover source/admitted envelopes,
+hashes, and request/response linkage; the historical 7/9 reconstruction score does not
+evaluate that newer schema.
 
 ---
 
@@ -146,6 +156,7 @@ own pruning, not a head-to-head comparison with compaction's information loss.
   session ran 36 tool calls with context climbing 22k → 217k and zero tokens reclaimed.
   Pruning inside an unfinished turn is what makes it effective, and is also where the cost
   in RQ4 comes from.
-- The context ledger has known display defects and is being reworked.
-- All figures come from one workload on one model. Nothing here has been replicated
-  elsewhere.
+- RQ1 repeats one workload on `gpt-5.6-luna`. RQ2 audits one controlled
+  `gpt-5.6-luna` session; RQ5 audits a distinct manual Ace pass whose optimizer was
+  `gpt-5.6-luna`. RQ4 observes a separate, unmatched `gpt-5.3-codex-spark` session. None
+  has been replicated across diverse tasks or models.

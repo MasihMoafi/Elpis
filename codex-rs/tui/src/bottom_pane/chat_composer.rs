@@ -459,10 +459,6 @@ const ELPIS_TIPS: &[(&str, &str)] = &[
         "open the Context Ledger and choose what stays in context",
     ),
     (
-        "/prune",
-        "distill stale tool output or force pressure prune: /prune [<pct>]",
-    ),
-    (
         "/auto",
         "let the cheap model route the work to the right one",
     ),
@@ -565,7 +561,6 @@ impl ChatComposer {
                 context_window_used_tokens: None,
                 collaboration_mode_indicator: None,
                 goal_status_indicator: None,
-                ide_context_active: false,
                 status_line_value: None,
                 status_line_hyperlink_url: None,
                 status_line_enabled: false,
@@ -738,10 +733,6 @@ impl ChatComposer {
 
     pub fn set_goal_status_indicator(&mut self, indicator: Option<GoalStatusIndicator>) {
         self.footer.goal_status_indicator = indicator;
-    }
-
-    pub fn set_ide_context_active(&mut self, active: bool) {
-        self.footer.ide_context_active = active;
     }
 
     pub fn set_personality_command_enabled(&mut self, enabled: bool) {
@@ -1152,7 +1143,6 @@ impl ChatComposer {
         if let Some(indicators) = status_line_right_indicator_line(
             self.footer.collaboration_mode_indicator,
             self.footer.goal_status_indicator.as_ref(),
-            self.footer.ide_context_active,
             show_cycle_hint,
         ) {
             if !spans.is_empty() {

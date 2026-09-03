@@ -42,9 +42,15 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::activity_state::ActivityState;
+use crate::activity_state::DashboardActivityState;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
+use crate::app_event::ManualMemoryMutation;
+use crate::app_event::ManualMemoryRequestTarget;
+use crate::app_event::ManualMemoryStatusCompletion;
+use crate::app_event::ManualMemoryUnavailableReason;
 use crate::app_server_approval_conversions::file_update_changes_to_display;
 use crate::approval_events::ApplyPatchApprovalRequestEvent;
 use crate::approval_events::ExecApprovalRequestEvent;
@@ -109,10 +115,13 @@ use codex_app_server_protocol::ThreadGoalStatus as AppThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadSettings;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
+use codex_app_server_protocol::ThreadSmartPruneSnapshot;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnActivityUpdatedNotification;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnCostUpdatedNotification;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
@@ -333,8 +342,6 @@ use self::goal_status::GoalStatusState;
 #[cfg(test)]
 use self::goal_status::goal_status_indicator_from_app_goal;
 mod goal_menu;
-mod ide_context;
-use self::ide_context::IdeContextState;
 mod input_queue;
 use self::input_queue::InputQueueState;
 mod input_flow;
@@ -364,6 +371,7 @@ use self::plugins::PluginListFetchState;
 use self::plugins::PluginsCacheState;
 mod plan_implementation;
 use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
+mod model_popup_state;
 pub(crate) mod model_popups;
 pub(crate) mod model_routing;
 mod notifications;
@@ -419,7 +427,7 @@ use self::user_messages::PendingSteerCompareKey;
 use self::user_messages::QueueDrain;
 use self::user_messages::QueuedUserMessage;
 use self::user_messages::ShellEscapePolicy;
-use self::user_messages::ThreadComposerState;
+pub(crate) use self::user_messages::ThreadComposerState;
 pub(crate) use self::user_messages::ThreadInputState;
 pub(crate) use self::user_messages::ThreadInputStateRestoreMode;
 pub(crate) use self::user_messages::UserMessage;
@@ -506,6 +514,27 @@ pub(crate) enum ExternalEditorState {
     Active,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum ManualMemoryPhase {
+    #[default]
+    Loading,
+    Ready,
+    Creating,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ManualMemoryCache {
+    bound_target: Option<ManualMemoryRequestTarget>,
+    phase: ManualMemoryPhase,
+    status: Option<crate::legacy_core::elpis_context::ManualMemoryStatus>,
+    sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
+    unavailable_reason: Option<ManualMemoryUnavailableReason>,
+    pending_mutation: Option<ManualMemoryMutation>,
+    refresh_requested: bool,
+    pending_context_report: bool,
+}
+
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///
 /// `ChatWidget` owns the state derived from the protocol event stream (history cells, streaming
@@ -523,6 +552,7 @@ pub(crate) struct ChatWidget {
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
     context_ledger: ContextLedgerState,
+    manual_memory_cache: ManualMemoryCache,
     transcript: TranscriptState,
     config: Config,
     raw_output_mode: bool,
@@ -537,6 +567,10 @@ pub(crate) struct ChatWidget {
     has_chatgpt_account: bool,
     has_codex_backend_auth: bool,
     model_catalog: Arc<ModelCatalog>,
+    /// Latest in-flight model-list request per explicit provider scope.
+    model_popup_request_ids: HashMap<Option<String>, uuid::Uuid>,
+    /// Row names used to retain the highlighted model during an in-place refresh.
+    model_popup_model_ids: Vec<String>,
     /// Locally installed Ollama model names, refreshed in the background for the `/model` picker.
     ollama_local_models: Vec<String>,
     session_telemetry: SessionTelemetry,
@@ -546,8 +580,11 @@ pub(crate) struct ChatWidget {
     runtime_model_provider_base_url: Option<String>,
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     token_info: Option<TokenUsageInfo>,
+    smart_prune: ThreadSmartPruneSnapshot,
+    smart_prune_synced: bool,
     context_prune_report_pending: bool,
     last_prune_saved_tokens: Option<u64>,
+    last_smart_prune_saved_tokens: Option<u64>,
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
     refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
     next_status_refresh_request_id: u64,
@@ -585,6 +622,7 @@ pub(crate) struct ChatWidget {
     last_unified_wait: Option<UnifiedExecWaitState>,
     unified_exec_wait_streak: Option<UnifiedExecWaitStreak>,
     turn_lifecycle: TurnLifecycleState,
+    activity_state: ActivityState,
     safety_buffering: SafetyBufferingState,
     task_complete_pending: bool,
     unified_exec_processes: Vec<UnifiedExecProcessSummary>,
@@ -606,7 +644,6 @@ pub(crate) struct ChatWidget {
     /// Tracks whether the buffered next round has seen any `Starting` update yet.
     mcp_startup_pending_next_round_saw_starting: bool,
     connectors: ConnectorsState,
-    ide_context: IdeContextState,
     plugins_cache: PluginsCacheState,
     plugins_fetch_state: PluginListFetchState,
     plugin_remote_sections_loading: bool,
@@ -892,6 +929,53 @@ fn token_usage_info_from_app_server(token_usage: ThreadTokenUsage) -> TokenUsage
 }
 
 impl ChatWidget {
+    pub(crate) fn on_turn_started_activity(&mut self, turn_id: String, started_at: Option<i64>) {
+        if self.activity_state.start(turn_id, started_at) {
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+        }
+    }
+
+    pub(crate) fn on_turn_completed_activity(
+        &mut self,
+        notification: TurnActivityUpdatedNotification,
+    ) {
+        if self.activity_state.finish(
+            &notification.turn_id,
+            notification.status,
+            notification.duration_ms,
+            notification.time_to_first_token_ms,
+            notification.profile,
+        ) {
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+        }
+    }
+
+    pub(crate) fn on_turn_cost_updated_activity(
+        &mut self,
+        notification: TurnCostUpdatedNotification,
+    ) {
+        if self
+            .activity_state
+            .update_cost(&notification.turn_id, notification.cost)
+        {
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+        }
+    }
+
+    pub(crate) fn reset_activity(&mut self) {
+        self.activity_state.reset();
+        self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+    }
+
+    /// Clears Activity before a different session emits the coalesced dashboard refresh.
+    pub(crate) fn reset_activity_for_thread_change(&mut self) {
+        self.activity_state.reset();
+    }
+
+    pub(crate) fn dashboard_activity_state(&self) -> DashboardActivityState {
+        self.activity_state.project()
+    }
+
     /// Width available to wrapped transcript history. The terminal-pet feature used to
     /// reserve columns on the right; with pets removed the full width is available.
     pub(crate) fn history_wrap_width(&self, width: u16) -> u16 {
@@ -1005,7 +1089,8 @@ impl ChatWidget {
         });
     }
 
-    pub(crate) fn set_token_info(&mut self, info: Option<TokenUsageInfo>) {
+    pub(crate) fn set_token_info(&mut self, info: Option<TokenUsageInfo>) -> bool {
+        let changed = self.token_info.as_ref() != info.as_ref();
         match info {
             Some(info) => self.apply_token_info(info),
             None => {
@@ -1014,6 +1099,10 @@ impl ChatWidget {
                 self.token_info = None;
             }
         }
+        if changed {
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+        }
+        changed
     }
 
     fn apply_token_info(&mut self, info: TokenUsageInfo) {
@@ -1032,14 +1121,7 @@ impl ChatWidget {
 
     fn restore_pre_review_token_info(&mut self) {
         if let Some(saved) = self.review.pre_review_token_info.take() {
-            match saved {
-                Some(info) => self.apply_token_info(info),
-                None => {
-                    self.bottom_pane
-                        .set_context_window(/*percent*/ None, /*used_tokens*/ None);
-                    self.token_info = None;
-                }
-            }
+            self.set_token_info(saved);
         }
     }
 
@@ -1675,6 +1757,19 @@ impl ChatWidget {
             .unwrap_or_default()
     }
 
+    #[cfg(test)]
+    pub(crate) fn dashboard_usage_state_for_test(&self) -> (Option<i64>, Option<i64>, Option<u64>) {
+        (
+            self.token_info
+                .as_ref()
+                .map(|info| info.last_token_usage.tokens_in_context_window()),
+            self.token_info
+                .as_ref()
+                .map(|info| info.total_token_usage.total_tokens),
+            self.last_prune_saved_tokens,
+        )
+    }
+
     pub(crate) fn thread_id(&self) -> Option<ThreadId> {
         self.thread_id
     }
@@ -1772,7 +1867,9 @@ impl ChatWidget {
     }
 
     pub(crate) fn clear_token_usage(&mut self) {
-        self.token_info = None;
+        if self.token_info.take().is_some() {
+            self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+        }
     }
 }
 

@@ -2894,17 +2894,25 @@ async fn experimental_features_popup_snapshot() {
 }
 
 #[tokio::test]
-async fn experimental_features_toggle_saves_on_exit() {
+async fn experimental_features_accept_emits_only_changed_rows() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     let expected_feature = Feature::JsRepl;
     let view = ExperimentalFeaturesView::new(
-        vec![ExperimentalFeatureItem {
-            feature: expected_feature,
-            name: "JavaScript REPL".to_string(),
-            description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities.".to_string(),
-            enabled: false,
-        }],
+        vec![
+            ExperimentalFeatureItem {
+                feature: expected_feature,
+                name: "JavaScript REPL".to_string(),
+                description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities.".to_string(),
+                enabled: false,
+            },
+            ExperimentalFeatureItem {
+                feature: Feature::ShellTool,
+                name: "Shell tool".to_string(),
+                description: "Allow the model to run shell commands.".to_string(),
+                enabled: false,
+            },
+        ],
         chat.app_event_tx.clone(),
         crate::keymap::RuntimeKeymap::defaults().list,
     );
@@ -2935,7 +2943,39 @@ async fn experimental_features_toggle_saves_on_exit() {
 }
 
 #[tokio::test]
-async fn experimental_popup_omits_stable_guardian_approval() {
+async fn experimental_features_cancel_and_unchanged_accept_emit_no_updates() {
+    for (case, key_event) in [
+        ("escape", KeyEvent::from(KeyCode::Esc)),
+        (
+            "ctrl-c",
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        ),
+        ("unchanged accept", KeyEvent::from(KeyCode::Enter)),
+    ] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        let view = ExperimentalFeaturesView::new(
+            vec![ExperimentalFeatureItem {
+                feature: Feature::JsRepl,
+                name: "JavaScript REPL".to_string(),
+                description: "Enable JavaScript REPL.".to_string(),
+                enabled: false,
+            }],
+            chat.app_event_tx.clone(),
+            crate::keymap::RuntimeKeymap::defaults().list,
+        );
+        chat.bottom_pane.show_view(Box::new(view));
+
+        chat.handle_key_event(key_event);
+
+        assert!(
+            rx.try_recv().is_err(),
+            "{case} must not emit a feature update"
+        );
+    }
+}
+
+#[tokio::test]
+async fn settings_popup_shows_only_selected_features() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let guardian_stage = FEATURES
         .iter()
@@ -2947,7 +2987,13 @@ async fn experimental_popup_omits_stable_guardian_approval() {
 
     chat.open_experimental_popup();
 
-    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let popup = render_bottom_popup(&chat, /*width*/ 240);
+    assert!(popup.contains("Keep computer awake"));
+    assert!(popup.contains("Smart Prune — Experimental"));
+    assert!(popup.contains(
+        "Optimizes eligible fresh tool results before their first main-model request. Uses an extra AI call and may slow a turn or remove useful detail; failures keep the original."
+    ));
+    assert!(!popup.contains("Network proxy"));
     assert!(
         !popup.contains("Auto-review"),
         "expected stable auto-review feature to be omitted from experimental popup, got:\n{popup}"
@@ -3019,9 +3065,16 @@ async fn model_picker_shows_auto_without_upstream_auto_presets() {
     // context pane, so where it wraps depends on how wide the widest model name happens
     // to be. The claim under test is which words appear, not where they break.
     assert!(
-        ["Elpis", "automatically", "chooses", "right", "model", "task"]
-            .iter()
-            .all(|word| popup.contains(word)),
+        [
+            "Elpis",
+            "automatically",
+            "chooses",
+            "right",
+            "model",
+            "task"
+        ]
+        .iter()
+        .all(|word| popup.contains(word)),
         "expected opaque Auto description:\n{popup}"
     );
     assert!(
@@ -3152,6 +3205,386 @@ async fn model_reasoning_selection_popup_snapshot() {
 }
 
 #[tokio::test]
+async fn model_catalog_uses_live_openai_models_without_fabricated_fallbacks() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    let mut bootstrap = get_available_model(&chat, "gpt-5.4");
+    bootstrap.id = "non-openai-model".to_string();
+    bootstrap.model = "non-openai-model".to_string();
+    bootstrap.display_name = "non-openai-model".to_string();
+    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]));
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    chat.open_model_popup();
+    let openai_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("OpenAI catalog refresh request");
+
+    let mut visible = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    visible.id = "unique-openai-model".to_string();
+    visible.model = "unique-openai-model".to_string();
+    visible.display_name = "Unique OpenAI Model".to_string();
+    visible.description = "Live account catalog metadata".to_string();
+    visible.show_in_picker = true;
+    let mut hidden = visible.clone();
+    hidden.id = "hidden-openai-model".to_string();
+    hidden.model = "hidden-openai-model".to_string();
+    hidden.display_name = "Hidden OpenAI Model".to_string();
+    hidden.show_in_picker = false;
+
+    assert!(chat.on_models_loaded(
+        openai_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![visible, hidden]),
+    ));
+
+    let picker = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(picker.contains("OPENAI"));
+    assert!(picker.contains("unique-openai-model"));
+    assert!(picker.contains("Live account catalog metadata"));
+    assert!(!picker.contains("hidden-openai-model"));
+    assert!(!picker.contains("gpt-5.6-sol"));
+}
+
+#[tokio::test]
+async fn model_catalog_reports_openai_unavailable_after_initial_failure() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    chat.open_model_popup();
+    let openai_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("OpenAI catalog refresh request");
+    let loading_picker = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(loading_picker.contains("Loading available OpenAI models"));
+
+    assert!(!chat.on_models_loaded(
+        openai_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Err("catalog unavailable".to_string()),
+    ));
+
+    let picker = render_bottom_popup(&chat, /*width*/ 100);
+    let normalized_picker = picker.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized_picker.contains("OpenAI unavailable - retry with /model"),
+        "picker:\n{picker}"
+    );
+    assert!(!picker.contains("Loading available OpenAI models"));
+}
+
+#[tokio::test]
+async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_reply() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    let mut visible = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    visible.id = "last-usable-openai-model".to_string();
+    visible.model = "last-usable-openai-model".to_string();
+    visible.display_name = "Last usable OpenAI model".to_string();
+    visible.show_in_picker = true;
+
+    chat.open_model_popup();
+    let first_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("first OpenAI catalog refresh request");
+    assert!(chat.on_models_loaded(
+        first_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![visible]),
+    ));
+
+    chat.open_model_popup();
+    let current_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("current OpenAI catalog refresh request");
+
+    let mut stale = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    stale.id = "stale-openai-model".to_string();
+    stale.model = "stale-openai-model".to_string();
+    stale.display_name = "Stale OpenAI model".to_string();
+    assert!(!chat.on_models_loaded(
+        first_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![stale]),
+    ));
+    assert!(!chat.on_models_loaded(
+        current_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(Vec::new()),
+    ));
+
+    chat.open_model_popup();
+    let error_request_id = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id: Some(provider_id),
+            } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID => Some(request_id),
+            _ => None,
+        })
+        .expect("error OpenAI catalog refresh request");
+    assert!(!chat.on_models_loaded(
+        error_request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Err("catalog unavailable".to_string()),
+    ));
+
+    let picker = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(picker.contains("last-usable-openai-model"));
+    assert!(!picker.contains("stale-openai-model"));
+}
+
+#[tokio::test]
+async fn model_catalog_promotes_cached_models_after_provider_switch() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let mut bootstrap = get_available_model(&chat, "gpt-5.4");
+    bootstrap.id = "bootstrap-model".to_string();
+    bootstrap.model = "bootstrap-model".to_string();
+    let mut openai = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    openai.id = "cached-openai-model".to_string();
+    openai.model = "cached-openai-model".to_string();
+    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]).with_provider_models(
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+        vec![openai.clone()],
+        /*make_primary*/ false,
+    ));
+    chat.config.model_provider_id = codex_model_provider_info::OPENAI_PROVIDER_ID.to_string();
+
+    chat.request_model_catalog(Some(
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    ));
+    let request_id = match rx.try_recv().expect("model catalog request") {
+        AppEvent::FetchModels { request_id, .. } => request_id,
+        event => panic!("expected FetchModels, got {event:?}"),
+    };
+
+    assert!(chat.on_models_loaded(
+        request_id,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+        Ok(vec![openai]),
+    ));
+    assert_eq!(
+        chat.model_catalog
+            .try_list_models()
+            .expect("primary model catalog")[0]
+            .model,
+        "cached-openai-model"
+    );
+}
+
+#[tokio::test]
+async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
+    chat.config.model_provider.name = "OpenRouter".to_string();
+    chat.config.model_provider.base_url =
+        Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
+
+    let mut bootstrap = get_available_model(&chat, "gpt-5.4");
+    bootstrap.id = "non-openai-model".to_string();
+    bootstrap.model = "non-openai-model".to_string();
+    bootstrap.display_name = "non-openai-model".to_string();
+    let mut openai = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    openai.id = "openai-reasoning-model".to_string();
+    openai.model = "openai-reasoning-model".to_string();
+    openai.display_name = "OpenAI reasoning model".to_string();
+    openai.show_in_picker = true;
+    openai.default_reasoning_effort = ReasoningEffortConfig::Low;
+    openai.supported_reasoning_efforts = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::Low,
+            description: "Low reasoning".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::High,
+            description: "High reasoning".to_string(),
+        },
+    ];
+    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]).with_provider_models(
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+        vec![openai],
+        /*make_primary*/ false,
+    ));
+
+    chat.open_model_popup();
+    while rx.try_recv().is_ok() {}
+    for _ in 0..chat.model_popup_model_ids.len() {
+        let selected = chat
+            .bottom_pane
+            .selected_index_for_active_view(
+                crate::chatwidget::model_popups::MODEL_SELECTION_VIEW_ID,
+            )
+            .and_then(|index| chat.model_popup_model_ids.get(index));
+        if selected.is_some_and(|model| model == "openai-reasoning-model") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::OpenReasoningPopup {
+            model,
+            provider_id: Some(provider_id),
+        } if model.model == "openai-reasoning-model"
+            && provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+    )));
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        AppEvent::UpdateModel(_)
+            | AppEvent::UpdateReasoningEffort(_)
+            | AppEvent::ApplyProviderModelSelection { .. }
+            | AppEvent::PersistModelSelection { .. }
+    )));
+}
+
+#[tokio::test]
+async fn model_reasoning_selection_for_openai_emits_one_atomic_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let mut openai = get_available_model(&chat, "gpt-5.4");
+    openai.id = "single-effort-openai-model".to_string();
+    openai.model = "single-effort-openai-model".to_string();
+    openai.display_name = "Single-effort OpenAI model".to_string();
+    openai.default_reasoning_effort = ReasoningEffortConfig::High;
+    openai.supported_reasoning_efforts = vec![ReasoningEffortPreset {
+        effort: ReasoningEffortConfig::High,
+        description: "Only supported effort".to_string(),
+    }];
+
+    chat.open_reasoning_popup_for_provider(
+        openai,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+    );
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::ApplyProviderModelSelection {
+            provider_id,
+            model,
+            effort: Some(ReasoningEffortConfig::High),
+        } if provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+            && model == "single-effort-openai-model"
+    )));
+}
+
+#[tokio::test]
+async fn ollama_model_selection_emits_one_atomic_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.on_ollama_models_loaded(vec!["local-test-model".to_string()]);
+    let presets = chat.models_for_active_provider();
+    chat.open_model_popup_with_presets(presets);
+
+    for _ in 0..chat.model_popup_model_ids.len() {
+        let selected = chat
+            .bottom_pane
+            .selected_index_for_active_view(
+                crate::chatwidget::model_popups::MODEL_SELECTION_VIEW_ID,
+            )
+            .and_then(|index| chat.model_popup_model_ids.get(index));
+        if selected.is_some_and(|model| model == "local-test-model") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    let selections = events
+        .iter()
+        .filter(|event| matches!(event, AppEvent::ApplyProviderModelSelection { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(selections.len(), 1);
+    assert!(matches!(
+        selections[0],
+        AppEvent::ApplyProviderModelSelection {
+            model,
+            provider_id,
+            effort: None,
+        } if model == "local-test-model"
+            && provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID
+    ));
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        AppEvent::UpdateModel(_) | AppEvent::PersistModelSelection { .. }
+    )));
+}
+
+#[tokio::test]
+async fn model_reasoning_selection_for_openai_escape_emits_no_selection() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let mut openai = get_available_model(&chat, "gpt-5.4");
+    openai.id = "cancelled-openai-model".to_string();
+    openai.model = "cancelled-openai-model".to_string();
+    openai.display_name = "Cancelled OpenAI model".to_string();
+    openai.supported_reasoning_efforts = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::Low,
+            description: "Low reasoning".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffortConfig::High,
+            description: "High reasoning".to_string(),
+        },
+    ];
+
+    chat.open_reasoning_popup_for_provider(
+        openai,
+        Some(codex_model_provider_info::OPENAI_PROVIDER_ID.to_string()),
+    );
+    while rx.try_recv().is_ok() {}
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        AppEvent::UpdateModel(_)
+            | AppEvent::UpdateReasoningEffort(_)
+            | AppEvent::ApplyProviderModelSelection { .. }
+            | AppEvent::PersistModelSelection { .. }
+    )));
+}
+
+#[tokio::test]
 async fn model_advanced_reasoning_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::Ultra));
@@ -3234,7 +3667,7 @@ async fn select_ultra_with_multi_agent_thread_limit(max_threads: usize) -> (bool
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     let advanced_preset = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|event| match event {
-        AppEvent::OpenAdvancedReasoningPopup { model } => Some(model),
+        AppEvent::OpenAdvancedReasoningPopup { model, .. } => Some(model),
         _ => None,
     });
     chat.open_advanced_reasoning_popup(advanced_preset.expect("advanced reasoning popup"));

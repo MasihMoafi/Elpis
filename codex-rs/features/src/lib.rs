@@ -224,6 +224,8 @@ pub enum Feature {
     Goals,
     /// Add current context-window metadata to model-visible context.
     TokenBudget,
+    /// Optimize large fresh tool outputs before their first main-model exposure.
+    AutomaticContextPruning,
     /// Track and report a shared token budget across a session's agent threads.
     RolloutBudget,
     /// Add current-time reminders to model-visible context.
@@ -1113,13 +1115,13 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::ToolSuggest,
         key: "tool_suggest",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::Plugins,
         key: "plugins",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::PluginHooks,
@@ -1161,7 +1163,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::RemotePlugin,
         key: "remote_plugin",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::PluginSharing,
@@ -1257,6 +1259,16 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::TokenBudget,
         key: "token_budget",
         stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::AutomaticContextPruning,
+        key: "automatic_context_pruning",
+        stage: Stage::Experimental {
+            name: "Smart Prune — Experimental",
+            menu_description: "Optimizes eligible fresh tool results before their first main-model request. Uses an extra AI call and may slow a turn or remove useful detail; failures keep the original.",
+            announcement: "",
+        },
         default_enabled: false,
     },
     FeatureSpec {
