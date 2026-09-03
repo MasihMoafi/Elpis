@@ -66,5 +66,14 @@ two multi-batch tests used the 10k window with two ~30k-token outputs, so the co
 check fired after the first output, native compaction consumed the scripted mock replies
 (both turns ended with a compaction error), turn two never reached history, the sweep had
 one batch, and the test waited forever for request six. Fixed in `b4b68ff` (test window +
-bounded wait); palette in `593fc84`. Hosted verification of the fix across the prune
-suites and the full gate are pending; no tag, release, or install has happened.
+bounded wait); palette in `593fc84`. The gate then cleared 20 commands and failed on
+`app-server-turn-cost`: two tests asserted `reload()`'s boolean, which compares auth by
+mode and so reports "no change" when one API key replaces another (the auth revision the
+worker watches is bumped); the paused-clock tests raced real HTTP against tokio timeouts
+and a 150-second clock jump that fired the worker's request timeout mid-probe. Fixed as
+tests only in `b4db1ef`, `35673af`, `80d7d6b`. The memory-recall surface filtered on a
+renamed test and ran zero tests; fixed in `757ea86`. Probe runs on `ci/prune-hang-probe`
+showed work-graph, memory, nightly-release, provider, chat-completion, release build,
+identity, clean-home launch, path check, and `.deb` packaging all pass on this tree.
+Final hosted verification of the turn-cost module and the full gate are pending; no tag,
+release, or install has happened.
