@@ -55,7 +55,7 @@ jobs:
           bin="$(cat "$RUNNER_TEMP/test-binary")"
           summary="$RUNNER_TEMP/summary.txt"
           : > "$summary"
-          mapfile -t tests < <("$bin" --list 2>/dev/null | grep -E '^suite::context_prune::manual_prune_rearms' | sed 's/: test$//')
+          mapfile -t tests < <("$bin" --list 2>/dev/null | grep -E '^suite::(context_prune|smart_prune)::' | sed 's/: test$//')
           echo "found ${#tests[@]} tests"
           for t in "${tests[@]}"; do
             echo "::group::$t"
@@ -71,3 +71,13 @@ jobs:
           cat "$summary"
           if grep -qE 'HUNG|FAILED' "$summary"; then exit 1; fi
 
+      - name: Run the exact gate command for the prune suite with a 900s kill timeout
+        if: always()
+        working-directory: codex-rs
+        run: |
+          set +e
+          CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
+            timeout -s KILL 900 cargo test -p codex-core --test all --locked suite::context_prune:: -- --nocapture
+          rc=$?
+          echo "gate-command exit=$rc"
+          exit $rc

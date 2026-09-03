@@ -24,6 +24,10 @@ use tempfile::TempDir;
 use tokio::sync::oneshot;
 
 const CONTEXT_WINDOW: i64 = 10_000;
+/// Window for the multi-batch sweeps. Each of their two tool outputs is ~30k tokens, so a
+/// 10k window trips the context-limit check after the first output and native compaction
+/// consumes the scripted replies before the second turn ever lands in history.
+const MULTI_BATCH_CONTEXT_WINDOW: i64 = 200_000;
 const MAIN_MODEL: &str = "gpt-5.4";
 const PRUNE_MODEL: &str = "gpt-5.6-luna";
 const OLD_CALL_ID: &str = "old-pressure-output";
@@ -718,79 +722,27 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
     ])
     .await;
     let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
-        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.model_context_window = Some(MULTI_BATCH_CONTEXT_WINDOW);
         config.tool_output_token_limit = Some(30_000);
         config.agent_interrupt_message_enabled = false;
     });
     let test = builder.build_with_streaming_server(&server).await?;
     let codex = Arc::clone(&test.codex);
 
-    let dump = |label: &str, items: &[codex_protocol::models::ResponseItem]| {
-        eprintln!("[probe] {label}: {} items", items.len());
-        for (index, item) in items.iter().enumerate() {
-            let text: String = format!("{item:?}").chars().take(110).collect();
-            eprintln!("[probe]   {index}: {text}");
-        }
-    };
-    for prompt in [
-        "generate the first oversized diagnostic output",
-        "generate the second oversized diagnostic output",
-    ] {
-        test.submit_turn(prompt).await?;
-        eprintln!(
-            "[probe] turn done: {prompt}; requests so far={}",
-            server.requests().await.len()
-        );
-        let state = codex_core::test_support::context_prune_state_snapshot(&codex).await;
-        dump("history after turn", &state.raw_history);
-        codex.flush_rollout().await?;
-        let rollout = codex.load_history(/*include_archived*/ false).await?.items;
-        eprintln!("[probe] rollout items after turn: {}", rollout.len());
-        for (index, item) in rollout.iter().enumerate() {
-            let text: String = format!("{item:?}").chars().take(170).collect();
-            eprintln!("[probe]   r{index}: {text}");
-        }
-    }
+    test.submit_turn("generate the first oversized diagnostic output")
+        .await?;
+    test.submit_turn("generate the second oversized diagnostic output")
+        .await?;
     codex.flush_rollout().await?;
 
     let state_before = codex_core::test_support::context_prune_state_snapshot(&codex).await;
-    dump("history before prune", &state_before.raw_history);
     let applied_passes_before = codex_core::context_pruner::pass_count();
     let saved_chars_before = codex_core::context_pruner::saved_chars();
     let checkpoints_before =
         context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
 
     let prune_id = codex.submit(Op::Prune { target_pct: None }).await?;
-    eprintln!("[probe] prune submitted id={prune_id}");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-    loop {
-        let n = server.requests().await.len();
-        eprintln!("[probe] requests={n}");
-        if n >= 6 {
-            break;
-        }
-        if std::time::Instant::now() > deadline {
-            let state = codex_core::test_support::context_prune_state_snapshot(&codex).await;
-            eprintln!(
-                "[probe] stuck: covered={:?} saved_tokens={}",
-                state.covered_call_ids, state.saved_tokens
-            );
-            dump("history after first pass", &state.raw_history);
-            let prune_request: serde_json::Value =
-                serde_json::from_slice(&server.requests().await[4]).expect("parse prune request");
-            let prune_text: String = prune_request["input"].to_string().chars().take(400).collect();
-            eprintln!("[probe] first prune request input (truncated): {prune_text}");
-            while let Ok(Ok(event)) =
-                tokio::time::timeout(std::time::Duration::from_millis(500), codex.next_event())
-                    .await
-            {
-                let text: String = format!("{:?}", event.msg).chars().take(160).collect();
-                eprintln!("[probe] queued event id={} {}", event.id, text);
-            }
-            panic!("[probe] request 6 never arrived; {n} requests seen");
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    }
+    server.wait_for_request_count(6).await;
 
     let requests = server.requests().await;
     assert_eq!(requests.len(), 6, "the sweep must open its second batch");
@@ -837,14 +789,10 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
         assert!(second_prune_input.contains(*call_id));
     }
 
-    eprintln!("[probe] interrupting active prune");
     codex_core::test_support::interrupt_active_prune_and_wait_for_cancellation(&codex).await?;
-    eprintln!("[probe] cancellation observed; releasing second pass");
     let _ = release_second_pass_tx.send(());
     let terminal = loop {
         let event = codex.next_event().await?;
-        let text: String = format!("{:?}", event.msg).chars().take(120).collect();
-        eprintln!("[probe] event id={} {}", event.id, text);
         if event.id == prune_id
             && matches!(
                 event.msg,
@@ -953,7 +901,7 @@ async fn manual_prune_interrupt_during_commit_stops_before_the_next_batch() -> R
     ])
     .await;
     let mut builder = test_codex().with_model(MAIN_MODEL).with_config(|config| {
-        config.model_context_window = Some(CONTEXT_WINDOW);
+        config.model_context_window = Some(MULTI_BATCH_CONTEXT_WINDOW);
         config.tool_output_token_limit = Some(30_000);
         config.agent_interrupt_message_enabled = false;
     });
