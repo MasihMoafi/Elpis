@@ -14,7 +14,7 @@ curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/ins
 
 - **Smart Prune (Experimental, off by default)** can optimize eligible textual tool results before the main model first sees them. Once admitted, Smart Prune does not revisit that history.
 - **Clear recovery boundaries:** the ambiguous retrospective `/prune` command is gone. `/force-prune <1-100>` remains an explicit emergency action that may reduce prompt-cache reuse; `/compact` remains native Codex compaction.
-- **Truthful context surfaces:** the Context Ledger, `/context`, and `/dashboard` distinguish current usage, estimated attribution, historical savings, Smart Prune admissions, and optimizer overhead.
+- **Truthful context surfaces:** the Context Ledger, `/context`, and `/dashboard` distinguish current usage, estimated attribution, historical savings, Smart Prune admissions, and optimizer overhead. `/context` categories use distinct, validated colours on dark terminals.
 - **Explicit continuity and memory:** `GOAL.md`, `ES.md`, development rules, and the user-maintained `MEMORY.md` are visible admission choices. Elpis does not claim automatic memory extraction or promotion.
 - **Safer customization:** ordinary skills and plugins do not participate until deliberately enabled. Configured MCP servers remain independent of the plugin gate.
 - **Accountable work graphs (under development, off by default):** persisted DAGs validate dependencies, write scopes, evidence, and required verifier tasks before dispatch.

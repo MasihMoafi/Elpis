@@ -5,6 +5,7 @@
 - Added Experimental, default-off Smart Prune before first main-model exposure.
 - Removed `/prune`; retained targeted `/force-prune` and native `/compact`.
 - Reworked context accounting, the Context Ledger, dashboard, and manual memory controls.
+- Gave `/context` categories distinct, validated colours on dark terminals; the dashboard mirrors them.
 - Made skills and plugins opt-in while preserving explicitly configured MCP servers.
 - Added under-development, default-off accountable work graphs, provider/activity improvements, and Linux-only release artifacts.
 
