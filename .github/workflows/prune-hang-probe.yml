@@ -42,8 +42,8 @@ jobs:
         run: |
           set -euo pipefail
           cargo test -p codex-app-server --lib --locked --no-run --message-format=json \
-            | jq -r 'select(.reason=="compiler-artifact" and .target.name=="codex-app-server" and (.target.kind|index("lib")) and .executable!=null) | .executable' \
-            > "$RUNNER_TEMP/test-binary"
+            | jq -r 'select(.reason=="compiler-artifact" and .profile.test==true and .executable!=null) | .executable' \
+            | tail -1 > "$RUNNER_TEMP/test-binary"
           test -s "$RUNNER_TEMP/test-binary"
           cat "$RUNNER_TEMP/test-binary"
 

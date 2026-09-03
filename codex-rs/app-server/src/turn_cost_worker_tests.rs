@@ -48,7 +48,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tokio::time::timeout;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
@@ -1951,10 +1950,24 @@ async fn recv_turn_cost_notification(
 }
 
 async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> ServerNotification {
-    let envelope = timeout(Duration::from_secs(1), rx.recv())
-        .await
-        .expect("timed out waiting for cost notification")
-        .expect("cost notification channel closed");
+    // Wall-clock deadline for the same reason as `wait_for_request_count`: a tokio timeout
+    // under a paused clock fires as soon as the runtime idles on the worker's real HTTP.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let envelope = loop {
+        match rx.try_recv() {
+            Ok(envelope) => break envelope,
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                panic!("cost notification channel closed")
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "timed out waiting for cost notification"
+                );
+                tokio::task::yield_now().await;
+            }
+        }
+    };
     let message = match envelope {
         OutgoingEnvelope::ToConnection {
             connection_id: ConnectionId(1),
