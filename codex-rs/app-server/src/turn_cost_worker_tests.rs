@@ -577,7 +577,7 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
         std::env::var("OPENAI_API_KEY").map(|v| v.len()),
         auth_home.path().display()
     );
-    eprintln!("[probe] cached before write: {:?}", auth_manager.auth().await.map(|a| a.api_key()));
+    eprintln!("[probe] cached before write: {:?}", auth_manager.auth().await.map(|a| a.api_key().map(str::to_string)));
     login_with_api_key(
         auth_home.path(),
         "sk-current",
@@ -594,7 +594,7 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
     let reloaded = auth_manager.reload().await;
     eprintln!(
         "[probe] reload -> {reloaded}; cached after: {:?}",
-        auth_manager.auth().await.map(|a| a.api_key())
+        auth_manager.auth().await.map(|a| a.api_key().map(str::to_string))
     );
     assert!(reloaded);
     let current_auth_revision = current_auth_revision(auth_manager.as_ref());
