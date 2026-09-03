@@ -19,7 +19,7 @@ test("keeps memory and experiments honest", async () => {
   assert.doesNotMatch(html, /automatic memory/i);
   assert.match(html, /user-maintained memory/i);
   assert.match(html, /Smart Prune[\s\S]{0,500}Experimental/i);
-  assert.match(html, /work graphs[\s\S]{0,500}experimental/i);
+  assert.match(html, /work graphs[\s\S]{0,500}under[- ]development/i);
   assert.doesNotMatch(html, /(^|[^-])\/prune(?:\s|<)/m);
   assert.match(html, /one live observation, not a matched cost or quality comparison/i);
 });

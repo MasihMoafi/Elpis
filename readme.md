@@ -221,8 +221,9 @@ Elpis never creates, merges, rebases, deletes, or pushes branches or worktrees. 
 and integrating them stays coordinator-owned, because those operations change durable user
 state and deserve deliberate review.
 
-Off by default. Enable with `enable_fanout = true` under `[features]`; there is no slash
-command. Full rules and the graph schema are in [docs/WORK_GRAPHS.md](docs/WORK_GRAPHS.md).
+Under development and off by default: the gates above are covered by negative tests on
+Linux, but the feature has not yet been accepted in live use. Enable with
+`enable_fanout = true` under `[features]`; there is no slash command. Full rules and the graph schema are in [docs/WORK_GRAPHS.md](docs/WORK_GRAPHS.md).
 
 ### Bring your own provider
 

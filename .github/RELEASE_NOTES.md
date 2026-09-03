@@ -17,7 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/ins
 - **Truthful context surfaces:** the Context Ledger, `/context`, and `/dashboard` distinguish current usage, estimated attribution, historical savings, Smart Prune admissions, and optimizer overhead.
 - **Explicit continuity and memory:** `GOAL.md`, `ES.md`, development rules, and the user-maintained `MEMORY.md` are visible admission choices. Elpis does not claim automatic memory extraction or promotion.
 - **Safer customization:** ordinary skills and plugins do not participate until deliberately enabled. Configured MCP servers remain independent of the plugin gate.
-- **Accountable work graphs (Experimental):** persisted DAGs validate dependencies, write scopes, evidence, and required verifier tasks before dispatch.
+- **Accountable work graphs (under development, off by default):** persisted DAGs validate dependencies, write scopes, evidence, and required verifier tasks before dispatch.
 - **Provider and activity improvements:** model/reasoning selection, live turn timing, cost availability, dashboard updates, and failure accounting are more explicit.
 
 ## Evidence boundary
