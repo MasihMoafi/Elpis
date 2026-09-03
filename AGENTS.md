@@ -4,7 +4,7 @@
 
 - Read `docs/GUIDE.md`; it is the product, architecture, and requirements source of truth.
 - Read `docs/USER_REQUESTS.md`; it records Masih's requested outcomes and is separate from agent-created execution work.
-- Read `TASKS.md`; work only on its Current Action unless Masih changes priority.
+- Read `TASKS.md`; work only on its Current Action unless Masih changes priority. `TASKS.md` is deliberately untracked local working notes (commit `1bb0104`); it lives in the main checkout, not in linked worktrees, and `docs/TASKS_ARCHIVE.md` holds closed history.
 - Read `docs/context.md` and `docs/sessions.md` before touching context, session, or pruning behavior.
 - Read `docs/SHIPPING_RULES.md` before a release or any change that reads the filesystem, environment, or network.
 - Read `docs/LOCAL_BUILD_RULES.md` before running `cargo` on Masih's workstation.

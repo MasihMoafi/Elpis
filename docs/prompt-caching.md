@@ -112,7 +112,8 @@ anything.
   pruning, compaction, and every other history rewrite leave it untouched. Only the prefix
   changes, which is exactly what the cache is meant to notice.
 - **Background requests that reuse the session's client** get their own namespace:
-  `<session-id>:context-prune`, `<session-id>:smart-prune`, and `<session-id>:memory`.
+  `<session-id>:context-prune` and `<session-id>:smart-prune`. (A `<session-id>:memory`
+  namespace is still defined in code but has no live caller; the automatic memory pipeline was removed.)
   Their prefixes are unrelated to the conversation, so sharing the turn's slot could only
   evict the turn prefix for no possible hit. Each namespace is itself constant per session
   and kind.

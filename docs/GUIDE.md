@@ -84,7 +84,7 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R4. Exact and lean continuity** — The active goal, decisions, constraints, changed files, verification, blockers, and next action survive restarts. Elpis supports exact native-thread resume and lean continuation from a compact portable checkpoint.
 
-**R5. Curated memory** — Memory stores reusable facts and proven procedures, not transcripts. Promotion requires repeated useful recall across distinct contexts. Memory remains searchable, attributable, reviewable, deletable, and bounded. Deleted or faded facts enter a searchable archive before baseline reset; archive failure must stop the reset.
+**R5. Curated memory** — Memory is a user-maintained `MEMORY.md` of reusable facts and proven procedures, not transcripts. It is admitted through the Context Ledger explicitly, shows truthful status without leaking contents, stays bounded, and can be created, admitted, or withdrawn by the user. Elpis has no automatic extraction, consolidation, or promotion pipeline (removed in `0c105e3`); none may be restored or claimed without Masih's explicit approval.
 
 **R6. Enforceable creator and project rules** — Applicable `AGENTS.md`, project requirements, and behavioral rules reach the model and action layer. Configured development-rule Markdown is a visible, switchable Context Ledger source, not a skill. Elpis ordinary and bundled skills start off and become model-visible only after deliberate enablement. Hard safety rules are enforced by code where prompts are insufficient.
 
@@ -94,7 +94,7 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused checks. Exhaustive inherited TUI/app-server regression runs belong to nightly/manual/release verification unless a change directly touches that surface. CI must not edit source or create status-only commits. Dependency deletion follows measured cost and product optionality, not crate names.
 
-**R10. Distinctive continuity-first identity** — Elpis uses a cyan visual identity and visibly separates runtime, model, context, memory, permissions, and evidence. UI design is an acceptance contract, not proof of implementation.
+**R10. Distinctive continuity-first identity** — Elpis uses its own visual identity (the reddish/black direction Masih chose in U8, not Codex's look) and visibly separates runtime, model, context, memory, permissions, and evidence. UI design is an acceptance contract, not proof of implementation.
 
 **R11. Claude models use the native provider path** — The removed Claude Code CLI-subprocess bridge is not a supported runtime. Claude models are supported through the native Anthropic Messages API adapter; authentication/provider selection must remain explicit.
 
