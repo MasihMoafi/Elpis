@@ -738,7 +738,33 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
         context_prune_checkpoints(codex.load_history(/*include_archived*/ false).await?.items);
 
     let prune_id = codex.submit(Op::Prune { target_pct: None }).await?;
-    server.wait_for_request_count(6).await;
+    eprintln!("[probe] prune submitted id={prune_id}");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let n = server.requests().await.len();
+        eprintln!("[probe] requests={n}");
+        if n >= 6 {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            let state = codex_core::test_support::context_prune_state_snapshot(&codex).await;
+            eprintln!(
+                "[probe] stuck: covered={:?} saved_tokens={} history_len={}",
+                state.covered_call_ids,
+                state.saved_tokens,
+                state.raw_history.len()
+            );
+            while let Ok(Ok(event)) =
+                tokio::time::timeout(std::time::Duration::from_millis(500), codex.next_event())
+                    .await
+            {
+                let text: String = format!("{:?}", event.msg).chars().take(160).collect();
+                eprintln!("[probe] queued event id={} {}", event.id, text);
+            }
+            panic!("[probe] request 6 never arrived; {n} requests seen");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
 
     let requests = server.requests().await;
     assert_eq!(requests.len(), 6, "the sweep must open its second batch");
@@ -785,10 +811,14 @@ async fn manual_prune_rearms_cancellation_before_a_later_batch_commits() -> Resu
         assert!(second_prune_input.contains(*call_id));
     }
 
+    eprintln!("[probe] interrupting active prune");
     codex_core::test_support::interrupt_active_prune_and_wait_for_cancellation(&codex).await?;
+    eprintln!("[probe] cancellation observed; releasing second pass");
     let _ = release_second_pass_tx.send(());
     let terminal = loop {
         let event = codex.next_event().await?;
+        let text: String = format!("{:?}", event.msg).chars().take(120).collect();
+        eprintln!("[probe] event id={} {}", event.id, text);
         if event.id == prune_id
             && matches!(
                 event.msg,
