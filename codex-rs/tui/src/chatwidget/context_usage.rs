@@ -27,8 +27,17 @@ use crate::legacy_core::elpis_context::ContinuitySourceCategory;
 const GRID_COLUMNS: usize = 26;
 const GRID_ROWS: usize = 10;
 const GRID_CELLS: usize = GRID_COLUMNS * GRID_ROWS;
-const BUILT_IN_CONTEXT_COLOR: Color = Color::Rgb(139, 92, 246);
-const PORTABLE_CONTEXT_COLOR: Color = Color::Rgb(215, 119, 87);
+// Category colours are explicit truecolor steps chosen for a dark terminal surface and
+// checked for adjacent-pair separation (normal and colour-deficient vision) and 3:1
+// contrast. The earlier terminal "light" ANSI slots were theme-defined and collapsed
+// into near-identical pastels on dark themes.
+const USER_MESSAGES_COLOR: Color = Color::Rgb(57, 135, 229);
+const AGENT_RESPONSES_COLOR: Color = Color::Rgb(25, 158, 112);
+const TOOL_ACTIVITY_COLOR: Color = Color::Rgb(201, 133, 0);
+const WORKSPACE_INSTRUCTIONS_COLOR: Color = Color::Rgb(213, 81, 129);
+const DEVELOPMENT_RULES_COLOR: Color = Color::Rgb(144, 133, 233);
+const PORTABLE_CONTEXT_COLOR: Color = Color::Rgb(217, 89, 38);
+const BUILT_IN_CONTEXT_COLOR: Color = Color::Rgb(138, 129, 120);
 
 #[derive(Clone, Debug)]
 struct CategoryUsage {
@@ -124,14 +133,14 @@ fn instruction_bucket_tokens(
 
 fn dashboard_css_color(color: Color) -> String {
     match color {
-        Color::Blue | Color::LightBlue => "#3b82f6",
-        Color::Green | Color::LightGreen => "#22c55e",
-        Color::Yellow | Color::LightYellow => "#eab308",
-        Color::Magenta | Color::LightMagenta => "#d946ef",
-        Color::Cyan | Color::LightCyan => "#06b6d4",
-        Color::Gray | Color::DarkGray => "#6b635a",
-        BUILT_IN_CONTEXT_COLOR => "#8b5cf6",
-        PORTABLE_CONTEXT_COLOR => "#d77757",
+        // Light-surface steps of the same hues; the dashboard page is light.
+        USER_MESSAGES_COLOR => "#2a78d6",
+        AGENT_RESPONSES_COLOR => "#1baf7a",
+        TOOL_ACTIVITY_COLOR => "#eda100",
+        WORKSPACE_INSTRUCTIONS_COLOR => "#e87ba4",
+        DEVELOPMENT_RULES_COLOR => "#4a3aa7",
+        PORTABLE_CONTEXT_COLOR => "#eb6834",
+        BUILT_IN_CONTEXT_COLOR => "#6b635a",
         _ => "#6b635a",
     }
     .to_string()
@@ -272,27 +281,27 @@ impl ChatWidget {
             CategoryUsage {
                 label: "User messages",
                 tokens: conversation[0],
-                color: Color::LightBlue,
+                color: USER_MESSAGES_COLOR,
             },
             CategoryUsage {
                 label: "Agent responses",
                 tokens: conversation[1],
-                color: Color::LightGreen,
+                color: AGENT_RESPONSES_COLOR,
             },
             CategoryUsage {
                 label: "Tool activity",
                 tokens: conversation[2],
-                color: Color::LightYellow,
+                color: TOOL_ACTIVITY_COLOR,
             },
             CategoryUsage {
                 label: "Workspace instructions",
                 tokens: fixed_system,
-                color: Color::LightMagenta,
+                color: WORKSPACE_INSTRUCTIONS_COLOR,
             },
             CategoryUsage {
                 label: "Development rules",
                 tokens: fixed_development_rules,
-                color: Color::LightCyan,
+                color: DEVELOPMENT_RULES_COLOR,
             },
             CategoryUsage {
                 label: "Portable context",
@@ -1113,22 +1122,22 @@ mod tests {
             CategoryUsage {
                 label: "User messages",
                 tokens: 17,
-                color: Color::LightBlue,
+                color: USER_MESSAGES_COLOR,
             },
             CategoryUsage {
                 label: "Agent responses",
                 tokens: 251,
-                color: Color::LightGreen,
+                color: AGENT_RESPONSES_COLOR,
             },
             CategoryUsage {
                 label: "Tool calls",
                 tokens: 1_400,
-                color: Color::LightYellow,
+                color: TOOL_ACTIVITY_COLOR,
             },
             CategoryUsage {
                 label: "Development rules",
                 tokens: 2_900,
-                color: Color::LightCyan,
+                color: DEVELOPMENT_RULES_COLOR,
             },
             CategoryUsage {
                 label: "Built-in + estimate gap",
@@ -1142,9 +1151,9 @@ mod tests {
         assert_eq!(
             grid_color_counts(&lines),
             std::collections::HashMap::from([
-                (Color::LightGreen, 1),
-                (Color::LightYellow, 3),
-                (Color::LightCyan, 6),
+                (AGENT_RESPONSES_COLOR, 1),
+                (TOOL_ACTIVITY_COLOR, 3),
+                (DEVELOPMENT_RULES_COLOR, 6),
                 (BUILT_IN_CONTEXT_COLOR, 14),
             ])
         );
@@ -1164,7 +1173,7 @@ mod tests {
         let user = CategoryUsage {
             label: "User messages",
             tokens: 17,
-            color: Color::LightBlue,
+            color: USER_MESSAGES_COLOR,
         };
         let built_in = CategoryUsage {
             label: "Built-in + estimate gap",
@@ -1174,7 +1183,7 @@ mod tests {
 
         let user_legend = category_legend_line(&user, 121_600);
         let built_in_legend = category_legend_line(&built_in, 121_600);
-        assert_eq!(user_legend.spans[0].style.fg, Some(Color::LightBlue));
+        assert_eq!(user_legend.spans[0].style.fg, Some(USER_MESSAGES_COLOR));
         assert_eq!(
             built_in_legend.spans[0].style.fg,
             Some(BUILT_IN_CONTEXT_COLOR)
@@ -1277,8 +1286,8 @@ mod tests {
 
     #[test]
     fn dashboard_preserves_portable_and_built_in_category_colors() {
-        assert_eq!(dashboard_css_color(PORTABLE_CONTEXT_COLOR), "#d77757");
-        assert_eq!(dashboard_css_color(BUILT_IN_CONTEXT_COLOR), "#8b5cf6");
+        assert_eq!(dashboard_css_color(PORTABLE_CONTEXT_COLOR), "#eb6834");
+        assert_eq!(dashboard_css_color(BUILT_IN_CONTEXT_COLOR), "#6b635a");
     }
 
     #[test]
