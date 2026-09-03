@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#12100f" />
     <title>Elpis — Change the runtime. Keep the thread.</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2312100f%22/><path d=%22M15 17h34v8H23v7h20v8H23v7h26v8H15z%22 fill=%22%23f4a524%22/></svg>" />
-    <link rel="stylesheet" href="./styles.css?v=2" />
+    <link rel="stylesheet" href="./styles.css?v=3" />
     <script src="./app.js" defer></script>
   </head>
   <body id="top">
@@ -21,6 +21,8 @@
       <nav aria-label="Primary navigation">
         <a href="#continuity">Continuity</a>
         <a href="#ledger">Context</a>
+        <a href="#pruning">Pruning</a>
+        <a href="#work-graphs">Work Graphs</a>
         <a href="#specs">Specifications</a>
         <a href="#install">Install</a>
       </nav>
@@ -154,7 +156,7 @@
         </div>
       </section>
 
-      <section class="section ledger-section ledger-section--text-only" id="ledger" aria-labelledby="ledger-title">
+      <section class="section ledger-section" id="ledger" aria-labelledby="ledger-title">
         <div class="ledger-copy">
           <p class="eyebrow">Context observability</p>
           <h2 id="ledger-title">Inspect the active context.</h2>
@@ -167,6 +169,130 @@
             <li><span>03</span> Change admission before the next request</li>
           </ul>
         </div>
+
+        <div class="ledger-tui-preview" aria-label="Context Ledger TUI Terminal Preview">
+          <div class="ledger-tui-header">
+            <span class="ledger-tui-dot"></span>
+            <span>admission.toml · Context Ledger (Tab)</span>
+            <span class="ledger-tui-tag">METERED TUI</span>
+          </div>
+          <div class="ledger-tui-body">
+            <div class="ledger-tui-row is-admitted">
+              <span class="ledger-tui-check">[✓]</span>
+              <span class="ledger-tui-file">GOAL.md</span>
+              <span class="ledger-tui-desc">Current task target &amp; acceptance</span>
+              <span class="ledger-tui-tokens">105 tk</span>
+              <span class="ledger-tui-pct">0.1%</span>
+            </div>
+            <div class="ledger-tui-row is-admitted">
+              <span class="ledger-tui-check">[✓]</span>
+              <span class="ledger-tui-file">MEMORY.md</span>
+              <span class="ledger-tui-desc">User-maintained project memory</span>
+              <span class="ledger-tui-tokens">310 tk</span>
+              <span class="ledger-tui-pct">0.2%</span>
+            </div>
+            <div class="ledger-tui-row is-admitted">
+              <span class="ledger-tui-check">[✓]</span>
+              <span class="ledger-tui-file">AGENTS.md</span>
+              <span class="ledger-tui-desc">Workspace operating conventions</span>
+              <span class="ledger-tui-tokens">820 tk</span>
+              <span class="ledger-tui-pct">0.4%</span>
+            </div>
+            <div class="ledger-tui-row is-excluded">
+              <span class="ledger-tui-check">[ ]</span>
+              <span class="ledger-tui-file">repo-tree.txt</span>
+              <span class="ledger-tui-desc">Full file hierarchy (unselected)</span>
+              <span class="ledger-tui-tokens">2,400 tk</span>
+              <span class="ledger-tui-pct muted">off</span>
+            </div>
+            <div class="ledger-tui-row is-admitted is-pruned">
+              <span class="ledger-tui-check">[✓]</span>
+              <span class="ledger-tui-file">/prune findings</span>
+              <span class="ledger-tui-desc">Ace-distilled search evidence</span>
+              <span class="ledger-tui-tokens">248 tk</span>
+              <span class="ledger-tui-pct highlight">0.1%</span>
+            </div>
+          </div>
+          <div class="ledger-tui-footer">
+            <div class="ledger-tui-meter">
+              <div class="ledger-tui-meter-bar" style="width: 0.8%;"></div>
+            </div>
+            <div class="ledger-tui-status">
+              <span>Admitted: <strong>1,483</strong> / 200,000 tk (0.7%)</span>
+              <span class="ledger-tui-headroom">Free headroom: 99.3%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section pruning-section" id="pruning" aria-labelledby="pruning-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Context engineering</p>
+            <h2 id="pruning-title">Compress the noise.<br /><em>Keep the evidence.</em></h2>
+          </div>
+          <p>
+            Terminal outputs and file searches shouldn't penalize every future turn. Elpis filters and distills tool output while preserving raw audit logs on disk, reducing peak context by 47–65%.
+          </p>
+        </div>
+
+        <div class="pruning-pipeline-grid">
+          <article class="pipeline-card">
+            <span class="pipeline-step">Layer 01</span>
+            <h3>RTK Shell Compaction</h3>
+            <p>Compacts shell command output before it reaches the model, stripping ANSI noise and trimming redundant grep and compiler output.</p>
+            <span class="pipeline-timing">Before model ingestion</span>
+          </article>
+          <article class="pipeline-card">
+            <span class="pipeline-step">Layer 02</span>
+            <h3>Deterministic Safety Cap</h3>
+            <p>Strict ceiling bounds exceptionally large tool results, preventing single accidental command outputs from blowing the budget.</p>
+            <span class="pipeline-timing">Hard budget guardrail</span>
+          </article>
+          <article class="pipeline-card pipeline-card--highlight">
+            <span class="pipeline-step">Layer 03</span>
+            <h3>Ace Distillation (/prune)</h3>
+            <p>Rewrites eligible tool evidence into dense, structured findings with audit pointers, triggered at 30% pressure or on demand.</p>
+            <span class="pipeline-timing">47–65% peak context reclaimed</span>
+          </article>
+        </div>
+
+        <div class="pruning-diff-container" aria-label="Before and after context pruning comparison">
+          <div class="diff-box diff-box--before">
+            <div class="diff-header">
+              <span class="diff-badge diff-badge--danger">Before · Raw grep output</span>
+              <span class="diff-meta">18,930 chars · ~4,720 tokens carried</span>
+            </div>
+            <pre class="diff-code"><code>tui/src/external_agent_config_migration.rs:800:   item_type: …ItemType::AgentsMd,
+tui/src/external_agent_config_migration_flow.rs:75: …ItemType::AgentsMd
+tui/src/theme_picker.rs:283:  fn theme_picker_subtitle(home: …) -> String
+tui/src/theme_picker.rs:392:     subtitle: Some(theme_picker_subtitle(
+tui/src/theme_picker.rs:605:     let subtitle = theme_picker_subtitle(…, Some(200));
+tui/src/theme_picker.rs:617:     let subtitle = theme_picker_subtitle(…, Some(140));
+tui/src/app_event.rs:152:        OpenAgentPicker,
+… roughly 230 more lines of repetitive grep dump …</code></pre>
+          </div>
+
+          <div class="diff-arrow" aria-hidden="true">
+            <span>/prune</span>
+            <i>→</i>
+          </div>
+
+          <div class="diff-box diff-box--after">
+            <div class="diff-header">
+              <span class="diff-badge diff-badge--success">After · Ace structured finding</span>
+              <span class="diff-meta">248 chars · 62 tokens (98.7% reduction)</span>
+            </div>
+            <pre class="diff-code"><code>[Ace pruned 231 lines of ripgrep output (18,930 chars → 248 chars).
+Findings:
+- Found ItemType::AgentsMd in external_agent_config_migration.rs:800
+- Found theme_picker_subtitle definitions in theme_picker.rs:283,392,605,617
+- Full raw output preserved in rollout evidence: rollout://sess-01j8/tool-14.log]</code></pre>
+          </div>
+        </div>
+        <p class="diff-footnote">
+          <span>✔</span> User instructions, model reasoning, and assistant conversation are <strong>100% untouched</strong>. Only disposable tool dumps are distilled.
+        </p>
       </section>
 
       <section class="section handoff-section" aria-labelledby="handoff-title">
@@ -182,6 +308,39 @@
           <article><span>03</span><h3>Execution checkpoint</h3><p>ES.md records the latest result, changed files, commands, and exact evidence.</p></article>
           <div class="flow-link" aria-hidden="true"><i></i></div>
           <article><span>04</span><h3>Lean continuation</h3><p>Start a fresh provider-neutral thread from the admitted checkpoints and rules.</p></article>
+        </div>
+      </section>
+
+      <section class="section workgraphs-section" id="work-graphs" aria-labelledby="workgraphs-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Deterministic multi-agent coordination</p>
+            <h2 id="workgraphs-title">Directed work graphs.<br /><em>Zero race conditions.</em></h2>
+          </div>
+          <p>
+            When tasks run across subagents, they must not overwrite each other's files, spin in cyclic dependency loops, or declare victory without evidence. Elpis enforces deterministic DAG boundaries.
+          </p>
+        </div>
+
+        <div class="workgraphs-grid">
+          <article class="workgraph-card">
+            <div class="workgraph-step-num">01</div>
+            <h3>Kahn's Topological Validation</h3>
+            <p>Every coordinated workflow is parsed into a Directed Acyclic Graph. Cycles, bad dependencies, and invalid roles are rejected before any worker agent is created.</p>
+            <span class="workgraph-tag">Pre-execution validation</span>
+          </article>
+          <article class="workgraph-card">
+            <div class="workgraph-step-num">02</div>
+            <h3>Write-Boundary Isolation</h3>
+            <p>Subagents receive declared write path prefixes. When tasks touch overlapping directories, Elpis automatically serializes execution to prevent destructive git conflicts.</p>
+            <span class="workgraph-tag">Write-collision prevention</span>
+          </article>
+          <article class="workgraph-card">
+            <div class="workgraph-step-num">03</div>
+            <h3>Evidence Verification Gate</h3>
+            <p>Downstream tasks remain locked until the assigned worker proves completion against explicit acceptance criteria with passing tests and verified git diffs.</p>
+            <span class="workgraph-tag">Audited task release</span>
+          </article>
         </div>
       </section>
 

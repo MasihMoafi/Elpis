@@ -94,3 +94,16 @@ test("does not include tracking or analytics", async () => {
   const html = await read("index.html");
   assert.doesNotMatch(html, /googletagmanager|google-analytics|plausible|posthog|segment\.com/i);
 });
+
+test("presents core features: Context Ledger TUI, Auditable Pruning pipeline, and Work Graphs", async () => {
+  const [html, css] = await Promise.all([read("index.html"), read("styles.css")]);
+  assert.match(html, /admission\.toml · Context Ledger/);
+  assert.match(html, /RTK Shell Compaction/);
+  assert.match(html, /Ace Distillation/);
+  assert.match(html, /Kahn's Topological Validation/);
+  assert.match(html, /Write-Boundary Isolation/);
+  assert.match(html, /Evidence Verification Gate/);
+  assert.match(css, /\.ledger-tui-preview/);
+  assert.match(css, /\.pruning-pipeline-grid/);
+  assert.match(css, /\.workgraphs-grid/);
+});
