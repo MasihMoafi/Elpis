@@ -264,11 +264,16 @@ h2 { margin-bottom: 0; font-size: clamp(3rem, 5vw, 5.9rem); font-weight: 500; li
 }
 .hero-brand-logo {
   margin-bottom: 24px;
-  overflow-x: auto;
+  overflow: hidden;
   max-width: 100%;
+  scrollbar-width: none;
+}
+.hero-brand-logo::-webkit-scrollbar {
+  display: none;
 }
 .hero-banner {
   margin: 0;
+  overflow: hidden;
   font-family: ui-monospace, "SF Mono", "Menlo", monospace;
   font-size: clamp(0.42rem, 0.96vw, 0.74rem);
   line-height: 1.1;
