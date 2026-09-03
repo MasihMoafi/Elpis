@@ -570,6 +570,14 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
             kind: TurnCostObservationKind::Finished { interrupted: false },
         })
         .await;
+    eprintln!(
+        "[probe] env HOME={:?} CODEX_API_KEY={:?} OPENAI_API_KEY={:?} auth_home={}",
+        std::env::var("HOME"),
+        std::env::var("CODEX_API_KEY").map(|v| v.len()),
+        std::env::var("OPENAI_API_KEY").map(|v| v.len()),
+        auth_home.path().display()
+    );
+    eprintln!("[probe] cached before write: {:?}", auth_manager.auth().await.map(|a| a.api_key()));
     login_with_api_key(
         auth_home.path(),
         "sk-current",
@@ -577,7 +585,18 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
         AuthKeyringBackendKind::default(),
     )
     .expect("write rotated API key");
-    assert!(auth_manager.reload().await);
+    let auth_file = auth_home.path().join("auth.json");
+    eprintln!(
+        "[probe] auth.json exists={} content={:?}",
+        auth_file.exists(),
+        std::fs::read_to_string(&auth_file).ok().map(|c| c.chars().take(200).collect::<String>())
+    );
+    let reloaded = auth_manager.reload().await;
+    eprintln!(
+        "[probe] reload -> {reloaded}; cached after: {:?}",
+        auth_manager.auth().await.map(|a| a.api_key())
+    );
+    assert!(reloaded);
     let current_auth_revision = current_auth_revision(auth_manager.as_ref());
     let (current_session_telemetry, current_metrics) = test_session_telemetry(thread_id);
     let (sender, receiver) = mpsc::channel(4);

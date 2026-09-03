@@ -41,8 +41,8 @@ jobs:
         working-directory: codex-rs
         run: |
           set -euo pipefail
-          cargo test -p codex-core --test all --locked --no-run --message-format=json \
-            | jq -r 'select(.reason=="compiler-artifact" and .target.name=="all" and .executable!=null) | .executable' \
+          cargo test -p codex-app-server --lib --locked --no-run --message-format=json \
+            | jq -r 'select(.reason=="compiler-artifact" and .target.name=="codex-app-server" and (.target.kind|index("lib")) and .executable!=null) | .executable' \
             > "$RUNNER_TEMP/test-binary"
           test -s "$RUNNER_TEMP/test-binary"
           cat "$RUNNER_TEMP/test-binary"
@@ -55,7 +55,7 @@ jobs:
           bin="$(cat "$RUNNER_TEMP/test-binary")"
           summary="$RUNNER_TEMP/summary.txt"
           : > "$summary"
-          mapfile -t tests < <("$bin" --list 2>/dev/null | grep -E '^suite::(context_prune|smart_prune)::' | sed 's/: test$//')
+          mapfile -t tests < <("$bin" --list 2>/dev/null | grep -E '^turn_cost_worker::tests::(api_key_rotation|subscription_change_during|subscription_to_api_key)' | sed 's/: test$//')
           echo "found ${#tests[@]} tests"
           for t in "${tests[@]}"; do
             echo "::group::$t"
@@ -77,7 +77,7 @@ jobs:
         run: |
           set +e
           CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
-            timeout -s KILL 900 cargo test -p codex-core --test all --locked suite::context_prune:: -- --nocapture
+            timeout -s KILL 900 cargo test -p codex-app-server --lib --locked turn_cost_worker -- --nocapture
           rc=$?
           echo "gate-command exit=$rc"
           exit $rc
