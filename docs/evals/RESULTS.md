@@ -156,6 +156,5 @@ own pruning, not a head-to-head comparison with compaction's information loss.
   session ran 36 tool calls with context climbing 22k → 217k and zero tokens reclaimed.
   Pruning inside an unfinished turn is what makes it effective, and is also where the cost
   in RQ4 comes from.
-- The context ledger has known display defects and is being reworked.
 - All figures come from one workload on one model. Nothing here has been replicated
   elsewhere.
