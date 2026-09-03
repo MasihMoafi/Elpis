@@ -1948,10 +1948,9 @@ async fn recv_turn_cost_notification(
 }
 
 async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> ServerNotification {
-    // Wall-clock deadline for the same reason as `wait_for_request_count`: a tokio timeout
-    // under a paused clock fires as soon as the runtime idles on the worker's real HTTP.
-    eprintln!("[probe-test] waiting for a notification");
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    // Wall-clock deadline: a tokio timeout under a paused clock fires as soon as the
+    // runtime idles on the worker's real HTTP.
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
     let envelope = loop {
         match rx.try_recv() {
             Ok(envelope) => break envelope,
@@ -1963,7 +1962,8 @@ async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> 
                     std::time::Instant::now() < deadline,
                     "timed out waiting for cost notification"
                 );
-                tokio::task::yield_now().await;
+                // Millisecond sleeps, not yields: see `advance_until_request_count`.
+                tokio::time::sleep(Duration::from_millis(1)).await;
             }
         }
     };
@@ -2019,22 +2019,18 @@ fn turn_cost_metric_value(metrics: &MetricsClient) -> Option<u64> {
     }
 }
 
-/// Advances the paused clock towards `POLL_INTERVAL` one second at a time, yielding between
-/// steps, until the mock has seen `expected` requests. Jumping the whole interval at once
-/// races an in-flight probe response against the worker's request timeout: on a slow
-/// runner the timeout fires first, the worker drops to retry mode, and its next tick
-/// re-probes instead of polling the cost.
+/// Lets the paused clock creep forward in one-millisecond sleeps until the mock has seen
+/// `expected` requests. Each sleep parks the runtime, which polls real I/O and then
+/// auto-advances the clock by exactly that millisecond. Jumping whole seconds at a time
+/// (the old `timeout`, or `advance(POLL_INTERVAL)`) races the loopback round trip against
+/// the worker's 15-second request timeout: fifteen jumps take microseconds of real time,
+/// the timeout fires mid-probe, and the worker drops to retry mode. Millisecond steps give
+/// the round trip thousands of parks per paused second, and the poll tick still arrives.
 async fn advance_until_request_count(server: &MockServer, expected: usize) {
-    let step = Duration::from_secs(1);
-    let mut advanced = Duration::ZERO;
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
-        for _ in 0..50 {
-            tokio::task::yield_now().await;
-        }
         let requests = server.received_requests().await.unwrap_or_default();
         if requests.len() >= expected {
-            eprintln!("[probe-test] reached {expected} requests after advancing {:?}", advanced);
             return;
         }
         assert!(
@@ -2042,10 +2038,7 @@ async fn advance_until_request_count(server: &MockServer, expected: usize) {
             "timed out waiting for {expected} turn-cost requests; saw {}",
             requests.len()
         );
-        if advanced < POLL_INTERVAL {
-            tokio::time::advance(step).await;
-            advanced += step;
-        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
     }
 }
 
