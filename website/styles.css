@@ -56,8 +56,21 @@ img { display: block; max-width: 100%; }
   background: rgba(18, 16, 15, 0.87);
   backdrop-filter: blur(18px);
 }
-.wordmark { width: max-content; font-size: 1.18rem; font-weight: 800; letter-spacing: -0.04em; }
-.wordmark span { color: var(--ember); }
+.wordmark {
+  width: max-content;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #ffe54c 0%, #ff9500 55%, #e84c00 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-flex;
+  align-items: baseline;
+}
+.wordmark span {
+  -webkit-text-fill-color: var(--ember);
+  color: var(--ember);
+}
 .site-header nav { display: flex; align-items: center; gap: 34px; color: var(--paper-muted); font-size: 0.86rem; }
 .site-header nav a { transition: color 180ms ease; }
 .site-header nav a:hover, .site-header nav a:focus-visible { color: var(--paper); }
@@ -242,6 +255,145 @@ h2 { margin-bottom: 0; font-size: clamp(3rem, 5vw, 5.9rem); font-weight: 500; li
   .flow-link { display: none; }
 }
 
+.themes-section {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: clamp(40px, 6vw, 90px);
+  align-items: center;
+  border-top: 1px solid var(--line);
+}
+.hero-brand-logo {
+  margin-bottom: 24px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.hero-banner {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", "Menlo", monospace;
+  font-size: clamp(0.42rem, 0.96vw, 0.74rem);
+  line-height: 1.1;
+  letter-spacing: 0.012em;
+  white-space: pre;
+  user-select: none;
+  color: #ff9900;
+  text-shadow: 0 0 16px rgba(255, 140, 0, 0.4);
+}
+.theme-char {
+  color: #ff9900;
+  display: inline-block;
+}
+
+/* -------------------------------------------------------------
+ * Technical Architecture & Specifications
+ * ----------------------------------------------------------- */
+.specs-section {
+  padding: clamp(90px, 10vw, 150px) clamp(24px, 6vw, 92px);
+  border-top: 1px solid var(--line);
+}
+.specs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 48px;
+}
+.spec-card {
+  padding: clamp(28px, 4vw, 44px);
+  background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.spec-tag {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--amber-light);
+  background: rgba(244, 165, 36, 0.08);
+  border: 1px solid rgba(244, 165, 36, 0.22);
+  margin-bottom: 20px;
+}
+.spec-card h3 {
+  font-size: 1.35rem;
+  color: var(--paper);
+  margin-bottom: 12px;
+  letter-spacing: -0.02em;
+}
+.spec-card p {
+  color: var(--paper-muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.spec-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.spec-list li {
+  font-size: 0.8rem;
+  color: var(--paper-muted);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.spec-list li span {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 0.72rem;
+  color: var(--paper);
+  text-transform: uppercase;
+  min-width: 68px;
+}
+
+.cli-terminal {
+  border: 1px solid rgba(255, 242, 232, 0.15);
+  background: #0d0b0a;
+  box-shadow: 20px 24px 0 rgba(18, 16, 15, 0.35);
+  overflow: hidden;
+}
+.cli-terminal .terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+.cli-terminal .terminal-bar span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+}
+.cli-terminal .terminal-bar p {
+  margin: 0 0 0 8px;
+  color: #70655e;
+  font-size: 0.76rem;
+  font-family: ui-monospace, monospace;
+}
+.cli-terminal .terminal-screen {
+  padding: 24px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+.cli-prompt { color: #888; }
+.cli-cmd { color: #fff; font-weight: 700; }
+.cli-output { margin-top: 14px; color: #a49992; }
+.cli-ok { color: var(--verdigris); font-weight: 700; margin-right: 6px; }
+.cli-status { display: block; margin-top: 12px; color: var(--ember); font-weight: 600; }
+
 @media (max-width: 720px) {
   html { scroll-padding-top: 68px; }
   .site-header { grid-template-columns: 1fr auto; min-height: 66px; padding: 0 20px; }
@@ -283,6 +435,9 @@ h2 { margin-bottom: 0; font-size: clamp(3rem, 5vw, 5.9rem); font-weight: 500; li
   .handoff-flow article { min-height: 200px; padding: 20px; }
   .handoff-flow h3 { margin-top: 50px; }
   .install-section { gap: 45px; }
+  .specs-grid { grid-template-columns: 1fr; }
+  .hero-banner { font-size: clamp(0.36rem, 1.35vw, 0.5rem); }
+  .cli-terminal { box-shadow: 10px 12px 0 rgba(18,16,15,.25); }
   .terminal { box-shadow: 10px 12px 0 rgba(18,16,15,.15); }
   .terminal-body { grid-template-columns: auto 1fr; }
   .copy-button { grid-column: 2; justify-self: start; }

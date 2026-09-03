@@ -21,6 +21,7 @@
       <nav aria-label="Primary navigation">
         <a href="#continuity">Continuity</a>
         <a href="#ledger">Context</a>
+        <a href="#specs">Specifications</a>
         <a href="#install">Install</a>
       </nav>
       <a class="header-cta" href="https://github.com/MasihMoafi/Elpis">View source <span aria-hidden="true">↗</span></a>
@@ -48,6 +49,9 @@
           </circle>
         </svg>
         <div class="hero-copy">
+          <div class="hero-brand-logo" aria-label="Elpis Pixel Animated Logo">
+            <pre class="hero-banner" data-theme-banner></pre>
+          </div>
           <p class="eyebrow"><span class="status-dot"></span> Early access</p>
           <h1 id="hero-title">Change the runtime.<br /><em>Keep the thread.</em></h1>
           <p class="hero-lede">
@@ -59,6 +63,7 @@
           </div>
           <div class="hero-proof" aria-label="Elpis product properties">
             <span>Local, inspectable state</span>
+            <span>Deterministic context pruning</span>
             <span>Bring your runtime</span>
             <span>Evidence attached</span>
           </div>
@@ -129,7 +134,7 @@
             <span class="card-number">01</span>
             <div class="feature-icon" aria-hidden="true">⌁</div>
             <h3>Context admission</h3>
-            <p>Select which project rules, instructions, user-maintained memory, GOAL.md, and ES.md enter the next request.</p>
+            <p>Prune stale tool outputs and dead-end traces. Select which project rules, user-maintained memory, GOAL.md, and ES.md enter the next request.</p>
             <div class="goal-meter"><span></span><span></span><span></span><span></span></div>
           </article>
           <article class="feature-card feature-context">
@@ -177,6 +182,80 @@
           <article><span>03</span><h3>Execution checkpoint</h3><p>ES.md records the latest result, changed files, commands, and exact evidence.</p></article>
           <div class="flow-link" aria-hidden="true"><i></i></div>
           <article><span>04</span><h3>Lean continuation</h3><p>Start a fresh provider-neutral thread from the admitted checkpoints and rules.</p></article>
+        </div>
+      </section>
+
+      <section class="section specs-section" id="specs" aria-labelledby="specs-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Technical architecture</p>
+            <h2 id="specs-title">Engineered in Rust.<br /><em>Zero runtime overhead.</em></h2>
+          </div>
+          <p>
+            Elpis runs as a native terminal layer built on the Codex-rs foundation. It manages context admission, token budgets, execution sandboxes, and cryptographic checkpoint evidence with sub-millisecond responsiveness.
+          </p>
+        </div>
+
+        <div class="specs-grid">
+          <article class="spec-card">
+            <span class="spec-tag">Core runtime</span>
+            <h3>Compiled Rust Kernel</h3>
+            <p>Sub-millisecond input loop built with Ratatui and Crossterm. Memory footprint stays under 14MB resident with zero telemetry or background tracking daemons.</p>
+            <ul class="spec-list">
+              <li><span>Binary</span> Pure local execution (macOS, Linux)</li>
+              <li><span>TUI</span> 24-bit TrueColor buffer with zero flicker</li>
+              <li><span>Privacy</span> Zero analytics, no third-party telemetry</li>
+            </ul>
+          </article>
+
+          <article class="spec-card">
+            <span class="spec-tag">Admission engine</span>
+            <h3>Deterministic Pruning &amp; Metering</h3>
+            <p>Prunes stale intermediate outputs and meters exact model-window usage before dispatching requests. Admitted rules, user-maintained memory (AGENTS.md), and checkpoints remain auditable.</p>
+            <ul class="spec-list">
+              <li><span>Pruning</span> Discards stale tool traces while retaining conclusions</li>
+              <li><span>Budgeting</span> Real-time token consumption estimates</li>
+              <li><span>Drift</span> Prevents loss of scope during long-running sessions</li>
+            </ul>
+          </article>
+
+          <article class="spec-card">
+            <span class="spec-tag">Runtime neutrality</span>
+            <h3>Swappable Provider Backends</h3>
+            <p>Handoff execution across hosted models and local inference without discarding working constraints or recreating tool permissions.</p>
+            <ul class="spec-list">
+              <li><span>Hosted</span> OpenAI API, Anthropic Claude native endpoints</li>
+              <li><span>Local</span> Ollama, vLLM, and OpenAI-compatible runners</li>
+              <li><span>Continuity</span> Shared task thread survives model failure or swap</li>
+            </ul>
+          </article>
+
+          <article class="spec-card">
+            <span class="spec-tag">State persistence</span>
+            <h3>Verifiable Checkpointing</h3>
+            <p>Clean continuation via structured GOAL.md and ES.md artifacts. Workspace file modifications, command outputs, and evidence remain attached.</p>
+            <ul class="spec-list">
+              <li><span>Continuity</span> Dual-mode: exact resume or lean continuation</li>
+              <li><span>Ledger</span> File touch logs and execution command audits</li>
+              <li><span>Portability</span> Plain markdown state readable by human or agent</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="cli-terminal" aria-label="Terminal CLI example">
+          <div class="terminal-bar">
+            <span></span><span></span><span></span>
+            <p>elpis session continuity demo</p>
+          </div>
+          <div class="terminal-screen">
+            <div class="cli-line"><span class="cli-prompt">user@workstation:~/repo $</span> <span class="cli-cmd">elpis resume --checkpoint ES.md --runtime anthropic</span></div>
+            <div class="cli-output">
+              <span class="cli-ok">✔</span> Admitted context: 1 goal, 3 project rules, 2 evidence attachments<br />
+              <span class="cli-ok">✔</span> Model window: 8,420 / 200,000 tokens (4.2% occupancy)<br />
+              <span class="cli-ok">✔</span> Workspace boundary: write-safe isolation active<br />
+              <span class="cli-status">⚡ [ELPIS] Thread continuity intact. Ready for next prompt.</span>
+            </div>
+          </div>
         </div>
       </section>
 
