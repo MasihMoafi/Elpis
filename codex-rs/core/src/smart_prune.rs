@@ -4,9 +4,11 @@
 //! runner, durable audit, and provider call live under `crate::session::smart_prune`.
 
 use codex_protocol::models::FunctionCallOutputBody;
+use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_utils_string::approx_token_count;
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -42,7 +44,7 @@ impl AdmissionDecision {
     }
 }
 
-pub(crate) fn textual_tool_output(item: &ResponseItem) -> Option<(&str, &str)> {
+pub(crate) fn textual_tool_output(item: &ResponseItem) -> Option<(&str, Cow<'_, str>)> {
     match item {
         ResponseItem::FunctionCallOutput {
             call_id, output, ..
@@ -50,8 +52,22 @@ pub(crate) fn textual_tool_output(item: &ResponseItem) -> Option<(&str, &str)> {
         | ResponseItem::CustomToolCallOutput {
             call_id, output, ..
         } => {
-            let FunctionCallOutputBody::Text(text) = &output.body else {
-                return None;
+            let text = match &output.body {
+                FunctionCallOutputBody::Text(text) => Cow::Borrowed(text.as_str()),
+                FunctionCallOutputBody::ContentItems(items) => {
+                    let text = items
+                        .iter()
+                        .map(|item| match item {
+                            FunctionCallOutputContentItem::InputText { text } => {
+                                Some(text.as_str())
+                            }
+                            FunctionCallOutputContentItem::InputImage { .. }
+                            | FunctionCallOutputContentItem::EncryptedContent { .. } => None,
+                        })
+                        .collect::<Option<Vec<_>>>()?
+                        .join("\n");
+                    Cow::Owned(text)
+                }
             };
             Some((call_id, text))
         }
@@ -140,7 +156,7 @@ pub(crate) fn transform_tool_output(
 
     let (call_id, source_text) = textual_tool_output(source)?;
 
-    let source_tokens = approx_token_count(source_text);
+    let source_tokens = approx_token_count(source_text.as_ref());
     if source_tokens < MIN_SOURCE_TOKENS {
         return None;
     }

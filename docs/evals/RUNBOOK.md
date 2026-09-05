@@ -1,7 +1,20 @@
 # What the paper still needs, and the runs that get it
 
-The questions are the five in `paper/main.tex` §7.1. Nothing else is a question.
-Status lives in `paper-research-questions.md`; this file is how to close what is open.
+Record all new planned and executed work in [the experiment log](EXPERIMENT_LOG.md).
+Use its stable run IDs when referencing evidence in the paper.
+
+This is a historical experiment outline, not completed paper evidence. Its former
+`paper/main.tex` and `paper-research-questions.md` references are absent from this checkout.
+For current cache-safe pruning, use the matched OFF/ON protocol in
+[Smart Prune cache validation](tasks/smart_prune_cache_validation/README.md) and the
+[offline receipt report](../../tools/smart-prune-report/README.md). Matched provider
+runs are still required; isolated cached-token observations do not establish no regression.
+
+The legacy `benchmark/run_benchmark.py` substitutes ground-truth outputs and sample
+traces even outside self-test mode. `generate_sample_traces.py` contains invented
+usage/cache figures. Its PASS result checks harness plumbing, not real model quality,
+pruning, or savings. Preserve these historical tools, but do not cite their outputs
+as empirical experiments or mix their traces with captured provider receipts.
 
 ## Experiment 1 — withdrawn, 8 Aug 2026
 

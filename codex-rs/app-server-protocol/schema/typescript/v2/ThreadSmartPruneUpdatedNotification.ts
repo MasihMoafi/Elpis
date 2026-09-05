@@ -4,7 +4,7 @@
 import type { ThreadSmartPruneSnapshot } from "./ThreadSmartPruneSnapshot";
 
 /**
- * Thread-scoped Smart Prune state emitted after an idle config refresh.
+ * Thread-scoped Smart Prune state emitted after config refresh or listener attachment.
  *
  * This is intentionally separate from token usage because a config change can
  * happen without an active turn or a provider usage sample.

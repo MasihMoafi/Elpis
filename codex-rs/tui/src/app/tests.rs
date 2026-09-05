@@ -197,6 +197,38 @@ async fn handle_mcp_inventory_result_respects_origin_thread() {
     assert_eq!(app.transcript_cells.len(), 1);
 }
 
+#[tokio::test]
+async fn ledger_attribution_refreshes_from_the_committed_transcript() {
+    let mut app = make_test_app().await;
+    app.transcript_cells = vec![
+        Arc::new(UserHistoryCell {
+            message: "A user request".to_string(),
+            text_elements: Vec::new(),
+            local_image_paths: Vec::new(),
+            remote_image_urls: Vec::new(),
+        }) as Arc<dyn HistoryCell>,
+        Arc::new(AgentMessageCell::new(
+            vec![Line::from("An agent response")],
+            /*is_first_line*/ true,
+        )) as Arc<dyn HistoryCell>,
+        Arc::new(crate::history_cell::new_active_web_search_call(
+            "call-1".to_string(),
+            "tool output".to_string(),
+            false,
+        )) as Arc<dyn HistoryCell>,
+    ];
+    app.context_usage_transcript_dirty = true;
+    let expected = crate::app_backtrack::context_usage_totals(&app.transcript_cells);
+
+    app.refresh_context_usage_transcript_totals();
+
+    assert_eq!(
+        app.chat_widget.context_usage_transcript_totals_for_test(),
+        expected
+    );
+    assert!(!app.context_usage_transcript_dirty);
+}
+
 #[test]
 fn bypass_hook_trust_startup_warning_snapshot() {
     let rendered = lines_to_single_string(
@@ -4118,6 +4150,7 @@ async fn make_test_app() -> App {
         runtime_permission_profile_override: None,
         file_search,
         transcript_cells: Vec::new(),
+        context_usage_transcript_dirty: true,
         overlay: None,
         deferred_history_lines: Vec::new(),
         has_emitted_history_lines: false,
@@ -4184,6 +4217,7 @@ async fn make_test_app_with_channels() -> (
             runtime_permission_profile_override: None,
             file_search,
             transcript_cells: Vec::new(),
+            context_usage_transcript_dirty: true,
             overlay: None,
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,
@@ -5085,6 +5119,7 @@ fn token_usage_notification(
             model_context_window,
             context_prune_saved_tokens,
             smart_prune: Default::default(),
+            context_attribution: None,
         },
     })
 }

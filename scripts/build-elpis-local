@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+mode=${1:-}
+if [ "$#" -ne 1 ]; then
+    printf 'usage: %s {check|dev|optimized|shipping}\n' "$0" >&2
+    exit 2
+fi
+
+case "$mode" in
+    check)
+        profile=check
+        cargo_args=(check --locked --offline -p codex-tui --bin elpis)
+        artifact=
+        ;;
+    dev)
+        profile=dev-small
+        cargo_args=(build --profile dev-small --locked --offline -p codex-tui --bin elpis)
+        artifact="$repo_root/codex-rs/target/dev-small/elpis"
+        ;;
+    optimized)
+        profile=local-release
+        cargo_args=(build --profile local-release --locked --offline -p codex-tui --bin elpis)
+        artifact="$repo_root/codex-rs/target/local-release/elpis"
+        ;;
+    shipping)
+        profile=release
+        cargo_args=(build --release --locked --offline -p codex-tui --bin elpis)
+        artifact="$repo_root/codex-rs/target/release/elpis"
+        ;;
+    *)
+        printf 'unknown build mode %q; expected check, dev, optimized, or shipping\n' "$mode" >&2
+        exit 2
+        ;;
+esac
+
+logical_cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || printf '2\n')
+default_jobs=$((logical_cpus / 2))
+if [ "$default_jobs" -lt 1 ]; then
+    default_jobs=1
+elif [ "$default_jobs" -gt 8 ]; then
+    default_jobs=8
+fi
+# Keep the compiler fingerprint stable when reducing sustained Cargo concurrency.
+default_rustc_threads=$default_jobs
+if [ "$mode" != check ] && [ "$default_jobs" -gt 4 ]; then
+    default_jobs=4
+fi
+jobs=${ELPIS_BUILD_JOBS:-$default_jobs}
+if ! [[ "$jobs" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ELPIS_BUILD_JOBS must be a positive integer\n' >&2
+    exit 2
+fi
+
+rustc_threads=${ELPIS_RUSTC_THREADS:-$default_rustc_threads}
+if ! [[ "$rustc_threads" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ELPIS_RUSTC_THREADS must be a positive integer\n' >&2
+    exit 2
+fi
+
+max_temp_c=${ELPIS_MAX_TEMP_C:-80}
+if ! [[ "$max_temp_c" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ELPIS_MAX_TEMP_C must be a positive integer\n' >&2
+    exit 2
+fi
+if [ "${#max_temp_c}" -gt 2 ] || [ "$max_temp_c" -gt 80 ]; then
+    printf 'ELPIS_MAX_TEMP_C must not exceed 80 C\n' >&2
+    exit 2
+fi
+max_temp_milli=$((max_temp_c * 1000))
+pause_margin_milli=$((max_temp_milli / 3))
+if [ "$pause_margin_milli" -gt 5000 ]; then pause_margin_milli=5000; fi
+resume_margin_milli=$(((max_temp_milli * 2) / 3))
+if [ "$resume_margin_milli" -gt 13000 ]; then resume_margin_milli=13000; fi
+pause_temp_milli=$((max_temp_milli - pause_margin_milli))
+resume_temp_milli=$((max_temp_milli - resume_margin_milli))
+poll_seconds=${ELPIS_TEMP_POLL_SECONDS:-0.5}
+
+temperature_files=()
+shopt -s nullglob
+if [ -n "${ELPIS_THERMAL_ROOT:-}" ]; then
+    temperature_files+=("$ELPIS_THERMAL_ROOT"/hwmon/hwmon*/temp*_input)
+    temperature_files+=("$ELPIS_THERMAL_ROOT"/thermal/thermal_zone*/temp)
+else
+    temperature_files+=(/sys/class/hwmon/hwmon*/temp*_input)
+    temperature_files+=(/sys/class/thermal/thermal_zone*/temp)
+fi
+shopt -u nullglob
+
+read_max_temperature_milli() {
+    local path raw current max=-1
+    for path in "${temperature_files[@]}"; do
+        IFS= read -r raw <"$path" 2>/dev/null || continue
+        [[ "$raw" =~ ^[0-9]+$ ]] || continue
+        if [ "$raw" -lt 1000 ]; then
+            current=$((raw * 1000))
+        else
+            current=$raw
+        fi
+        if [ "$current" -gt "$max" ]; then
+            max=$current
+        fi
+    done
+    [ "$max" -ge 0 ] || return 1
+    printf '%s\n' "$max"
+}
+
+format_temperature() {
+    local milli=$1
+    if [ "$milli" -lt 0 ]; then
+        printf 'unavailable'
+    else
+        printf '%d.%d' "$((milli / 1000))" "$(((milli % 1000) / 100))"
+    fi
+}
+
+if ! current_milli=$(read_max_temperature_milli); then
+    printf 'temperature monitoring unavailable before build; refusing to start\n' >&2
+    exit 75
+fi
+peak_milli=$current_milli
+if [ "$current_milli" -ge "$max_temp_milli" ]; then
+    printf 'temperature limit reached before build: current_c=%s limit_c=%s\n' \
+        "$(format_temperature "$current_milli")" "$max_temp_c" >&2
+    exit 75
+fi
+
+export CARGO_BUILD_JOBS=$jobs
+export RUST_TEST_THREADS=1
+export CODEX_SKIP_BWRAP_BUILD=1
+
+append_rustflag() {
+    if [ -n "${RUSTFLAGS:-}" ]; then
+        RUSTFLAGS="$RUSTFLAGS $1"
+    else
+        RUSTFLAGS=$1
+    fi
+}
+
+# Cargo parallelizes independent crates, but Elpis spends most cold-build time
+# inside the single, very large codex-core and codex-tui crates. Rust 1.96 ships
+# the parallel front end and bundled LLD behind compiler execution flags. They
+# do not change the selected Cargo optimization profile; they make both the
+# one-crate bottleneck and final link use the available CPU.
+if RUSTC_BOOTSTRAP=1 rustc -Zthreads="$rustc_threads" -Zunstable-options \
+    -Clinker-features=+lld --print cfg >/dev/null 2>&1
+then
+    export RUSTC_BOOTSTRAP=1
+    append_rustflag "-Zthreads=$rustc_threads"
+    append_rustflag "-Zunstable-options"
+    append_rustflag "-Clinker-features=+lld"
+    local_acceleration=parallel-rustc+lld
+else
+    local_acceleration=unavailable
+fi
+
+# Freeze path-remapping flags for both locally optimized profiles so repeats
+# reuse the same Cargo fingerprint and installed artifacts do not expose the
+# workstation path. Dev/check retain the caller's normal fingerprint.
+if [ "$mode" = optimized ] || [ "$mode" = shipping ]; then
+    remap_from=${ELPIS_REMAP_PATH_FROM:-$HOME}
+    append_rustflag "--remap-path-prefix=$remap_from=/build"
+    export CFLAGS="-ffile-prefix-map=$remap_from=/build -fdebug-prefix-map=$remap_from=/build"
+    export CXXFLAGS="$CFLAGS"
+fi
+export RUSTFLAGS
+
+started_ns=$(date +%s%N)
+thermal_failure=
+build_pid=
+build_paused=0
+pause_count=0
+cooling_started_ns=0
+cooling_ms=0
+limit_hold_count=0
+limit_hold_active=0
+resume_build() {
+    if [ "${build_paused:-0}" -eq 1 ] && [ -n "${build_pid:-}" ]; then
+        kill -CONT -- "-$build_pid" 2>/dev/null || true
+        build_paused=0
+        limit_hold_active=0
+        if [ "$cooling_started_ns" -gt 0 ]; then
+            cooling_ms=$((cooling_ms + (($(date +%s%N) - cooling_started_ns) / 1000000)))
+        fi
+        printf 'thermal_resume current_c=%s pause_count=%s cooling_ms=%s\n' \
+            "$(format_temperature "${current_milli:--1}")" "$pause_count" "$cooling_ms" >&2
+        cooling_started_ns=0
+    fi
+}
+terminate_build() {
+    if [ -n "${build_pid:-}" ]; then
+        resume_build
+        kill -TERM -- "-$build_pid" 2>/dev/null || true
+    fi
+}
+trap 'terminate_build; exit 130' INT TERM
+
+cd "$repo_root/codex-rs"
+setsid nice -n 5 cargo "${cargo_args[@]}" &
+build_pid=$!
+while kill -0 "$build_pid" 2>/dev/null || kill -0 -- "-$build_pid" 2>/dev/null; do
+    if ! kill -0 "$build_pid" 2>/dev/null; then
+        thermal_failure=leader_exit
+        printf 'build leader exited while process group remained; terminating owned group\n' >&2
+        terminate_build
+        break
+    fi
+    if current_milli=$(read_max_temperature_milli); then
+        if [ "$current_milli" -gt "$peak_milli" ]; then
+            peak_milli=$current_milli
+        fi
+        if [ "$current_milli" -ge "$max_temp_milli" ] && [ "$build_paused" -eq 0 ]; then
+            build_paused=1
+            pause_count=$((pause_count + 1))
+            limit_hold_count=$((limit_hold_count + 1))
+            limit_hold_active=1
+            cooling_started_ns=$(date +%s%N)
+            kill -STOP -- "-$build_pid" 2>/dev/null || {
+                build_paused=0
+                cooling_started_ns=0
+                thermal_failure=thermal_abort
+                printf 'unable to hold build at temperature limit\n' >&2
+                terminate_build
+                break
+            }
+            printf 'thermal_limit_hold current_c=%s limit_c=%s pause_count=%s\n' \
+                "$(format_temperature "$current_milli")" "$max_temp_c" "$pause_count" >&2
+        elif [ "$current_milli" -ge "$max_temp_milli" ]; then
+            if [ "$limit_hold_active" -eq 0 ]; then
+                limit_hold_count=$((limit_hold_count + 1))
+                limit_hold_active=1
+                printf 'thermal_limit_hold current_c=%s limit_c=%s pause_count=%s\n' \
+                    "$(format_temperature "$current_milli")" "$max_temp_c" "$pause_count" >&2
+            fi
+        elif [ "$build_paused" -eq 0 ] && [ "$current_milli" -ge "$pause_temp_milli" ]; then
+            build_paused=1
+            pause_count=$((pause_count + 1))
+            cooling_started_ns=$(date +%s%N)
+            kill -STOP -- "-$build_pid" 2>/dev/null || {
+                build_paused=0
+                cooling_started_ns=0
+                thermal_failure=thermal_abort
+                printf 'unable to pause build process group\n' >&2
+                terminate_build
+                break
+            }
+            printf 'thermal_pause current_c=%s pause_count=%s\n' \
+                "$(format_temperature "$current_milli")" "$pause_count" >&2
+        elif [ "$build_paused" -eq 1 ] && [ "$current_milli" -lt "$resume_temp_milli" ]; then
+            resume_build
+        fi
+    else
+        thermal_failure=temperature_unavailable
+        printf 'temperature monitoring lost during build; stopping build\n' >&2
+        terminate_build
+        break
+    fi
+    sleep "$poll_seconds"
+done
+
+set +e
+wait "$build_pid"
+build_status=$?
+set -e
+trap - INT TERM
+finished_ns=$(date +%s%N)
+elapsed_ms=$(((finished_ns - started_ns) / 1000000))
+artifact_bytes=0
+if [ -n "$artifact" ] && [ -f "$artifact" ]; then
+    artifact_bytes=$(stat -c %s "$artifact")
+fi
+
+if [ -n "$thermal_failure" ]; then
+    printf 'build_result status=%s mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
+        "$thermal_failure" "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
+    exit 75
+fi
+if [ "$build_status" -ne 0 ]; then
+    printf 'build_result status=failed mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
+        "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
+    exit "$build_status"
+fi
+
+if [ -n "$artifact" ] && [ -f "$artifact" ] && { [ "$mode" = optimized ] || [ "$mode" = shipping ]; }; then
+    # Consume the full stream: grep -q can SIGPIPE strings and hide a match under pipefail.
+    if strings "$artifact" | grep -F -e "$remap_from/" -e 'Desktop/p/' >/dev/null; then
+        printf 'build_result status=path_leak mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
+            "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
+        exit 1
+    fi
+fi
+
+printf 'build_result status=ok mode=%s profile=%s jobs=%s elapsed_ms=%s peak_c=%s artifact_bytes=%s pause_count=%s cooling_ms=%s limit_hold_count=%s\n' \
+    "$mode" "$profile" "$jobs" "$elapsed_ms" "$(format_temperature "$peak_milli")" "$artifact_bytes" "$pause_count" "$cooling_ms" "$limit_hold_count"
+printf 'build_acceleration rustc_threads=%s linker=%s\n' "$rustc_threads" "$local_acceleration"

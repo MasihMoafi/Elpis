@@ -47,6 +47,58 @@ pub(super) struct AdmissionAuditInput<'a> {
     pub(super) items: &'a [AdmissionAuditItem],
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum AttemptStatus {
+    Admitted,
+    Unchanged,
+    TimedOut,
+    ModelError,
+    MalformedResponse,
+    SourceError,
+    AuditError,
+    Cancelled,
+}
+
+impl AttemptStatus {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Admitted => "admitted",
+            Self::Unchanged => "unchanged",
+            Self::TimedOut => "timed_out",
+            Self::ModelError => "model_error",
+            Self::MalformedResponse => "malformed_response",
+            Self::SourceError => "source_error",
+            Self::AuditError => "audit_error",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+pub(super) struct AttemptAuditInput<'a> {
+    pub(super) attempt_id: &'a str,
+    pub(super) session_id: &'a str,
+    pub(super) turn_id: &'a str,
+    pub(super) status: AttemptStatus,
+    pub(super) model_slug: &'a str,
+    pub(super) reasoning_effort: &'a str,
+    pub(super) instructions: &'a str,
+    pub(super) input: &'a str,
+    pub(super) raw_response: Option<&'a str>,
+    pub(super) error: Option<&'a str>,
+    pub(super) candidate_outputs: usize,
+    pub(super) admitted_outputs: usize,
+    pub(super) saved_tokens: usize,
+    pub(super) latency_ms: u64,
+    pub(super) usage: Option<&'a TokenUsage>,
+    pub(super) admission_id: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct AttemptAuditReceipt {
+    pub(super) audit_path: PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct AdmissionAuditReceipt {
     pub(super) admission_id: String,
@@ -108,9 +160,85 @@ struct ResponseLinkage<'a> {
     usage: Option<&'a TokenUsage>,
 }
 
+#[derive(Serialize)]
+struct AttemptRecord<'a> {
+    schema_version: u32,
+    attempt_id: &'a str,
+    session_id: &'a str,
+    turn_id: &'a str,
+    timestamp: String,
+    status: AttemptStatus,
+    model: &'a str,
+    reasoning_effort: &'a str,
+    instructions: &'a str,
+    input: &'a str,
+    raw_response: Option<&'a str>,
+    error: Option<&'a str>,
+    candidate_outputs: usize,
+    admitted_outputs: usize,
+    saved_tokens: usize,
+    latency_ms: u64,
+    usage: Option<&'a TokenUsage>,
+    admission_id: Option<&'a str>,
+}
+
 pub(super) fn response_item_sha256(item: &ResponseItem) -> Result<String> {
     let bytes = serde_json::to_vec(item).context("failed to serialize Smart Prune source")?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+pub(super) fn write_attempt(
+    log_dir: &Path,
+    input: AttemptAuditInput<'_>,
+) -> Result<AttemptAuditReceipt> {
+    let mut id_components = Path::new(input.attempt_id).components();
+    anyhow::ensure!(
+        matches!(id_components.next(), Some(Component::Normal(_)))
+            && id_components.next().is_none(),
+        "invalid Smart Prune attempt id"
+    );
+    std::fs::create_dir_all(log_dir).with_context(|| {
+        format!(
+            "failed to create Smart Prune audit directory under {}",
+            log_dir.display()
+        )
+    })?;
+    let smart_prune_dir = log_dir.join("smart-prune");
+    ensure_private_directory(&smart_prune_dir)?;
+    let attempts_dir = smart_prune_dir.join("attempts");
+    ensure_private_directory(&attempts_dir)?;
+    sync_directory(log_dir)?;
+    sync_directory(&smart_prune_dir)?;
+    let relative_path = Path::new("smart-prune")
+        .join("attempts")
+        .join(format!("{}.json", input.attempt_id));
+    let final_path = log_dir.join(&relative_path);
+    write_json_new(
+        &final_path,
+        &AttemptRecord {
+            schema_version: AUDIT_SCHEMA_VERSION,
+            attempt_id: input.attempt_id,
+            session_id: input.session_id,
+            turn_id: input.turn_id,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            status: input.status,
+            model: input.model_slug,
+            reasoning_effort: input.reasoning_effort,
+            instructions: input.instructions,
+            input: input.input,
+            raw_response: input.raw_response,
+            error: input.error,
+            candidate_outputs: input.candidate_outputs,
+            admitted_outputs: input.admitted_outputs,
+            saved_tokens: input.saved_tokens,
+            latency_ms: input.latency_ms,
+            usage: input.usage,
+            admission_id: input.admission_id,
+        },
+    )?;
+    Ok(AttemptAuditReceipt {
+        audit_path: relative_path,
+    })
 }
 
 pub(super) fn write_admission(
@@ -475,6 +603,84 @@ mod tests {
             usage: None,
             items: std::slice::from_ref(item),
         }
+    }
+
+    fn attempt_input<'a>(attempt_id: &'a str) -> AttemptAuditInput<'a> {
+        AttemptAuditInput {
+            attempt_id,
+            session_id: "session-1",
+            turn_id: "turn-1",
+            status: AttemptStatus::TimedOut,
+            model_slug: "gpt-5.6-luna",
+            reasoning_effort: "low",
+            instructions: "instructions",
+            input: "exact optimizer input",
+            raw_response: None,
+            error: Some("20-second optimizer deadline elapsed"),
+            candidate_outputs: 2,
+            admitted_outputs: 0,
+            saved_tokens: 0,
+            latency_ms: 20_000,
+            usage: None,
+            admission_id: None,
+        }
+    }
+
+    #[test]
+    fn attempt_publication_is_exact_immutable_and_path_confined() {
+        let root = tempfile::tempdir().expect("audit root");
+        let receipt = write_attempt(root.path(), attempt_input("attempt-1"))
+            .expect("publish optimizer attempt");
+        assert_eq!(
+            receipt.audit_path,
+            Path::new("smart-prune/attempts/attempt-1.json")
+        );
+        let record: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.path().join(&receipt.audit_path))
+                .expect("read optimizer attempt"),
+        )
+        .expect("parse optimizer attempt");
+        assert_eq!(record["status"], "timed_out");
+        assert_eq!(record["model"], "gpt-5.6-luna");
+        assert_eq!(record["reasoning_effort"], "low");
+        assert_eq!(record["input"], "exact optimizer input");
+        assert_eq!(record["candidate_outputs"], 2);
+        assert_eq!(record["latency_ms"], 20_000);
+        assert!(
+            write_attempt(root.path(), attempt_input("attempt-1")).is_err(),
+            "attempt evidence must never be overwritten"
+        );
+        assert!(write_attempt(root.path(), attempt_input("../escape")).is_err());
+        assert!(!root.path().join("escape.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn attempt_artifacts_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().expect("audit root");
+        let receipt = write_attempt(root.path(), attempt_input("private-attempt"))
+            .expect("publish optimizer attempt");
+        for directory in [
+            root.path().join("smart-prune"),
+            root.path().join("smart-prune/attempts"),
+        ] {
+            assert_eq!(
+                std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+                0o700,
+                "{} must be private",
+                directory.display()
+            );
+        }
+        assert_eq!(
+            std::fs::metadata(root.path().join(receipt.audit_path))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600,
+        );
     }
 
     #[test]

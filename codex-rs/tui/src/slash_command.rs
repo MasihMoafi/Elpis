@@ -41,6 +41,7 @@ pub enum SlashCommand {
     App,
     Init,
     Compact,
+    Prune,
     SmartPrune,
     #[strum(to_string = "force-prune")]
     ForcePrune,
@@ -81,6 +82,7 @@ impl SlashCommand {
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Elpis",
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
+            SlashCommand::Prune => "turn Smart Prune on for subsequent turns",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
@@ -191,6 +193,7 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
+            | SlashCommand::Prune
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Keymap
@@ -251,6 +254,7 @@ impl SlashCommand {
             | SlashCommand::Resume
             | SlashCommand::Init
             | SlashCommand::Compact
+            | SlashCommand::Prune
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Diff
@@ -336,8 +340,8 @@ mod tests {
     }
 
     #[test]
-    fn retrospective_prune_command_is_not_available() {
-        assert!(SlashCommand::from_str("prune").is_err());
+    fn prune_enables_smart_prune_without_replacing_explicit_recovery() {
+        assert_eq!(SlashCommand::from_str("prune"), Ok(SlashCommand::Prune));
         assert_eq!(SlashCommand::from_str("compact"), Ok(SlashCommand::Compact));
         assert_eq!(
             SlashCommand::from_str("smart-prune"),
@@ -348,9 +352,9 @@ mod tests {
             Ok(SlashCommand::ForcePrune)
         );
         assert!(
-            !super::built_in_slash_commands()
+            super::built_in_slash_commands()
                 .into_iter()
-                .any(|(name, _)| name == "prune")
+                .any(|(name, command)| name == "prune" && command == SlashCommand::Prune)
         );
     }
 

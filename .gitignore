@@ -22,6 +22,10 @@ uv.lock
 src/uv.lock
 package-lock.json
 
+# Local dashboard CSS toolchain; compiled assets are committed.
+!codex-rs/tui/src/dashboard_assets/package-lock.json
+codex-rs/tui/src/dashboard_assets/node_modules/
+
 # IDE
 .vscode/
 .idea/

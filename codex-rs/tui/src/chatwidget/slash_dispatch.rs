@@ -259,6 +259,9 @@ impl ChatWidget {
                 const INIT_PROMPT: &str = include_str!("../../prompt_for_init_command.md");
                 self.submit_user_message(INIT_PROMPT.to_string().into());
             }
+            SlashCommand::Prune => {
+                self.request_smart_prune_enabled(/*enabled*/ true);
+            }
             SlashCommand::SmartPrune => {
                 self.toggle_smart_prune();
             }
@@ -1067,6 +1070,7 @@ impl ChatWidget {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
+            | SlashCommand::Prune
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Review

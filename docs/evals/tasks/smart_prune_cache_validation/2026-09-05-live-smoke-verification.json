@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "verification": "PASS_OBSERVED_SMOKE_LINKAGE",
+  "main_inference_count": 2,
+  "shell_tool_call_count": 1,
+  "code_cell_count": 1,
+  "optimizer_attempt_count": 1,
+  "main_model": "gpt-5.6-luna",
+  "main_effort": "medium",
+  "optimizer_model": "gpt-5.6-luna",
+  "optimizer_effort": "low",
+  "optimizer_latency_ms": 5002,
+  "source_reduction": {
+    "source_tokens_estimate": 3029,
+    "admitted_tokens_estimate": 71,
+    "saved_tokens_estimate": 2958
+  },
+  "optimizer_usage": {
+    "input_tokens": {
+      "known_sum": 6495,
+      "unknown_records": 0,
+      "total": 6495
+    },
+    "cached_input_tokens": {
+      "known_sum": 0,
+      "unknown_records": 0,
+      "total": 0
+    },
+    "cache_write_tokens": {
+      "known_sum": 0,
+      "unknown_records": 0,
+      "total": 0
+    },
+    "output_tokens": {
+      "known_sum": 136,
+      "unknown_records": 0,
+      "total": 136
+    },
+    "reasoning_output_tokens": {
+      "known_sum": 75,
+      "unknown_records": 0,
+      "total": 75
+    },
+    "total_tokens": {
+      "known_sum": 6631,
+      "unknown_records": 0,
+      "total": 6631
+    }
+  },
+  "linked_main_usage": {
+    "input_tokens": {
+      "known_sum": 9785,
+      "unknown_records": 0,
+      "total": 9785
+    },
+    "cached_input_tokens": {
+      "known_sum": 8960,
+      "unknown_records": 0,
+      "total": 8960
+    },
+    "cache_write_tokens": {
+      "known_sum": 0,
+      "unknown_records": 0,
+      "total": 0
+    },
+    "output_tokens": {
+      "known_sum": 20,
+      "unknown_records": 0,
+      "total": 20
+    },
+    "reasoning_output_tokens": {
+      "known_sum": 9,
+      "unknown_records": 0,
+      "total": 9
+    },
+    "total_tokens": {
+      "known_sum": 9805,
+      "unknown_records": 0,
+      "total": 9805
+    }
+  },
+  "cache_reuse": "OBSERVED_REUSE",
+  "source_hash_matches_receipt": true,
+  "optimizer_source_matches_receipt": true,
+  "admitted_payload_matches_delta_without_transport_metadata": true,
+  "tool_only_fact_retained": true,
+  "normalized_logical_continuation": "OBSERVED_PREVIOUS_RESPONSE_PLUS_NEW_OUTPUT",
+  "normalized_previous_request_items": 4,
+  "normalized_followup_items": 7,
+  "stable_main_request_options": true,
+  "full_request_bytes": "NOT_CHECKED_DELTA_REQUEST",
+  "logical_request_hash": "PRESENT_NOT_PUBLIC",
+  "provider_cache_regression": "NOT_TESTED",
+  "causal_cost_effect": "NOT_TESTED",
+  "transport_retry_count": "UNKNOWN",
+  "private_raw_hashes": "NOT_PUBLIC"
+}

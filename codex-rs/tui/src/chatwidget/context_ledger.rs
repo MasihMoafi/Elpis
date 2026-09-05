@@ -1,5 +1,14 @@
 //! Persistent, user-controlled view of Elpis-owned portable context.
 
+use super::context_usage::AGENT_RESPONSES_COLOR;
+use super::context_usage::SYSTEM_INSTRUCTIONS_COLOR;
+use super::context_usage::TOOL_RESULTS_COLOR;
+use super::context_usage::USER_MESSAGES_COLOR;
+use super::context_usage::context_used_percent;
+use super::context_usage::reconcile_context_categories;
+use super::context_usage::run_built_context_categories;
+use super::context_usage::smart_prune_attempt_evidence_path;
+use super::context_usage::weighted_cell_counts;
 use super::*;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
@@ -13,7 +22,6 @@ use crate::terminal_palette::stdout_color_level;
 
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
-
 /// User-facing grouping for portable sources. Core categories retain their
 /// admission semantics; this layer only keeps manually selected files from
 /// being presented as Elpis-owned session continuity.
@@ -56,10 +64,19 @@ impl LedgerSourceGroup {
 
     fn color(self) -> Color {
         match self {
-            Self::SessionContinuity => Color::Rgb(52, 168, 83),
-            Self::UserFiles => Color::Rgb(59, 130, 246),
-            Self::DurableMemory => Color::Rgb(215, 119, 87),
-            Self::Instructions => Color::Rgb(255, 193, 7),
+            Self::SessionContinuity => TOOL_RESULTS_COLOR,
+            Self::UserFiles => USER_MESSAGES_COLOR,
+            Self::DurableMemory => AGENT_RESPONSES_COLOR,
+            Self::Instructions => SYSTEM_INSTRUCTIONS_COLOR,
+        }
+    }
+
+    fn marker(self) -> &'static str {
+        match self {
+            Self::SessionContinuity => "⬟",
+            Self::UserFiles => "●",
+            Self::DurableMemory => "◆",
+            Self::Instructions => "✦",
         }
     }
 }
@@ -343,17 +360,17 @@ impl ChatWidget {
         let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
         let accounting_sources = self.accounted_continuity_sources();
-        let total_tokens = accounting_sources
+        let admitted_source_tokens = accounting_sources
             .iter()
             .filter(|source| source.admitted)
             .map(|source| source.estimated_tokens)
             .sum::<u64>();
-        // Plain ANSI cyan so the ledger matches the teal used by the identity line,
-        // composer accents, and the rest of the UI in the user's terminal theme.
-        let cyan = Style::default().fg(Color::Cyan);
+        // Structural branding follows the composer. Data and admission-state
+        // colors remain independent so their meaning does not change with branding.
+        let brand = crate::style::brand_style().not_bold();
+        let included = Style::default().fg(Color::Cyan);
         let amber = Style::default().fg(Color::Rgb(245, 158, 11));
         let muted = Style::default().fg(Color::Rgb(100, 116, 139));
-        let conversation_color = Color::Gray;
         let context_window = self
             .status_line_context_window_size()
             .unwrap_or(258_400)
@@ -361,45 +378,32 @@ impl ChatWidget {
         // Use the same measured request-context value as `/context` and the status
         // line.  Portable source estimates are attribution only; they must not
         // inflate the headline or percentage beyond what is actually in context.
-        let measured_used_tokens = (self
+        let used_tokens = self
             .token_info
             .as_ref()
             .map(|info| info.last_token_usage.tokens_in_context_window())
             .unwrap_or(0)
-            .max(0) as u64)
-            .min(context_window);
-        let used_tokens = apply_token_delta(
-            measured_used_tokens,
-            self.context_ledger.projected_token_delta,
-        )
-        .min(context_window);
+            .max(0) as u64;
         let has_request_snapshot = self.token_info.is_some();
-        let admitted_display_tokens = total_tokens.min(used_tokens);
-        // The Ledger accounts for portable sources. Everything else is the
-        // conversation plus built-in request context; the provider does not split it.
-        let conversation_tokens = used_tokens.saturating_sub(admitted_display_tokens);
-        let used_percent = used_tokens
-            .saturating_mul(100)
-            .saturating_add(context_window / 2)
-            / context_window;
-        let admitted_segments = LedgerSourceGroup::ALL
-            .into_iter()
-            .map(|group| {
-                let admitted = accounting_sources
-                    .iter()
-                    .filter(|source| {
-                        LedgerSourceGroup::for_source(source) == group && source.admitted
-                    })
-                    .map(|source| source.estimated_tokens)
-                    .sum::<u64>();
-                (admitted, group.color())
-            })
+        let raw_categories = self
+            .context_attribution
+            .as_ref()
+            .map(run_built_context_categories)
+            .unwrap_or_default();
+        let categories = reconcile_context_categories(&raw_categories, used_tokens);
+        let attributed_tokens = self
+            .context_attribution
+            .as_ref()
+            .filter(|_| has_request_snapshot)
+            .map(|_| used_tokens);
+        let used_percent = context_used_percent(used_tokens, context_window);
+        let mut attribution_segments = categories
+            .iter()
+            .map(|category| (category.tokens, category.color))
             .collect::<Vec<_>>();
-        let mut bar_segments = vec![(conversation_tokens, conversation_color)];
-        bar_segments.extend(scale_usage_segments(
-            &admitted_segments,
-            admitted_display_tokens,
-        ));
+        if attribution_segments.is_empty() && has_request_snapshot && used_tokens > 0 {
+            attribution_segments.push((used_tokens, Color::DarkGray));
+        }
         let source_change_status = if !self.context_ledger.pending_context_admissions.is_empty() {
             Some("changes queued")
         } else if matches!(
@@ -407,23 +411,26 @@ impl ChatWidget {
             Some(ManualMemoryMutation::Admission { .. })
         ) {
             Some("saving change")
+        } else if self.context_ledger.projected_token_delta != 0 {
+            // Admission estimates describe a future request, not a change to
+            // the measured context. Keep its bar and categories in sync with
+            // `/context` until core reports the next request's actual usage.
+            Some("changes pending")
         } else {
             None
         };
         let context_header = if has_request_snapshot && let Some(status) = source_change_status {
             format!("≈{} tokens now · {status}", format_tokens(used_tokens))
-        } else if has_request_snapshot && self.context_ledger.projected_token_delta != 0 {
-            format!("next request ≈{} tokens", format_tokens(used_tokens))
         } else if has_request_snapshot {
             format!("≈{} tokens in context", format_tokens(used_tokens))
-        } else if total_tokens == 0 {
+        } else if admitted_source_tokens == 0 {
             // Keep the compact idle layout used by the existing popups while making
             // the zero state explicit: no provider request has been measured yet.
-            "Total ≈0 tokens admitted".to_string()
+            "context not measured · ≈0 source estimates".to_string()
         } else {
             format!(
-                "context not measured · ≈{} portable admitted",
-                format_tokens(total_tokens)
+                "context not measured · ≈{} source estimates",
+                format_tokens(admitted_source_tokens)
             )
         };
         let interaction_hint = if self.context_ledger.focused {
@@ -433,9 +440,9 @@ impl ChatWidget {
         };
         let mut lines = vec![
             Line::from(vec![
-                Span::styled("CONTEXT LEDGER", cyan.bold()),
+                Span::styled("CONTEXT LEDGER", brand.bold()),
                 Span::raw("  "),
-                Span::styled(context_header, cyan),
+                Span::styled(context_header, brand),
             ]),
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
@@ -501,6 +508,104 @@ impl ChatWidget {
             "Tool results pass through unchanged".to_string()
         };
         lines.push(Line::from(Span::styled(smart_prune_detail, muted)));
+        if self.smart_prune_synced && self.smart_prune.failed_batches > 0 {
+            let plural = if self.smart_prune.failed_batches == 1 {
+                "batch"
+            } else {
+                "batches"
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} optimizer {plural} failed · originals preserved",
+                    self.smart_prune.failed_batches
+                ),
+                Style::default().fg(Color::Yellow).bold(),
+            )));
+        }
+        if self.smart_prune_synced && self.smart_prune.optimizer_requests > 0 {
+            let usage = if self.smart_prune.optimizer_usage_reports > 0 {
+                format!(
+                    "{} tokens reported",
+                    format_tokens(self.smart_prune.optimizer_usage.total_tokens.max(0) as u64)
+                )
+            } else {
+                "usage unreported".to_string()
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} request{} · {} total wait · {usage}",
+                    self.smart_prune.optimizer_requests,
+                    if self.smart_prune.optimizer_requests == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                    format_duration_ms(self.smart_prune.optimizer_latency_ms),
+                ),
+                muted,
+            )));
+        }
+        if self.smart_prune_synced
+            && let Some(attempt) = self.smart_prune.latest_attempt.as_ref()
+        {
+            let status = attempt.status.replace('_', " ");
+            let status_style = match attempt.status.as_str() {
+                "admitted" => Style::default().fg(Color::Green).bold(),
+                "unchanged" => muted,
+                _ => Style::default().fg(Color::Yellow).bold(),
+            };
+            lines.push(Line::from(vec![
+                Span::styled("Last attempt: ", muted),
+                Span::styled(status, status_style),
+            ]));
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} candidate{} · {} admitted · {}",
+                    attempt.candidate_outputs,
+                    if attempt.candidate_outputs == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                    attempt.admitted_outputs,
+                    format_duration_ms(attempt.latency_ms),
+                ),
+                muted,
+            )));
+            let usage = attempt
+                .usage
+                .as_ref()
+                .map(|usage| {
+                    format!(
+                        "{} tokens reported",
+                        format_tokens(usage.total_tokens.max(0) as u64)
+                    )
+                })
+                .unwrap_or_else(|| "usage unreported".to_string());
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} · {} effort · {usage}",
+                    attempt.model_slug, attempt.reasoning_effort
+                ),
+                muted,
+            )));
+            if let Some(path) = attempt
+                .audit_path
+                .as_deref()
+                .and_then(|path| smart_prune_attempt_evidence_path(&self.config.codex_home, path))
+                && let Ok(destination) = url::Url::from_file_path(&path)
+            {
+                let file_name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy())
+                    .unwrap_or_default();
+                source_links.push((lines.len(), destination.to_string()));
+                lines.push(Line::from(Span::styled(
+                    format!("Attempt evidence {file_name}"),
+                    Style::default().fg(Color::Cyan).underlined(),
+                )));
+            }
+        }
         if self.smart_prune_synced
             && let Some(latest) = self.smart_prune.latest.as_ref()
         {
@@ -530,38 +635,69 @@ impl ChatWidget {
         };
         lines.push(Line::from(Span::styled(smart_prune_hint, muted)));
         lines.push(Line::from(""));
-        lines.extend([
-            Line::from(vec![
-                Span::styled("CONTEXT WINDOW", cyan.bold()),
-                Span::raw("  "),
-                Span::styled(
+        lines.push(Line::from(vec![
+            Span::styled("CONTEXT WINDOW", brand.bold()),
+            Span::raw("  "),
+            Span::styled(
+                if has_request_snapshot {
                     format!(
                         "≈{} of {} used ({used_percent}%)",
                         format_tokens(used_tokens),
                         format_tokens(context_window),
-                    ),
-                    muted,
-                ),
-            ]),
-            usage_bar_line(content_width, context_window, &bar_segments),
-            {
-                let name = "Conversation + built-in context";
-                // Same unit as every other row and header; without it this row reads
-                // "≈0" two lines under a total reading "≈4.4k tokens".
-                let right = format!("≈{} tokens", format_tokens(conversation_tokens));
+                    )
+                } else {
+                    "usage unavailable".to_string()
+                },
+                muted,
+            ),
+        ]));
+        if has_request_snapshot {
+            lines.push(usage_bar_line(
+                content_width,
+                context_window,
+                &attribution_segments,
+            ));
+        }
+        if attributed_tokens.is_some() {
+            lines.push(Line::from(Span::styled(
+                "MEASURED TOTAL · ESTIMATED CATEGORY SHARES",
+                brand.bold(),
+            )));
+            lines.push(Line::from(Span::styled(
+                "Estimated segments reconcile to measured active context; all shares use the full window",
+                muted,
+            )));
+            for category in &categories {
+                let right = format!(
+                    "≈{} · {}",
+                    format_tokens(category.tokens),
+                    format_share(category.tokens, context_window),
+                );
                 let pad = content_width
-                    .saturating_sub(2 + 2 + name.chars().count() + right.chars().count())
+                    .saturating_sub(2 + 2 + category.label.chars().count() + right.chars().count())
                     .max(1);
-                Line::from(vec![
+                lines.push(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled("■ ", Style::default().fg(conversation_color)),
-                    Span::raw(name),
+                    Span::styled(
+                        format!("{} ", category.marker()),
+                        Style::default().fg(category.color),
+                    ),
+                    Span::raw(category.label),
                     Span::raw(" ".repeat(pad)),
                     Span::styled(right, muted),
-                ])
-            },
-            Line::from(""),
-        ]);
+                ]));
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                if has_request_snapshot {
+                    "Core measured total; category attribution unavailable until the next provider attempt"
+                } else {
+                    "Context measurement unavailable until the first request snapshot"
+                },
+                muted,
+            )));
+        }
+        lines.push(Line::from(""));
 
         if sources.is_empty() {
             lines.push(Line::from("No portable context is available.".dim()));
@@ -583,7 +719,7 @@ impl ChatWidget {
                 .sum::<u64>();
             let cat_style = Style::default().fg(group.color());
             lines.push(Line::from(vec![
-                Span::styled("■ ", cat_style),
+                Span::styled(format!("{} ", group.marker()), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
                 Span::raw("  "),
                 Span::styled(
@@ -604,7 +740,7 @@ impl ChatWidget {
                 } else {
                     "EXCLUDED"
                 };
-                let state_style = if source.admitted { cyan } else { amber };
+                let state_style = if source.admitted { included } else { amber };
                 let marker_style = if source.admitted { cat_style } else { muted };
                 let prefix = if selected { "› " } else { "  " };
                 // Per-source estimates stay exact so similarly sized files remain
@@ -638,13 +774,13 @@ impl ChatWidget {
                     source_links.push((lines.len(), destination.to_string()));
                 }
                 lines.push(Line::from(vec![
-                    Span::styled(prefix, cyan),
+                    Span::styled(prefix, brand),
                     Span::styled(marker, marker_style),
                     Span::raw(" "),
                     Span::styled(
                         shown_name,
                         if selected {
-                            cyan.bold().underlined()
+                            brand.bold().underlined()
                         } else {
                             Style::default().underlined()
                         },
@@ -666,8 +802,8 @@ impl ChatWidget {
                     } else {
                         "Excluded; when enabled, included"
                     };
-                    lines.push(Line::from(Span::styled("WHY INCLUDED", cyan.bold())));
-                    lines.push(Line::from(Span::styled(source.name.clone(), cyan)));
+                    lines.push(Line::from(Span::styled("WHY INCLUDED", brand.bold())));
+                    lines.push(Line::from(Span::styled(source.name.clone(), brand)));
                     lines.push(Line::from(
                         format!("{inclusion} because {}.", source.reason).dim(),
                     ));
@@ -733,7 +869,7 @@ impl ChatWidget {
             smart_prune_line,
             smart_prune_columns,
         } = ledger_lines;
-        let cyan = Style::default().fg(Color::Cyan);
+        let brand = crate::style::brand_style().not_bold();
 
         let scroll_lines = self
             .context_ledger
@@ -788,7 +924,7 @@ impl ChatWidget {
         *self.context_ledger.last_source_ranges.borrow_mut() = tracked_ranges;
 
         Paragraph::new(lines.clone())
-            .block(Block::default().borders(Borders::LEFT).border_style(cyan))
+            .block(Block::default().borders(Borders::LEFT).border_style(brand))
             .wrap(Wrap { trim: true })
             .scroll((scroll_lines, 0))
             .render(area, buf);
@@ -1502,14 +1638,6 @@ fn all_bulk_context_sources_admitted(
         .is_some_and(|first| first.admitted && actionable.all(|source| source.admitted))
 }
 
-fn apply_token_delta(tokens: u64, delta: i64) -> u64 {
-    if delta < 0 {
-        tokens.saturating_sub(delta.unsigned_abs())
-    } else {
-        tokens.saturating_add(delta as u64)
-    }
-}
-
 /// One-line horizontal usage bar: a colored segment per (tokens, color) entry,
 /// proportional to the context window; the remainder renders as free space.
 fn usage_bar_line(
@@ -1527,23 +1655,17 @@ fn usage_bar_line(
     let cells_used = ((total_tokens as u128 * bar_width as u128
         + u128::from(context_window.max(1)) / 2)
         / u128::from(context_window.max(1))) as usize;
-    let mut previous_boundary = 0usize;
-    let mut cumulative_tokens = 0u64;
-    for (index, (tokens, color)) in segments.iter().enumerate() {
-        cumulative_tokens = cumulative_tokens.saturating_add(*tokens);
-        let boundary = if index + 1 == segments.len() {
-            cells_used
-        } else if total_tokens == 0 {
-            0
-        } else {
-            ((cumulative_tokens.min(total_tokens) as u128 * cells_used as u128)
-                / total_tokens as u128) as usize
-        };
-        let cells = boundary.saturating_sub(previous_boundary);
+    let counts = weighted_cell_counts(
+        &segments
+            .iter()
+            .map(|(tokens, _)| *tokens)
+            .collect::<Vec<_>>(),
+        cells_used,
+    );
+    for ((_, color), cells) in segments.iter().zip(counts) {
         if cells > 0 {
             spans.push(Span::styled("█".repeat(cells), Style::default().fg(*color)));
         }
-        previous_boundary = boundary;
     }
     if cells_used < bar_width {
         spans.push(Span::styled(
@@ -1554,42 +1676,20 @@ fn usage_bar_line(
     Line::from(spans)
 }
 
-/// Scale attribution segments down to the measured amount they represent.  This
-/// keeps the colored breakdown honest when source byte estimates exceed the exact
-/// request-context count after pruning.
-fn scale_usage_segments(segments: &[(u64, Color)], target: u64) -> Vec<(u64, Color)> {
-    let source_total = segments.iter().map(|(tokens, _)| *tokens).sum::<u64>();
-    if source_total == 0 || target >= source_total {
-        return segments.to_vec();
-    }
-
-    let mut scaled = segments
-        .iter()
-        .map(|(tokens, color)| {
-            (
-                ((*tokens as u128 * target as u128) / source_total as u128) as u64,
-                *color,
-            )
-        })
-        .collect::<Vec<_>>();
-    let assigned = scaled.iter().map(|(tokens, _)| *tokens).sum::<u64>();
-    let remainder = target.saturating_sub(assigned);
-    if remainder > 0 {
-        if let Some((tokens, _)) = scaled.iter_mut().rev().find(|(tokens, _)| *tokens > 0) {
-            *tokens = tokens.saturating_add(remainder);
-        } else if let Some((tokens, _)) = scaled.last_mut() {
-            *tokens = remainder;
-        }
-    }
-    scaled
-}
-
 fn format_tokens(tokens: u64) -> String {
     if tokens < 1_000 {
         tokens.to_string()
     } else {
         format!("{:.1}k", tokens as f64 / 1_000.0)
     }
+}
+
+fn format_share(tokens: u64, total: u64) -> String {
+    if total == 0 {
+        return "0.0%".to_string();
+    }
+    let tenths = (u128::from(tokens) * 1_000 + u128::from(total) / 2) / u128::from(total);
+    format!("{}.{:01}%", tenths / 10, tenths % 10)
 }
 
 fn format_source_count(value: u64) -> String {
@@ -1656,9 +1756,30 @@ fn wrapped_line_count(lines: &[Line<'_>], width: u16) -> u16 {
     .unwrap_or(u16::MAX)
 }
 
+fn format_duration_ms(milliseconds: u64) -> String {
+    if milliseconds >= 1_000 {
+        format!("{:.1}s", milliseconds as f64 / 1_000.0)
+    } else {
+        format!("{milliseconds}ms")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ledger_source_palette_uses_fixed_rgb_colors() {
+        assert_eq!(
+            LedgerSourceGroup::ALL.map(LedgerSourceGroup::color),
+            [
+                Color::Rgb(252, 178, 79),
+                Color::Rgb(111, 181, 253),
+                Color::Rgb(3, 155, 44),
+                Color::Rgb(240, 68, 93),
+            ]
+        );
+    }
 
     #[test]
     fn smart_prune_palette_uses_a_readable_low_color_fallback() {
@@ -1711,12 +1832,6 @@ mod tests {
         let narrow = selected_source_scroll_offset(&lines, 5..7, 12, 4);
         assert!(narrow > wide);
         assert_eq!(selected_source_scroll_offset(&[], 0..4, 52, 4), 0);
-    }
-
-    #[test]
-    fn scaled_usage_segments_match_measured_context() {
-        let scaled = scale_usage_segments(&[(70, Color::Green), (30, Color::Yellow)], 25);
-        assert_eq!(scaled.iter().map(|(tokens, _)| *tokens).sum::<u64>(), 25);
     }
 
     #[test]

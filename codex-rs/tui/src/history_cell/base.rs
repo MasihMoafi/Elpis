@@ -41,7 +41,7 @@ impl HistoryCell for WebHyperlinkHistoryCell {
     }
 
     fn display_hyperlink_lines(&self, _width: u16) -> Vec<HyperlinkLine> {
-        crate::terminal_hyperlinks::annotate_web_urls(self.lines.clone())
+        crate::terminal_hyperlinks::annotate_terminal_urls(self.lines.clone())
     }
 
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {

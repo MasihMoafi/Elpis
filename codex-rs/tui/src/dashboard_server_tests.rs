@@ -15,6 +15,8 @@ use tiny_http::TestRequest;
 
 const PORT: u16 = 43123;
 const ACTIVITY_FIXTURE: &str = include_str!("dashboard_assets/fixtures/activity-state.json");
+const DASHBOARD_SOURCE_CSS: &str = include_str!("dashboard_assets/source.css");
+const DASHBOARD_PACKAGE_JSON: &str = include_str!("dashboard_assets/package.json");
 
 fn context() -> DashboardContext {
     DashboardContext {
@@ -22,10 +24,11 @@ fn context() -> DashboardContext {
         used_tokens: Some(120),
         window_tokens: 1_000,
         used_percent: Some(12),
+        attributed_tokens: Some(120),
         categories: Some(vec![DashboardCategory {
             label: "System prompt".to_string(),
-            tokens: 20,
-            color: "#e87ba4".to_string(),
+            tokens: 120,
+            color: "#f0445d".to_string(),
         }]),
         saved_tokens: 5,
         sources: vec![DashboardSource {
@@ -83,6 +86,16 @@ fn smart_prune(
             request_linkage_verified: true,
             response_usage: Some(token_totals(4_200, Some(0))),
             response_linkage_verified: true,
+        }),
+        latest_attempt: Some(DashboardSmartPruneAttempt {
+            status: "admitted".to_string(),
+            model: "gpt-5.6-luna".to_string(),
+            reasoning_effort: "low".to_string(),
+            candidate_outputs: 3,
+            admitted_outputs: 2,
+            approx_saved_tokens: 16_800,
+            latency_ms: 625,
+            usage: Some(token_totals(600, None)),
         }),
     }
 }
@@ -415,6 +428,7 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
             "examined_outputs",
             "failed_batches",
             "latest",
+            "latest_attempt",
             "optimizer_latency_ms",
             "optimizer_requests",
             "optimizer_usage",
@@ -443,6 +457,27 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
     assert_eq!(
         synced["smart_prune"]["latest"]["response_usage"]["cache_write"],
         0
+    );
+    assert_keys(
+        &synced["smart_prune"]["latest_attempt"],
+        &[
+            "admitted_outputs",
+            "approx_saved_tokens",
+            "candidate_outputs",
+            "latency_ms",
+            "model",
+            "reasoning_effort",
+            "status",
+            "usage",
+        ],
+    );
+    assert_eq!(
+        synced["smart_prune"]["latest_attempt"]["status"],
+        "admitted"
+    );
+    assert_eq!(
+        synced["smart_prune"]["latest_attempt"]["model"],
+        "gpt-5.6-luna"
     );
     let serialized = synced.to_string();
     for forbidden in [
@@ -662,38 +697,65 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
     for required in [
         "id=\"tab-activity\"",
         "data-tab=\"activity\"",
-        "class=\"tab active\" id=\"tab-activity\" type=\"button\" role=\"tab\" aria-selected=\"true\"",
+        "role=\"tab\" aria-selected=\"true\"",
+        "aria-label=\"Context window usage by category\"",
+        "aria-label=\"Estimated token usage by category\"",
+        "id=\"poll-toggle\"",
+        "id=\"refresh-now\"",
+        "Smart Prune",
+        "Experimental",
+        "One window. One denominator.",
+        "measured total and estimated category attribution",
+        "Reported tokens without invented cost",
+        "Approx. saved",
+        "Latest request attribution",
+    ] {
+        assert!(
+            INDEX_HTML.contains(required),
+            "missing dashboard HTML contract: {required}"
+        );
+    }
+    for forbidden in [
+        "aria-label=\"Active context occupancy\"",
+        "aria-label=\"Latest request composition\"",
+        "Two measurements, clearly separated",
+    ] {
+        assert!(
+            !INDEX_HTML.contains(forbidden),
+            "obsolete duplicate context visual survived: {forbidden}"
+        );
+    }
+    for required in [
         "envelope.state",
         "envelope.heartbeat_at",
         "nextState.revision !== lastValidState.revision",
         "value.schema_version === 1",
-        "aria-label=\"Estimated token usage by category\"",
-        "id=\"poll-toggle\"",
-        "id=\"refresh-now\"",
         "setText('poll-toggle', 'Resume')",
         "Idle",
-        "color-scheme: light",
-        "--bg: #f7f4ee",
         "ArrowLeft",
         "ArrowRight",
         "Home",
         "End",
         "tab.tabIndex",
-        "Smart Prune — Experimental",
         "configured_enabled",
         "current_thread_next_turn_enabled",
-        "prefers-reduced-motion: reduce",
+        "latest_attempt",
+        "failed_batches",
         "CATEGORY_COLORS",
-        "#2a78d6",
-        "#1baf7a",
-        "#eda100",
-        "#e87ba4",
-        "#6b635a",
-        ".category-purple { background: #4a3aa7; }",
-        "'#4a3aa7': 'category-purple'",
-        ".category-portable { background: #eb6834; }",
-        "'#eb6834': 'category-portable'",
-        "CATEGORY_COLORS[value] || CATEGORY_COLOR_FALLBACK",
+        "#6fb5fd",
+        "#039b2c",
+        "#03dae5",
+        "#a2810b",
+        "#f0445d",
+        "#ef8cff",
+        "#fcb24f",
+        "#919191",
+        "#a6fc18",
+        "const COMPOSITION_CELL_COUNT = 100",
+        "function allocateContextCells(categories, usedTokens, windowTokens)",
+        "usedTokens * COMPOSITION_CELL_COUNT / windowTokens",
+        "if (usedCells >= positive.length)",
+        "composition-free",
         "function formatPercent(value, total)",
         ".toFixed(1) + '%'",
         "formatPercent(safeContext.used_tokens, safeContext.window_tokens)",
@@ -701,20 +763,86 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "setTimeout(() => { void poll(); }, delay)",
         "subscription_authentication",
         "awaiting_backend_price",
-        "Timing breakdown unavailable for this turn",
-        "Measured request total with estimated category and pruning breakdowns.",
-        "Approx. saved",
-        "Estimated token usage by category",
+        "renderAttempt(safeSmart.latest_attempt)",
+        "setText('smart-failed', formatNumber(safeSmart.failed_batches))",
+    ] {
+        assert!(
+            DASHBOARD_JS.contains(required),
+            "missing dashboard JavaScript contract: {required}"
+        );
+    }
+    for required in [
+        "@plugin \"daisyui\"",
+        "@plugin \"daisyui/theme\"",
+        "name: \"elpis-dashboard\"",
+        "color-scheme: dark",
+        "prefers-reduced-motion: reduce",
+        ".category-blue",
+        "background: #6fb5fd",
+        ".category-green",
+        "background: #039b2c",
+        ".category-cyan",
+        "background: #03dae5",
+        ".category-yellow",
+        "background: #a2810b",
+        ".category-orange",
+        "background: #fcb24f",
+        ".category-rose",
+        "background: #f0445d",
+        ".category-purple",
+        "background: #ef8cff",
+        ".category-gray",
+        "background: #919191",
+        ".category-lime",
+        "background: #a6fc18",
+    ] {
+        assert!(
+            DASHBOARD_SOURCE_CSS.contains(required),
+            "missing dashboard CSS source contract: {required}"
+        );
+    }
+    for required in ["\"daisyui\": \"5.7.28\"", "\"tailwindcss\": \"4.3.3\""] {
+        assert!(
+            DASHBOARD_PACKAGE_JSON.contains(required),
+            "missing pinned dashboard dependency: {required}"
+        );
+    }
+}
+
+#[test]
+fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt() {
+    for required in [
+        "data-theme=\"elpis-dashboard\"",
+        "href=\"/dashboard.css\"",
+        "src=\"/dashboard.js\"",
+        "class=\"navbar",
+        "class=\"tabs tabs-box",
+        "class=\"card",
+        "class=\"stats",
+        "class=\"stat",
+        "class=\"badge",
+        "id=\"smart-failed\"",
+        "id=\"attempt-status\"",
+        "id=\"attempt-model\"",
+        "id=\"attempt-effort\"",
+        "id=\"attempt-candidates\"",
+        "id=\"attempt-admitted\"",
+        "id=\"attempt-saved\"",
+        "id=\"attempt-latency\"",
+        "id=\"attempt-usage\"",
+        "Last optimizer attempt",
+        "No optimizer attempt observed",
     ] {
         assert!(
             INDEX_HTML.contains(required),
-            "missing dashboard contract: {required}"
+            "missing modern dashboard contract: {required}"
         );
     }
 }
 
 #[test]
 fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields() {
+    let authored_assets = format!("{INDEX_HTML}\n{DASHBOARD_JS}\n{DASHBOARD_SOURCE_CSS}");
     for forbidden in [
         "innerHTML",
         "outerHTML",
@@ -745,18 +873,18 @@ fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields()
         "style.background = category.color",
         "setInterval(refresh",
         "setInterval(poll",
-        "<script src=",
-        "rel=\"stylesheet\"",
         "http://",
         "https://",
-        "color-scheme: dark",
-        "--bg: #100b0c",
+        "color-scheme: light",
+        "--bg: #f7f4ee",
+        "'unsafe-inline'",
     ] {
         assert!(
-            !INDEX_HTML.contains(forbidden),
+            !authored_assets.contains(forbidden),
             "unsafe dashboard source: {forbidden}"
         );
     }
+    assert!(!CSP.contains("'unsafe-inline'"));
 }
 
 #[test]
@@ -794,6 +922,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
     assert_keys(
         &value["context"],
         &[
+            "attributed_tokens",
             "backtrack_points",
             "categories",
             "model",
@@ -884,6 +1013,16 @@ fn bind_host_method_and_path_guards_are_exact_and_read_only() {
     for (host, path, content_type) in [
         ("127.0.0.1:43123", "/", "text/html; charset=utf-8"),
         ("LOCALHOST:43123", "/index.html", "text/html; charset=utf-8"),
+        (
+            "localhost:43123",
+            "/dashboard.css",
+            "text/css; charset=utf-8",
+        ),
+        (
+            "localhost:43123",
+            "/dashboard.js",
+            "text/javascript; charset=utf-8",
+        ),
         (
             "localhost:43123",
             "/data.json",

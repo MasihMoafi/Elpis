@@ -1,5 +1,6 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+use crate::app_backtrack::ContextUsageTranscriptTotals;
 use crate::bottom_pane::goal_status_indicator_line;
 use crate::chatwidget::rate_limits::NUDGE_MODEL_SLUG;
 use crate::chatwidget::rate_limits::get_limits_duration;
@@ -228,6 +229,11 @@ async fn context_report_separates_current_tool_context_from_prior_manual_savings
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.config.animations = false;
     chat.set_token_info(Some(make_token_info(17_259, 121_600)));
+    chat.context_attribution = Some(codex_app_server_protocol::ThreadContextAttribution {
+        tool_results: 704,
+        estimated_total: 704,
+        ..Default::default()
+    });
     assert!(chat.update_context_prune_savings(29_268, /*from_replay*/ true));
     while rx.try_recv().is_ok() {}
 
@@ -248,12 +254,12 @@ async fn context_report_separates_current_tool_context_from_prior_manual_savings
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
         })
-        .filter(|line| line.contains("Tool activity"))
+        .filter(|line| line.contains("Tool results"))
         .collect::<Vec<_>>();
     let rendered = lines_to_single_string(&lines);
 
     assert!(
-        rendered.contains("Tool activity"),
+        rendered.contains("Tool results"),
         "context output: {rendered}"
     );
     assert!(!tool_lines.is_empty(), "context output: {rendered}");
@@ -272,8 +278,8 @@ async fn context_report_separates_current_tool_context_from_prior_manual_savings
         "context output: {rendered}"
     );
     assert!(
-        rendered.contains("Built-in + estimate gap"),
-        "context output: {rendered}"
+        !rendered.contains("Built-in + estimate gap"),
+        "context output fabricated a gap bucket: {rendered}"
     );
     assert!(
         !rendered.contains("Unattributed"),
@@ -282,6 +288,128 @@ async fn context_report_separates_current_tool_context_from_prior_manual_savings
     assert!(
         !rendered.contains("saved in session"),
         "context output: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn context_and_usage_link_rollout_and_latest_smart_prune_attempt_evidence()
+-> anyhow::Result<()> {
+    let root = tempdir()?;
+    let rollout = root.path().join("rollout.jsonl");
+    let attempt = root
+        .path()
+        .join("logs/smart-prune/attempts/019d0000-attempt.json");
+    std::fs::create_dir_all(attempt.parent().expect("attempt parent"))?;
+    std::fs::write(&rollout, "{}\n")?;
+    std::fs::write(&attempt, "{}\n")?;
+
+    let configure = |chat: &mut ChatWidget| {
+        chat.config.codex_home = root.path().to_path_buf().abs();
+        chat.current_rollout_path = Some(rollout.clone());
+        chat.smart_prune_synced = true;
+        chat.smart_prune.latest_attempt =
+            Some(codex_app_server_protocol::ThreadSmartPruneAttemptSnapshot {
+                attempt_id: "019d0000-attempt".to_string(),
+                audit_path: Some("smart-prune/attempts/019d0000-attempt.json".to_string()),
+                status: "timed_out".to_string(),
+                model_slug: "gpt-5.6-luna".to_string(),
+                reasoning_effort: "low".to_string(),
+                candidate_outputs: 1,
+                admitted_outputs: 0,
+                approx_saved_tokens: 0,
+                latency_ms: 20_000,
+                usage: None,
+            });
+    };
+    let expected = [
+        url::Url::from_file_path(&rollout)
+            .expect("rollout URL")
+            .to_string(),
+        url::Url::from_file_path(&attempt)
+            .expect("attempt URL")
+            .to_string(),
+    ];
+
+    let (mut context_chat, _context_rx, _ops) = make_chatwidget_manual(None).await;
+    configure(&mut context_chat);
+    context_chat.config.animations = false;
+    context_chat.add_context_usage_output(ContextUsageTranscriptTotals::default());
+    let context_links = context_chat
+        .transcript
+        .active_cell
+        .as_ref()
+        .expect("context output")
+        .display_hyperlink_lines(100)
+        .into_iter()
+        .flat_map(|line| line.hyperlinks)
+        .map(|link| link.destination)
+        .collect::<Vec<_>>();
+    for destination in &expected {
+        assert!(
+            context_links.contains(destination),
+            "/context omitted evidence destination {destination:?}: {context_links:?}"
+        );
+    }
+
+    let (mut usage_chat, mut usage_rx, _ops) = make_chatwidget_manual(None).await;
+    configure(&mut usage_chat);
+    while usage_rx.try_recv().is_ok() {}
+    usage_chat.add_status_output(false, None);
+    let usage_cell = std::iter::from_fn(|| usage_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .expect("/usage output");
+    let usage_links = usage_cell
+        .display_hyperlink_lines(100)
+        .into_iter()
+        .flat_map(|line| line.hyperlinks)
+        .map(|link| link.destination)
+        .collect::<Vec<_>>();
+    for destination in &expected {
+        assert!(
+            usage_links.contains(destination),
+            "/usage omitted evidence destination {destination:?}: {usage_links:?}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_and_usage_do_not_invent_evidence_links_before_a_session_or_attempt() {
+    let (mut context_chat, _context_rx, _ops) = make_chatwidget_manual(None).await;
+    context_chat.config.animations = false;
+    context_chat.current_rollout_path = None;
+    context_chat.smart_prune.latest_attempt = None;
+    context_chat.add_context_usage_output(ContextUsageTranscriptTotals::default());
+    assert!(
+        context_chat
+            .transcript
+            .active_cell
+            .as_ref()
+            .expect("context output")
+            .display_hyperlink_lines(100)
+            .iter()
+            .all(|line| line.hyperlinks.is_empty())
+    );
+
+    let (mut usage_chat, mut usage_rx, _ops) = make_chatwidget_manual(None).await;
+    usage_chat.current_rollout_path = None;
+    usage_chat.smart_prune.latest_attempt = None;
+    while usage_rx.try_recv().is_ok() {}
+    usage_chat.add_status_output(false, None);
+    let usage_cell = std::iter::from_fn(|| usage_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .expect("/usage output");
+    assert!(
+        usage_cell
+            .display_hyperlink_lines(100)
+            .iter()
+            .all(|line| line.hyperlinks.is_empty())
     );
 }
 

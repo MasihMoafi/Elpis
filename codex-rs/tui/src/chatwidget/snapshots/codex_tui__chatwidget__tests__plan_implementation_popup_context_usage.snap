@@ -17,8 +17,9 @@ expression: popup
                                 planning with  ││CONTEXT WINDOW  ≈90.0k of
                                 the model.     ││100.0k used (90%)
 └──────────────────────────────────────────────┘│██████████████████████████░░░
-  Press enter to confirm or esc to go back      │■ Conversation + built-in
-                                                │context ≈90.0k tokens
+  Press enter to confirm or esc to go back      │Core measured total; category
+                                                │attribution unavailable until
+                                                │the next provider attempt
                                                 │
                                                 │No portable context is
                                                 │available.

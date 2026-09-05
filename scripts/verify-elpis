@@ -179,13 +179,17 @@ for name, raw_row in commands.items():
         if mode != "check" or argv != ["fmt", "--all", "--check"]:
             fail(f"command {name!r} is not the allowed formatting check")
     elif argv[0] == "check":
-        if mode != "check" or argv != [
-            "check",
-            "--workspace",
-            "--all-targets",
-            "--exclude",
-            "codex-sandboxing",
-        ]:
+        allowed_checks = [
+            [
+                "check",
+                "--workspace",
+                "--all-targets",
+                "--exclude",
+                "codex-sandboxing",
+            ],
+            ["check", "-p", "codex-tui", "--lib", "--bin", "elpis", "--locked"],
+        ]
+        if mode != "check" or argv not in allowed_checks:
             fail(f"command {name!r} is not the allowed workspace check")
     elif argv[0] == "test":
         validate_test_argv(name, argv)
@@ -201,7 +205,10 @@ if not isinstance(surfaces, list) or not surfaces:
 expected_surface_order = [
     "docs",
     "dashboard",
+    "tui-edit",
     "tui",
+    "smart-prune",
+    "context-ledger",
     "context-compaction",
     "app-server",
     "telemetry",
@@ -381,33 +388,21 @@ resolve_path() {
 }
 
 if ((${#changed_paths[@]} > 0)); then
-    first_signature=
-    have_signature=false
     force_full=false
-    declare -a first_path_surfaces=()
     for path in "${changed_paths[@]}"; do
         [[ -n $path ]] || die "changed path must not be empty"
         resolve_path "$path"
         for surface in "${RESOLVED_SURFACES[@]}"; do
             if [[ $surface == full ]]; then
                 force_full=true
+            else
+                wanted_surfaces["$surface"]=1
             fi
         done
-        signature=$(IFS=$'\x1f'; printf '%s' "${RESOLVED_SURFACES[*]}")
-        if [[ $have_signature == false ]]; then
-            first_signature=$signature
-            first_path_surfaces=("${RESOLVED_SURFACES[@]}")
-            have_signature=true
-        elif [[ $signature != "$first_signature" ]]; then
-            force_full=true
-        fi
     done
     if [[ $force_full == true ]]; then
+        wanted_surfaces=()
         wanted_surfaces[full]=1
-    else
-        for surface in "${first_path_surfaces[@]}"; do
-            wanted_surfaces["$surface"]=1
-        done
     fi
 fi
 

@@ -3090,6 +3090,7 @@ impl ThreadRequestProcessor {
                         &token_usage_thread,
                         codex_thread.as_ref(),
                         token_usage_turn_id,
+                        response_history.get_rollout_items(),
                     )
                     .await;
                 }
@@ -3875,6 +3876,7 @@ impl ThreadRequestProcessor {
                 &token_usage_thread,
                 forked_thread.as_ref(),
                 token_usage_turn_id,
+                &history_items,
             )
             .await;
         }

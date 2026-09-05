@@ -3,10 +3,11 @@
 ## The Elpis Smart Prune design
 
 Masih Moafi<br>
-Technical preprint · evidence snapshot: 2026-09-02
+Technical preprint draft · evidence snapshot: 2026-09-05
 
 > **Status.** The implementation and its cache-stability invariant are tested. One live
-> Smart Prune session observed high provider cache reuse at two admission boundaries.
+> Smart Prune pilot observed provider cache reuse at two admission boundaries. A separate
+> ON-only smoke test retained a planted tool-only fact after one real admission.
 > Comparative cost, latency, and task quality remain open because no matched OFF/ON study
 > has been completed.
 
@@ -27,8 +28,10 @@ Mock-provider integration tests establish first-exposure placement, exact later-
 stability, stable main cache-key construction, bounded failure, and byte-exact fail-open
 behavior. A live observational session reported 2,862,592 cached tokens out of 2,986,458
 main input tokens (95.85%); the first responses linked to two applied admissions reported
-98.96% and 98.89% cached input. These results support the mechanism, not a causal cost or
-quality advantage.
+98.96% and 98.89% cached input. A separate ON-only smoke test shortened an estimated
+3,029-token result to 71 tokens and retained a planted fact; its follow-up reported
+91.57% cached input, while the optimizer used 6,631 tokens. These observations support
+functionality, not a causal cost or general task-quality advantage.
 
 ## 1. Problem
 
@@ -152,7 +155,8 @@ rewrite; it cannot guarantee a billed cache hit.
 
 ## 4. Retrospective pruning is emergency-only
 
-Elpis removed the ambiguous `/prune` command. `/force-prune <1-100>` remains an explicit
+Elpis replaced the old retrospective meaning of `/prune`: it now only enables Smart
+Prune for subsequent turns, like `/smart-prune on`. `/force-prune <1-100>` remains an explicit
 emergency recovery tool. It can reclaim tool-result history the main model has already seen,
 which means it may reduce downstream prompt-cache reuse from the first changed item onward.
 Elpis marks frozen epochs and can place a cache breakpoint at a surviving boundary, but no
@@ -188,8 +192,8 @@ The reproducible command is:
 
 ```bash
 cd codex-rs
-CARGO_BUILD_JOBS=1 RUST_TEST_THREADS=1 \
-  cargo test -p codex-core --test all -- suite::smart_prune --nocapture
+CODEX_SKIP_BWRAP_BUILD=1 CARGO_BUILD_JOBS=1 RUST_TEST_THREADS=1 \
+  nice -n 10 cargo test --locked --offline -p codex-core --test all -- suite::smart_prune --nocapture
 ```
 
 These are encoded-request tests against a mock provider. They establish the tested client
@@ -214,7 +218,31 @@ pilot also exposed an operational defect: 18 of 20 optimizer attempts reached th
 deadline, accumulating 860.732 seconds of optimizer wait. The current same-turn failure
 guard is integration-tested but has not yet been revalidated in a comparable live run.
 
-### 5.3 Verdict
+### 5.3 Isolated live smoke: 2026-09-05
+
+A second ON-only observation used a fixture containing a fact absent from the initial
+prompt and preceding response [4]. The real optimizer admitted one output before its
+main-model follow-up. The fact appeared in both the admitted artifact and final answer.
+
+| Measurement | Observed value |
+| --- | ---: |
+| Source / admitted tokens, local estimates | 3,029 / 71 |
+| One-time source reduction, local estimate | 2,958 |
+| Optimizer input / output tokens, provider-reported | 6,495 / 136 |
+| Optimizer latency | 5,002 ms |
+| Follow-up input / cached input tokens, provider-reported | 9,785 / 8,960 |
+| Follow-up cached-input share | 91.57% |
+
+Actual execution used Luna medium for both main requests and Luna low for the optimizer;
+startup model migration overrode the launcher's Mini request. Private archived receipts
+and an offline verifier structurally link source, admission, transmitted delta and response. Three
+main-request properties were observed: stable options, an unchanged cache key, and
+continuation through the prior response ID. The delta trace does not independently prove
+byte-identical complete wire prefixes. There was no live OFF control, forced inactivity
+failure, generalized quality benchmark, or matched cost measurement. The 2,958-token
+source reduction is not net savings; optimizer work and future reuse must be included.
+
+### 5.4 Verdict
 
 | Question | Verdict |
 | --- | --- |
@@ -275,6 +303,8 @@ cheaper or better completed task.
 - [Cache validation protocol](../docs/evals/tasks/smart_prune_cache_validation/README.md)
 - [2026-09-02 mechanism verification](../docs/evals/tasks/smart_prune_cache_validation/2026-09-02-mechanism-tests.md)
 - [2026-09-01 live pilot](../docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md)
+- [2026-09-05 live smoke and raw-evidence inventory](../docs/evals/tasks/smart_prune_cache_validation/2026-09-05-live-smoke.md)
+- [Experiment log: executed versus planned](../docs/evals/EXPERIMENT_LOG.md)
 - [Evaluation verdicts](../docs/evals/RESULTS.md)
 - [Context and pruning behavior](../docs/context.md)
 - [Prompt-cache lifecycle](../docs/prompt-caching.md)
@@ -288,3 +318,5 @@ cheaper or better completed task.
 3. Headroom, [Architecture](https://github.com/headroomlabs-ai/headroom/blob/main/docs/content/docs/architecture.mdx)
    and [Context Management](https://headroom-docs.vercel.app/docs/context-management),
    accessed 2026-09-02.
+4. Elpis, [Isolated Smart Prune live smoke](../docs/evals/tasks/smart_prune_cache_validation/2026-09-05-live-smoke.md),
+   2026-09-05; ON-only functional observation, not a comparative savings study.

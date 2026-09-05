@@ -84,6 +84,69 @@
       ],
       "type": "object"
     },
+    "ThreadSmartPruneAttemptSnapshot": {
+      "properties": {
+        "admittedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "auditPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidateOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "latencyMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "modelSlug": {
+          "type": "string"
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenUsageBreakdown"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "admittedOutputs",
+        "approxSavedTokens",
+        "attemptId",
+        "candidateOutputs",
+        "latencyMs",
+        "modelSlug",
+        "reasoningEffort",
+        "status"
+      ],
+      "type": "object"
+    },
     "ThreadSmartPruneSnapshot": {
       "properties": {
         "admittedOutputs": {
@@ -123,6 +186,16 @@
           "anyOf": [
             {
               "$ref": "#/definitions/ThreadSmartPruneAdmissionSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestAttempt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadSmartPruneAttemptSnapshot"
             },
             {
               "type": "null"
@@ -226,7 +299,7 @@
       "type": "object"
     }
   },
-  "description": "Thread-scoped Smart Prune state emitted after an idle config refresh.\n\nThis is intentionally separate from token usage because a config change can happen without an active turn or a provider usage sample.",
+  "description": "Thread-scoped Smart Prune state emitted after config refresh or listener attachment.\n\nThis is intentionally separate from token usage because a config change can happen without an active turn or a provider usage sample.",
   "properties": {
     "smartPrune": {
       "$ref": "#/definitions/ThreadSmartPruneSnapshot"

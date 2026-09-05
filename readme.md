@@ -45,14 +45,17 @@
 Linux x86_64:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.1.2/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
 The installer installs Elpis only. [RTK](https://github.com/rtk-ai/rtk) is an optional,
 separate shell-output filter; if it is already on `PATH`, Elpis can offer its reviewed hook
 on first launch. Then choose a provider and sign in or enter its API key.
 
-`v0.2.0` is the Linux x86_64 release described by this source tree.
+The installer downloads the [latest published Linux release](https://github.com/MasihMoafi/Elpis/releases/latest)
+and verifies its SHA-256 checksum. This source describes **v0.2.0**; consult the
+release page for the available artifacts and version-specific notes. The maintainer
+accepted the local candidate before the hosted release gates.
 
 ## What is Elpis
 
@@ -100,11 +103,12 @@ uses a layered pipeline to keep useful findings while removing disposable explor
 | --- | --- | --- |
 | **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
 | **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
-| **3. Smart Prune — Experimental** | Shrinks eligible fresh textual tool results before their first main-model exposure while preserving the tool event and call ID. | When enabled with the Context Ledger `p` switch or `/smart-prune on` |
+| **3. Smart Prune — Experimental** | Shrinks eligible fresh textual tool results before their first main-model exposure while preserving the tool event and call ID. | When enabled with `/prune`, the Context Ledger `p` switch, or `/smart-prune on` |
 | **4. Emergency Ace pruning** | Selectively rewrites eligible old tool evidence toward a requested working-set target, preserving the latest context and an evidence pointer. | Explicit `/force-prune <1-100>` only |
 
 `/force-prune` is an explicit emergency Ace action and does not rewrite user instructions,
-assistant messages, or model reasoning. The ambiguous retrospective `/prune` command was removed.
+assistant messages, or model reasoning. `/prune` now only enables Smart Prune for
+subsequent turns; it does not rewrite already-sent history.
 `/compact` immediately runs Codex native compaction and remains independent of Ace pruning.
 Automatic native compaction uses the model-window threshold and usable-window headroom. Smart
 Prune is Experimental and off by default; its Ledger switch and `/smart-prune on|off` command
@@ -287,6 +291,10 @@ Across those configured historical requests, Elpis spent over 95% of its operati
 ### RQ4: Cache Preservation & Token Economics
 
 Smart Prune now optimizes a fresh tool result before first main-model exposure, so its automatic path does not rewrite already-sent history. One normal-work ON session reported 95.85% cached input overall; the first responses linked to two admissions reported 98.96% and 98.89%. Encoded-request tests separately establish stable prefix and cache-key construction on the tested path. This supports the cache-preserving mechanism, not a complete RQ4 result: there was no matched OFF arm or private full-request trace. The pilot also exposed a 45-second-timeout retry storm; in focused tests, the current code skips later Smart Prune batches in a turn after its first optimizer failure, but that fix has not yet been live-revalidated. The chart below is the 41-pass cost breakdown from the superseded 42-pass retrospective run, not current Smart Prune economics. See the [technical preprint](paper/paper.md), [mechanism-test record](docs/evals/tasks/smart_prune_cache_validation/2026-09-02-mechanism-tests.md), and [2026-09-01 live pilot](docs/evals/tasks/smart_prune_cache_validation/2026-09-01-live-pilot.md).
+
+The separate [September 5 live smoke](docs/evals/tasks/smart_prune_cache_validation/2026-09-05-live-smoke.md)
+also admitted one smaller output, retained a planted fact, and observed cache reuse.
+It is ON-only functional evidence, not an additional controlled savings experiment.
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 

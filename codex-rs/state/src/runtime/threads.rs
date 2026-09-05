@@ -2742,6 +2742,7 @@ mod tests {
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
                 smart_prune: Default::default(),
+                context_attribution: None,
             },
         ))];
         let override_updated_at =

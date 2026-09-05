@@ -39,6 +39,7 @@ impl App {
                 t.insert_cell(cell.clone());
             }
             self.transcript_cells.push(cell);
+            self.context_usage_transcript_dirty = true;
         }
 
         // Walk backward to find the contiguous run of streaming AgentMessageCells that
@@ -57,6 +58,7 @@ impl App {
                 Arc::new(history_cell::AgentMarkdownCell::new(source, &cwd));
             self.transcript_cells
                 .splice(start..end, std::iter::once(consolidated.clone()));
+            self.context_usage_transcript_dirty = true;
 
             if let Some(Overlay::Transcript(t)) = &mut self.overlay {
                 t.consolidate_cells(start..end, consolidated.clone());

@@ -15,6 +15,11 @@ kind = "cargo"
 mode = "check"
 argv = ["check", "--workspace", "--all-targets", "--exclude", "codex-sandboxing"]
 
+[commands.tui-check]
+kind = "cargo"
+mode = "check"
+argv = ["check", "-p", "codex-tui", "--lib", "--bin", "elpis", "--locked"]
+
 [commands.tui-dashboard]
 kind = "cargo"
 mode = "test"
@@ -214,6 +219,10 @@ name = "dashboard"
 commands = ["fmt-check", "tui-dashboard", "tui-context-usage"]
 
 [[surfaces]]
+name = "tui-edit"
+commands = ["fmt-check", "tui-check"]
+
+[[surfaces]]
 name = "tui"
 commands = [
     "fmt-check",
@@ -227,6 +236,19 @@ commands = [
     "tui-thread-setting-model-reasoning",
     "tui-enabled-skills",
 ]
+
+[[surfaces]]
+name = "smart-prune"
+commands = [
+    "fmt-check",
+    "features-automatic-pruning",
+    "core-smart-prune",
+    "tui-smart-prune-controls",
+]
+
+[[surfaces]]
+name = "context-ledger"
+commands = ["fmt-check", "tui-context-usage", "tui-context-ledger"]
 
 [[surfaces]]
 name = "context-compaction"
@@ -427,7 +449,19 @@ surfaces = ["dashboard"]
 
 [[path_rules]]
 glob = "codex-rs/tui/src/chatwidget/context_usage.rs"
-surfaces = ["dashboard"]
+surfaces = ["dashboard", "context-ledger"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/smart_prune*"
+surfaces = ["smart-prune"]
+
+[[path_rules]]
+glob = "codex-rs/core/src/session/smart_prune*"
+surfaces = ["smart-prune"]
+
+[[path_rules]]
+glob = "codex-rs/core/tests/suite/smart_prune*"
+surfaces = ["smart-prune"]
 
 [[path_rules]]
 glob = "codex-rs/features/**"
@@ -458,12 +492,12 @@ glob = "codex-rs/core/src/session/context_prune*"
 surfaces = ["context-compaction"]
 
 [[path_rules]]
-glob = "codex-rs/tui/src/chatwidget/context_ledger.rs"
-surfaces = ["context-compaction"]
+glob = "codex-rs/tui/src/chatwidget/tests/context_ledger.rs"
+surfaces = ["context-ledger"]
 
 [[path_rules]]
-glob = "codex-rs/tui/src/chatwidget/tests/context_ledger.rs"
-surfaces = ["context-compaction"]
+glob = "codex-rs/tui/src/chatwidget/context_ledger.rs"
+surfaces = ["context-ledger"]
 
 [[path_rules]]
 glob = "codex-rs/backend-client/**"
@@ -523,7 +557,7 @@ surfaces = ["app-server"]
 
 [[path_rules]]
 glob = "codex-rs/tui/**"
-surfaces = ["tui"]
+surfaces = ["tui-edit"]
 
 [[path_rules]]
 glob = "docs/**"

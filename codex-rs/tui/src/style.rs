@@ -11,12 +11,14 @@ use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 
-const LIGHT_BG_PRIMARY_RGB: (u8, u8, u8) = (0, 111, 133);
-const DARK_BG_PRIMARY_RGB: (u8, u8, u8) = (70, 220, 242);
-const LIGHT_BG_SECONDARY_RGB: (u8, u8, u8) = (0, 130, 153);
-const DARK_BG_SECONDARY_RGB: (u8, u8, u8) = (120, 230, 248);
-const LIGHT_BG_STATUS_RGB: (u8, u8, u8) = (0, 98, 120);
-const DARK_BG_STATUS_RGB: (u8, u8, u8) = (100, 222, 242);
+// Copper is the product accent; context categories and success/error colors are
+// independent semantic palettes. Use deeper ink on light terminal backgrounds.
+const LIGHT_BG_PRIMARY_RGB: (u8, u8, u8) = (151, 75, 53);
+const DARK_BG_PRIMARY_RGB: (u8, u8, u8) = (230, 162, 140);
+const LIGHT_BG_SECONDARY_RGB: (u8, u8, u8) = (113, 96, 86);
+const DARK_BG_SECONDARY_RGB: (u8, u8, u8) = (167, 148, 139);
+const LIGHT_BG_STATUS_RGB: (u8, u8, u8) = (141, 81, 61);
+const DARK_BG_STATUS_RGB: (u8, u8, u8) = (207, 165, 143);
 // Decorative table rules should remain visible without competing with cell content.
 const TABLE_SEPARATOR_FG_ALPHA: f32 = 0.20;
 
@@ -53,7 +55,7 @@ pub(crate) fn popup_border_style() -> Style {
     secondary_style_for(default_bg())
 }
 
-/// Returns the Elpis cyan used for meaningful status symbols.
+/// Returns the softer Elpis accent for informational status symbols.
 pub(crate) fn status_symbol_style() -> Style {
     status_style_for(default_bg())
 }
@@ -134,12 +136,16 @@ fn table_separator_style_for(
 
 #[allow(clippy::disallowed_methods)]
 pub fn user_message_bg(terminal_bg: (u8, u8, u8)) -> Color {
+    best_color(user_message_bg_rgb(terminal_bg))
+}
+
+pub(crate) fn user_message_bg_rgb(terminal_bg: (u8, u8, u8)) -> (u8, u8, u8) {
     let (top, alpha) = if is_light(terminal_bg) {
         (LIGHT_BG_PRIMARY_RGB, 0.06)
     } else {
         (DARK_BG_PRIMARY_RGB, 0.12)
     };
-    best_color(blend(top, terminal_bg, alpha))
+    blend(top, terminal_bg, alpha)
 }
 
 #[allow(clippy::disallowed_methods)]
@@ -154,19 +160,74 @@ mod tests {
     use ratatui::style::Modifier;
 
     #[test]
-    fn accent_style_uses_darker_cyan_on_light_backgrounds() {
+    fn accent_style_uses_deep_copper_on_light_backgrounds() {
+        assert_eq!(
+            adaptive_palette_color(
+                Some((255, 255, 255)),
+                LIGHT_BG_PRIMARY_RGB,
+                DARK_BG_PRIMARY_RGB
+            ),
+            (151, 75, 53),
+        );
         let style = accent_style_for(Some((255, 255, 255)));
 
-        assert_eq!(style.fg, Some(best_color(LIGHT_BG_PRIMARY_RGB)));
+        assert_eq!(style.fg, Some(best_color((151, 75, 53))));
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
-    fn accent_style_uses_cyan_on_dark_or_unknown_backgrounds() {
-        let expected = Style::default().fg(best_color(DARK_BG_PRIMARY_RGB)).bold();
+    fn accent_style_uses_soft_copper_on_dark_or_unknown_backgrounds() {
+        for background in [Some((0, 0, 0)), None] {
+            assert_eq!(
+                adaptive_palette_color(background, LIGHT_BG_PRIMARY_RGB, DARK_BG_PRIMARY_RGB),
+                (230, 162, 140),
+            );
+        }
+        let expected = Style::default().fg(best_color((230, 162, 140))).bold();
 
         assert_eq!(accent_style_for(Some((0, 0, 0))), expected);
         assert_eq!(accent_style_for(/*terminal_bg*/ None), expected);
+    }
+
+    #[test]
+    fn brand_palette_has_readable_contrast_on_light_and_dark_terminals() {
+        fn luminance(rgb: (u8, u8, u8)) -> f64 {
+            let linear = |value: u8| {
+                let value = f64::from(value) / 255.0;
+                if value <= 0.04045 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
+        }
+        for (background, colors) in [
+            (
+                (250, 248, 245),
+                [
+                    LIGHT_BG_PRIMARY_RGB,
+                    LIGHT_BG_SECONDARY_RGB,
+                    LIGHT_BG_STATUS_RGB,
+                ],
+            ),
+            (
+                (24, 24, 24),
+                [
+                    DARK_BG_PRIMARY_RGB,
+                    DARK_BG_SECONDARY_RGB,
+                    DARK_BG_STATUS_RGB,
+                ],
+            ),
+        ] {
+            for color in colors {
+                let foreground = luminance(color);
+                let background = luminance(background);
+                let contrast =
+                    (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
+                assert!(contrast >= 4.5, "{color:?}: contrast {contrast}");
+            }
+        }
     }
 
     #[test]

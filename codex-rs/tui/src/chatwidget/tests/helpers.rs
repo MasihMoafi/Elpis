@@ -417,6 +417,7 @@ pub(super) fn handle_token_count(chat: &mut ChatWidget, info: Option<TokenUsageI
                             model_context_window: info.model_context_window,
                             context_prune_saved_tokens: 0,
                             smart_prune: Default::default(),
+                            context_attribution: None,
                         },
                     },
                 ),

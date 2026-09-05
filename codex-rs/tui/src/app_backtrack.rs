@@ -616,6 +616,7 @@ fn user_positions_iter(
 /// next-request payload: pruned/evicted tool output and the static system prompt/tool
 /// schemas are not part of `transcript_cells`. Treat these as an estimate, the same way
 /// the Context Ledger already labels its own per-source sizes as estimated tokens.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ContextUsageTranscriptTotals {
     pub(crate) checkpoints: usize,
     pub(crate) user_message_bytes: usize,

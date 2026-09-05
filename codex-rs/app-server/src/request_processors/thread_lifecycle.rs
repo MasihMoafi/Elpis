@@ -822,6 +822,7 @@ pub(super) async fn handle_pending_thread_resume_request(
             &token_usage_thread,
             conversation.as_ref(),
             token_usage_turn_id,
+            &pending.history_items,
         )
         .await;
     }

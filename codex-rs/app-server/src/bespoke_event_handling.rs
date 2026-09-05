@@ -1602,11 +1602,13 @@ async fn handle_token_count_event(
         rate_limits,
         context_prune_saved_tokens,
         smart_prune,
+        context_attribution,
     } = token_count_event;
     if let Some(info) = info {
         let mut token_usage = ThreadTokenUsage::from(info);
         token_usage.context_prune_saved_tokens = context_prune_saved_tokens;
         token_usage.smart_prune = smart_prune.into();
+        token_usage.context_attribution = context_attribution.map(Into::into);
         let notification = ThreadTokenUsageUpdatedNotification {
             thread_id: conversation_id.to_string(),
             turn_id,
@@ -4036,7 +4038,9 @@ mod tests {
                         }),
                         response_linkage_verified: true,
                     }),
+                    latest_attempt: None,
                 },
+                context_attribution: None,
             },
             &outgoing,
         )
@@ -4106,6 +4110,7 @@ mod tests {
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
                 smart_prune: Default::default(),
+                context_attribution: None,
             },
             &outgoing,
         )

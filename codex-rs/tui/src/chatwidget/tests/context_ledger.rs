@@ -27,6 +27,26 @@ fn render_ledger_buffer(chat: &ChatWidget, height: u16) -> ratatui::buffer::Buff
     buf
 }
 
+#[tokio::test]
+async fn context_ledger_frame_uses_the_shared_elpis_brand() {
+    let (chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let buf = render_ledger_buffer(&chat, 45);
+    let brand = crate::style::brand_style();
+    assert_eq!(buf[(0, 0)].fg, brand.fg.expect("brand foreground"));
+    assert_eq!(buf[(1, 0)].fg, brand.fg.expect("brand foreground"));
+
+    let area = ratatui::layout::Rect::new(0, 0, 196, 60);
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(&chat, area, &mut buf);
+    let identity_row = (0..area.height)
+        .find(|y| (1..6).map(|x| buf[(x, *y)].symbol()).collect::<String>() == "Elpis")
+        .expect("rendered identity line");
+    assert_eq!(
+        buf[(1, identity_row)].fg,
+        brand.fg.expect("brand foreground")
+    );
+}
+
 fn configure_ledger_sources(
     chat: &mut ChatWidget,
     root: &std::path::Path,
@@ -70,6 +90,376 @@ fn configure_ledger_sources(
     chat.last_rendered_width.set(Some(120));
     seed_manual_memory_cache_from_disk(chat)?;
     Ok((memories, cwd))
+}
+
+fn seed_run_built_attribution(chat: &mut ChatWidget) {
+    chat.context_attribution = Some(codex_app_server_protocol::ThreadContextAttribution {
+        system_instructions: 700,
+        developer_messages: 900,
+        user_messages: 100,
+        agent_messages: 200,
+        reasoning: 300,
+        tool_calls: 400,
+        tool_results: 500,
+        tool_definitions: 600,
+        output_schema: 50,
+        unrecognized_items: 75,
+        estimated_total: 3_825,
+    });
+}
+
+#[tokio::test]
+async fn active_ledger_uses_one_full_window_category_bar() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    for source in &mut chat.manual_memory_cache.sources {
+        source.admitted = true;
+        source.estimated_tokens = 100;
+    }
+    chat.set_context_usage_transcript_totals(crate::app_backtrack::ContextUsageTranscriptTotals {
+        checkpoints: 1,
+        user_message_bytes: 400,
+        agent_response_bytes: 800,
+        tool_activity_bytes: 1_200,
+    });
+    let mut token_info = make_token_info(10_000, 20_000);
+    token_info.last_token_usage.input_tokens = 9_000;
+    token_info.last_token_usage.output_tokens = 1_000;
+    chat.set_token_info(Some(token_info));
+    seed_run_built_attribution(&mut chat);
+
+    let rendered = render_ledger(&chat, 100);
+    let unboxed = rendered.replace('│', " ");
+    let normalized = unboxed.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        rendered.contains("MEASURED TOTAL · ESTIMATED CATEGORY SHARES"),
+        "single context measurement is not clearly labelled:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("≈10.0k of 20.0k used (50%)"),
+        "full-window denominator is not visible:\n{rendered}",
+    );
+    assert!(
+        normalized.contains("Estimated segments reconcile to measured active context"),
+        "missing reconciliation disclosure:\n{rendered}",
+    );
+    assert!(
+        normalized.contains("Estimated segments reconcile to measured active context")
+            && normalized.contains("all shares use the full window"),
+        "missing measurement and attribution provenance:\n{rendered}",
+    );
+    for (marker, label) in [
+        ("●", "User messages"),
+        ("◆", "Agent messages"),
+        ("▲", "Reasoning"),
+        ("■", "Tool calls"),
+        ("⬟", "Tool results"),
+        ("✦", "System instructions"),
+        ("✚", "Developer messages"),
+        ("▣", "Tool definitions + schema"),
+        ("?", "Unrecognized request items"),
+    ] {
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line.contains(&format!("{marker} {label}"))),
+            "missing unique marker for {label:?}:\n{rendered}",
+        );
+    }
+    for label in [
+        "User messages",
+        "Agent messages",
+        "Reasoning",
+        "Tool calls",
+        "Tool results",
+        "System instructions",
+        "Developer messages",
+        "Tool definitions + schema",
+        "Unrecognized request items",
+    ] {
+        assert!(rendered.contains(label), "missing {label:?}:\n{rendered}");
+    }
+    assert!(
+        !rendered.contains("Conversation + built-in context"),
+        "opaque aggregate survived:\n{rendered}",
+    );
+    assert!(!rendered.contains("ACTIVE OCCUPANCY"));
+    assert!(!rendered.contains("REQUEST COMPOSITION"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_command_and_ledger_share_the_same_run_built_breakdown() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = false;
+    chat.set_token_info(Some(make_token_info(3_825, 20_000)));
+    seed_run_built_attribution(&mut chat);
+
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let command = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+    let ledger = render_ledger(&chat, 100);
+
+    for (label, tokens) in [
+        ("User messages", "100"),
+        ("Agent messages", "200"),
+        ("Reasoning", "300"),
+        ("Tool calls", "400"),
+        ("Tool results", "500"),
+        ("System instructions", "700"),
+        ("Developer messages", "900"),
+        ("Tool definitions + schema", "650"),
+        ("Unrecognized request items", "75"),
+    ] {
+        assert!(
+            command.contains(label),
+            "/context missing {label:?}:\n{command}"
+        );
+        assert!(
+            ledger.contains(label),
+            "Ledger missing {label:?}:\n{ledger}"
+        );
+        assert!(
+            command
+                .lines()
+                .any(|line| line.contains(label) && line.contains(tokens)),
+            "/context has the wrong value for {label:?}:\n{command}",
+        );
+        assert!(
+            ledger
+                .lines()
+                .any(|line| line.contains(label) && line.contains(tokens)),
+            "Ledger has the wrong value for {label:?}:\n{ledger}",
+        );
+    }
+    for rendered in [&command, &ledger] {
+        assert!(!rendered.contains("Built-in + estimate gap"));
+        assert!(!rendered.contains("Conversation + built-in context"));
+    }
+}
+
+#[tokio::test]
+async fn context_surfaces_preserve_above_capacity_usage_and_category_counts() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = false;
+    chat.set_token_info(Some(make_token_info(210_000, 200_000)));
+    chat.context_attribution = Some(codex_app_server_protocol::ThreadContextAttribution {
+        user_messages: 100_000,
+        agent_messages: 110_000,
+        estimated_total: 210_000,
+        ..Default::default()
+    });
+
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let command = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+    let ledger = render_ledger(&chat, 100);
+    assert!(command.contains("210k/200k · 105.0% used"), "{command}");
+    assert!(ledger.contains("≈210.0k of 200.0k used (105%)"), "{ledger}");
+    for (label, tokens) in [("User messages", "100.0k"), ("Agent messages", "110.0k")] {
+        assert!(
+            ledger
+                .lines()
+                .any(|line| line.contains(label) && line.contains(tokens)),
+            "{ledger}"
+        );
+    }
+    assert_eq!(command.matches('█').count(), 80);
+    assert_eq!(ledger.matches('█').count(), 49);
+    assert!(!command.contains('░'));
+    assert!(!ledger.contains('░'));
+}
+
+#[tokio::test]
+async fn missing_context_measurement_is_distinct_from_measured_zero() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = false;
+    chat.set_token_info(None);
+
+    let unavailable = render_ledger(&chat, 100);
+    assert!(unavailable.contains("usage unavailable"), "{unavailable}");
+    assert!(
+        !unavailable.contains("Core measured total"),
+        "{unavailable}"
+    );
+    assert!(!unavailable.contains("used (0%)"), "{unavailable}");
+    assert!(!unavailable.contains('░'));
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let command = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output"),
+    );
+    assert!(
+        command.contains("Context measurement unavailable"),
+        "{command}"
+    );
+    assert!(!command.contains("neutral fill is measured"), "{command}");
+    assert!(!command.contains('░'));
+
+    chat.set_token_info(Some(make_token_info(0, 200_000)));
+    let measured_zero = render_ledger(&chat, 100);
+    assert!(
+        measured_zero.contains("≈0 of 200.0k used (0%)"),
+        "{measured_zero}"
+    );
+    assert!(
+        measured_zero.contains("Core measured total"),
+        "{measured_zero}"
+    );
+    assert!(measured_zero.contains('░'));
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let command = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output"),
+    );
+    assert!(command.contains("0/200k · 0.0% used"), "{command}");
+    assert!(
+        !command.contains("Context measurement unavailable"),
+        "{command}"
+    );
+}
+
+#[tokio::test]
+async fn pending_source_changes_do_not_change_measured_context_categories_or_bar() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = false;
+    chat.set_token_info(Some(make_token_info(3_825, 20_000)));
+    seed_run_built_attribution(&mut chat);
+
+    let baseline = render_ledger(&chat, 200);
+    let accounting = |rendered: &str| {
+        rendered
+            .split_once("CONTEXT WINDOW")
+            .expect("measured context section")
+            .1
+            .lines()
+            .map(|line| line.trim_matches(|ch: char| ch == '│' || ch.is_whitespace()))
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let baseline_accounting = accounting(&baseline);
+
+    // Inclusion and exclusion are both next-request choices. Neither is a new
+    // measurement, and neither may rescale the current request's categories.
+    for delta in [-500, 700] {
+        chat.context_ledger.projected_token_delta = delta;
+        chat.context_ledger.projection_baseline_turn_id = Some("turn-1".to_string());
+        let pending = render_ledger(&chat, 200);
+        assert!(pending.contains("changes pending"), "{pending}");
+        assert_eq!(accounting(&pending), baseline_accounting);
+        assert!(!pending.contains("next request ≈"), "{pending}");
+
+        chat.add_context_usage_output(
+            crate::app_backtrack::ContextUsageTranscriptTotals::default(),
+        );
+        let command = lines_to_single_string(
+            &chat
+                .active_cell_transcript_lines(100)
+                .expect("/context output rendered"),
+        );
+        assert!(command.contains("3.8k/20k · 19.1% used"), "{command}");
+        assert!(pending.contains("≈3.8k of 20.0k used (19%)"), "{pending}");
+    }
+
+    // Only the new core measurement changes the bar and clears the pending note.
+    chat.reconcile_context_projection_for_turn("turn-2");
+    chat.set_token_info(Some(make_token_info(3_200, 20_000)));
+    let measured = render_ledger(&chat, 200);
+    assert!(!measured.contains("changes pending"), "{measured}");
+    assert!(measured.contains("≈3.2k of 20.0k used (16%)"), "{measured}");
+    assert_ne!(accounting(&measured), baseline_accounting);
+}
+
+#[tokio::test]
+async fn unmeasured_ledger_does_not_fabricate_context_attribution() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_token_info(Some(make_token_info(10_000, 20_000)));
+
+    let rendered = render_ledger(&chat, 80);
+    let unboxed = rendered.replace('│', " ");
+    let normalized = unboxed.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        !rendered.contains("Conversation + built-in context"),
+        "unmeasured Ledger fabricated an aggregate:\n{rendered}",
+    );
+    assert!(normalized.contains("category attribution unavailable"));
+    assert!(normalized.contains("Core measured total"));
+    for label in ["User messages", "Agent messages", "Tool calls"] {
+        assert!(
+            !rendered.contains(label),
+            "unmeasured Ledger fabricated {label:?}:\n{rendered}",
+        );
+    }
+}
+
+#[tokio::test]
+async fn rendered_ledger_uses_the_context_palette_instead_of_terminal_gray() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let user_file = root.path().join("user-notes.md");
+    std::fs::write(&user_file, "Manually selected context")?;
+    crate::legacy_core::elpis_context::add_continuity_source(Some(&memories), &cwd, &user_file)?;
+    seed_manual_memory_cache_from_disk(&mut chat)?;
+    for source in &mut chat.manual_memory_cache.sources {
+        source.admitted = true;
+        source.estimated_tokens = 100;
+    }
+    chat.set_context_usage_transcript_totals(crate::app_backtrack::ContextUsageTranscriptTotals {
+        checkpoints: 1,
+        user_message_bytes: 400,
+        agent_response_bytes: 800,
+        tool_activity_bytes: 1_200,
+    });
+    chat.set_token_info(Some(make_token_info(10_000, 20_000)));
+    seed_run_built_attribution(&mut chat);
+
+    let buffer = render_ledger_buffer(&chat, 80);
+    let expected = [
+        ("●", "User messages", Color::Rgb(111, 181, 253)),
+        ("◆", "Agent messages", Color::Rgb(3, 155, 44)),
+        ("▲", "Reasoning", Color::Rgb(3, 218, 229)),
+        ("■", "Tool calls", Color::Rgb(162, 129, 11)),
+        ("⬟", "Tool results", Color::Rgb(252, 178, 79)),
+        ("✦", "System instructions", Color::Rgb(240, 68, 93)),
+        ("✚", "Developer messages", Color::Rgb(239, 140, 255)),
+        ("▣", "Tool definitions + schema", Color::Rgb(145, 145, 145)),
+        ("?", "Unrecognized request items", Color::Rgb(166, 252, 24)),
+    ];
+    let mut rendered_colors = Vec::new();
+    for (marker, label, expected_color) in expected {
+        let row = (0..80)
+            .find(|row| {
+                (0..52)
+                    .map(|column| buffer[(column, *row)].symbol())
+                    .collect::<String>()
+                    .contains(label)
+            })
+            .unwrap_or_else(|| panic!("missing rendered Ledger row: {label}"));
+        let color = (0..52)
+            .find_map(|column| {
+                let cell = &buffer[(column, row)];
+                (cell.symbol() == marker).then_some(cell.fg)
+            })
+            .unwrap_or_else(|| panic!("missing category marker for Ledger row: {label}"));
+        assert_eq!(color, expected_color, "wrong rendered color for {label}");
+        assert_ne!(color, Color::Gray, "terminal Gray is theme-dependent");
+        rendered_colors.push(color);
+    }
+    rendered_colors.sort_by_key(|color| format!("{color:?}"));
+    rendered_colors.dedup();
+    assert_eq!(rendered_colors.len(), expected.len());
+    Ok(())
 }
 
 #[tokio::test]
@@ -381,8 +771,7 @@ async fn active_turn_exclusion_waits_for_boundary_without_inflating_conversation
 
     let before = render_ledger(&chat, 80);
     assert!(before.contains("≈10.0k tokens in context"));
-    assert!(before.contains("Conversation + built-in context"));
-    assert!(before.contains("≈9.0k tokens"), "{before}");
+    assert!(!before.contains("Built-in + estimate gap"));
 
     let buffer = render_ledger_buffer(&chat, 80);
     let es_row = (0..80)
@@ -400,8 +789,7 @@ async fn active_turn_exclusion_waits_for_boundary_without_inflating_conversation
         after.contains("≈10.0k tokens now · changes queued"),
         "{after}"
     );
-    assert!(after.contains("Conversation + built-in context"));
-    assert!(after.contains("≈9.0k tokens"), "{after}");
+    assert!(!after.contains("Built-in + estimate gap"));
     assert!(
         !chat
             .continuity_sources()
@@ -426,19 +814,18 @@ async fn active_turn_exclusion_waits_for_boundary_without_inflating_conversation
         during_old_turn.contains("≈10.2k tokens now · changes queued"),
         "{during_old_turn}"
     );
-    assert!(
-        during_old_turn.contains("≈9.2k tokens"),
-        "{during_old_turn}"
-    );
+    assert!(!during_old_turn.contains("Conversation + built-in context"));
 
     handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
     assert_ne!(std::fs::read(&admission_path)?, admission_before_toggle);
     let after_boundary = render_ledger(&chat, 80);
     assert!(
-        after_boundary.contains("next request ≈9.8k tokens"),
+        after_boundary.contains("≈10.2k tokens now · changes pending"),
         "{after_boundary}"
     );
-    assert!(after_boundary.contains("≈9.2k tokens"), "{after_boundary}");
+    assert!(after_boundary.contains("≈10.2k of 20.0k used (51%)"));
+    assert!(!after_boundary.contains("next request ≈9.8k tokens"));
+    assert!(!after_boundary.contains("Conversation + built-in context"));
 
     chat.reconcile_context_projection_for_turn("turn-2");
     chat.set_token_info(Some(make_token_info(9_800, 20_000)));
@@ -447,10 +834,7 @@ async fn active_turn_exclusion_waits_for_boundary_without_inflating_conversation
         next_exact_snapshot.contains("≈9.8k tokens in context"),
         "{next_exact_snapshot}"
     );
-    assert!(
-        next_exact_snapshot.contains("≈9.2k tokens"),
-        "{next_exact_snapshot}"
-    );
+    assert!(!next_exact_snapshot.contains("Conversation + built-in context"));
     Ok(())
 }
 
@@ -494,7 +878,8 @@ async fn active_turn_toggle_back_to_original_cancels_the_queued_write() -> anyho
 }
 
 #[tokio::test]
-async fn grouped_project_rules_project_as_one_admission_key() -> anyhow::Result<()> {
+async fn grouped_project_rules_toggle_as_one_admission_key_without_changing_measured_usage()
+-> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
@@ -543,14 +928,20 @@ async fn grouped_project_rules_project_as_one_admission_key() -> anyhow::Result<
         })
         .expect("rendered project-rule row");
     assert!(chat.handle_context_ledger_mouse_click(project_row, 8));
-    assert!(render_ledger(&chat, 200).contains("≈8.5k tokens"));
+    let queued = render_ledger(&chat, 200);
+    assert!(
+        queued.contains("≈10.0k tokens now · changes queued"),
+        "{queued}"
+    );
+    assert!(!queued.contains("Conversation + built-in context"));
 
     handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
     let after_boundary = render_ledger(&chat, 200);
     assert!(
-        after_boundary.contains("next request ≈8.5k tokens"),
+        after_boundary.contains("≈10.0k tokens now · changes pending"),
         "{after_boundary}"
     );
+    assert!(after_boundary.contains("≈10.0k of 20.0k used (50%)"));
     assert!(
         chat.manual_memory_cache
             .sources
@@ -585,7 +976,7 @@ async fn grouped_project_rules_project_as_one_admission_key() -> anyhow::Result<
 }
 
 #[tokio::test]
-async fn durable_memory_is_counted_and_its_toggle_projects_free_space() -> anyhow::Result<()> {
+async fn durable_memory_toggle_preserves_measured_usage_until_next_request() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
@@ -609,11 +1000,7 @@ async fn durable_memory_is_counted_and_its_toggle_projects_free_space() -> anyho
         before.contains("DURABLE MEMORY  ≈800 tokens admitted"),
         "{before}"
     );
-    assert!(
-        before.contains("Conversation + built-in context"),
-        "{before}"
-    );
-    assert!(before.contains("≈9.2k tokens"), "{before}");
+    assert!(!before.contains("Built-in + estimate gap"), "{before}");
     while rx.try_recv().is_ok() {}
 
     chat.last_rendered_width.set(Some(120));
@@ -634,7 +1021,6 @@ async fn durable_memory_is_counted_and_its_toggle_projects_free_space() -> anyho
         queued.contains("≈10.0k tokens now · saving change"),
         "{queued}"
     );
-    assert!(queued.contains("≈9.2k tokens"), "{queued}");
     let target = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
             AppEvent::ManualMemoryAdmissionRequested(target, false) => Some(target),
@@ -672,9 +1058,12 @@ async fn durable_memory_is_counted_and_its_toggle_projects_free_space() -> anyho
     chat.clear_manual_memory_pending_mutation();
 
     let after = render_ledger(&chat, 80);
-    assert!(after.contains("next request ≈9.2k tokens"), "{after}");
-    assert!(after.contains("Conversation + built-in context"), "{after}");
-    assert!(after.contains("≈9.2k tokens"), "{after}");
+    assert!(
+        after.contains("≈10.0k tokens now · changes pending"),
+        "{after}"
+    );
+    assert!(after.contains("≈10.0k of 20.0k used (50%)"), "{after}");
+    assert!(!after.contains("Built-in + estimate gap"), "{after}");
     Ok(())
 }
 
@@ -1063,6 +1452,8 @@ async fn ledger_renders_smart_prune_switch_in_both_states() {
     chat.smart_prune.examined_outputs = 3;
     chat.smart_prune.admitted_outputs = 2;
     chat.smart_prune.failed_batches = 1;
+    chat.smart_prune.optimizer_requests = 1;
+    chat.smart_prune.optimizer_latency_ms = 45_000;
     chat.smart_prune.approx_source_tokens = 4_000;
     chat.smart_prune.approx_admitted_tokens = 700;
     chat.smart_prune.approx_saved_tokens = 3_300;
@@ -1087,13 +1478,68 @@ async fn ledger_renders_smart_prune_switch_in_both_states() {
     assert!(evidenced.contains("2 of 3 eligible outputs shortened"));
     assert!(evidenced.contains("≈3.3k"));
     assert!(evidenced.contains("saved"));
-    assert!(!evidenced.contains("failed"));
+    assert!(evidenced.contains("1 optimizer batch failed"));
+    assert!(evidenced.contains("originals preserved"));
+    assert!(evidenced.contains("45.0s total wait"));
+    assert!(evidenced.contains("usage unreported"));
     assert!(!evidenced.contains("≈4.0k→≈700"));
     assert!(evidenced.contains("Latest 019d0000 · response linked"));
 
     chat.bottom_pane.set_task_running(/*running*/ true);
     let busy = render_ledger(&chat, 30);
     assert!(busy.contains("active turn unchanged"));
+}
+
+#[tokio::test]
+async fn ledger_explains_the_latest_failed_optimizer_attempt_and_links_its_evidence()
+-> anyhow::Result<()> {
+    let root = tempdir()?;
+    let attempt_dir = root.path().join("logs/smart-prune/attempts");
+    std::fs::create_dir_all(&attempt_dir)?;
+    let attempt_path = attempt_dir.join("019d0000-timeout.json");
+    std::fs::write(&attempt_path, "{}\n")?;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.codex_home = root.path().to_path_buf().abs();
+    chat.smart_prune_synced = true;
+    chat.smart_prune.enabled = true;
+    chat.smart_prune.examined_outputs = 1;
+    chat.smart_prune.unchanged_outputs = 1;
+    chat.smart_prune.failed_batches = 1;
+    chat.smart_prune.optimizer_requests = 1;
+    chat.smart_prune.optimizer_latency_ms = 20_000;
+    chat.smart_prune.latest_attempt =
+        Some(codex_app_server_protocol::ThreadSmartPruneAttemptSnapshot {
+            attempt_id: "019d0000-timeout".to_string(),
+            audit_path: Some("smart-prune/attempts/019d0000-timeout.json".to_string()),
+            status: "timed_out".to_string(),
+            model_slug: "gpt-5.6-luna".to_string(),
+            reasoning_effort: "low".to_string(),
+            candidate_outputs: 1,
+            admitted_outputs: 0,
+            approx_saved_tokens: 0,
+            latency_ms: 20_000,
+            usage: None,
+        });
+
+    let rendered = render_ledger(&chat, 50);
+    assert!(rendered.contains("Last attempt: timed out"));
+    assert!(rendered.contains("1 candidate · 0 admitted · 20.0s"));
+    assert!(rendered.contains("gpt-5.6-luna · low effort · usage unreported"));
+    assert!(rendered.contains("Attempt evidence 019d0000-timeout.json"));
+
+    let buffer = render_ledger_buffer(&chat, 50);
+    let destination = url::Url::from_file_path(&attempt_path)
+        .expect("attempt path URL")
+        .to_string();
+    assert!(
+        buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol().contains(&format!("\u{1b}]8;;{destination}"))),
+        "attempt evidence must be a real OSC 8 file hyperlink"
+    );
+    Ok(())
 }
 
 #[tokio::test]
@@ -1299,4 +1745,120 @@ async fn enabled_ledger_switch_keeps_textual_state_and_a_bold_knob() {
         .expect("enabled switch");
 
     assert!(switch[4].modifier.contains(Modifier::BOLD));
+}
+
+#[tokio::test]
+async fn context_command_reports_synchronized_smart_prune_admission_separately() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = false;
+    chat.set_token_info(Some(make_token_info(3_825, 20_000)));
+    chat.smart_prune_synced = true;
+    chat.smart_prune.enabled = true;
+    chat.smart_prune.examined_outputs = 1;
+    chat.smart_prune.admitted_outputs = 1;
+    chat.smart_prune.failed_batches = 0;
+    chat.smart_prune.approx_saved_tokens = 2_958;
+    chat.smart_prune.optimizer_requests = 1;
+    chat.smart_prune.optimizer_usage_reports = 0;
+
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let rendered = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+
+    assert!(rendered.contains("Smart Prune Audit"), "{rendered}");
+    assert!(rendered.contains("Smart Prune ON"), "{rendered}");
+    assert!(rendered.contains("1 admitted / 1 examined"), "{rendered}");
+    assert!(rendered.contains("0 failed batches"), "{rendered}");
+    assert!(
+        rendered.contains("≈3k tokens estimated one-time source reduction"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("optimizer usage unreported"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("History Rewrite Audit"), "{rendered}");
+    assert!(
+        rendered.contains("No history rewrites recorded"),
+        "{rendered}"
+    );
+
+    chat.smart_prune.optimizer_usage_reports = 1;
+    chat.smart_prune.optimizer_usage.total_tokens = 6_631;
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let reported = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+    assert!(
+        reported.contains("optimizer usage · ~6.6k tokens"),
+        "{reported}"
+    );
+    assert!(
+        !reported.contains("optimizer usage unreported"),
+        "{reported}"
+    );
+}
+
+#[tokio::test]
+async fn context_command_does_not_infer_smart_prune_outcome_before_sync_or_from_failure() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = false;
+    chat.set_token_info(Some(make_token_info(3_825, 20_000)));
+    chat.smart_prune.admitted_outputs = 0;
+    chat.smart_prune.failed_batches = 1;
+    chat.smart_prune.approx_saved_tokens = 0;
+
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let unsynced = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+    assert!(unsynced.contains("Smart Prune Audit"), "{unsynced}");
+    assert!(
+        unsynced.contains("status unavailable · syncing"),
+        "{unsynced}"
+    );
+    assert!(!unsynced.contains("OFF"), "{unsynced}");
+    assert!(!unsynced.contains("no attempts"), "{unsynced}");
+
+    chat.smart_prune_synced = true;
+    chat.smart_prune.failed_batches = 0;
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let synchronized_control = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+    assert!(
+        synchronized_control
+            .contains("Smart Prune OFF · 0 admitted / 0 examined · 0 failed batches"),
+        "{synchronized_control}"
+    );
+
+    chat.smart_prune.enabled = true;
+    chat.smart_prune.examined_outputs = 1;
+    chat.smart_prune.unchanged_outputs = 1;
+    chat.smart_prune.failed_batches = 1;
+    chat.smart_prune.optimizer_requests = 1;
+    chat.smart_prune.optimizer_usage_reports = 0;
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let failed = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+    assert!(failed.contains("Smart Prune ON"), "{failed}");
+    assert!(failed.contains("0 admitted / 1 examined"), "{failed}");
+    assert!(failed.contains("1 failed batches"), "{failed}");
+    assert!(
+        !failed.contains("estimated one-time source reduction"),
+        "{failed}"
+    );
+    assert!(failed.contains("optimizer usage unreported"), "{failed}");
 }

@@ -110,7 +110,7 @@ fn decision_manifest_rejects_unknown_duplicate_and_invalid_decisions() {
 }
 
 #[test]
-fn admission_enforces_eligibility_boundary_and_rejects_structured_output() {
+fn admission_enforces_eligibility_boundary_for_text_and_non_text_output() {
     let output = |body| ResponseItem::FunctionCallOutput {
         id: None,
         call_id: "boundary".to_string(),
@@ -147,14 +147,34 @@ fn admission_enforces_eligibility_boundary_and_rejects_structured_output() {
         transform_tool_output(
             &output(FunctionCallOutputBody::ContentItems(vec![
                 FunctionCallOutputContentItem::InputText {
+                    text: "tool metadata".to_string(),
+                },
+                FunctionCallOutputContentItem::InputText {
                     text: "x".repeat(8_000),
                 },
             ])),
             "kept",
             evidence,
         )
+        .is_some(),
+        "all-text structured output is the real exec shape and must be eligible"
+    );
+    assert!(
+        transform_tool_output(
+            &output(FunctionCallOutputBody::ContentItems(vec![
+                FunctionCallOutputContentItem::InputText {
+                    text: "x".repeat(8_000),
+                },
+                FunctionCallOutputContentItem::InputImage {
+                    image_url: "data:image/png;base64,AAA".to_string(),
+                    detail: None,
+                },
+            ])),
+            "kept",
+            evidence,
+        )
         .is_none(),
-        "structured tool output must remain byte-identical"
+        "multimodal output must remain byte-identical"
     );
 }
 

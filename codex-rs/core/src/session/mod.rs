@@ -347,6 +347,7 @@ use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::CompactedItem;
+use codex_protocol::protocol::ContextAttributionSnapshot;
 use codex_protocol::protocol::DeprecationNoticeEvent;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::Event;
@@ -3805,10 +3806,14 @@ impl Session {
     }
 
     /// Deliver the current request-context estimate without persisting a synthetic
-    /// provider usage event.  The TUI uses this snapshot for the ledger and `/context`;
-    /// it is emitted immediately before a request is built, after any first-exposure
-    /// Smart Prune admissions from the preceding tool batch.
-    pub(crate) async fn send_current_context_token_count_event(&self, turn_context: &TurnContext) {
+    /// provider usage event. The TUI uses this snapshot for the ledger and `/context`;
+    /// it is emitted after the request is fully built and immediately before the
+    /// provider attempt.
+    pub(crate) async fn send_current_context_token_count_event(
+        &self,
+        turn_context: &TurnContext,
+        context_attribution: ContextAttributionSnapshot,
+    ) {
         let active_context_tokens = self.get_total_token_usage().await;
         let (mut info, rate_limits, context_prune_saved_tokens, mut smart_prune) = {
             let state = self.state.lock().await;
@@ -3837,6 +3842,7 @@ impl Session {
                 rate_limits,
                 context_prune_saved_tokens,
                 smart_prune,
+                context_attribution: Some(context_attribution),
             }),
         };
         self.send_event_raw_with_persistence(event, /*persist*/ false)
@@ -3844,6 +3850,15 @@ impl Session {
     }
 
     pub(crate) async fn send_token_count_event(&self, turn_context: &TurnContext) {
+        self.send_token_count_event_with_attribution(turn_context, None)
+            .await;
+    }
+
+    pub(crate) async fn send_token_count_event_with_attribution(
+        &self,
+        turn_context: &TurnContext,
+        context_attribution: Option<ContextAttributionSnapshot>,
+    ) {
         let (info, rate_limits, context_prune_saved_tokens, mut smart_prune) = {
             let state = self.state.lock().await;
             let (info, rate_limits) = state.token_info_and_rate_limits();
@@ -3860,6 +3875,7 @@ impl Session {
             rate_limits,
             context_prune_saved_tokens,
             smart_prune,
+            context_attribution,
         });
         self.send_event(turn_context, event).await;
     }

@@ -564,6 +564,9 @@ pub(crate) struct App {
     pub(crate) file_search: FileSearchManager,
 
     pub(crate) transcript_cells: Vec<Arc<dyn HistoryCell>>,
+    /// Recompute the Ledger's transcript attribution once after committed history
+    /// changes, rather than rescanning every animation frame.
+    context_usage_transcript_dirty: bool,
 
     // Pager overlay state (Transcript or Static like Diff)
     pub(crate) overlay: Option<Overlay>,
@@ -826,6 +829,7 @@ impl App {
         startup_elapsed_before_app: Duration,
         startup_bootstrap: Option<AppServerBootstrap>,
         startup_hooks_browser: Option<HooksListEntry>,
+        startup_identity: crate::startup_animation::StartupIdentityHistoryCell,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
         let startup_started_at = Instant::now();
@@ -1082,6 +1086,7 @@ See the Elpis keymap documentation for supported actions and examples."
             enhanced_keys_supported,
             keymap: runtime_keymap,
             transcript_cells: Vec::new(),
+            context_usage_transcript_dirty: true,
             overlay: None,
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,
@@ -1116,6 +1121,7 @@ See the Elpis keymap documentation for supported actions and examples."
             pending_plugin_enabled_writes: HashMap::new(),
             pending_hook_enabled_writes: HashMap::new(),
         };
+        app.insert_history_cell(tui, Box::new(startup_identity));
         if let Some(entry) = startup_hooks_browser {
             app.chat_widget.open_hooks_browser(entry);
         }
@@ -1367,6 +1373,7 @@ See the Elpis keymap documentation for supported actions and examples."
     }
 
     fn render_chat_widget_frame(&mut self, tui: &mut tui::Tui) -> Result<Rect> {
+        self.refresh_context_usage_transcript_totals();
         let desired_height = self.chat_widget.desired_height(tui.terminal.size()?.width);
         let mut rendered_area = Rect::default();
         tui.draw_with_resize_reflow(desired_height, |frame| {
@@ -1379,6 +1386,15 @@ See the Elpis keymap documentation for supported actions and examples."
             }
         })?;
         Ok(rendered_area)
+    }
+
+    fn refresh_context_usage_transcript_totals(&mut self) {
+        if !self.context_usage_transcript_dirty {
+            return;
+        }
+        let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+        self.chat_widget.set_context_usage_transcript_totals(totals);
+        self.context_usage_transcript_dirty = false;
     }
 
     pub(super) fn show_shutdown_feedback(&mut self, tui: &mut tui::Tui) -> Result<()> {

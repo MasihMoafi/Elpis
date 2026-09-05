@@ -271,8 +271,6 @@ pub(crate) async fn run_turn(
                 turn_context.as_ref(),
             )
             .await;
-            sess.send_current_context_token_count_event(turn_context.as_ref())
-                .await;
             if token_status.token_limit_reached
                 && !turn_context.config.automatic_compaction_enabled()
             {
@@ -1032,6 +1030,11 @@ async fn run_sampling_request(
             turn_context.as_ref(),
             base_instructions.clone(),
         );
+        sess.send_current_context_token_count_event(
+            turn_context.as_ref(),
+            prompt.context_attribution_snapshot(),
+        )
+        .await;
         // Record each real attempt after its prompt is fixed. A failed stream may execute and
         // admit a tool result before the retry, so recording only outside this loop misses the
         // retry that first exposes that admission.
@@ -2420,7 +2423,15 @@ async fn try_run_sampling_request(
         // counts only after pending tools resolve so clients do not see progress events while the
         // turn is waiting on the user. This also needs to happen before returning cancellation so
         // token usage already recorded from the completed response is still persisted.
-        sess.send_token_count_event(&turn_context).await;
+        let retained_input = sess
+            .clone_history()
+            .await
+            .for_prompt(&turn_context.model_info.input_modalities);
+        sess.send_token_count_event_with_attribution(
+            &turn_context,
+            Some(prompt.context_attribution_for_input(&retained_input)),
+        )
+        .await;
     }
 
     if cancellation_token.is_cancelled() {

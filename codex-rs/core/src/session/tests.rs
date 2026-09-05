@@ -2356,6 +2356,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             rate_limits: None,
             context_prune_saved_tokens: 0,
             smart_prune: Default::default(),
+            context_attribution: None,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2364,6 +2365,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             rate_limits: None,
             context_prune_saved_tokens: 0,
             smart_prune: Default::default(),
+            context_attribution: None,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2372,6 +2374,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             rate_limits: None,
             context_prune_saved_tokens: 0,
             smart_prune: Default::default(),
+            context_attribution: None,
         },
     )));
     rollout_items.push(RolloutItem::EventMsg(EventMsg::TokenCount(
@@ -2380,6 +2383,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             rate_limits: None,
             context_prune_saved_tokens: 0,
             smart_prune: Default::default(),
+            context_attribution: None,
         },
     )));
 

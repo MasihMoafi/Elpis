@@ -100,6 +100,16 @@ impl ChatWidget {
             }
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
                 self.reconcile_context_projection_for_turn(&notification.turn_id);
+                let context_attribution_changed = notification
+                    .token_usage
+                    .context_attribution
+                    .as_ref()
+                    .is_some_and(|next| self.context_attribution.as_ref() != Some(next));
+                if let Some(context_attribution) =
+                    notification.token_usage.context_attribution.clone()
+                {
+                    self.context_attribution = Some(context_attribution);
+                }
                 self.update_smart_prune_savings(
                     notification.token_usage.smart_prune.approx_saved_tokens,
                     from_replay,
@@ -119,7 +129,9 @@ impl ChatWidget {
                 let tokens_changed = self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));
-                if !tokens_changed && (smart_prune_changed || savings_changed) {
+                if !tokens_changed
+                    && (smart_prune_changed || savings_changed || context_attribution_changed)
+                {
                     self.app_event_tx.send(AppEvent::RefreshContextDashboard);
                 }
                 self.refresh_status_line();

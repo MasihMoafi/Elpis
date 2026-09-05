@@ -401,6 +401,7 @@ export type { ThreadArchivedNotification } from "./ThreadArchivedNotification";
 export type { ThreadClosedNotification } from "./ThreadClosedNotification";
 export type { ThreadCompactStartParams } from "./ThreadCompactStartParams";
 export type { ThreadCompactStartResponse } from "./ThreadCompactStartResponse";
+export type { ThreadContextAttribution } from "./ThreadContextAttribution";
 export type { ThreadDeleteParams } from "./ThreadDeleteParams";
 export type { ThreadDeleteResponse } from "./ThreadDeleteResponse";
 export type { ThreadDeletedNotification } from "./ThreadDeletedNotification";
@@ -457,6 +458,7 @@ export type { ThreadSettingsUpdatedNotification } from "./ThreadSettingsUpdatedN
 export type { ThreadShellCommandParams } from "./ThreadShellCommandParams";
 export type { ThreadShellCommandResponse } from "./ThreadShellCommandResponse";
 export type { ThreadSmartPruneAdmissionSnapshot } from "./ThreadSmartPruneAdmissionSnapshot";
+export type { ThreadSmartPruneAttemptSnapshot } from "./ThreadSmartPruneAttemptSnapshot";
 export type { ThreadSmartPruneSnapshot } from "./ThreadSmartPruneSnapshot";
 export type { ThreadSmartPruneUpdatedNotification } from "./ThreadSmartPruneUpdatedNotification";
 export type { ThreadSortKey } from "./ThreadSortKey";

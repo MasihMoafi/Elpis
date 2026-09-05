@@ -76,6 +76,7 @@ fn dashboard_token_usage_notification(
                 model_context_window: Some(1_000),
                 context_prune_saved_tokens: saved_tokens,
                 smart_prune,
+                context_attribution: None,
             },
         },
     )

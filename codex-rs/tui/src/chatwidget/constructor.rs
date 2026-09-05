@@ -122,6 +122,9 @@ impl ChatWidget {
             runtime_model_provider_base_url,
             remote_connection: None,
             token_info: None,
+            context_attribution: None,
+            context_usage_transcript_totals:
+                crate::app_backtrack::ContextUsageTranscriptTotals::default(),
             smart_prune: ThreadSmartPruneSnapshot::default(),
             smart_prune_synced: false,
             context_prune_report_pending: false,

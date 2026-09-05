@@ -272,6 +272,28 @@ assert_call_at 1 test -p codex-tui --lib --locked dashboard
 assert_call_at 2 test -p codex-tui --lib --locked context_usage
 assert_all_cargo_env
 
+new_fixture context-ledger-focused
+run_selector --changed codex-rs/tui/src/chatwidget/context_ledger.rs
+assert_status 0
+assert_output 'Elpis verification: surfaces=context-ledger'
+assert_output 'Elpis verification: commands=fmt-check,tui-context-usage,tui-context-ledger'
+assert_call_count 3
+
+new_fixture generic-tui-edit
+run_selector --changed codex-rs/tui/src/app.rs
+assert_status 0
+assert_output 'Elpis verification: surfaces=tui-edit'
+assert_output 'Elpis verification: commands=fmt-check,tui-check'
+assert_call_count 2
+assert_call_at 1 check -p codex-tui --lib --bin elpis --locked
+
+new_fixture smart-prune-focused
+run_selector --changed codex-rs/core/src/smart_prune.rs
+assert_status 0
+assert_output 'Elpis verification: surfaces=smart-prune'
+assert_output 'Elpis verification: commands=fmt-check,features-automatic-pruning,core-smart-prune,tui-smart-prune-controls'
+assert_call_count 4
+
 # Explicit surfaces are a stable manifest-order union; repetition and a changed
 # path do not duplicate shared commands or trigger the mixed-path fallback.
 new_fixture explicit-union
@@ -315,15 +337,16 @@ run_selector \
     --changed codex-rs/tui/src/dashboard_server.rs \
     --changed codex-rs/tui/src/app.rs
 assert_status 0
-assert_output 'Elpis verification: surfaces=full'
+assert_output 'Elpis verification: surfaces=dashboard,tui-edit'
+assert_not_output 'surfaces=full'
 
 # Cross-cutting exceptions must beat each broad family, and each broad family
 # must still classify an ordinary member in the other direction.
 precedence_paths=(
     'codex-rs/tui/src/dashboard_server.rs|dashboard'
-    'codex-rs/tui/src/chatwidget/context_ledger.rs|context-compaction'
+    'codex-rs/tui/src/chatwidget/context_ledger.rs|context-ledger'
     'codex-rs/tui/src/multi_agents.rs|agents-work-graph'
-    'codex-rs/tui/src/app.rs|tui'
+    'codex-rs/tui/src/app.rs|tui-edit'
     'codex-rs/app-server/src/turn_cost_worker.rs|telemetry'
     'codex-rs/app-server/tests/suite/v2/memory_recall.rs|memory'
     'codex-rs/app-server/src/lib.rs|app-server'
@@ -785,7 +808,7 @@ def squash(text: str) -> str:
 
 local = Path(sys.argv[1]).read_text()
 shipping = Path(sys.argv[2]).read_text()
-local_selector = section(local, "## 7. Checked verification selector")
+local_selector = section(local, "## 9. Checked verification selector")
 shipping_boundary = section(shipping, "## 7. Selector evidence is not shipping evidence")
 
 expected_examples = [
@@ -809,7 +832,7 @@ for clause in (
     "Explicitly sharing one target across different checkouts can reuse stale artifacts and produce false failures.",
     "`ELPIS_CARGO_TARGET_DIR` is accepted only when the value is absolute and the target is writable.",
     "It may create the target directory, but it never deletes targets or caches and never runs `cargo clean`.",
-    "`cargo fmt --all --check` is the one narrow check-only exception to section 6: it checks the whole workspace without rewriting source.",
+    "`cargo fmt --all --check` is the one narrow check-only exception to section 8: it checks the whole workspace without rewriting source.",
     "Plain `cargo fmt --all` remains prohibited.",
 ):
     require(clause in local_contract, f"local selector contract missing: {clause}")

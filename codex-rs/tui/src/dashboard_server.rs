@@ -19,8 +19,10 @@ use crate::activity_state::DashboardActivityState;
 use crate::activity_state::DashboardActivityStatus as ProjectedActivityStatus;
 
 const INDEX_HTML: &str = include_str!("dashboard_assets/index.html");
+const DASHBOARD_CSS: &str = include_str!("dashboard_assets/dashboard.css");
+const DASHBOARD_JS: &str = include_str!("dashboard_assets/dashboard.js");
 const SCHEMA_VERSION: u64 = 1;
-const CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UNAVAILABLE_JSON: &[u8] = br#"{"state":null,"heartbeat_at":null}"#;
 
 type DashboardResponse = tiny_http::Response<Cursor<Vec<u8>>>;
@@ -48,6 +50,7 @@ pub(crate) struct DashboardContext {
     pub(crate) used_tokens: Option<u64>,
     pub(crate) window_tokens: u64,
     pub(crate) used_percent: Option<i64>,
+    pub(crate) attributed_tokens: Option<u64>,
     pub(crate) categories: Option<Vec<DashboardCategory>>,
     pub(crate) saved_tokens: u64,
     pub(crate) sources: Vec<DashboardSource>,
@@ -166,6 +169,7 @@ pub(crate) struct DashboardSmartPrune {
     pub(crate) optimizer_usage: DashboardTokenTotals,
     pub(crate) optimizer_latency_ms: u64,
     pub(crate) latest: Option<DashboardSmartPruneLatest>,
+    pub(crate) latest_attempt: Option<DashboardSmartPruneAttempt>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -178,6 +182,18 @@ pub(crate) struct DashboardSmartPruneLatest {
     pub(crate) request_linkage_verified: bool,
     pub(crate) response_usage: Option<DashboardTokenTotals>,
     pub(crate) response_linkage_verified: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardSmartPruneAttempt {
+    pub(crate) status: String,
+    pub(crate) model: String,
+    pub(crate) reasoning_effort: String,
+    pub(crate) candidate_outputs: u64,
+    pub(crate) admitted_outputs: u64,
+    pub(crate) approx_saved_tokens: u64,
+    pub(crate) latency_ms: u64,
+    pub(crate) usage: Option<DashboardTokenTotals>,
 }
 
 static DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
@@ -369,6 +385,16 @@ fn response_for_at(
             200,
             "text/html; charset=utf-8",
             INDEX_HTML.as_bytes().to_vec(),
+        ),
+        "/dashboard.css" => response(
+            200,
+            "text/css; charset=utf-8",
+            DASHBOARD_CSS.as_bytes().to_vec(),
+        ),
+        "/dashboard.js" => response(
+            200,
+            "text/javascript; charset=utf-8",
+            DASHBOARD_JS.as_bytes().to_vec(),
         ),
         "/data.json" => match state {
             Some(state) => data_response_with(state, heartbeat_at, serde_json::to_vec),

@@ -640,6 +640,7 @@ impl App {
                 if start < end {
                     self.transcript_cells
                         .splice(start..end, std::iter::once(consolidated.clone()));
+                    self.context_usage_transcript_dirty = true;
 
                     if let Some(Overlay::Transcript(t)) = &mut self.overlay {
                         t.consolidate_cells(start..end, consolidated.clone());
@@ -649,6 +650,7 @@ impl App {
                     self.finish_required_stream_reflow(tui)?;
                 } else {
                     self.transcript_cells.push(consolidated.clone());
+                    self.context_usage_transcript_dirty = true;
                     if let Some(Overlay::Transcript(t)) = &mut self.overlay {
                         t.insert_cell(consolidated.clone());
                         tui.frame_requester().schedule_frame();

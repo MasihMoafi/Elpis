@@ -110,6 +110,7 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SkillMetadata as ProtocolSkillMetadata;
 use codex_app_server_protocol::SkillsListResponse;
+use codex_app_server_protocol::ThreadContextAttribution;
 use codex_app_server_protocol::ThreadGoal as AppThreadGoal;
 use codex_app_server_protocol::ThreadGoalStatus as AppThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
@@ -580,6 +581,8 @@ pub(crate) struct ChatWidget {
     runtime_model_provider_base_url: Option<String>,
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     token_info: Option<TokenUsageInfo>,
+    context_attribution: Option<ThreadContextAttribution>,
+    context_usage_transcript_totals: crate::app_backtrack::ContextUsageTranscriptTotals,
     smart_prune: ThreadSmartPruneSnapshot,
     smart_prune_synced: bool,
     context_prune_report_pending: bool,

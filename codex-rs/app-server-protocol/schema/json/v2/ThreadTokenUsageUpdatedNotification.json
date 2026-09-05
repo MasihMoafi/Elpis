@@ -1,6 +1,80 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "ThreadContextAttribution": {
+      "description": "Estimated composition of the exact request built for the latest provider attempt. Values are never padded to reconcile with provider token accounting.",
+      "properties": {
+        "agentMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "developerMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "estimatedTotal": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "outputSchema": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "reasoning": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "systemInstructions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolCalls": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolDefinitions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolResults": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "unrecognizedItems": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "userMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agentMessages",
+        "developerMessages",
+        "estimatedTotal",
+        "outputSchema",
+        "reasoning",
+        "systemInstructions",
+        "toolCalls",
+        "toolDefinitions",
+        "toolResults",
+        "unrecognizedItems",
+        "userMessages"
+      ],
+      "type": "object"
+    },
     "ThreadSmartPruneAdmissionSnapshot": {
       "properties": {
         "admissionId": {
@@ -84,6 +158,69 @@
       ],
       "type": "object"
     },
+    "ThreadSmartPruneAttemptSnapshot": {
+      "properties": {
+        "admittedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "auditPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidateOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "latencyMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "modelSlug": {
+          "type": "string"
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenUsageBreakdown"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "admittedOutputs",
+        "approxSavedTokens",
+        "attemptId",
+        "candidateOutputs",
+        "latencyMs",
+        "modelSlug",
+        "reasoningEffort",
+        "status"
+      ],
+      "type": "object"
+    },
     "ThreadSmartPruneSnapshot": {
       "properties": {
         "admittedOutputs": {
@@ -123,6 +260,16 @@
           "anyOf": [
             {
               "$ref": "#/definitions/ThreadSmartPruneAdmissionSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestAttempt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadSmartPruneAttemptSnapshot"
             },
             {
               "type": "null"
@@ -187,6 +334,16 @@
     },
     "ThreadTokenUsage": {
       "properties": {
+        "contextAttribution": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadContextAttribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "contextPruneSavedTokens": {
           "default": 0,
           "format": "uint64",

@@ -189,6 +189,26 @@ async fn slash_smart_prune_toggles_and_accepts_explicit_state() {
 }
 
 #[tokio::test]
+async fn slash_prune_only_enables_smart_prune_and_never_runs_manual_pruning() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.smart_prune_synced = true;
+
+    chat.dispatch_command(SlashCommand::Prune);
+
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::CodexOp(Op::Prune { .. })),
+            "/prune must enable Smart Prune, not rewrite existing history"
+        );
+    }
+}
+
+#[tokio::test]
 async fn slash_smart_prune_rejects_invalid_state() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

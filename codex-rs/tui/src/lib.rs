@@ -169,6 +169,7 @@ mod session_state;
 mod shimmer;
 mod skills_helpers;
 mod slash_command;
+mod startup_animation;
 mod startup_error;
 mod startup_hooks_review;
 pub mod startup_timing;
@@ -1271,6 +1272,8 @@ async fn run_ratatui_app(
         initialized_terminal.stderr_guard,
     );
     let mut terminal_restore_guard = TerminalRestoreGuard::new();
+    let mut startup_animation =
+        crate::startup_animation::StartupAnimation::new(initial_config.animations);
 
     #[cfg(not(debug_assertions))]
     {
@@ -1297,20 +1300,40 @@ async fn run_ratatui_app(
     // Initialize high-fidelity session event logging if enabled.
     session_log::maybe_init(&initial_config);
 
-    let app_server_session = match start_app_server(
-        &app_server_target,
-        arg0_paths.clone(),
-        initial_config.clone(),
-        cli_kv_overrides.clone(),
-        loader_overrides.clone(),
-        strict_config,
-        cloud_config_bundle.clone(),
-        log_db.clone(),
-        state_db.clone(),
-        environment_manager.clone(),
-    )
-    .await
-    {
+    let app_server_start = startup_animation
+        .wait_for(
+            &mut tui,
+            "Starting runtime",
+            start_app_server(
+                &app_server_target,
+                arg0_paths.clone(),
+                initial_config.clone(),
+                cli_kv_overrides.clone(),
+                loader_overrides.clone(),
+                strict_config,
+                cloud_config_bundle.clone(),
+                log_db.clone(),
+                state_db.clone(),
+                environment_manager.clone(),
+            ),
+        )
+        .await?;
+    let app_server_start = match app_server_start {
+        crate::startup_animation::StartupWait::Completed(result) => result,
+        crate::startup_animation::StartupWait::Cancelled => {
+            terminal_restore_guard.restore_silently();
+            session_log::log_session_end();
+            let _ = tui.terminal.clear();
+            return Ok(AppExitInfo {
+                token_usage: crate::token_usage::TokenUsage::default(),
+                thread_id: None,
+                resume_hint: None,
+                update_action: None,
+                exit_reason: ExitReason::UserRequested,
+            });
+        }
+    };
+    let app_server_session = match app_server_start {
         Ok(app_server) => AppServerSession::new(app_server, app_server_target.thread_params_mode()),
         Err(err) => {
             terminal_restore_guard.restore_silently();
@@ -1674,32 +1697,55 @@ async fn run_ratatui_app(
 
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
+    startup_animation.set_animations_enabled(config.animations);
     let mut app_server = match app_server {
         Some(app_server) => app_server,
-        None => match start_app_server(
-            &app_server_target,
-            arg0_paths,
-            config.clone(),
-            cli_kv_overrides.clone(),
-            loader_overrides.clone(),
-            strict_config,
-            cloud_config_bundle.clone(),
-            log_db.clone(),
-            state_db.clone(),
-            environment_manager.clone(),
-        )
-        .await
-        {
-            Ok(app_server) => {
-                AppServerSession::new(app_server, app_server_target.thread_params_mode())
-                    .with_remote_cwd_override(remote_cwd_override.clone())
+        None => {
+            let app_server_start = startup_animation
+                .wait_for(
+                    &mut tui,
+                    "Restarting runtime",
+                    start_app_server(
+                        &app_server_target,
+                        arg0_paths,
+                        config.clone(),
+                        cli_kv_overrides.clone(),
+                        loader_overrides.clone(),
+                        strict_config,
+                        cloud_config_bundle.clone(),
+                        log_db.clone(),
+                        state_db.clone(),
+                        environment_manager.clone(),
+                    ),
+                )
+                .await?;
+            let app_server_start = match app_server_start {
+                crate::startup_animation::StartupWait::Completed(result) => result,
+                crate::startup_animation::StartupWait::Cancelled => {
+                    terminal_restore_guard.restore_silently();
+                    session_log::log_session_end();
+                    let _ = tui.terminal.clear();
+                    return Ok(AppExitInfo {
+                        token_usage: crate::token_usage::TokenUsage::default(),
+                        thread_id: None,
+                        resume_hint: None,
+                        update_action: None,
+                        exit_reason: ExitReason::UserRequested,
+                    });
+                }
+            };
+            match app_server_start {
+                Ok(app_server) => {
+                    AppServerSession::new(app_server, app_server_target.thread_params_mode())
+                        .with_remote_cwd_override(remote_cwd_override.clone())
+                }
+                Err(err) => {
+                    terminal_restore_guard.restore_silently();
+                    session_log::log_session_end();
+                    return Err(err);
+                }
             }
-            Err(err) => {
-                terminal_restore_guard.restore_silently();
-                session_log::log_session_end();
-                return Err(err);
-            }
-        },
+        }
     };
 
     // Persistent app-server resumes may attach to an already-running thread,
@@ -1716,10 +1762,30 @@ async fn run_ratatui_app(
     // before hooks are listed, so a first launch that finds RTK reviews it right away.
     crate::rtk_hook::ensure_rtk_hook(config.codex_home.as_path());
     let startup_prefetch_started_at = Instant::now();
-    let (startup_bootstrap, startup_hooks_entry) = tokio::join!(
-        app_server.bootstrap(&config),
-        load_startup_hooks_review_entry(hooks_request_handle, hooks_cwd),
-    );
+    let startup_prefetch = startup_animation
+        .wait_for(&mut tui, "Preparing context", async {
+            tokio::join!(
+                app_server.bootstrap(&config),
+                load_startup_hooks_review_entry(hooks_request_handle, hooks_cwd),
+            )
+        })
+        .await?;
+    let (startup_bootstrap, startup_hooks_entry) = match startup_prefetch {
+        crate::startup_animation::StartupWait::Completed(result) => result,
+        crate::startup_animation::StartupWait::Cancelled => {
+            shutdown_app_server_if_present(Some(app_server)).await;
+            terminal_restore_guard.restore_silently();
+            session_log::log_session_end();
+            let _ = tui.terminal.clear();
+            return Ok(AppExitInfo {
+                token_usage: crate::token_usage::TokenUsage::default(),
+                thread_id: None,
+                resume_hint: None,
+                update_action: None,
+                exit_reason: ExitReason::UserRequested,
+            });
+        }
+    };
     let startup_bootstrap = Some(startup_bootstrap?);
     let startup_elapsed_before_app = startup_prefetch_started_at.elapsed();
     let startup_hooks_browser = match maybe_run_startup_hooks_review(
@@ -1739,6 +1805,8 @@ async fn run_ratatui_app(
     // accept a keystroke, so this is the wait a user actually experiences.
     crate::startup_timing::record("ready");
     crate::startup_timing::finish_and_log(&startup_log_home);
+    let startup_identity =
+        startup_animation.into_history_cell(tui.terminal.last_known_screen_size.height);
     let app_result = App::run(
         &mut tui,
         app_server,
@@ -1758,6 +1826,7 @@ async fn run_ratatui_app(
         startup_elapsed_before_app,
         startup_bootstrap,
         startup_hooks_browser,
+        startup_identity,
     )
     .await;
 

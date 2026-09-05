@@ -596,6 +596,7 @@ mod tests {
                         rate_limits: None,
                         context_prune_saved_tokens: 0,
                         smart_prune: Default::default(),
+                        context_attribution: None,
                     },
                 )),
                 RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
@@ -684,6 +685,7 @@ mod tests {
                     rate_limits: None,
                     context_prune_saved_tokens: 0,
                     smart_prune: Default::default(),
+                    context_attribution: None,
                 },
             ))])
             .await

@@ -12,7 +12,9 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::SmartPruneAdmissionSnapshot;
+use codex_protocol::protocol::SmartPruneAttemptSnapshot;
 use codex_protocol::protocol::SmartPruneSnapshot;
 use codex_protocol::protocol::TokenUsage;
 use codex_rollout_trace::InferenceTraceContext;
@@ -26,7 +28,6 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::context_pruner::MAX_PRUNE_BATCH_TOKENS;
 use crate::context_pruner::PRUNE_MODEL_SLUG;
-use crate::context_pruner::PRUNE_REASONING_EFFORT;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::smart_prune::AdmissionDecision;
 use crate::smart_prune::AdmissionEvidence;
@@ -40,7 +41,12 @@ use super::session::Session;
 use super::smart_prune_audit;
 use super::turn_context::TurnContext;
 
-const ADMISSION_TIMEOUT: Duration = Duration::from_secs(45);
+/// Smart Prune runs inline before the main model sees a fresh tool result. It
+/// therefore uses the cheap model's low-effort path and an inactivity bound;
+/// `/force-prune` retains the separate high-fidelity Max-effort path.
+const SMART_PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Low;
+const ADMISSION_TIMEOUT: Duration = Duration::from_secs(60);
+const OPENROUTER_FALLBACK_TIMEOUT: Duration = Duration::from_secs(60);
 
 const SMART_PRUNE_INSTRUCTIONS: &str = r#"You are Elpis Smart Prune. Compress fresh tool results before their first use by the main model.
 
@@ -58,10 +64,81 @@ struct Candidate {
 }
 
 struct ModelAdmission {
+    attempt_id: String,
     raw_response: String,
     usage: Option<TokenUsage>,
     model_slug: String,
     input: String,
+    latency: Duration,
+}
+
+/// Kept outside the request future so errors and cancellation retain received evidence.
+#[derive(Default)]
+struct OptimizerProgress {
+    completed_items: Vec<ResponseItem>,
+    deltas: String,
+    usage: Option<TokenUsage>,
+}
+
+impl OptimizerProgress {
+    fn raw_response(&self) -> Option<String> {
+        super::turn::get_last_assistant_message_from_turn(&self.completed_items)
+            .or_else(|| (!self.deltas.trim().is_empty()).then(|| self.deltas.clone()))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OptimizerRoute {
+    Primary,
+    OpenRouter,
+}
+
+enum OptimizerAttemptFailure {
+    Cancelled,
+    Failed,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct OptimizerInactivityTimeout(Duration);
+
+impl std::fmt::Display for OptimizerInactivityTimeout {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{}-second optimizer inactivity timeout elapsed",
+            self.0.as_secs()
+        )
+    }
+}
+
+impl std::error::Error for OptimizerInactivityTimeout {}
+
+async fn next_optimizer_stream_item<S>(
+    stream: &mut S,
+    inactivity_timeout: Duration,
+) -> Result<Option<S::Item>, OptimizerInactivityTimeout>
+where
+    S: futures::Stream + Unpin,
+{
+    tokio::time::timeout(inactivity_timeout, stream.next())
+        .await
+        .map_err(|_| OptimizerInactivityTimeout(inactivity_timeout))
+}
+
+struct AttemptOutcome<'a> {
+    attempt_id: &'a str,
+    turn_id: &'a str,
+    model_slug: &'a str,
+    input: &'a str,
+    status: smart_prune_audit::AttemptStatus,
+    raw_response: Option<&'a str>,
+    error: Option<&'a str>,
+    candidate_outputs: usize,
+    admitted_outputs: usize,
+    saved_tokens: usize,
+    latency: Duration,
+    usage: Option<&'a TokenUsage>,
+    admission_id: Option<&'a str>,
 }
 
 /// Causal identity of the main-model attempt that first contains an admission.
@@ -112,42 +189,51 @@ pub(super) async fn optimize_pending_outputs(
             return pending;
         }
     };
-
     if cancellation_token.is_cancelled() {
         return pending;
     }
-
-    record_optimizer_started(sess).await;
-    let optimizer_started = Instant::now();
-    let admission_result = tokio::select! {
-        biased;
-        _ = cancellation_token.cancelled() => {
-            record_optimizer_finished(sess, optimizer_started.elapsed(), None).await;
-            return pending;
+    let primary = run_optimizer_attempt(
+        sess,
+        turn_context,
+        &input,
+        candidates.len(),
+        OptimizerRoute::Primary,
+        ADMISSION_TIMEOUT,
+        cancellation_token,
+    )
+    .await;
+    let admission = match primary {
+        Ok(admission) => admission,
+        Err(OptimizerAttemptFailure::Cancelled) => return pending,
+        Err(OptimizerAttemptFailure::Failed) if should_try_openrouter_fallback(turn_context) => {
+            tracing::warn!(
+                "Smart Prune Luna attempt failed; trying the separately authenticated OpenRouter fallback"
+            );
+            match run_optimizer_attempt(
+                sess,
+                turn_context,
+                &input,
+                candidates.len(),
+                OptimizerRoute::OpenRouter,
+                OPENROUTER_FALLBACK_TIMEOUT,
+                cancellation_token,
+            )
+            .await
+            {
+                Ok(admission) => admission,
+                Err(OptimizerAttemptFailure::Cancelled) => return pending,
+                Err(OptimizerAttemptFailure::Failed) => {
+                    record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
+                    return pending;
+                }
+            }
         }
-        result = tokio::time::timeout(
-            ADMISSION_TIMEOUT,
-            run_model_admission(sess, turn_context, input),
-        ) => result,
-    };
-    let optimizer_usage = match &admission_result {
-        Ok(Ok(admission)) => admission.usage.as_ref(),
-        _ => None,
-    };
-    record_optimizer_finished(sess, optimizer_started.elapsed(), optimizer_usage).await;
-    let admission = match admission_result {
-        Ok(Ok(admission)) => admission,
-        Ok(Err(err)) => {
-            tracing::warn!("Smart Prune model pass failed; preserving tool output: {err:#}");
+        Err(OptimizerAttemptFailure::Failed) => {
             record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
             return pending;
         }
-        Err(_) => {
-            tracing::warn!("Smart Prune model pass timed out; preserving tool output");
-            record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
-            return pending;
-        }
     };
+    let optimizer_elapsed = admission.latency;
 
     let expected_ids = candidates
         .iter()
@@ -155,6 +241,25 @@ pub(super) async fn optimize_pending_outputs(
         .collect::<Vec<_>>();
     let Some(decisions) = parse_decision_manifest(&admission.raw_response, &expected_ids) else {
         tracing::warn!("Smart Prune response was malformed; preserving tool output");
+        record_attempt(
+            sess,
+            AttemptOutcome {
+                attempt_id: &admission.attempt_id,
+                turn_id: &turn_context.sub_id,
+                model_slug: &admission.model_slug,
+                input: &input,
+                status: smart_prune_audit::AttemptStatus::MalformedResponse,
+                raw_response: Some(&admission.raw_response),
+                error: Some("optimizer response did not match the decision manifest schema"),
+                candidate_outputs: candidates.len(),
+                admitted_outputs: 0,
+                saved_tokens: 0,
+                latency: optimizer_elapsed,
+                usage: admission.usage.as_ref(),
+                admission_id: None,
+            },
+        )
+        .await;
         record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
         return pending;
     };
@@ -169,7 +274,27 @@ pub(super) async fn optimize_pending_outputs(
         let source_sha256 = match smart_prune_audit::response_item_sha256(&candidate.source) {
             Ok(hash) => hash,
             Err(err) => {
-                tracing::warn!("Smart Prune source hashing failed; preserving batch: {err:#}");
+                let error = format!("{err:#}");
+                tracing::warn!("Smart Prune source hashing failed; preserving batch: {error}");
+                record_attempt(
+                    sess,
+                    AttemptOutcome {
+                        attempt_id: &admission.attempt_id,
+                        turn_id: &turn_context.sub_id,
+                        model_slug: &admission.model_slug,
+                        input: &input,
+                        status: smart_prune_audit::AttemptStatus::SourceError,
+                        raw_response: Some(&admission.raw_response),
+                        error: Some(&error),
+                        candidate_outputs: candidates.len(),
+                        admitted_outputs: 0,
+                        saved_tokens: 0,
+                        latency: optimizer_elapsed,
+                        usage: admission.usage.as_ref(),
+                        admission_id: None,
+                    },
+                )
+                .await;
                 record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
                 return pending;
             }
@@ -187,6 +312,25 @@ pub(super) async fn optimize_pending_outputs(
         applied.push((candidate.clone(), source_sha256, transformed));
     }
     if applied.is_empty() {
+        record_attempt(
+            sess,
+            AttemptOutcome {
+                attempt_id: &admission.attempt_id,
+                turn_id: &turn_context.sub_id,
+                model_slug: &admission.model_slug,
+                input: &input,
+                status: smart_prune_audit::AttemptStatus::Unchanged,
+                raw_response: Some(&admission.raw_response),
+                error: None,
+                candidate_outputs: candidates.len(),
+                admitted_outputs: 0,
+                saved_tokens: 0,
+                latency: optimizer_elapsed,
+                usage: admission.usage.as_ref(),
+                admission_id: None,
+            },
+        )
+        .await;
         record_unchanged_batch(sess, candidates.len()).await;
         return pending;
     }
@@ -222,11 +366,54 @@ pub(super) async fn optimize_pending_outputs(
             items: &audit_items,
         },
     ) {
-        tracing::warn!("Smart Prune audit failed; preserving tool output: {err:#}");
+        let error = format!("{err:#}");
+        tracing::warn!("Smart Prune audit failed; preserving tool output: {error}");
+        record_attempt(
+            sess,
+            AttemptOutcome {
+                attempt_id: &admission.attempt_id,
+                turn_id: &turn_context.sub_id,
+                model_slug: &admission.model_slug,
+                input: &input,
+                status: smart_prune_audit::AttemptStatus::AuditError,
+                raw_response: Some(&admission.raw_response),
+                error: Some(&error),
+                candidate_outputs: candidates.len(),
+                admitted_outputs: 0,
+                saved_tokens: 0,
+                latency: optimizer_elapsed,
+                usage: admission.usage.as_ref(),
+                admission_id: None,
+            },
+        )
+        .await;
         record_batch_failure(sess, &turn_context.sub_id, candidates.len()).await;
         return pending;
     }
 
+    let saved_tokens = audit_items
+        .iter()
+        .map(|item| item.saved_tokens)
+        .sum::<usize>();
+    record_attempt(
+        sess,
+        AttemptOutcome {
+            attempt_id: &admission.attempt_id,
+            turn_id: &turn_context.sub_id,
+            model_slug: &admission.model_slug,
+            input: &input,
+            status: smart_prune_audit::AttemptStatus::Admitted,
+            raw_response: Some(&admission.raw_response),
+            error: None,
+            candidate_outputs: candidates.len(),
+            admitted_outputs: audit_items.len(),
+            saved_tokens,
+            latency: optimizer_elapsed,
+            usage: admission.usage.as_ref(),
+            admission_id: Some(&admission_id),
+        },
+    )
+    .await;
     record_applied_admission(sess, &admission_id, candidates.len(), &audit_items).await;
 
     for (candidate, _, transformed) in applied {
@@ -241,13 +428,142 @@ pub(super) async fn optimize_pending_outputs(
     tracing::info!(
         admission_id,
         admitted_items = audit_items.len(),
-        saved_tokens = audit_items
-            .iter()
-            .map(|item| item.saved_tokens)
-            .sum::<usize>(),
+        saved_tokens,
         "Smart Prune admitted fresh tool output before first main-model exposure"
     );
     pending
+}
+
+async fn run_optimizer_attempt(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    input: &str,
+    candidate_outputs: usize,
+    route: OptimizerRoute,
+    inactivity_timeout: Duration,
+    cancellation_token: &CancellationToken,
+) -> Result<ModelAdmission, OptimizerAttemptFailure> {
+    let attempt_id = uuid::Uuid::now_v7().to_string();
+    let model_slug = match route {
+        OptimizerRoute::Primary => selected_model_slug(turn_context),
+        OptimizerRoute::OpenRouter => codex_model_provider_info::OPENROUTER_FREE_MODEL_SLUG,
+    };
+    record_optimizer_started(sess).await;
+    let started = Instant::now();
+    let mut progress = OptimizerProgress::default();
+    let result = tokio::select! {
+        biased;
+        _ = cancellation_token.cancelled() => None,
+        result = run_model_admission(
+            sess,
+            turn_context,
+            input.to_string(),
+            route,
+            inactivity_timeout,
+            &mut progress,
+        ) => Some(result),
+    };
+    let elapsed = started.elapsed();
+    let usage = progress.usage.as_ref();
+    record_optimizer_finished(sess, elapsed, usage).await;
+    let raw_response = progress.raw_response();
+    let Some(result) = result else {
+        record_attempt(
+            sess,
+            AttemptOutcome {
+                attempt_id: &attempt_id,
+                turn_id: &turn_context.sub_id,
+                model_slug,
+                input,
+                status: smart_prune_audit::AttemptStatus::Cancelled,
+                raw_response: raw_response.as_deref(),
+                error: Some("turn cancelled while optimizer request was in flight"),
+                candidate_outputs,
+                admitted_outputs: 0,
+                saved_tokens: 0,
+                latency: elapsed,
+                usage,
+                admission_id: None,
+            },
+        )
+        .await;
+        return Err(OptimizerAttemptFailure::Cancelled);
+    };
+    match result {
+        Ok(mut admission) => {
+            admission.attempt_id = attempt_id;
+            admission.latency = elapsed;
+            Ok(admission)
+        }
+        Err(err) if err.downcast_ref::<OptimizerInactivityTimeout>().is_some() => {
+            let error = err.to_string();
+            tracing::warn!(
+                model = model_slug,
+                "Smart Prune optimizer attempt timed out after inactivity"
+            );
+            record_attempt(
+                sess,
+                AttemptOutcome {
+                    attempt_id: &attempt_id,
+                    turn_id: &turn_context.sub_id,
+                    model_slug,
+                    input,
+                    status: smart_prune_audit::AttemptStatus::TimedOut,
+                    raw_response: raw_response.as_deref(),
+                    error: Some(&error),
+                    candidate_outputs,
+                    admitted_outputs: 0,
+                    saved_tokens: 0,
+                    latency: elapsed,
+                    usage,
+                    admission_id: None,
+                },
+            )
+            .await;
+            Err(OptimizerAttemptFailure::Failed)
+        }
+        Err(err) => {
+            let error = format!("{err:#}");
+            tracing::warn!(
+                model = model_slug,
+                "Smart Prune optimizer attempt failed: {error}"
+            );
+            record_attempt(
+                sess,
+                AttemptOutcome {
+                    attempt_id: &attempt_id,
+                    turn_id: &turn_context.sub_id,
+                    model_slug,
+                    input,
+                    status: smart_prune_audit::AttemptStatus::ModelError,
+                    raw_response: raw_response.as_deref(),
+                    error: Some(&error),
+                    candidate_outputs,
+                    admitted_outputs: 0,
+                    saved_tokens: 0,
+                    latency: elapsed,
+                    usage,
+                    admission_id: None,
+                },
+            )
+            .await;
+            Err(OptimizerAttemptFailure::Failed)
+        }
+    }
+}
+
+fn should_try_openrouter_fallback(turn_context: &TurnContext) -> bool {
+    turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+        && turn_context
+            .config
+            .model_providers
+            .get(codex_model_provider_info::OPENROUTER_PROVIDER_ID)
+            .is_some_and(|provider| {
+                provider
+                    .env_key
+                    .as_ref()
+                    .is_none_or(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
+            })
 }
 
 async fn record_batch_failure(sess: &Session, turn_id: &str, examined: usize) {
@@ -283,6 +599,56 @@ async fn record_optimizer_finished(sess: &Session, elapsed: Duration, usage: Opt
             state.smart_prune.optimizer_usage_reports.saturating_add(1);
         state.smart_prune.optimizer_usage.add_assign(usage);
     }
+}
+
+async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
+    let elapsed_ms = u64::try_from(outcome.latency.as_millis()).unwrap_or(u64::MAX);
+    let log_dir = sess.codex_home().await.join("logs");
+    let session_id = sess.session_id().to_string();
+    let audit_path = match smart_prune_audit::write_attempt(
+        &log_dir,
+        smart_prune_audit::AttemptAuditInput {
+            attempt_id: outcome.attempt_id,
+            session_id: &session_id,
+            turn_id: outcome.turn_id,
+            status: outcome.status,
+            model_slug: outcome.model_slug,
+            reasoning_effort: SMART_PRUNE_REASONING_EFFORT.as_str(),
+            instructions: SMART_PRUNE_INSTRUCTIONS,
+            input: outcome.input,
+            raw_response: outcome.raw_response,
+            error: outcome.error,
+            candidate_outputs: outcome.candidate_outputs,
+            admitted_outputs: outcome.admitted_outputs,
+            saved_tokens: outcome.saved_tokens,
+            latency_ms: elapsed_ms,
+            usage: outcome.usage,
+            admission_id: outcome.admission_id,
+        },
+    ) {
+        Ok(receipt) => Some(receipt.audit_path.to_string_lossy().into_owned()),
+        Err(err) => {
+            tracing::warn!(
+                attempt_id = outcome.attempt_id,
+                "Smart Prune attempt evidence could not be published: {err:#}"
+            );
+            None
+        }
+    };
+
+    let mut state = sess.state.lock().await;
+    state.smart_prune.latest_attempt = Some(SmartPruneAttemptSnapshot {
+        attempt_id: outcome.attempt_id.to_string(),
+        audit_path,
+        status: outcome.status.as_str().to_string(),
+        model_slug: outcome.model_slug.to_string(),
+        reasoning_effort: SMART_PRUNE_REASONING_EFFORT.as_str().to_string(),
+        candidate_outputs: outcome.candidate_outputs as u64,
+        admitted_outputs: outcome.admitted_outputs as u64,
+        approx_saved_tokens: outcome.saved_tokens as u64,
+        latency_ms: elapsed_ms,
+        usage: outcome.usage.cloned(),
+    });
 }
 
 async fn record_unchanged_batch(sess: &Session, examined: usize) {
@@ -463,7 +829,7 @@ fn select_candidates(pending: &[PendingToolOutput]) -> Vec<Candidate> {
         let Some((call_id, text)) = textual_tool_output(&source) else {
             continue;
         };
-        let source_tokens = approx_token_count(text);
+        let source_tokens = approx_token_count(text.as_ref());
         if source_tokens < MIN_SOURCE_TOKENS
             || selected_tokens.saturating_add(source_tokens) > MAX_PRUNE_BATCH_TOKENS
         {
@@ -511,18 +877,27 @@ async fn run_model_admission(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     input: String,
+    route: OptimizerRoute,
+    inactivity_timeout: Duration,
+    progress: &mut OptimizerProgress,
 ) -> anyhow::Result<ModelAdmission> {
-    let model_slug =
-        if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
-            PRUNE_MODEL_SLUG
-        } else {
-            turn_context.model_info.slug.as_str()
-        };
-    let model_info = sess
-        .services
-        .models_manager
-        .get_model_info(model_slug, &turn_context.config.to_models_manager_config())
-        .await;
+    let model_info = match route {
+        OptimizerRoute::Primary => {
+            sess.services
+                .models_manager
+                .get_model_info(
+                    selected_model_slug(turn_context),
+                    &turn_context.config.to_models_manager_config(),
+                )
+                .await
+        }
+        OptimizerRoute::OpenRouter => codex_model_provider::openrouter_free_model_catalog()
+            .models
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("OpenRouter fallback catalog is empty"))?,
+    };
+    let model_slug = model_info.slug.clone();
     let prompt = Prompt {
         input: vec![ResponseItem::Message {
             id: None,
@@ -543,30 +918,49 @@ async fn run_model_admission(
         "smart-prune".to_string(),
         CodexResponsesRequestKind::SmartPrune,
     );
-    let mut client_session = sess.services.model_client.load().new_session();
-    let mut stream = client_session
-        .stream(
+    let model_client = sess.services.model_client.load();
+    let mut client_session = match route {
+        OptimizerRoute::Primary => model_client.new_session(),
+        OptimizerRoute::OpenRouter => {
+            let provider = turn_context
+                .config
+                .model_providers
+                .get(codex_model_provider_info::OPENROUTER_PROVIDER_ID)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("OpenRouter fallback provider is not configured"))?;
+            model_client.with_provider(provider).new_session()
+        }
+    };
+    let mut stream = tokio::time::timeout(
+        inactivity_timeout,
+        client_session.stream(
             &prompt,
             &model_info,
             &turn_context.session_telemetry,
-            Some(PRUNE_REASONING_EFFORT),
+            Some(SMART_PRUNE_REASONING_EFFORT),
             turn_context.reasoning_summary,
-            turn_context.config.service_tier.clone(),
+            match route {
+                OptimizerRoute::Primary => turn_context.config.service_tier.clone(),
+                OptimizerRoute::OpenRouter => None,
+            },
             &metadata,
             &InferenceTraceContext::disabled(),
-        )
-        .await?;
+        ),
+    )
+    .await
+    .map_err(|_| OptimizerInactivityTimeout(inactivity_timeout))??;
 
-    let mut completed_items = Vec::new();
-    let mut deltas = String::new();
-    let mut usage = None;
     let mut saw_completed = false;
-    while let Some(event) = stream.next().await {
+    loop {
+        let event = next_optimizer_stream_item(&mut stream, inactivity_timeout).await?;
+        let Some(event) = event else {
+            break;
+        };
         match event? {
-            ResponseEvent::OutputItemDone(item) => completed_items.push(item),
-            ResponseEvent::OutputTextDelta(delta) => deltas.push_str(&delta),
+            ResponseEvent::OutputItemDone(item) => progress.completed_items.push(item),
+            ResponseEvent::OutputTextDelta(delta) => progress.deltas.push_str(&delta),
             ResponseEvent::Completed { token_usage, .. } => {
-                usage = token_usage;
+                progress.usage = token_usage;
                 saw_completed = true;
             }
             _ => {}
@@ -576,15 +970,25 @@ async fn run_model_admission(
         saw_completed,
         "Smart Prune stream closed before response.completed"
     );
-    let raw_response = super::turn::get_last_assistant_message_from_turn(&completed_items)
-        .or_else(|| (!deltas.trim().is_empty()).then_some(deltas))
+    let raw_response = progress
+        .raw_response()
         .ok_or_else(|| anyhow::anyhow!("Smart Prune stream completed without assistant text"))?;
     Ok(ModelAdmission {
+        attempt_id: String::new(),
         raw_response,
-        usage,
-        model_slug: model_slug.to_string(),
+        usage: progress.usage.clone(),
+        model_slug,
         input,
+        latency: Duration::ZERO,
     })
+}
+
+fn selected_model_slug(turn_context: &TurnContext) -> &str {
+    if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
+        PRUNE_MODEL_SLUG
+    } else {
+        turn_context.model_info.slug.as_str()
+    }
 }
 
 fn response_item_call_id(item: &ResponseItem) -> Option<&str> {
@@ -719,6 +1123,69 @@ mod tests {
         assert_eq!(snapshot.optimizer_usage.input_tokens, 30);
         assert_eq!(snapshot.optimizer_usage.total_tokens, 38);
         assert_eq!(snapshot.optimizer_usage.cache_write_tokens, Some(0));
+    }
+
+    #[tokio::test]
+    async fn request_linking_completes_after_an_admission() {
+        let (session, _) = crate::session::tests::make_session_and_context().await;
+        record_applied_admission(&session, "deadlock-regression", 1, &[]).await;
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            session.record_smart_prune_request(&[]),
+        )
+        .await;
+
+        assert!(result.is_ok(), "Smart Prune request linking deadlocked");
+    }
+
+    #[test]
+    fn optimizer_waits_for_sixty_seconds_of_inactivity() {
+        assert_eq!(ADMISSION_TIMEOUT, Duration::from_secs(60));
+        assert_eq!(OPENROUTER_FALLBACK_TIMEOUT, Duration::from_secs(60));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn optimizer_inactivity_clock_restarts_after_each_stream_item() {
+        let mut stream = Box::pin(futures::stream::unfold(0, |item| async move {
+            if item == 2 {
+                None
+            } else {
+                tokio::time::sleep(Duration::from_secs(40)).await;
+                Some((item, item + 1))
+            }
+        }));
+        let started = tokio::time::Instant::now();
+
+        assert_eq!(
+            next_optimizer_stream_item(&mut stream, ADMISSION_TIMEOUT).await,
+            Ok(Some(0))
+        );
+        assert_eq!(
+            next_optimizer_stream_item(&mut stream, ADMISSION_TIMEOUT).await,
+            Ok(Some(1))
+        );
+        assert_eq!(started.elapsed(), Duration::from_secs(80));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn optimizer_inactivity_clock_expires_after_sixty_silent_seconds() {
+        let mut stream = Box::pin(futures::stream::unfold(false, |sent| async move {
+            if sent {
+                None
+            } else {
+                tokio::time::sleep(Duration::from_secs(61)).await;
+                Some(((), true))
+            }
+        }));
+
+        let error = next_optimizer_stream_item(&mut stream, ADMISSION_TIMEOUT)
+            .await
+            .expect_err("a silent optimizer stream must time out");
+        assert_eq!(
+            error.to_string(),
+            "60-second optimizer inactivity timeout elapsed"
+        );
     }
 
     #[tokio::test]

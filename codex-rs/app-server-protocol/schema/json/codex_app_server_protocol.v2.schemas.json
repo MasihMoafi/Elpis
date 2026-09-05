@@ -13376,6 +13376,46 @@
           "properties": {
             "method": {
               "enum": [
+                "turn/activityUpdated"
+              ],
+              "title": "Turn/activityUpdatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/TurnActivityUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Turn/activityUpdatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "turn/costUpdated"
+              ],
+              "title": "Turn/costUpdatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/TurnCostUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Turn/costUpdatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "hook/completed"
               ],
               "title": "Hook/completedNotificationMethod",
@@ -15361,6 +15401,80 @@
     "ThreadCompactStartResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ThreadCompactStartResponse",
+      "type": "object"
+    },
+    "ThreadContextAttribution": {
+      "description": "Estimated composition of the exact request built for the latest provider attempt. Values are never padded to reconcile with provider token accounting.",
+      "properties": {
+        "agentMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "developerMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "estimatedTotal": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "outputSchema": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "reasoning": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "systemInstructions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolCalls": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolDefinitions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolResults": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "unrecognizedItems": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "userMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agentMessages",
+        "developerMessages",
+        "estimatedTotal",
+        "outputSchema",
+        "reasoning",
+        "systemInstructions",
+        "toolCalls",
+        "toolDefinitions",
+        "toolResults",
+        "unrecognizedItems",
+        "userMessages"
+      ],
       "type": "object"
     },
     "ThreadDeleteParams": {
@@ -17614,6 +17728,69 @@
       ],
       "type": "object"
     },
+    "ThreadSmartPruneAttemptSnapshot": {
+      "properties": {
+        "admittedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "auditPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidateOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "latencyMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "modelSlug": {
+          "type": "string"
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenUsageBreakdown"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "admittedOutputs",
+        "approxSavedTokens",
+        "attemptId",
+        "candidateOutputs",
+        "latencyMs",
+        "modelSlug",
+        "reasoningEffort",
+        "status"
+      ],
+      "type": "object"
+    },
     "ThreadSmartPruneSnapshot": {
       "properties": {
         "admittedOutputs": {
@@ -17653,6 +17830,16 @@
           "anyOf": [
             {
               "$ref": "#/definitions/ThreadSmartPruneAdmissionSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestAttempt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadSmartPruneAttemptSnapshot"
             },
             {
               "type": "null"
@@ -17717,7 +17904,7 @@
     },
     "ThreadSmartPruneUpdatedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "Thread-scoped Smart Prune state emitted after an idle config refresh.\n\nThis is intentionally separate from token usage because a config change can happen without an active turn or a provider usage sample.",
+      "description": "Thread-scoped Smart Prune state emitted after config refresh or listener attachment.\n\nThis is intentionally separate from token usage because a config change can happen without an active turn or a provider usage sample.",
       "properties": {
         "smartPrune": {
           "$ref": "#/definitions/ThreadSmartPruneSnapshot"
@@ -18068,6 +18255,16 @@
     },
     "ThreadTokenUsage": {
       "properties": {
+        "contextAttribution": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadContextAttribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "contextPruneSavedTokens": {
           "default": 0,
           "format": "uint64",
@@ -18375,6 +18572,67 @@
       ],
       "type": "object"
     },
+    "TurnActivityStatus": {
+      "enum": [
+        "completed",
+        "failed",
+        "interrupted"
+      ],
+      "type": "string"
+    },
+    "TurnActivityUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Ephemeral scalar-only terminal activity; never part of a persisted turn.",
+      "properties": {
+        "durationMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TurnProfileSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startedAt": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/TurnActivityStatus"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "timeToFirstTokenMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "threadId",
+        "turnId"
+      ],
+      "title": "TurnActivityUpdatedNotification",
+      "type": "object"
+    },
     "TurnCompletedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -18390,6 +18648,82 @@
         "turn"
       ],
       "title": "TurnCompletedNotification",
+      "type": "object"
+    },
+    "TurnCostAvailability": {
+      "enum": [
+        "subscriptionAuthentication",
+        "costObservationDisabled",
+        "providerUnsupported",
+        "awaitingBackendPrice",
+        "backendUnavailable",
+        "observationDropped"
+      ],
+      "type": "string"
+    },
+    "TurnCostState": {
+      "oneOf": [
+        {
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/TurnCostAvailability"
+            },
+            "type": {
+              "enum": [
+                "unavailable"
+              ],
+              "title": "UnavailableTurnCostStateType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "type"
+          ],
+          "title": "UnavailableTurnCostState",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "backendTotalUsd": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "priced"
+              ],
+              "title": "PricedTurnCostStateType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "backendTotalUsd",
+            "type"
+          ],
+          "title": "PricedTurnCostState",
+          "type": "object"
+        }
+      ]
+    },
+    "TurnCostUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cost": {
+          "$ref": "#/definitions/TurnCostState"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cost",
+        "threadId",
+        "turnId"
+      ],
+      "title": "TurnCostUpdatedNotification",
       "type": "object"
     },
     "TurnDiffUpdatedNotification": {
@@ -18584,6 +18918,62 @@
         "turnId"
       ],
       "title": "TurnPlanUpdatedNotification",
+      "type": "object"
+    },
+    "TurnProfileSummary": {
+      "description": "Scalar timing facts only; no messages, paths, account, provider, or trace data.",
+      "properties": {
+        "afterLastSamplingMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "beforeFirstSamplingMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "betweenSamplingOverheadMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "compactionMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "samplingMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "samplingRequestCount": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "samplingRetryCount": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolBlockingMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "afterLastSamplingMs",
+        "beforeFirstSamplingMs",
+        "betweenSamplingOverheadMs",
+        "compactionMs",
+        "samplingMs",
+        "samplingRequestCount",
+        "samplingRetryCount",
+        "toolBlockingMs"
+      ],
       "type": "object"
     },
     "TurnStartParams": {

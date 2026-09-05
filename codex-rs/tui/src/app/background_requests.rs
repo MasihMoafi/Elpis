@@ -932,6 +932,7 @@ impl App {
         };
 
         self.transcript_cells.remove(index);
+        self.context_usage_transcript_dirty = true;
         if let Some(Overlay::Transcript(overlay)) = &mut self.overlay {
             overlay.replace_cells(self.transcript_cells.clone());
         }

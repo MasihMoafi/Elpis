@@ -228,7 +228,7 @@ impl ChatWidget {
             .cloned()
             .collect();
         let continuity_sources = self.continuity_sources();
-        let (cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
+        let (mut cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
             self.runtime_model_provider_base_url.as_deref(),
             self.remote_connection.as_ref(),
@@ -248,6 +248,14 @@ impl ChatWidget {
             refreshing_rate_limits,
             self.last_prune_saved_tokens.unwrap_or(0),
         );
+        let rollout_path = self.rollout_path();
+        let evidence_lines = self.local_evidence_lines(rollout_path.as_deref());
+        if !evidence_lines.is_empty() {
+            cell.parts
+                .push(Box::new(crate::history_cell::WebHyperlinkHistoryCell::new(
+                    evidence_lines,
+                )));
+        }
         if let Some(request_id) = request_id {
             self.refreshing_status_outputs.push((request_id, handle));
         }

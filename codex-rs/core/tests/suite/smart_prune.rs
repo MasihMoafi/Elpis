@@ -10,6 +10,7 @@ use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_function_call;
+use core_test_support::responses::ev_output_text_delta;
 use core_test_support::responses::mount_response_sequence;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
@@ -26,6 +27,11 @@ use sha2::Sha256;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
+use wiremock::Mock;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::header;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 const MAIN_MODEL: &str = "gpt-5.4";
 const CACHE_TEST_MODEL: &str = "gpt-5.6-sol";
@@ -79,6 +85,29 @@ fn admission_response(call_id: &str, compact: &str) -> String {
         ev_assistant_message("smart-prune-result", &response),
         ev_completed_with_tokens("smart-prune-result", 75),
     ])
+}
+
+fn chat_admission_response(call_id: &str, compact: &str) -> String {
+    let content = serde_json::to_string(&json!({
+        "items": [{
+            "call_id": call_id,
+            "decision": "compact",
+            "content": compact,
+        }]
+    }))
+    .expect("serialize OpenRouter admission response");
+    format!(
+        "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+        json!({
+            "id": "openrouter-smart-prune",
+            "choices": [{"delta": {"content": content}}]
+        }),
+        json!({
+            "id": "openrouter-smart-prune",
+            "choices": [{"delta": {}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 40, "completion_tokens": 20}
+        }),
+    )
 }
 
 fn malformed_admission_with_usage(
@@ -149,9 +178,31 @@ fn assert_source_output_preserved(
     );
 }
 
+fn only_attempt_record(harness: &TestCodexHarness) -> Result<serde_json::Value> {
+    let attempts = harness
+        .test()
+        .codex_home_path()
+        .join("logs/smart-prune/attempts");
+    let records = std::fs::read_dir(attempts)?.collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(
+        records.len(),
+        1,
+        "expected exactly one optimizer attempt audit"
+    );
+    Ok(serde_json::from_str(&std::fs::read_to_string(
+        records[0].path(),
+    )?)?)
+}
+
 async fn harness_for_model(enabled: bool, model: &str) -> Result<TestCodexHarness> {
     TestCodexHarness::with_builder(test_codex().with_model(model).with_config(move |config| {
         config.model_context_window = Some(100_000);
+        // Most Smart Prune tests exercise the primary route in isolation. The
+        // fallback acceptance test below explicitly installs a mock OpenRouter
+        // provider so no other test can contact an ambient third-party endpoint.
+        config
+            .model_providers
+            .remove(codex_model_provider_info::OPENROUTER_PROVIDER_ID);
         if enabled {
             let _ = config.features.enable(Feature::AutomaticContextPruning);
         }
@@ -252,7 +303,7 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].body_json()["model"], CACHE_TEST_MODEL);
     assert_eq!(requests[1].body_json()["model"], SMART_PRUNE_MODEL);
-    assert_eq!(requests[1].body_json()["reasoning"]["effort"], "max");
+    assert_eq!(requests[1].body_json()["reasoning"]["effort"], "low");
     assert_eq!(requests[2].body_json()["model"], CACHE_TEST_MODEL);
     assert!(requests[1].body_contains_text(CALL_A));
     assert!(requests[1].body_contains_text(&"Z".repeat(256)));
@@ -358,6 +409,9 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     let response_link: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
         admission_dir.join("response.json"),
     )?)?;
+    let admission_manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+        admission_dir.join("manifest.json"),
+    )?)?;
     assert_eq!(response_link["response_id"], "main-final");
     assert_eq!(response_link["usage"]["total_tokens"], 200);
     let snapshot = harness.test().codex.smart_prune_snapshot().await;
@@ -365,6 +419,28 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     assert_eq!(latest.request_input_sha256.as_deref(), Some(request_hash));
     assert!(latest.request_linkage_verified);
     assert!(latest.response_linkage_verified);
+    let attempt = only_attempt_record(&harness)?;
+    assert_eq!(attempt["status"], "admitted");
+    assert_eq!(attempt["model"], SMART_PRUNE_MODEL);
+    assert_eq!(attempt["reasoning_effort"], "low");
+    assert_eq!(attempt["candidate_outputs"], 1);
+    assert_eq!(attempt["admitted_outputs"], 1);
+    assert_eq!(attempt["saved_tokens"], admission_manifest["saved_tokens"]);
+    assert!(
+        attempt["saved_tokens"]
+            .as_u64()
+            .is_some_and(|saved| saved > 0)
+    );
+    assert!(
+        attempt["input"]
+            .as_str()
+            .is_some_and(|value| value.contains(&"Z".repeat(256)))
+    );
+    assert!(
+        attempt["raw_response"]
+            .as_str()
+            .is_some_and(|value| value.contains(COMPACT_A))
+    );
 
     Ok(())
 }
@@ -424,7 +500,7 @@ async fn interrupt_cancels_in_flight_smart_prune_without_waiting_for_timeout() -
         wait_for_event(&codex, |event| matches!(event, EventMsg::TurnAborted(_))),
     )
     .await
-    .expect("interrupt must not wait for the 45-second Smart Prune timeout");
+    .expect("interrupt must not wait for the 60-second Smart Prune inactivity timeout");
     assert!(interrupted_at.elapsed() < Duration::from_secs(2));
 
     let snapshot = harness.test().codex.smart_prune_snapshot().await;
@@ -476,6 +552,189 @@ async fn smart_prune_malformed_reply_fails_open() -> Result<()> {
     assert_eq!(snapshot.optimizer_usage_reports, 1);
     assert_eq!(snapshot.optimizer_usage.input_tokens, 25);
     assert_eq!(snapshot.optimizer_usage.cache_write_tokens, None);
+    let attempt = only_attempt_record(&harness)?;
+    assert_eq!(attempt["status"], "malformed_response");
+    assert_eq!(attempt["model"], SMART_PRUNE_MODEL);
+    assert_eq!(attempt["reasoning_effort"], "low");
+    assert_eq!(attempt["candidate_outputs"], 1);
+    assert_eq!(attempt["admitted_outputs"], 0);
+    assert_eq!(attempt["raw_response"], "not valid JSON");
+    assert!(
+        attempt["input"]
+            .as_str()
+            .is_some_and(|value| value.contains(&"Z".repeat(256)))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn luna_timeout_falls_back_to_openrouter_and_admits_before_main_send() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    let harness =
+        TestCodexHarness::with_builder(test_codex().with_model(CACHE_TEST_MODEL).with_config(
+            |config| {
+                config.model_context_window = Some(100_000);
+                let _ = config.features.enable(Feature::AutomaticContextPruning);
+                config.model_provider.request_max_retries = Some(0);
+                config.model_provider.stream_max_retries = Some(0);
+
+                let mut openrouter =
+                    codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
+                openrouter.base_url = config.model_provider.base_url.clone();
+                openrouter.env_key = None;
+                openrouter.env_key_instructions = None;
+                openrouter.experimental_bearer_token = Some("test-openrouter-key".to_string());
+                openrouter.request_max_retries = Some(0);
+                openrouter.stream_max_retries = Some(0);
+                config.model_providers.insert(
+                    codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+                    openrouter,
+                );
+            },
+        ))
+        .await?;
+    let responses = mount_response_sequence(
+        harness.server(),
+        vec![
+            sse_response(tool_response(CALL_A, 90)),
+            sse_response(admission_response(CALL_A, "late primary result"))
+                .set_delay(Duration::from_secs(120)),
+            sse_response(final_response()),
+        ],
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("authorization", "Bearer test-openrouter-key"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(chat_admission_response(CALL_A, COMPACT_A)),
+        )
+        .expect(1)
+        .mount(harness.server())
+        .await;
+
+    let codex = Arc::clone(&harness.test().codex);
+    submit_without_wait(&harness, "generate a large diagnostic output").await?;
+    wait_for_optimizer_request(&harness, &responses, CALL_A).await;
+    tokio::time::pause();
+    tokio::time::sleep(Duration::from_secs(61)).await;
+    tokio::time::resume();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))),
+    )
+    .await
+    .expect("turn should complete through the OpenRouter fallback");
+
+    let response_requests = responses.requests();
+    assert_eq!(response_requests.len(), 3);
+    assert!(response_requests[2].body_contains_text(COMPACT_A));
+    assert!(!response_requests[2].body_contains_text(&"Z".repeat(256)));
+    let requests = harness
+        .server()
+        .received_requests()
+        .await
+        .expect("recorded requests");
+    let fallback = requests
+        .iter()
+        .find(|request| request.url.path() == "/v1/chat/completions")
+        .expect("OpenRouter fallback request");
+    let fallback_body: serde_json::Value = serde_json::from_slice(&fallback.body)?;
+    assert_eq!(
+        fallback_body["model"],
+        codex_model_provider_info::OPENROUTER_FREE_MODEL_SLUG
+    );
+    assert!(fallback_body.to_string().contains(CALL_A));
+
+    let snapshot = codex.smart_prune_snapshot().await;
+    assert_eq!(snapshot.optimizer_requests, 2);
+    assert_eq!(snapshot.failed_batches, 0);
+    assert_eq!(snapshot.admitted_outputs, 1);
+    let latest_attempt = snapshot.latest_attempt.expect("fallback attempt evidence");
+    assert_eq!(
+        latest_attempt.model_slug,
+        codex_model_provider_info::OPENROUTER_FREE_MODEL_SLUG
+    );
+    assert_eq!(latest_attempt.status, "admitted");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn luna_timeout_does_not_cross_providers_without_openrouter_credential() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    const MISSING_KEY: &str = "ELPIS_TEST_MISSING_OPENROUTER_KEY_7D8D4D66";
+    assert!(
+        std::env::var_os(MISSING_KEY).is_none(),
+        "test-only missing-key variable unexpectedly exists"
+    );
+    let harness =
+        TestCodexHarness::with_builder(test_codex().with_model(CACHE_TEST_MODEL).with_config(
+            |config| {
+                config.model_context_window = Some(100_000);
+                let _ = config.features.enable(Feature::AutomaticContextPruning);
+                config.model_provider.request_max_retries = Some(0);
+                config.model_provider.stream_max_retries = Some(0);
+
+                let mut openrouter =
+                    codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
+                openrouter.base_url = config.model_provider.base_url.clone();
+                openrouter.env_key = Some(MISSING_KEY.to_string());
+                openrouter.request_max_retries = Some(0);
+                openrouter.stream_max_retries = Some(0);
+                config.model_providers.insert(
+                    codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+                    openrouter,
+                );
+            },
+        ))
+        .await?;
+    let responses = mount_response_sequence(
+        harness.server(),
+        vec![
+            sse_response(tool_response(CALL_A, 90)),
+            sse_response(admission_response(CALL_A, "late primary result"))
+                .set_delay(Duration::from_secs(120)),
+            sse_response(final_response()),
+        ],
+    )
+    .await;
+    let codex = Arc::clone(&harness.test().codex);
+
+    submit_without_wait(&harness, "generate a large diagnostic output").await?;
+    wait_for_optimizer_request(&harness, &responses, CALL_A).await;
+    tokio::time::pause();
+    tokio::time::sleep(Duration::from_secs(21)).await;
+    tokio::task::yield_now().await;
+    let before_timeout = codex.smart_prune_snapshot().await;
+    assert_eq!(before_timeout.optimizer_requests, 1);
+    assert_eq!(before_timeout.failed_batches, 0);
+    assert_eq!(before_timeout.admitted_outputs, 0);
+    tokio::time::sleep(Duration::from_secs(40)).await;
+    tokio::time::resume();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))),
+    )
+    .await
+    .expect("turn should fail open without an OpenRouter credential");
+
+    let snapshot = codex.smart_prune_snapshot().await;
+    assert_eq!(snapshot.optimizer_requests, 1);
+    assert_eq!(snapshot.failed_batches, 1);
+    assert_eq!(snapshot.admitted_outputs, 0);
+    let latest_attempt = snapshot.latest_attempt.expect("Luna timeout evidence");
+    assert_eq!(latest_attempt.model_slug, SMART_PRUNE_MODEL);
+    assert_eq!(latest_attempt.status, "timed_out");
+    let attempt = only_attempt_record(&harness)?;
+    assert_eq!(attempt["status"], "timed_out");
+    assert_eq!(
+        attempt["error"],
+        "60-second optimizer inactivity timeout elapsed"
+    );
+
     Ok(())
 }
 
@@ -487,7 +746,7 @@ async fn failed_optimizer_skips_later_batches_in_same_turn() -> Result<()> {
         harness.server(),
         vec![
             sse_response(tool_response(CALL_A, 90)),
-            sse_response(admission_response(CALL_A, COMPACT_A)).set_delay(Duration::from_secs(60)),
+            sse_response(admission_response(CALL_A, COMPACT_A)).set_delay(Duration::from_secs(120)),
             sse_response(tool_response(CALL_B, 89)),
             sse_response(final_response()),
         ],
@@ -502,7 +761,7 @@ async fn failed_optimizer_skips_later_batches_in_same_turn() -> Result<()> {
     .await?;
     wait_for_optimizer_request(&harness, &requests, CALL_A).await;
     tokio::time::pause();
-    tokio::time::sleep(Duration::from_secs(46)).await;
+    tokio::time::sleep(Duration::from_secs(61)).await;
     tokio::time::resume();
     tokio::time::timeout(Duration::from_secs(5), async {
         while harness
@@ -724,6 +983,121 @@ async fn smart_prune_stream_without_completed_fails_open() -> Result<()> {
     );
     let snapshot = harness.test().codex.smart_prune_snapshot().await;
     assert_eq!(snapshot.optimizer_requests, 1);
+    assert_eq!(snapshot.optimizer_usage_reports, 0);
+    let attempt = only_attempt_record(&harness)?;
+    assert_eq!(attempt["status"], "model_error");
+    assert_eq!(attempt["raw_response"], manifest);
+    assert!(attempt["usage"].is_null());
+    assert_source_output_preserved(&requests[1], &requests[2], CALL_A);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn smart_prune_stream_error_preserves_partial_text_in_audit() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    let harness = harness(true).await?;
+    let partial = "{\"items\":[{\"call_id\":\"smart-prune-call-a\",\"decision\":\"compact\"";
+    let requests = mount_sse_sequence(
+        harness.server(),
+        vec![
+            tool_response(CALL_A, 90),
+            sse(vec![
+                ev_output_text_delta(partial),
+                json!({
+                    "type": "response.failed",
+                    "response": {
+                        "id": "failed-smart-prune",
+                        "error": {"code": "server_error", "message": "injected optimizer failure"},
+                    },
+                }),
+            ]),
+            final_response(),
+        ],
+    )
+    .await;
+
+    harness
+        .submit("preserve a partial optimizer answer as evidence")
+        .await?;
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 3);
+    assert_source_output_preserved(&requests[1], &requests[2], CALL_A);
+    assert!(!requests[2].body_contains_text("[ELPIS SMART PRUNE]"));
+    let attempt = only_attempt_record(&harness)?;
+    assert_eq!(attempt["status"], "model_error");
+    assert_eq!(attempt["raw_response"], partial);
+    assert!(attempt["usage"].is_null());
+    assert_eq!(attempt["admitted_outputs"], 0);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn smart_prune_missing_answer_preserves_received_usage_in_audit() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    let harness = harness(true).await?;
+    let requests = mount_sse_sequence(
+        harness.server(),
+        vec![
+            tool_response(CALL_A, 90),
+            sse(vec![ev_completed_with_tokens("empty-smart-prune", 75)]),
+            final_response(),
+        ],
+    )
+    .await;
+
+    harness
+        .submit("retain usage even when an optimizer answer is missing")
+        .await?;
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 3);
+    assert_source_output_preserved(&requests[1], &requests[2], CALL_A);
+    let attempt = only_attempt_record(&harness)?;
+    assert_eq!(attempt["status"], "model_error");
+    assert!(attempt["raw_response"].is_null());
+    assert_eq!(attempt["usage"]["total_tokens"], 75);
+    assert_eq!(attempt["admitted_outputs"], 0);
+    let snapshot = harness.test().codex.smart_prune_snapshot().await;
+    assert_eq!(snapshot.optimizer_usage_reports, 1);
+    assert_eq!(snapshot.optimizer_usage.total_tokens, 75);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn smart_prune_empty_failed_stream_does_not_invent_text_or_usage() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    let harness = harness(true).await?;
+    let requests = mount_sse_sequence(
+        harness.server(),
+        vec![
+            tool_response(CALL_A, 90),
+            sse(vec![json!({
+                "type": "response.failed",
+                "response": {
+                    "id": "empty-smart-prune",
+                    "error": {"code": "server_error", "message": "injected empty failure"},
+                },
+            })]),
+            final_response(),
+        ],
+    )
+    .await;
+
+    harness
+        .submit("retain absence of an optimizer answer or usage")
+        .await?;
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 3);
+    assert_source_output_preserved(&requests[1], &requests[2], CALL_A);
+    let attempt = only_attempt_record(&harness)?;
+    assert_eq!(attempt["status"], "model_error");
+    assert!(attempt["raw_response"].is_null());
+    assert!(attempt["usage"].is_null());
+    assert_eq!(attempt["admitted_outputs"], 0);
+    let snapshot = harness.test().codex.smart_prune_snapshot().await;
     assert_eq!(snapshot.optimizer_usage_reports, 0);
 
     Ok(())

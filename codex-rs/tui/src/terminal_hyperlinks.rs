@@ -149,6 +149,25 @@ pub(crate) fn annotate_web_urls(lines: Vec<Line<'static>>) -> Vec<HyperlinkLine>
     lines.into_iter().map(annotate_web_urls_in_line).collect()
 }
 
+/// Annotate trusted UI-produced HTTP(S) and local `file://` evidence URLs.
+/// Model-authored prose must keep using `annotate_web_urls` so it cannot invent
+/// clickable local-file destinations.
+pub(crate) fn annotate_terminal_urls(lines: Vec<Line<'static>>) -> Vec<HyperlinkLine> {
+    lines
+        .into_iter()
+        .map(|line| {
+            let text = line
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>();
+            let mut out = HyperlinkLine::new(line);
+            out.hyperlinks = links_in_text(&text, terminal_destination);
+            out
+        })
+        .collect()
+}
+
 pub(crate) fn annotate_web_urls_in_line(line: Line<'static>) -> HyperlinkLine {
     let text = line
         .spans
@@ -242,6 +261,13 @@ fn push_link_range(line: &mut HyperlinkLine, range: Range<usize>, destination: &
 }
 
 pub(crate) fn web_links_in_text(text: &str) -> Vec<TerminalHyperlink> {
+    links_in_text(text, web_destination)
+}
+
+fn links_in_text(
+    text: &str,
+    destination_for: fn(&str) -> Option<String>,
+) -> Vec<TerminalHyperlink> {
     let mut links = Vec::new();
     let mut search_from = 0usize;
     for raw_token in text.split_ascii_whitespace() {
@@ -258,7 +284,7 @@ pub(crate) fn web_links_in_text(text: &str) -> Vec<TerminalHyperlink> {
             continue;
         }
         let candidate = &raw_token[trimmed_start..trimmed_end];
-        let Some(destination) = web_destination(candidate) else {
+        let Some(destination) = destination_for(candidate) else {
             continue;
         };
         let start = text[..raw_start + trimmed_start].width();

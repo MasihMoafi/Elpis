@@ -14,8 +14,10 @@ Replace Elpis's automatic retrospective Ace rewriting with admission-time semant
 optimization of fresh client-executed tool results. The main model must receive the
 admitted form on its first exposure, after which that exact history remains stable.
 
-`/prune` remains the explicit retrospective maintenance command. Native compaction
-remains the context-limit fallback. Neither is part of Smart Prune's automatic path.
+`/prune` is a compatibility alias that enables Smart Prune for subsequent turns.
+`/force-prune <pct>` remains the explicit retrospective maintenance command. Native
+compaction remains the context-limit fallback. Neither retrospective mechanism is part
+of Smart Prune's automatic path.
 
 ## Non-negotiable invariants
 
@@ -36,7 +38,7 @@ remains the context-limit fallback. Neither is part of Smart Prune's automatic p
    output unchanged.
 8. A compact result may reference archived evidence only after that evidence has been
    durably written.
-9. The admission Ace call uses an isolated client session and cache namespace; it must
+9. The admission optimizer call uses an isolated client session and cache namespace; it must
    not disturb the main turn's incremental response state.
 10. No dashboard number is presented as provider cost, task quality, or causal cache
     improvement unless its source supports that claim.
@@ -46,7 +48,7 @@ remains the context-limit fallback. Neither is part of Smart Prune's automatic p
 ### Included
 
 - client-executed `FunctionCallOutput` and `CustomToolCallOutput` textual bodies;
-- one batched Ace decision after each sampling step's tool futures finish;
+- one batched optimizer decision after each sampling step's tool futures finish;
 - a default-off, persist-first Smart Prune control;
 - `/smart-prune`, `/smart-prune on`, and `/smart-prune off`;
 - a prominent Context Ledger switch and keyboard control;
@@ -75,7 +77,7 @@ remains the context-limit fallback. Neither is part of Smart Prune's automatic p
   without Smart Prune. It is not a pre-hook secret bypass.
 - **Admitted output:** either the byte-identical canonical source or a validated compact
   textual body inside the same response envelope.
-- **Main provider:** the user-turn inference stream. The separate Ace maintenance call
+- **Main provider:** the user-turn inference stream. The separate optimizer call
   does not count as first exposure to the main conversation history.
 - **Admission:** the single boundary at which a fresh local tool result becomes durable
   model-visible history.
@@ -122,7 +124,7 @@ from cache safety.
   preserved, with a hard 24,000 approximate-token pass cap. A result that exceeds the cap
   remains unchanged; it is not sent unbounded to the optimizer. Later in-range siblings
   remain eligible.
-- Ace may explicitly choose `unchanged` for any result.
+- The optimizer may explicitly choose `unchanged` for any result.
 - Elpis rejects a proposed compact body unless the final admitted body, including its
   evidence marker, saves at least 20 percent and at least 256 approximate tokens.
 - The session snapshot records eligible unchanged, optimized, and failed outcomes, plus
@@ -132,12 +134,15 @@ from cache safety.
 This policy bounds cost and latency. It does not provide cache safety; immutability after
 admission provides cache safety.
 
-## Ace contract
+## Optimizer contract
 
-Use `gpt-5.6-luna` with maximum reasoning for the initial implementation, falling back
-to the active turn model only through the existing provider-compatible fallback rule.
+Use `gpt-5.6-luna` with low reasoning for the first-party attempt. If that request reaches the
+60-second inactivity bound or fails at the model/transport layer, make one separately authenticated
+attempt through OpenRouter's `openrouter/free` route when `OPENROUTER_API_KEY` is available. Do not cross providers
+after a completed but malformed, unchanged, or unprofitable Luna response.
 The request uses a dedicated `:smart-prune` prompt-cache namespace and a fresh model
-client session.
+client session. The fallback transmits the same eligible tool-result batch to OpenRouter only
+after the first-party failure and only with that separate credential.
 
 The response is strict JSON containing exactly one decision per eligible call id:
 
@@ -155,7 +160,8 @@ compact body must state concrete relevant evidence and outcomes, not invent fact
 instructions. Elpis appends a small stable archive marker containing the admission id,
 source SHA-256, and call id. The marker never claims the model can dereference it.
 
-The full pass is bounded by a 45-second timeout. Failure leaves every output unchanged.
+The Luna attempt and conditional OpenRouter attempt each permit up to 60 seconds without a streamed
+response event. The inactivity interval resets on every event. Failure leaves every output unchanged.
 Turn cancellation skips a not-yet-started pass and cancels an in-flight optimizer request;
 it never publishes an admission audit.
 
@@ -284,7 +290,7 @@ them.
 
 ## Failure behavior
 
-- Below threshold or unsupported: unchanged, no Ace request.
+- Below threshold or unsupported: unchanged, no optimizer request.
 - Hook feedback/block: unchanged by Smart Prune.
 - Timeout/provider/stream/parse error: unchanged; failed count and optimizer overhead
   recorded in the session snapshot.
@@ -314,8 +320,8 @@ them.
    prefix falls back to a full input.
 5. Failure coverage proving audit publication errors, malformed/incomplete responses, and
    insufficient savings pass the source through unchanged; the implementation's bounded
-   timeout follows the same fail-open branch. Local tests do not wait out the 45-second
-   timer itself.
+   inactivity timeout follows the same fail-open branch. Virtual time exercises the 60-second
+   per-attempt inactivity bound without wall-clock waiting.
 6. Runtime-toggle tests proving persist-first behavior, authoritative state refresh,
    idle-only changes, and next-turn application. Managed feature constraints are not
    separately exercised.
@@ -342,7 +348,7 @@ confirmed, run three batches of ten paired trials. Capture:
 - admission audit and request/response manifests;
 - dashboard JSON and rendered screenshot;
 - Context Ledger render/screenshot;
-- main and Ace input/output/cached/cache-write tokens;
+- main and optimizer input/output/cached/cache-write tokens;
 - latency and errors/timeouts;
 - deterministic task answer/verifier result.
 

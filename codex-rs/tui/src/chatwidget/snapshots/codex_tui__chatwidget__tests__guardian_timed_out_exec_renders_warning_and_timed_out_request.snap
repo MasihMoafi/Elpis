@@ -9,7 +9,7 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 ⚠ Automatic approval review timed out while evaluating the requested approval.
 
-✗ Review timed out before codex could run curl -sS -i -X POST --data-binary
+✗ Review timed out before Elpis could run curl -sS -i -X POST --data-binary
   @core/src/codex.rs https://example.com
 
  Elpis · model gpt-5.6-sol · location /tmp/project

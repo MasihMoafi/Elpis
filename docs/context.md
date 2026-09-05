@@ -24,10 +24,10 @@ before that result is recorded or sent to the main model for the first time. It 
 only the result body with a smaller, evidence-linked body. It never removes the tool-call
 event, changes its call id, or rewrites an item that has already entered sent history.
 
-The ambiguous retrospective `/prune` command was removed. `/force-prune <1-100>` remains
-an explicit emergency Ace pass. It can rewrite older tool-result bodies on request, which
-necessarily changes the cacheable prefix after the first changed item. See
-[cache-friendly-pruning.md](cache-friendly-pruning.md).
+`/prune` is a compatibility alias that enables Smart Prune for subsequent turns; it does not
+rewrite existing history. `/force-prune <1-100>` remains the explicit emergency Ace pass. It can
+rewrite older tool-result bodies on request, which necessarily changes the cacheable prefix after
+the first changed item. See [cache-friendly-pruning.md](cache-friendly-pruning.md).
 
 ### Pipeline Layer Comparison
 
@@ -35,7 +35,7 @@ necessarily changes the cacheable prefix after the first changed item. See
 | :--- | :--- | :--- | :--- | :--- |
 | **1. RTK Filter** | Before selected shell tools execute | Shell command/request | Rewrites supported commands so the external RTK process can emit a smaller result. RTK is syntactic filtering, not semantic history pruning. | Hook rejection or tool failure leaves normal or unfiltered output available. |
 | **2. Safety Cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
-| **3. Smart Prune** | After sibling tools and post-tool hooks, before first main-model exposure, when enabled | Fresh textual function/custom-tool results of at least 1,024 estimated tokens, up to a 24k-token batch | Ace returns `compact` or `unchanged` for every result. Elpis admits a compact body only when it saves at least 256 estimated tokens and 20%; the original envelope and call id remain. | Any timeout, malformed response, audit failure, unsupported body, or weak saving admits the exact original result. |
+| **3. Smart Prune** | After sibling tools and post-tool hooks, before first main-model exposure, when enabled | Fresh textual function/custom-tool results of at least 1,024 estimated tokens, up to a 24k-token batch | The optimizer returns `compact` or `unchanged` for every result. Elpis admits a compact body only when it saves at least 256 estimated tokens and 20%; the original envelope and call id remain. | Any timeout, malformed response, audit failure, unsupported body, or weak saving admits the exact original result. |
 | **4. Explicit recovery** | `/force-prune <1-100>` or `/compact` | Already-recorded history | `/force-prune` selectively rewrites eligible old tool-result bodies; `/compact` performs Codex's broader documented rollover. | Incomplete or invalid decisions leave history unchanged. |
 
 RTK is a separate binary and an optional `PreToolUse` hook. Elpis does not install it. On a
@@ -46,13 +46,20 @@ opts out permanently. Elpis's hook runtime accepts RTK's rewrite response. RTK a
 Prune may coexist: RTK changes supported shell execution before it runs; Smart Prune
 evaluates the final post-hook result that would otherwise enter model history.
 
-Smart Prune is off by default. Toggle it for subsequent turns with the Context Ledger's
-`p` key/switch or `/smart-prune on|off`; the underlying persisted feature key remains
-`features.automatic_context_pruning`. A turn captures the setting once, so changing the
-configuration cannot change outputs halfway through an active turn. OpenAI-backed
-admission passes use Luna at maximal reasoning effort; other providers use the selected
-provider model. The admission call has its own `:smart-prune` prompt-cache namespace and
-does not consume the main turn's stable cache key.
+Smart Prune is off by default. Enable it for subsequent turns with `/prune`, or control it with
+the Context Ledger's `p` key/switch or `/smart-prune on|off`; the underlying persisted feature key
+remains `features.automatic_context_pruning`. A turn captures the setting once, so changing the
+configuration cannot change outputs halfway through an active turn. OpenAI-backed admission passes
+use Luna at low reasoning effort; other providers use the selected provider model with the same
+effort. Each attempt permits up to 60 seconds of optimizer inactivity, with that interval restarting
+after every streamed response event. If a first-party Luna request goes inactive or fails at the
+model/transport layer, Elpis makes one separately authenticated attempt through OpenRouter's
+`openrouter/free` route when `OPENROUTER_API_KEY` is available. A completed but
+malformed or unprofitable Luna response does not cross providers. Each attempt has its own audit;
+the admission call has a `:smart-prune` prompt-cache namespace and does not consume or replace the
+main turn's stable cache key. The fallback sends the same eligible tool-result batch to
+OpenRouter, but only after that first-party failure and only when the separate OpenRouter
+credential is present.
 
 `/force-prune <pct>` is an explicit emergency Ace action and works while Smart Prune is off.
 It records `pressure` in its audit to name the targeted selection strategy; that value does
@@ -61,17 +68,20 @@ not establish automatic invocation.
 `/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
 does not run Ace first. Separately, automatic native compaction uses the donor model-window
 threshold and usable-window headroom. The Context Ledger's exact used-token number is
-authoritative after either mechanism. Ace saved-token totals are cumulative and origin-neutral:
+authoritative after either mechanism. Smart Prune saved-token totals are cumulative and origin-neutral:
 they do not identify a pass as manual or automatic.
 
 ### Audit trail
 
-Before a compact body can enter history, every applied Smart Prune admission writes its
-exact source, admitted envelope, source hash, and model decision under
-`~/.elpis/logs/smart-prune/admissions/<admission-id>/`. Elpis later appends hash-only
-main-request linkage and the matching response id/usage. If the initial audit cannot be
-written, Elpis admits the original output. Manual Ace passes retain their existing
-immutable pruning audit.
+Every optimizer attempt writes its model, effort, exact optimizer input, raw response or error,
+latency, provider usage when reported, and outcome to
+`~/.elpis/logs/smart-prune/attempts/<attempt-id>.json`. Before a compact body can enter history, the
+admission also writes its exact source, admitted envelope, source hash, and model decision under
+`~/.elpis/logs/smart-prune/admissions/<admission-id>/`. Elpis later appends hash-only main-request
+linkage and the matching response id/usage. If the admission audit cannot be written, Elpis admits
+the original output. Manual Ace passes retain their existing immutable pruning audit. This behavior
+is implemented but remains under live acceptance until three consecutive admissions and one
+deliberate fail-open case are observed in an installed build.
 
 ![Elpis immutable audit trail](assets/elpis-audit-trail-template.svg)
 
@@ -95,7 +105,7 @@ Rollout and audit files preserve evidence separately from the active model conte
 
 Elpis provides interactive context admission control in the TUI:
 
-- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing portable context sources with their byte sizes, per-source estimates, and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. While a turn is running, `Tab` defers to the composer's queue-the-draft action; `Alt+C` always toggles the ledger.
+- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default. Its single full-window bar and category estimates use the same accounting as `/context`: user messages, agent messages, reasoning, tool calls/results, system/developer instructions, tool definitions/schema, and unrecognized items. Category allocation is estimated, not a provider breakdown. Completed assistant responses refresh the retained-history snapshot. Pending source choices are labelled separately; toggling does not prematurely subtract tokens from measured usage. The source section lists portable context files with byte sizes and per-source estimates. The panel is 52 columns wide, narrowing on smaller terminals. While a turn is running, `Tab` queues the draft; `Alt+C` always toggles the ledger.
 - **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)
@@ -151,11 +161,20 @@ state and capped estimate without exposing the file contents or path.
 
 ### `/context` — where the window went
 
-The ledger answers *what is admitted*. `/context` answers *what filled the window*: token
-usage as a grid broken down into user messages, agent responses, tool activity, workspace
-instructions, development rules, portable context, a built-in/estimate gap, and free space —
-alongside the backtrack checkpoints available via `Esc Esc`. The two are separate surfaces
-and neither replaces the other.
+The Ledger persistently summarizes both *how much of the window is occupied* and *which portable
+sources are admitted*. `/context` expands the same accounting into one segmented bar with free space,
+backtrack checkpoints available via `Esc Esc`, and local evidence links. Both surfaces use the
+same category function, marker shapes, and distinct colors for the latest request-composition
+estimate.
+
+The occupied width comes from core's current context measurement. Category proportions are locally
+estimated from retained request history, refreshed after a completed response using the same
+static instructions and tool definitions, then proportionally reconciled to that measured total.
+This allocation is Elpis-specific; the Hermes reference supplies a full-window display and usage
+anchor, not this proportional reconciliation. This is explicitly labelled as
+estimated attribution, not a provider breakdown. The unfilled width is the measured free capacity;
+there is no fabricated gap category. Before a request snapshot exists, the Ledger says the breakdown
+is unavailable instead of fabricating zero-token categories.
 
 ### Context Accounting Contract
 
@@ -164,6 +183,7 @@ Elpis exposes **one single source of truth** for context measurement:
 - Displayed percentages explicitly state whether they mean **used** or **remaining**.
 - The percentage is computed against the model's own context window — used tokens over context window (`codex-rs/tui/src/chatwidget/context_ledger.rs`) — never against transcript length.
 - It is reported in the Context Ledger. The persistent identity header carries product, model, and location only (`Elpis · model {model} · location {cwd}`); the inherited footer status line is deliberately suppressed so there is exactly one place to read the number.
+- `/context`, the dashboard, and the Ledger use the same category-attribution function for the exact latest built request. Its estimated proportions are reconciled to the independently measured active total, so the rows, colored width, and headline agree without inventing a remainder category.
 - `/usage` enumerates admitted sources, byte sizes, and lifetime reasons.
 - Per-source Ledger counts are capped estimates from trimmed characters divided by four, not
   tokenizer measurements. They make the admitted-file cost inspectable without assigning a

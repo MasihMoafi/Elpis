@@ -22,8 +22,10 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use codex_core::CodexThread;
 use codex_protocol::ThreadId;
+use codex_protocol::protocol::ContextAttributionSnapshot;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::TokenUsageInfo;
 
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::OutgoingMessageSender;
@@ -59,13 +61,16 @@ pub(super) async fn send_thread_token_usage_update_to_connection(
     thread: &Thread,
     conversation: &CodexThread,
     token_usage_turn_id: Option<String>,
+    rollout_items: &[RolloutItem],
 ) {
     let Some(info) = conversation.token_usage_info().await else {
         return;
     };
+    let context_attribution = latest_context_attribution_from_rollout_items(rollout_items, &info);
     let mut token_usage = ThreadTokenUsage::from(info);
     token_usage.context_prune_saved_tokens = conversation.context_prune_saved_tokens().await;
     token_usage.smart_prune = conversation.smart_prune_snapshot().await.into();
+    token_usage.context_attribution = context_attribution.map(Into::into);
     let notification = ThreadTokenUsageUpdatedNotification {
         thread_id: thread_id.to_string(),
         turn_id: token_usage_turn_id.unwrap_or_else(|| latest_token_usage_turn_id(thread)),
@@ -86,6 +91,27 @@ pub(super) async fn send_thread_token_usage_update_to_connection(
 struct TokenUsageTurnOwner {
     id: String,
     position: Option<usize>,
+}
+
+fn latest_context_attribution_from_rollout_items(
+    rollout_items: &[RolloutItem],
+    info: &TokenUsageInfo,
+) -> Option<ContextAttributionSnapshot> {
+    // A missing snapshot on the latest usage record is unknown, not permission
+    // to combine an older request's categories with a newer context total.
+    rollout_items.iter().rev().find_map(|item| match item {
+        RolloutItem::EventMsg(EventMsg::TokenCount(event)) => {
+            // A running thread may have advanced after history was loaded.
+            // Never pair an older category snapshot with newer live totals.
+            Some(
+                event
+                    .context_attribution
+                    .clone()
+                    .filter(|_| event.info.as_ref() == Some(info)),
+            )
+        }
+        _ => None,
+    })?
 }
 
 pub(super) fn latest_token_usage_turn_id_from_rollout_items(
@@ -167,6 +193,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn replay_preserves_latest_context_categories_without_recounting() {
+        let mut items = token_usage_history();
+        let info = TokenUsageInfo {
+            total_token_usage: Default::default(),
+            last_token_usage: Default::default(),
+            model_context_window: Some(100),
+        };
+        let expected = ContextAttributionSnapshot {
+            agent_messages: 29,
+            estimated_total: 29,
+            ..Default::default()
+        };
+        if let RolloutItem::EventMsg(EventMsg::TokenCount(event)) = &mut items[2] {
+            event.context_attribution = Some(expected.clone());
+            event.info = Some(info.clone());
+        }
+        assert_eq!(
+            latest_context_attribution_from_rollout_items(&items, &info),
+            Some(expected),
+        );
+
+        let mut newer_info = info.clone();
+        newer_info.last_token_usage.output_tokens = 1;
+        assert_eq!(
+            latest_context_attribution_from_rollout_items(&items, &newer_info),
+            None,
+        );
+
+        // Older files or a newer usage record without an attribution must not
+        // masquerade as a freshly classified context.
+        items.push(token_usage_history()[2].clone());
+        assert_eq!(
+            latest_context_attribution_from_rollout_items(&items, &info),
+            None
+        );
+        assert_eq!(
+            latest_context_attribution_from_rollout_items(&[], &info),
+            None
+        );
+    }
+
     fn token_usage_history() -> Vec<RolloutItem> {
         vec![
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
@@ -186,6 +254,7 @@ mod tests {
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
                 smart_prune: Default::default(),
+                context_attribution: None,
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
