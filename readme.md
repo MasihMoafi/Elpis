@@ -14,6 +14,12 @@
 
 </div>
 
+[Elpis v0.2.0 is available for Linux x86_64](https://github.com/MasihMoafi/Elpis/releases/tag/v0.2.0).
+Start with the [versioned guide](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/readme.md)
+or [interactive demo](https://elpis.masihmoafi.com).
+The accepted release passed its [exact-source shipping checks](https://github.com/MasihMoafi/Elpis/actions/runs/33965914155).
+The release tag, not this development branch, identifies the shipped runtime.
+
 ![Elpis interactive terminal demo](docs/assets/demo.gif)
 
 ![Elpis context audit — selective pruning and evidence trail](docs/assets/evidence.gif)
@@ -42,17 +48,19 @@
 
 ## Quickstart
 
-Linux x86_64 and macOS on Apple Silicon:
+Linux x86_64; macOS and Windows are not included in v0.2.0. Review the installer before running it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
-The installer picks the right binary for your machine and installs
-[RTK](https://github.com/rtk-ai/rtk), which powers shell-output filtering. On first launch,
-choose a provider and sign in or enter its API key.
+The installer downloads the latest published Elpis Linux binary and verifies its
+SHA-256 sidecar. [RTK](https://github.com/rtk-ai/rtk) is an optional, separate
+shell-output filter; this installer does not install it. On first launch, choose
+a provider and sign in or enter its API key.
 
-`v0.1.2` is the current release.
+`v0.2.0` is the current release. Smart Prune is experimental and off by default;
+`/prune` enables it for subsequent turns without rewriting already-sent history.
 
 ## What is Elpis
 
@@ -100,15 +108,15 @@ uses a layered pipeline to keep useful findings while removing disposable explor
 | --- | --- | --- |
 | **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
 | **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
-| **3. Ace pruning — Experimental** | Selectively rewrites eligible old tool evidence toward a safe working-set target, preserving the latest context and an evidence pointer. | Manual `/prune` or `/force-prune`; automatic pressure cycling only in a conversation started with the default-off setting enabled |
+| **3. Smart Prune — Experimental** | Optimizes eligible fresh textual tool results before their first main-model exposure; admitted history is not revisited. | Enable with `/prune` |
+| **4. Emergency Ace pruning** | Selectively rewrites eligible old tool evidence toward a working-set target, preserving recent context and evidence pointers. | Explicit `/force-prune <1-100>` only |
 
-`/prune` and `/force-prune` are explicit manual Ace actions and do not rewrite user instructions,
-assistant messages, or model reasoning. `/compact` immediately runs Codex native compaction; it
-is independent of Ace pruning. Automatic native compaction uses the model-window threshold and
-usable-window headroom. Automatic Ace pruning is Experimental and off by default; `/settings`
-saves its value for the next conversation.
+These controls describe v0.2.0. `/prune` only enables Smart Prune; `/force-prune`
+is a separate emergency history rewrite that may reduce cache reuse. Neither
+rewrites user instructions, assistant messages, or model reasoning. `/compact`
+runs native Codex compaction. See the [release context contract](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/docs/context.md).
 
-#### What a pruning decision looks like
+#### Historical emergency-pruning example
 
 ![Task 1 Context Flow and Pruning Lifecycle](docs/assets/sankey_context_flow.svg)
 
@@ -156,9 +164,11 @@ its per-source estimates are not tokenizer measurements.
 
 ![The Context Ledger listing admitted instruction files with their token counts and included state](docs/assets/context-ledger.webp)
 
-`/context` answers a different question: where the window went. It displays token usage by user
-messages, agent responses, tool calls, system prompt, Development rules, and free space, alongside available
-backtrack checkpoints.
+In v0.2.0, Ledger and `/context` share category colors and a full-window scale.
+They distinguish active context usage from locally estimated request categories:
+user and agent messages, reasoning, tool calls/results, instructions, developer
+messages, and tool definitions. Category estimates are not provider-billed counts.
+Available backtrack checkpoints and local evidence links remain inspectable.
 
 <img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
 
@@ -284,7 +294,13 @@ Across those configured historical requests, Elpis spent over 95% of its operati
 
 ### RQ4: Pruning Overhead & Token Economics
 
-Pruning adds an auxiliary model call sequenced against the main agent, and rewriting history invalidates the provider's cached prefix. Both costs are real. The figures below are configured historical runs with automatic pruning enabled under the superseded high-frequency setup; they bound that configuration's penalty rather than describe the current default: 730,810 auxiliary tokens spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token).
+The historical history-rewriting configuration added optimizer calls and could
+invalidate cached prefixes. Its measured totals were 730,810 auxiliary tokens to
+reclaim 605,377 context tokens (0.83 reclaimed per spent token). These are not
+v0.2.0 Smart Prune results. Smart Prune acts before first exposure and does not
+revisit admitted history, but it still adds optimizer work. Controlled OFF/ON
+cache, net-cost, and general task-quality effects remain unproven. See the
+[release experiment log](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/docs/evals/EXPERIMENT_LOG.md).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 
@@ -308,7 +324,7 @@ Every pruning event produces an immutable audit record on disk under `~/.elpis/l
 - [Providers](docs/providers.md) — provider adapters, BYOK, and protocol limitations
 - [Evals & benchmarks](docs/evals/) — source data, procedures, scorers, and results
 - [Technical guide](docs/GUIDE.md) — product thesis, requirements, and architecture
-- [Research paper](paper/paper.md) — technical preprint and formal specifications
+- [Research paper](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/paper/paper.md) — technical preprint draft, not a completed comparative-results paper
 
 ## License
 
