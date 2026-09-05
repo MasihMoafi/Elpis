@@ -1,0 +1,23 @@
+@import "/home/masih/Desktop/p/Elpis/website/node_modules/tailwindcss";
+@source "./index.html";
+@source "./demo.mjs";
+@plugin "/home/masih/Desktop/p/Elpis/website/node_modules/daisyui" { themes: false; logs: false; }
+@plugin "/home/masih/Desktop/p/Elpis/website/node_modules/daisyui/theme" {
+  name: "elpis-candidate"; default: true; prefersdark: true; color-scheme: dark;
+  --color-base-100: #0c0e0d; --color-base-200: #111411; --color-base-300: #2c322e; --color-base-content: #eeeae1;
+  --color-primary: #df9b63; --color-primary-content: #241207;
+  --color-secondary: #86afa0; --color-secondary-content: #0e2019;
+  --color-accent: #d18478; --color-accent-content: #28100c;
+  --color-neutral: #171c18; --color-neutral-content: #dddcd2;
+  --color-info: #9abdde; --color-info-content: #0c1c2b;
+  --color-success: #95b9a1; --color-success-content: #0d2317;
+  --color-warning: #e9b767; --color-warning-content: #2c1c04;
+  --color-error: #db8b85; --color-error-content: #2b0d0a;
+  --radius-selector: .25rem; --radius-field: .25rem; --radius-box: .5rem;
+  --size-selector: .25rem; --size-field: .25rem; --border: 1px; --depth: 0; --noise: 0;
+}
+@layer base { body { font-family: ui-sans-serif, system-ui, sans-serif; } :focus-visible { outline: 2px solid var(--color-warning); outline-offset: 4px; } }
+.elpis-logo { font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: clamp(5px, .93vw, 13px); line-height: 1.12; letter-spacing: -.035em; color: var(--color-warning); background: linear-gradient(110deg, var(--color-accent) 0%, var(--color-warning) 40%, var(--color-base-content) 48%, var(--color-warning) 56%, var(--color-accent) 100%); background-size: 240% 100%; background-clip: text; -webkit-text-fill-color: transparent; animation: flare 7s linear infinite; }
+body[data-paused="true"] .elpis-logo { animation-play-state: paused; }
+@keyframes flare { from { background-position: 130% 0; } to { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) { .elpis-logo { animation: none; } }

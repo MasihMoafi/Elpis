@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-theme="elpis-candidate">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elpis · Persistent identity candidate</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="demo.mjs"></script>
+</head>
+<body class="min-h-screen bg-base-100 text-base-content">
+  <main class="mx-auto max-w-[1600px] p-4 md:p-8 lg:p-12">
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div><p class="font-mono text-xs uppercase tracking-[.22em] text-base-content/55">Elpis / interaction study 01</p><h1 class="mt-2 text-xl font-medium">Persistent identity. Visible context.</h1></div>
+      <span class="badge badge-outline text-base-content/65">Illustrative candidate · pending review</span>
+    </header>
+    <section class="overflow-hidden rounded-box border border-base-300 bg-base-200" aria-label="Interactive Elpis layout candidate">
+      <div class="flex flex-wrap items-center gap-3 border-b border-base-300 px-6 py-3 font-mono text-xs text-base-content/60">
+        <span class="text-base-content">ELPIS</span><span>/</span><span>workspace</span><span class="ml-auto">Native runtime · Luna optimizer</span>
+      </div>
+      <div class="grid lg:grid-cols-[minmax(0,1fr)_390px]">
+        <section class="flex min-w-0 flex-col" aria-label="Elpis identity and conversation">
+          <div class="border-b border-base-300 px-6 py-8 md:px-10" id="identity">
+            <pre id="logo" class="elpis-logo" aria-label="ELPIS">████████████   ██            ███████████     ████    ████████████
+████████████   ██            ████████████    ████    ████████████
+██             ██            ██        ███   ████    ██
+██             ██            ██        ███   ████    ██
+██████████     ██            ████████████    ████    ████████████
+██             ██            ███████████     ████              ██
+██             ██            ██              ████              ██
+████████████   ███████████   ██              ████    ████████████
+████████████   ███████████   ██              ████    ████████████</pre>
+            <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-xs text-base-content/55"><span>Solar flare</span><span>Identity stays above the conversation</span></div>
+          </div>
+          <div class="flex-1 space-y-6 p-6 md:px-10 md:py-8" id="conversation">
+            <div class="grid grid-cols-[20px_1fr] gap-3"><span class="text-info">›</span><div><p class="mb-2 font-mono text-xs text-base-content/50">YOU</p><p>Find the failing context checks and explain the cause.</p></div></div>
+            <div class="grid grid-cols-[20px_1fr] gap-3"><span class="text-accent">✦</span><div><p class="mb-2 font-mono text-xs text-base-content/50">ELPIS</p><p id="reply" class="leading-7 text-base-content/80">I’ll inspect the request accounting and the admission boundary.</p></div></div>
+            <div class="card card-border bg-base-100">
+              <div class="card-body gap-4 p-5">
+                <div class="flex flex-wrap items-center justify-between gap-2 font-mono text-xs"><span>⌘ inspect context fixtures</span><span id="tool-status" class="text-base-content/55">Ready</span></div>
+                <pre id="tool-body" class="overflow-x-auto text-xs leading-6 text-base-content/60">Waiting for the illustrative tool result.
+The existing context remains at 48,000 tokens.</pre>
+                <div id="admission" class="hidden border-t border-base-300 pt-3 text-sm text-success">9,000 tokens avoided before the next main-model request.</div>
+              </div>
+            </div>
+            <p class="min-h-12 text-sm leading-6 text-base-content/60" id="stage-copy" aria-live="polite">Replay follows a fresh tool result through inspection and compact admission. Every number in this candidate is a fixture.</p>
+          </div>
+          <div class="border-t border-base-300 p-6 md:px-10">
+            <label for="composer" class="mb-2 block font-mono text-xs text-base-content/55">NEXT REQUEST</label>
+            <textarea id="composer" class="textarea w-full resize-none bg-base-100" rows="2" readonly>Continue with the selected context sources.</textarea>
+            <div class="mt-3 flex items-center justify-between gap-3 font-mono text-xs text-base-content/50"><span>Read-only visual demo</span><span id="free-label">62.5% context free</span></div>
+          </div>
+        </section>
+        <aside class="border-t border-base-300 p-6 lg:border-t-0 lg:border-l" aria-label="Context Ledger">
+          <div class="mb-6 flex items-center justify-between"><h2 class="text-base font-medium">Context Ledger</h2><span class="text-xs text-base-content/50">/context</span></div>
+          <section class="mb-7" aria-label="Measured context">
+            <div class="mb-3 flex items-baseline justify-between"><strong id="used" class="text-3xl font-medium tabular-nums">48,000</strong><span class="font-mono text-xs text-base-content/55">of 128,000 tokens</span></div>
+            <div id="context-bar" class="flex h-5 overflow-hidden rounded-sm bg-base-300" role="img" aria-label="Context: 37.5 percent used"></div>
+            <p class="mt-2 flex justify-between font-mono text-xs text-base-content/50"><span id="used-percent">37.5% used</span><span>Full window</span></p>
+            <div id="categories" class="mt-5 space-y-2.5 font-mono text-xs"></div>
+            <p class="mt-4 text-xs leading-5 text-base-content/50">Illustrative measured total. Category shares are estimates. Free capacity is the unfilled portion.</p>
+          </section>
+          <section class="border-t border-base-300 py-5" aria-label="Context admission controls">
+            <div class="mb-4 flex items-center justify-between"><h3 class="font-mono text-xs uppercase tracking-widest text-base-content/65">Admitted sources</h3><span class="text-xs text-base-content/45">Next request</span></div>
+            <label class="flex cursor-pointer items-center justify-between gap-3 py-2 text-sm"><span>AGENTS.md <span class="ml-2 text-xs text-base-content/45">3,000</span></span><input class="toggle toggle-sm" type="checkbox" checked disabled aria-label="AGENTS.md included in this fixture"></label>
+            <label class="flex cursor-pointer items-center justify-between gap-3 py-2 text-sm"><span>ES.md <span class="ml-2 text-xs text-base-content/45">800</span></span><input id="source-toggle" class="toggle toggle-sm" type="checkbox" checked aria-label="Include ES.md on the next request"></label>
+            <p id="pending" class="mt-3 min-h-10 text-xs leading-5 text-base-content/55">Selections match the current fixture request.</p>
+          </section>
+          <section class="border-t border-base-300 pt-5" aria-label="Smart Prune evidence">
+            <div class="flex items-center justify-between"><h3 class="font-mono text-xs uppercase tracking-widest text-base-content/65">Smart Prune</h3><span class="badge badge-outline text-success">ON</span></div>
+            <p id="prune-status" class="mt-3 text-sm">Waiting for fresh output</p>
+            <p class="mt-2 text-xs leading-5 text-base-content/50">The demo shortens an unsent tool result. It never edits its existing sent-message fixture.</p>
+            <details class="mt-4 text-xs text-base-content/60"><summary class="cursor-pointer underline underline-offset-4">Inspect illustrative evidence</summary><pre id="evidence" class="mt-3 overflow-auto leading-5"></pre></details>
+          </section>
+        </aside>
+      </div>
+      <footer class="flex flex-wrap items-center gap-3 border-t border-base-300 px-6 py-4">
+        <button id="replay" class="btn btn-sm">↻ Replay demo</button><button id="pause" class="btn btn-sm">Pause</button><button id="next" class="btn btn-sm ml-auto">Next fixture request →</button>
+      </footer>
+    </section>
+    <p class="mt-5 text-xs leading-5 text-base-content/45">Candidate only. This is an interactive layout and accounting illustration, not a recording of Elpis or experimental evidence. Existing designs remain available.</p>
+  </main>
+</body>
+</html>
