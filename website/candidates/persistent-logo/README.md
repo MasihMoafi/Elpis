@@ -15,6 +15,13 @@ node --test fixture.test.mjs
 Open `http://127.0.0.1:43127`. Replay resets the fixture; Pause also stops the logo.
 Reduced-motion preferences pause autoplay initially. Resume is an explicit opt-in.
 
+[Recorded illustrative demo](demo.webm): 7.05 seconds, 1440×1280 VP9, captured
+from the actual candidate page. The desktop/mobile PNGs and replay video are new
+review assets; none replaces an existing deployed image. `record-demo.mjs` records
+through Chromium CDP and the system ffmpeg with one encoding thread; it refuses
+to overwrite an existing recording. It requires the local Playwright module path
+used by the script, not a dependency download.
+
 All token values and optimizer results are fixtures. This is not a product recording,
 cache benchmark, or evidence that the installed runtime behaves as illustrated.
 

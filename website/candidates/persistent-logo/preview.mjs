@@ -2,7 +2,12 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 const allowed = new Map([['/', ['index.html', 'text/html']], ['/styles.css', ['styles.css', 'text/css']], ['/demo.mjs', ['demo.mjs', 'text/javascript']], ['/fixture.mjs', ['fixture.mjs', 'text/javascript']]]);
 const port = Number(process.env.ELPIS_DEMO_PORT || 43127);
+allowed.set('/demo.webm', ['demo.webm', 'video/webm']);
 createServer(async (request, response) => {
+  if (![ `127.0.0.1:${port}`, `localhost:${port}` ].includes(request.headers.host?.toLowerCase())) {
+    response.writeHead(403).end(); return;
+  }
+  if (request.method !== 'GET') { response.writeHead(405).end(); return; }
   const asset = allowed.get(new URL(request.url, 'http://127.0.0.1').pathname);
   if (!asset) { response.writeHead(404).end(); return; }
   try {
