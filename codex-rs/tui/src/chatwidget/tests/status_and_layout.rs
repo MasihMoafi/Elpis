@@ -322,12 +322,10 @@ async fn context_and_usage_link_rollout_and_latest_smart_prune_attempt_evidence(
             });
     };
     let expected = [
-        url::Url::from_file_path(&rollout)
-            .expect("rollout URL")
-            .to_string(),
-        url::Url::from_file_path(&attempt)
-            .expect("attempt URL")
-            .to_string(),
+        crate::dashboard_server::evidence_url(root.path(), "Rollout", &rollout)
+            .expect("rollout report URL"),
+        crate::dashboard_server::evidence_url(root.path(), "Smart Prune attempt", &attempt)
+            .expect("attempt report URL"),
     ];
 
     let (mut context_chat, _context_rx, _ops) = make_chatwidget_manual(None).await;

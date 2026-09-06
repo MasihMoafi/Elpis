@@ -278,6 +278,82 @@ async fn context_surfaces_preserve_above_capacity_usage_and_category_counts() {
 }
 
 #[tokio::test]
+async fn context_model_label_tracks_selection_before_first_request() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4-mini")).await;
+    chat.config.model = Some("gpt-5.4-mini".to_string());
+    chat.set_token_info(None);
+
+    chat.set_model("gpt-6-astra");
+    assert_eq!(chat.model_display_name(), "gpt-6-astra");
+    assert_eq!(chat.config.model.as_deref(), Some("gpt-5.4-mini"));
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let rendered = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output"),
+    );
+
+    assert!(
+        rendered.contains("gpt-6-astra · one full-window scale"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("gpt-5.4-mini"), "{rendered}");
+    assert!(
+        rendered.contains("Context measurement unavailable"),
+        "{rendered}"
+    );
+    assert!(chat.token_info.is_none());
+}
+
+#[tokio::test]
+async fn context_model_label_without_switch_keeps_selection_and_unknown_usage() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4-mini")).await;
+    chat.config.model = Some("gpt-5.4-mini".to_string());
+    chat.set_token_info(None);
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let rendered = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output"),
+    );
+
+    assert!(
+        rendered.contains("gpt-5.4-mini · one full-window scale"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("gpt-6-astra"), "{rendered}");
+    assert!(
+        rendered.contains("Context measurement unavailable"),
+        "{rendered}"
+    );
+    assert!(chat.token_info.is_none());
+}
+
+#[tokio::test]
+async fn context_model_label_switch_preserves_existing_measurement() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4-mini")).await;
+    chat.config.model = Some("gpt-5.4-mini".to_string());
+    chat.set_token_info(Some(make_token_info(1_200, 200_000)));
+    chat.set_model("gpt-6-astra");
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals::default());
+    let rendered = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(100)
+            .expect("/context output"),
+    );
+
+    assert!(
+        rendered.contains("gpt-6-astra · one full-window scale"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("1.2k/200k"), "{rendered}");
+    assert!(
+        !rendered.contains("Context measurement unavailable"),
+        "{rendered}"
+    );
+}
+
+#[tokio::test]
 async fn missing_context_measurement_is_distinct_from_measured_zero() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.animations = false;
@@ -1497,7 +1573,7 @@ async fn ledger_explains_the_latest_failed_optimizer_attempt_and_links_its_evide
     let attempt_dir = root.path().join("logs/smart-prune/attempts");
     std::fs::create_dir_all(&attempt_dir)?;
     let attempt_path = attempt_dir.join("019d0000-timeout.json");
-    std::fs::write(&attempt_path, "{}\n")?;
+    std::fs::write(&attempt_path, r#"{"evidence":"ledger-report-marker-7301"}"#)?;
 
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.codex_home = root.path().to_path_buf().abs();
@@ -1526,19 +1602,48 @@ async fn ledger_explains_the_latest_failed_optimizer_attempt_and_links_its_evide
     assert!(rendered.contains("Last attempt: timed out"));
     assert!(rendered.contains("1 candidate · 0 admitted · 20.0s"));
     assert!(rendered.contains("gpt-5.6-luna · low effort · usage unreported"));
-    assert!(rendered.contains("Attempt evidence 019d0000-timeout.json"));
+    assert!(rendered.contains("Read attempt evidence"));
 
     let buffer = render_ledger_buffer(&chat, 50);
-    let destination = url::Url::from_file_path(&attempt_path)
-        .expect("attempt path URL")
-        .to_string();
+    let destination =
+        crate::dashboard_server::evidence_url(root.path(), "Smart Prune attempt", &attempt_path)
+            .expect("attempt report URL");
+    assert!(destination.starts_with("http://127.0.0.1:"));
     assert!(
         buffer
             .content()
             .iter()
             .any(|cell| cell.symbol().contains(&format!("\u{1b}]8;;{destination}"))),
-        "attempt evidence must be a real OSC 8 file hyperlink"
+        "attempt evidence must be a real OSC 8 readable HTTP report hyperlink"
     );
+    assert!(!buffer.content().iter().any(|cell| {
+        cell.symbol()
+            .contains(&format!("file://{}", attempt_path.display()))
+    }));
+    for suffix in ["", ".md"] {
+        use std::io::{Read, Write};
+        let url = url::Url::parse(&format!("{destination}{suffix}"))?;
+        let port = url.port().expect("local report port");
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))?;
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
+        write!(
+            stream,
+            "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n",
+            url.path()
+        )?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response)?;
+        assert!(response.starts_with("HTTP/1.1 200"));
+        assert!(response.contains("ledger-report-marker-7301"));
+        if suffix.is_empty() {
+            assert!(response.contains("Download Markdown"));
+        } else {
+            assert!(response.contains("# Smart Prune attempt"));
+        }
+    }
+    chat.smart_prune.latest_attempt.as_mut().unwrap().audit_path =
+        Some("smart-prune/attempts/missing.json".to_string());
+    assert!(!render_ledger(&chat, 50).contains("Read attempt evidence"));
     Ok(())
 }
 

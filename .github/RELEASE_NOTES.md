@@ -13,6 +13,16 @@ sidecar; review the script before running it.
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
+## September 6 maintenance refresh
+
+The v0.2.0 downloads have been refreshed with these corrections:
+
+- Ledger, /context, /usage, and dashboard evidence links open private readable reports with Markdown downloads. The maintainer confirmed the Ledger link opens in normal browser use.
+- Background dashboard polling preserves existing evidence links and avoids flashing refresh controls. Unavailable subscription-cost text is smaller and wraps within its column.
+- Context and dashboard model labels follow the active model selection. Smart Prune's Luna optimizer uses the selected Max reasoning effort without changing the main model's effort.
+
+Restart Elpis after updating, then open newly generated evidence links. Existing file URLs in old terminal output are not rewritten. Smart Prune remains experimental; this refresh makes no new quality, latency, or savings claim.
+
 ## What changed
 
 - **Smart Prune (Experimental, off by default)** can optimize eligible textual tool results before the main model first sees them. Once admitted, Smart Prune does not revisit that history.

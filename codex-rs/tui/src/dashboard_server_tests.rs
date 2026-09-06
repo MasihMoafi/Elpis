@@ -1132,3 +1132,58 @@ fn failed_server_start_does_not_latch_and_success_is_reused() {
     );
     assert_eq!(attempts.get(), 2);
 }
+
+#[test]
+fn evidence_http_route_opens_only_registered_reports() {
+    use std::io::Read;
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("attempt.json");
+    std::fs::write(
+        &path,
+        r#"{"input":"REGISTERED_EVIDENCE_HTTP_MARKER","usage":null}"#,
+    )
+    .unwrap();
+    let url =
+        url::Url::parse(&evidence_url(dir.path(), "Smart Prune attempt", &path).unwrap()).unwrap();
+    let port = url.port().unwrap();
+    let get = |route: &str, host: &str, origin: &str| {
+        let mut socket = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        write!(
+            socket,
+            "GET {route} HTTP/1.1\r\nHost: {host}\r\n{origin}Connection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut body = String::new();
+        socket.read_to_string(&mut body).unwrap();
+        body
+    };
+    let host = format!("127.0.0.1:{port}");
+    let html = get(url.path(), &host, "");
+    assert!(html.starts_with("HTTP/1.1 200"));
+    assert!(html.contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
+    assert!(html.contains("Download Markdown"));
+    let md = get(&format!("{}.md", url.path()), &host, "");
+    assert!(md.starts_with("HTTP/1.1 200"));
+    assert!(md.contains("# Smart Prune attempt"));
+    for (route, host, origin) in [
+        ("/evidence/wrong/id", host.as_str(), ""),
+        (url.path(), "foreign.example", ""),
+        (
+            url.path(),
+            host.as_str(),
+            "Origin: https://foreign.example\r\n",
+        ),
+    ] {
+        let denied = get(route, host, origin);
+        assert!(denied.starts_with("HTTP/1.1 403"));
+        assert!(!denied.contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
+    }
+    assert!(!get("/data.json", &host, "").contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
+    assert!(!get("/", &host, "").contains(url.path().split('/').nth(2).unwrap()));
+}

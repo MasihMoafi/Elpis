@@ -194,6 +194,9 @@ jobs:
         working-directory: website
         run: npm test
 
+      - name: Verify dashboard polling and preview
+        run: node --test tools/dashboard-preview/*.test.mjs
+
       - name: Restore Cargo downloads
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:

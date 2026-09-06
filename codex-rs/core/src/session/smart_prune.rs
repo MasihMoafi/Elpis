@@ -41,10 +41,10 @@ use super::session::Session;
 use super::smart_prune_audit;
 use super::turn_context::TurnContext;
 
-/// Smart Prune runs inline before the main model sees a fresh tool result. It
-/// therefore uses the cheap model's low-effort path and an inactivity bound;
-/// `/force-prune` retains the separate high-fidelity Max-effort path.
-const SMART_PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Low;
+/// Smart Prune uses the maintainer-selected Max-effort optimizer path before
+/// first main-model exposure. This request-local setting does not alter the main
+/// model's reasoning effort; the existing inactivity bound still applies.
+const SMART_PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Max;
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(60);
 const OPENROUTER_FALLBACK_TIMEOUT: Duration = Duration::from_secs(60);
 

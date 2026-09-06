@@ -593,15 +593,15 @@ impl ChatWidget {
                 .audit_path
                 .as_deref()
                 .and_then(|path| smart_prune_attempt_evidence_path(&self.config.codex_home, path))
-                && let Ok(destination) = url::Url::from_file_path(&path)
+                && let Some(destination) = crate::dashboard_server::evidence_url(
+                    &self.config.codex_home,
+                    "Smart Prune attempt",
+                    &path,
+                )
             {
-                let file_name = path
-                    .file_name()
-                    .map(|name| name.to_string_lossy())
-                    .unwrap_or_default();
-                source_links.push((lines.len(), destination.to_string()));
+                source_links.push((lines.len(), destination));
                 lines.push(Line::from(Span::styled(
-                    format!("Attempt evidence {file_name}"),
+                    "Read attempt evidence",
                     Style::default().fg(Color::Cyan).underlined(),
                 )));
             }

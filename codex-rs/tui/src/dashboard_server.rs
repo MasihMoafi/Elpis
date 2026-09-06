@@ -18,6 +18,12 @@ use serde::Serialize;
 use crate::activity_state::DashboardActivityState;
 use crate::activity_state::DashboardActivityStatus as ProjectedActivityStatus;
 
+#[path = "dashboard_evidence.rs"]
+mod evidence;
+
+pub(crate) use evidence::publish as publish_evidence;
+pub(crate) use evidence::register as evidence_url;
+
 const INDEX_HTML: &str = include_str!("dashboard_assets/index.html");
 const DASHBOARD_CSS: &str = include_str!("dashboard_assets/dashboard.css");
 const DASHBOARD_JS: &str = include_str!("dashboard_assets/dashboard.js");
@@ -330,7 +336,7 @@ pub(crate) fn ensure_running() -> Option<String> {
     ensure_server_url(&SERVER_URL, || {
         let listener = tiny_http::Server::http(dashboard_bind_addr()).ok()?;
         let port = listener.server_addr().to_ip()?.port();
-        let url = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}{}", evidence::dashboard_fragment());
         std::thread::Builder::new()
             .name("elpis-dashboard".to_string())
             .spawn(move || serve(listener, port))
@@ -379,6 +385,9 @@ fn response_for_at(
             "text/plain; charset=utf-8",
             b"method not allowed".to_vec(),
         );
+    }
+    if request.url().starts_with("/evidence/") {
+        return evidence::route(request, port);
     }
     match request.url() {
         "/" | "/index.html" => response(
@@ -447,6 +456,7 @@ fn response(status: u16, content_type: &str, body: Vec<u8>) -> DashboardResponse
     for (name, value) in [
         ("Content-Type", content_type),
         ("Cache-Control", "no-store"),
+        ("Referrer-Policy", "no-referrer"),
         ("Content-Security-Policy", CSP),
         ("X-Content-Type-Options", "nosniff"),
         ("X-Frame-Options", "DENY"),

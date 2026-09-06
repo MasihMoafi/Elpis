@@ -322,8 +322,12 @@ fn smart_prune_admission_manifest_path(
     strict_smart_prune_path(codex_home, audit_path, "admissions", true)
 }
 
-fn evidence_url_line(label: &'static str, path: &std::path::Path) -> Option<Line<'static>> {
-    let destination = url::Url::from_file_path(path).ok()?.to_string();
+fn evidence_url_line(
+    label: &'static str,
+    root: &std::path::Path,
+    path: &std::path::Path,
+) -> Option<Line<'static>> {
+    let destination = crate::dashboard_server::evidence_url(root, label, path)?;
     Some(Line::from(vec![
         Span::styled(
             format!("   {label} · "),
@@ -334,15 +338,13 @@ fn evidence_url_line(label: &'static str, path: &std::path::Path) -> Option<Line
 }
 
 impl ChatWidget {
-    pub(super) fn local_evidence_lines(
+    fn local_evidence_paths(
         &self,
         rollout_path: Option<&std::path::Path>,
-    ) -> Vec<Line<'static>> {
-        let mut evidence = Vec::new();
-        if let Some(path) = rollout_path.filter(|path| path.is_file())
-            && let Some(line) = evidence_url_line("Rollout", path)
-        {
-            evidence.push(line);
+    ) -> Vec<(&'static str, std::path::PathBuf)> {
+        let mut paths = Vec::new();
+        if let Some(path) = rollout_path.filter(|path| path.is_file()) {
+            paths.push(("Rollout", path.to_path_buf()));
         }
         if let Some(path) = self
             .smart_prune
@@ -350,21 +352,35 @@ impl ChatWidget {
             .as_ref()
             .and_then(|attempt| attempt.audit_path.as_deref())
             .and_then(|path| smart_prune_attempt_evidence_path(&self.config.codex_home, path))
-            && let Some(line) = evidence_url_line("Smart Prune attempt", &path)
         {
-            evidence.push(line);
+            paths.push(("Smart Prune attempt", path));
         }
         if let Some(path) = self.smart_prune.latest.as_ref().and_then(|admission| {
             smart_prune_admission_manifest_path(
                 &self.config.codex_home,
                 admission.audit_path.as_str(),
             )
-        }) && let Some(line) = evidence_url_line("Smart Prune admission", &path)
-        {
-            evidence.push(line);
+        }) {
+            let ace = path.with_file_name("ace.json");
+            paths.push(("Smart Prune admission", path));
+            if ace.is_file() {
+                paths.push(("Optimizer conversation", ace));
+            }
         }
+        paths
+    }
+
+    pub(super) fn local_evidence_lines(
+        &self,
+        rollout_path: Option<&std::path::Path>,
+    ) -> Vec<Line<'static>> {
+        let evidence: Vec<_> = self
+            .local_evidence_paths(rollout_path)
+            .iter()
+            .filter_map(|(label, path)| evidence_url_line(label, &self.config.codex_home, path))
+            .collect();
         if evidence.is_empty() {
-            return evidence;
+            return Vec::new();
         }
         let mut lines = vec![
             Span::styled(
@@ -474,11 +490,7 @@ impl ChatWidget {
             crate::branding::compaction_evidence();
 
         ContextUsageSnapshot {
-            model: self
-                .config
-                .model
-                .clone()
-                .unwrap_or_else(|| "model".to_string()),
+            model: self.model_display_name().to_string(),
             used_tokens,
             window_tokens: window,
             used_percent,
@@ -498,6 +510,10 @@ impl ChatWidget {
     /// the same numbers `/context` already computes and merges semantic changes.
     pub(crate) fn publish_dashboard_snapshot(&self, totals: &ContextUsageTranscriptTotals) {
         let snapshot = self.context_usage_snapshot(totals);
+        crate::dashboard_server::publish_evidence(
+            &self.config.codex_home,
+            self.local_evidence_paths(snapshot.rollout_path.as_deref()),
+        );
         let categories = snapshot.has_request_snapshot.then(|| {
             snapshot
                 .categories
@@ -1182,6 +1198,28 @@ pub(super) fn context_used_percent(tokens: u64, window: u64) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn evidence_links_use_readable_http_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("attempt.json");
+        std::fs::write(
+            &path,
+            r#"{"status":"admitted","input":"EVIDENCE_ACCESS_MARKER"}"#,
+        )
+        .unwrap();
+        let line = super::evidence_url_line("Smart Prune attempt", dir.path(), &path).unwrap();
+        let text = line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(
+            text.contains("http://127.0.0.1:"),
+            "evidence must open through HTTP: {text}"
+        );
+        assert!(!text.contains("file://"));
+    }
+
     use super::*;
     use crate::legacy_core::elpis_context::ContinuitySourceCategory;
 

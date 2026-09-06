@@ -303,8 +303,13 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].body_json()["model"], CACHE_TEST_MODEL);
     assert_eq!(requests[1].body_json()["model"], SMART_PRUNE_MODEL);
-    assert_eq!(requests[1].body_json()["reasoning"]["effort"], "low");
+    assert_eq!(requests[1].body_json()["reasoning"]["effort"], "max");
     assert_eq!(requests[2].body_json()["model"], CACHE_TEST_MODEL);
+    assert_eq!(
+        requests[0].body_json()["reasoning"],
+        requests[2].body_json()["reasoning"],
+        "optimizer effort must not change the main model's reasoning settings"
+    );
     assert!(requests[1].body_contains_text(CALL_A));
     assert!(requests[1].body_contains_text(&"Z".repeat(256)));
     assert!(requests[2].body_contains_text(COMPACT_A));
@@ -422,7 +427,7 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     let attempt = only_attempt_record(&harness)?;
     assert_eq!(attempt["status"], "admitted");
     assert_eq!(attempt["model"], SMART_PRUNE_MODEL);
-    assert_eq!(attempt["reasoning_effort"], "low");
+    assert_eq!(attempt["reasoning_effort"], "max");
     assert_eq!(attempt["candidate_outputs"], 1);
     assert_eq!(attempt["admitted_outputs"], 1);
     assert_eq!(attempt["saved_tokens"], admission_manifest["saved_tokens"]);
@@ -555,7 +560,7 @@ async fn smart_prune_malformed_reply_fails_open() -> Result<()> {
     let attempt = only_attempt_record(&harness)?;
     assert_eq!(attempt["status"], "malformed_response");
     assert_eq!(attempt["model"], SMART_PRUNE_MODEL);
-    assert_eq!(attempt["reasoning_effort"], "low");
+    assert_eq!(attempt["reasoning_effort"], "max");
     assert_eq!(attempt["candidate_outputs"], 1);
     assert_eq!(attempt["admitted_outputs"], 0);
     assert_eq!(attempt["raw_response"], "not valid JSON");

@@ -53,6 +53,7 @@ let inFlight = false;
 let paused = false;
 let lastValidState = null;
 let lastValidHeartbeat = null;
+let lastEvidenceKey = null;
 
 function byId(id) {
   return document.getElementById(id);
@@ -82,7 +83,8 @@ function isValidState(value) {
 }
 
 function setText(id, value) {
-  byId(id).textContent = value;
+  const node = byId(id);
+  if (node.textContent !== value) node.textContent = value;
 }
 
 function makeNode(tag, className, text) {
@@ -476,11 +478,42 @@ function schedulePoll(delay) {
   pollTimer = paused ? null : setTimeout(() => { void poll(); }, delay);
 }
 
+async function refreshEvidence() {
+  const container = byId('evidence-links');
+  const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
+  if (!container || !token || !/^[a-f0-9]{32}$/.test(token)) return;
+  try {
+    const prefix = '/evidence/' + token + '/';
+    const response = await fetch(prefix + 'index.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Evidence unavailable');
+    const rows = await response.json();
+    if (!Array.isArray(rows)) throw new Error('Invalid evidence list');
+    const links = rows.filter(row => isObject(row) && typeof row.label === 'string' && typeof row.url === 'string' && row.url.startsWith(prefix) && /^[a-f0-9]{32}$/.test(row.url.slice(prefix.length)));
+    const key = JSON.stringify(links.map(row => [row.label, row.url]));
+    if (key === lastEvidenceKey) return;
+    container.replaceChildren();
+    for (const row of links) {
+      const link = makeNode('a', 'link', row.label);
+      link.href = row.url;
+      link.target = '_blank';
+      link.rel = 'noreferrer noopener';
+      container.append(link);
+    }
+    if (!container.childNodes.length) container.textContent = 'No readable evidence recorded for this thread yet.';
+    lastEvidenceKey = key;
+  } catch (_error) {
+    lastEvidenceKey = null;
+    setText('evidence-links', 'Evidence unavailable. Open a fresh /dashboard link from Elpis.');
+  }
+}
+
 async function poll(force = false) {
   if (inFlight || (paused && !force)) return;
   inFlight = true;
-  byId('refresh-now').disabled = true;
-  setTransport(paused ? 'Refreshing once' : 'Refreshing', paused ? 'paused' : 'neutral');
+  if (force || lastValidState === null) {
+    byId('refresh-now').disabled = true;
+    setTransport(paused ? 'Refreshing once' : 'Refreshing', paused ? 'paused' : 'neutral');
+  }
   try {
     const response = await fetch('/data.json', { cache: 'no-store' });
     if (!response.ok) {
@@ -495,6 +528,7 @@ async function poll(force = false) {
       return;
     }
     lastValidHeartbeat = nextHeartbeat;
+    await refreshEvidence();
     if (lastValidState === null || nextState.revision !== lastValidState.revision) renderState(nextState);
     updateFreshness();
     setTransport(paused ? 'Paused · refreshed' : 'Live', paused ? 'paused' : 'available');
