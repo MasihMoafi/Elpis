@@ -21,7 +21,7 @@ The v0.2.0 downloads have been refreshed with these corrections:
 - Background dashboard polling preserves existing evidence links and avoids flashing refresh controls. Unavailable subscription-cost text is smaller and wraps within its column.
 - Context and dashboard model labels follow the active model selection. Smart Prune's Luna optimizer uses the selected Max reasoning effort without changing the main model's effort.
 
-Restart Elpis after updating, then open newly generated evidence links. Existing file URLs in old terminal output are not rewritten. Smart Prune remains experimental; this refresh makes no new quality, latency, or savings claim.
+Existing v0.2.0 users should rerun the installer above to get the refreshed build. Restart Elpis after updating, then open newly generated evidence links. Existing file URLs in old terminal output are not rewritten. Smart Prune remains experimental; this refresh makes no new quality, latency, or savings claim.
 
 ## What changed
 

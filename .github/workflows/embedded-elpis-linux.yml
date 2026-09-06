@@ -8,10 +8,21 @@ on:
         required: false
         default: true
         type: boolean
+      replace_existing_release:
+        description: Replace the latest release with this verified source (maintenance recovery only)
+        required: false
+        default: false
+        type: boolean
+      expected_release_commit:
+        description: Current lightweight release tag commit required for maintenance replacement
+        required: false
+        default: ""
+        type: string
   pull_request:
     paths:
       - .github/workflows/embedded-elpis-linux.yml
       - .github/RELEASE_NOTES.md
+      - .github/tests/release-publish.test.mjs
       - .github/workflows/launcher-diagnostics.yml
       - CHANGELOG.md
       - codex-rs/**
@@ -31,6 +42,7 @@ on:
     paths:
       - .github/workflows/embedded-elpis-linux.yml
       - .github/RELEASE_NOTES.md
+      - .github/tests/release-publish.test.mjs
       - .github/workflows/launcher-diagnostics.yml
       - CHANGELOG.md
       - codex-rs/**
@@ -77,6 +89,18 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
+
+      - name: Validate maintenance replacement request
+        if: github.event_name == 'workflow_dispatch' && inputs.replace_existing_release
+        env:
+          FULL_REGRESSION: ${{ inputs.full_regression }}
+          EXPECTED_RELEASE_COMMIT: ${{ inputs.expected_release_commit }}
+        run: |
+          set -euo pipefail
+          if [ "$FULL_REGRESSION" != true ] || ! [[ "$EXPECTED_RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Maintenance replacement requires full_regression=true and the current 40-character release commit." >&2
+            exit 1
+          fi
 
       - name: Install Linux build dependencies
         working-directory: codex-rs
@@ -196,6 +220,9 @@ jobs:
 
       - name: Verify dashboard polling and preview
         run: node --test tools/dashboard-preview/*.test.mjs
+
+      - name: Verify release publication guards
+        run: node --test .github/tests/release-publish.test.mjs
 
       - name: Restore Cargo downloads
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -662,7 +689,7 @@ jobs:
 
   release:
     name: Publish tagged binaries
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.replace_existing_release && inputs.full_regression)
     needs: [build, install-release-artifacts, installer-platform-detection]
     runs-on: ubuntu-24.04
     permissions:
@@ -686,9 +713,26 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          REPLACE_EXISTING_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.replace_existing_release }}
+          FULL_REGRESSION: ${{ inputs.full_regression }}
+          EXPECTED_RELEASE_COMMIT: ${{ inputs.expected_release_commit }}
         run: |
           set -euo pipefail
           expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' codex-rs/tui/Cargo.toml | head -1)"
+          release_tag="v$expected"
+          if [ "$REPLACE_EXISTING_RELEASE" = true ]; then
+            test "$FULL_REGRESSION" = true
+            [[ "$EXPECTED_RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$release_tag"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$release_tag" --jq .object.type)" = commit
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$release_tag" --jq .object.sha)" = "$EXPECTED_RELEASE_COMMIT"
+          else
+            test "$GITHUB_REF_NAME" = "$release_tag"
+            if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Release $release_tag already exists; refusing to replace it." >&2
+              exit 1
+            fi
+          fi
           mapfile -t debs < <(find dist -maxdepth 1 -type f -name '*.deb' -print)
           test "${#debs[@]}" -eq 1
           test "$(dpkg-deb -f "${debs[0]}" Package)" = elpis
@@ -698,15 +742,25 @@ jobs:
           mv dist/elpis dist/elpis-linux-x86_64
           (cd dist && sha256sum elpis-linux-x86_64 > elpis-linux-x86_64.sha256)
           (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists; refusing to replace it." >&2
-            exit 1
+          assets=(dist/elpis-linux-x86_64 dist/elpis-linux-x86_64.sha256 "$deb" "$deb.sha256")
+          notes="$RUNNER_TEMP/elpis-release-notes.md"
+          cp .github/RELEASE_NOTES.md "$notes"
+          printf '\nVerified source: [%s](https://github.com/%s/commit/%s). [Release checks](https://github.com/%s/actions/runs/%s).\n' \
+            "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$notes"
+          if [ "$REPLACE_EXISTING_RELEASE" = true ]; then
+            gh release upload "$release_tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            verified_dist="$(mktemp -d)"
+            for asset in "${assets[@]}"; do
+              gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" --pattern "$(basename "$asset")" --dir "$verified_dist"
+              cmp "$asset" "$verified_dist/$(basename "$asset")"
+            done
+            (cd "$verified_dist" && sha256sum -c ./*.sha256)
+            # A token-owned tag update does not trigger a duplicate publishing run.
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$release_tag" \
+              -f sha="$GITHUB_SHA" -F force=true
+            gh release edit "$release_tag" --repo "$GITHUB_REPOSITORY" \
+              --notes-file "$notes" --title "Elpis $release_tag" --latest
+          else
+            gh release create "$release_tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+              --notes-file "$notes" --title "Elpis $release_tag"
           fi
-          gh release create "$GITHUB_REF_NAME" \
-            dist/elpis-linux-x86_64 \
-            dist/elpis-linux-x86_64.sha256 \
-            "$deb" \
-            "$deb.sha256" \
-            --repo "$GITHUB_REPOSITORY" \
-            --notes-file .github/RELEASE_NOTES.md \
-            --title "Elpis $GITHUB_REF_NAME"
