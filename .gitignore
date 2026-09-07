@@ -21,6 +21,7 @@ src/.env.cuda
 uv.lock
 src/uv.lock
 package-lock.json
+website/node_modules/
 
 # IDE
 .vscode/
@@ -75,6 +76,7 @@ src/fix_cuda.sh
 !docs/assets/elpis-context-slash.webp
 *.svg
 !docs/assets/*.svg
+!website/assets/diagram_ace_lifecycle.svg
 *.mp4
 *.mp3
 *.wav
@@ -123,3 +125,4 @@ docs/evals/ling/
 
 # Eval archive: personal session evidence, local only
 docs/evals/archive/
+ES.md
