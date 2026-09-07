@@ -108,6 +108,8 @@ is independent of Ace pruning. Automatic native compaction uses the model-window
 usable-window headroom. Automatic Ace pruning is Experimental and off by default; `/settings`
 saves its value for the next conversation.
 
+![Ace Pruning and Context Lifecycle](docs/assets/diagram_ace_lifecycle.svg)
+
 #### What a pruning decision looks like
 
 ![Task 1 Context Flow and Pruning Lifecycle](docs/assets/sankey_context_flow.svg)
@@ -185,7 +187,7 @@ until you admit it: like every optional row, memory does not reach the model una
 - **Admitted in the open.** Because it is a Ledger row, you can always see whether memory
   reached the model, switch it on when you want it, and drop it when you do not.
 - **Retrieval beyond that file is your choice.** Register an MCP server — for example
-  [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) — and Elpis will use it.
+  [rag-mcp](https://github.com/MasihMoafi/rag-mcp) — and Elpis will use it.
 
 Elpis previously ran an extraction, consolidation, and promotion pipeline. It was removed
 because it did not work: across two threshold settings it produced zero durable
@@ -236,7 +238,7 @@ preserved across provider boundaries.
 
 Extend Elpis with external capabilities that stay in their own processes through MCP:
 
-- **Workspace retrieval:** [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) provides local LanceDB/Tantivy search over your documents.
+- **Workspace retrieval:** [rag-mcp](https://github.com/MasihMoafi/rag-mcp) provides local LanceDB/Tantivy search over your documents.
 - **Voice transcription:** [WhisperType](https://github.com/MasihMoafi/Voice-commander) provides local speech-to-text without adding its model/runtime dependencies to Elpis core.
 
 ### Privacy and ownership
