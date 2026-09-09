@@ -93,7 +93,8 @@ fn test_model_client_with_thread_id(
     thread_id: ThreadId,
     session_source: SessionSource,
 ) -> ModelClient {
-    let provider = create_oss_provider_with_base_url("test-oss", "https://example.com/v1", WireApi::Responses);
+    let provider =
+        create_oss_provider_with_base_url("test-oss", "https://example.com/v1", WireApi::Responses);
     ModelClient::new(
         /*auth_manager*/ None,
         AgentIdentityAuthPolicy::JwtOnly,
@@ -779,7 +780,11 @@ fn model_client_with_counting_attestation(
     } else {
         (
             None,
-            create_oss_provider_with_base_url("test-oss", "https://example.com/v1", WireApi::Responses),
+            create_oss_provider_with_base_url(
+                "test-oss",
+                "https://example.com/v1",
+                WireApi::Responses,
+            ),
         )
     };
     let model_client = ModelClient::new(

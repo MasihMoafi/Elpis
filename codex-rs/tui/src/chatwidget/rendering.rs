@@ -2,6 +2,7 @@
 //! Render composition for the main chat widget surface.
 
 use super::*;
+use ratatui::text::Span;
 
 impl ChatWidget {
     pub(super) fn as_renderable(&self) -> RenderableItem<'_> {
@@ -59,9 +60,7 @@ impl ChatWidget {
     }
 }
 
-/// The cyan identity line (model, context used, location), positioned directly below the
-/// composer rather than at the very top of the screen -- separated from both the transcript
-/// above and the composer it follows, instead of stuck against the last chat message.
+/// The branded identity line separates the transcript from the composer below it.
 struct IdentityLineRenderable<'a> {
     chat_widget: &'a ChatWidget,
 }
@@ -234,11 +233,11 @@ impl ChatWidget {
         let model = self.current_model();
         let location = format_directory_display(self.status_line_cwd(), /*max_width*/ None);
         Line::from(vec![
-            " Elpis ".cyan().bold(),
+            Span::styled(" Elpis ", crate::style::brand_style()),
             "· model ".dim(),
-            model.cyan(),
+            Span::raw(model),
             " · location ".dim(),
-            location.cyan(),
+            location.dim(),
         ])
         .render(area, buf);
     }

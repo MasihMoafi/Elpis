@@ -13,6 +13,7 @@ use crate::function_tool::FunctionCallError;
 use crate::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
+use crate::tools::parallel::PendingToolOutput;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolRouter;
 use codex_protocol::error::CodexErr;
@@ -128,7 +129,7 @@ pub(crate) async fn record_completed_response_item_with_finalized_facts(
 /// queuing any tool execution futures. This records items immediately so
 /// history and rollout stay in sync even if the turn is later cancelled.
 pub(crate) type InFlightFuture<'f> =
-    Pin<Box<dyn Future<Output = Result<ResponseInputItem>> + Send + 'f>>;
+    Pin<Box<dyn Future<Output = Result<PendingToolOutput>> + Send + 'f>>;
 
 #[derive(Default)]
 pub(crate) struct OutputItemResult {

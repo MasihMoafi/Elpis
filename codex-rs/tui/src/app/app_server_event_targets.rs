@@ -61,6 +61,9 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ThreadTokenUsageUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadSmartPruneUpdated(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::ThreadGoalUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }
@@ -212,6 +215,8 @@ mod tests {
     use codex_app_server_protocol::ServerNotification;
     use codex_app_server_protocol::ThreadSettings;
     use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
+    use codex_app_server_protocol::ThreadSmartPruneSnapshot;
+    use codex_app_server_protocol::ThreadSmartPruneUpdatedNotification;
     use codex_app_server_protocol::TurnActivityStatus;
     use codex_app_server_protocol::TurnActivityUpdatedNotification;
     use codex_app_server_protocol::TurnCostAvailability;
@@ -330,6 +335,20 @@ mod tests {
             ServerNotification::ThreadSettingsUpdated(ThreadSettingsUpdatedNotification {
                 thread_id: thread_id.to_string(),
                 thread_settings: test_thread_settings(),
+            });
+
+        let target = server_notification_thread_target(&notification);
+
+        assert_eq!(target, ServerNotificationThreadTarget::Thread(thread_id));
+    }
+
+    #[test]
+    fn smart_prune_updated_notifications_route_to_threads() {
+        let thread_id = ThreadId::new();
+        let notification =
+            ServerNotification::ThreadSmartPruneUpdated(ThreadSmartPruneUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                smart_prune: ThreadSmartPruneSnapshot::default(),
             });
 
         let target = server_notification_thread_target(&notification);

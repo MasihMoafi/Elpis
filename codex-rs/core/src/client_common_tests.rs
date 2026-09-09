@@ -103,6 +103,113 @@ fn responses_lite_request_copies_strip_image_details() {
 }
 
 #[test]
+fn prompt_context_attribution_comes_from_final_request_without_padding() {
+    let message = |role: &str, text: &str| ResponseItem::Message {
+        id: None,
+        role: role.to_string(),
+        content: vec![if role == "assistant" {
+            ContentItem::OutputText {
+                text: text.to_string(),
+            }
+        } else {
+            ContentItem::InputText {
+                text: text.to_string(),
+            }
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+    let prompt = Prompt {
+        input: vec![
+            message("developer", &"developer ".repeat(200)),
+            message("user", &"user ".repeat(200)),
+            message("assistant", &"assistant ".repeat(200)),
+            ResponseItem::Reasoning {
+                id: None,
+                summary: vec![
+                    codex_protocol::models::ReasoningItemReasoningSummary::SummaryText {
+                        text: "reasoning ".repeat(200),
+                    },
+                ],
+                content: None,
+                encrypted_content: None,
+                internal_chat_message_metadata_passthrough: None,
+            },
+            ResponseItem::FunctionCall {
+                id: None,
+                name: "lookup".to_string(),
+                namespace: None,
+                arguments: r#"{"query":"evidence"}"#.to_string(),
+                call_id: "call-1".to_string(),
+                internal_chat_message_metadata_passthrough: None,
+            },
+            ResponseItem::FunctionCallOutput {
+                id: None,
+                call_id: "call-1".to_string(),
+                output: FunctionCallOutputPayload::from_text("result ".repeat(200)),
+                internal_chat_message_metadata_passthrough: None,
+            },
+        ],
+        tools: vec![codex_tools::ToolSpec::Freeform(codex_tools::FreeformTool {
+            name: "lookup".to_string(),
+            description: "Look up evidence".to_string(),
+            format: codex_tools::FreeformToolFormat {
+                r#type: "grammar".to_string(),
+                syntax: "query".to_string(),
+                definition: "root: query".to_string(),
+            },
+        })],
+        base_instructions: codex_protocol::models::BaseInstructions {
+            text: "system ".repeat(200),
+        },
+        output_schema: Some(serde_json::json!({"type": "string"})),
+        ..Default::default()
+    };
+
+    let attribution = prompt.context_attribution_snapshot();
+    for (label, tokens) in [
+        ("system instructions", attribution.system_instructions),
+        ("developer messages", attribution.developer_messages),
+        ("user messages", attribution.user_messages),
+        ("agent messages", attribution.agent_messages),
+        ("reasoning", attribution.reasoning),
+        ("tool calls", attribution.tool_calls),
+        ("tool results", attribution.tool_results),
+        ("tool definitions", attribution.tool_definitions),
+        ("output schema", attribution.output_schema),
+    ] {
+        assert!(tokens > 0, "missing {label} attribution");
+    }
+    assert_eq!(
+        attribution.estimated_total,
+        attribution.system_instructions
+            + attribution.developer_messages
+            + attribution.user_messages
+            + attribution.agent_messages
+            + attribution.reasoning
+            + attribution.tool_calls
+            + attribution.tool_results
+            + attribution.tool_definitions
+            + attribution.output_schema
+            + attribution.unrecognized_items,
+        "the run-built estimate must be the exact sum, never a padded provider gap",
+    );
+
+    let empty = Prompt::default().context_attribution_snapshot();
+    assert_eq!(empty.estimated_total, empty.system_instructions);
+    assert!(empty.system_instructions > 0);
+    assert_eq!(empty.developer_messages, 0);
+    assert_eq!(empty.user_messages, 0);
+    assert_eq!(empty.agent_messages, 0);
+    assert_eq!(empty.reasoning, 0);
+    assert_eq!(empty.tool_calls, 0);
+    assert_eq!(empty.tool_results, 0);
+    assert_eq!(empty.tool_definitions, 0);
+    assert_eq!(empty.output_schema, 0);
+    assert_eq!(empty.unrecognized_items, 0);
+}
+
+#[test]
 fn serializes_text_verbosity_when_set() {
     let input: Vec<ResponseItem> = vec![];
     let tools: Vec<serde_json::Value> = vec![];

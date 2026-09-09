@@ -19,6 +19,7 @@ use crate::session::session::SessionConfiguration;
 use crate::session::time_reminder::CurrentTimeReminderState;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use codex_protocol::protocol::RateLimitSnapshot;
+use codex_protocol::protocol::SmartPruneSnapshot;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnContextItem;
@@ -58,6 +59,10 @@ pub(crate) struct SessionState {
     /// Hysteresis gate for automatic pruning: which phase of the 30% -> 20% -> regrow
     /// cycle the session is in. See `crate::context_pruner::PruneCycle`.
     pub(crate) context_prune_cycle: crate::context_pruner::PruneCycle,
+    /// Admission-time Smart Prune counters and bounded latest evidence.
+    pub(crate) smart_prune: SmartPruneSnapshot,
+    /// Turn whose failed admission disables further Smart Prune attempts for that turn.
+    pub(crate) smart_prune_failed_turn_id: Option<String>,
 }
 
 impl SessionState {
@@ -93,6 +98,8 @@ impl SessionState {
             context_prune_consecutive_failures: 0,
             context_prune_retry_after: None,
             context_prune_cycle: crate::context_pruner::PruneCycle::default(),
+            smart_prune: SmartPruneSnapshot::default(),
+            smart_prune_failed_turn_id: None,
         }
     }
 

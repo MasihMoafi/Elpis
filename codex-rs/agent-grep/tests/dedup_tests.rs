@@ -128,7 +128,10 @@ fn test_cross_turn_session_adaptive_deduplication() {
         .iter()
         .filter(|cl| cl.previously_seen)
         .collect();
-    assert!(!collapsed_lines.is_empty(), "Previously seen lines should be tagged/collapsed");
+    assert!(
+        !collapsed_lines.is_empty(),
+        "Previously seen lines should be tagged/collapsed"
+    );
 }
 
 #[test]

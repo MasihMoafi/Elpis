@@ -193,11 +193,7 @@ impl ContextContributor for ElpisContinuityExtension {
                             return None;
                         }
                         body.as_ref().map(|body| {
-                            RenderedWorldStateFragment::new(
-                                "developer",
-                                ("", ""),
-                                body.clone(),
-                            )
+                            RenderedWorldStateFragment::new("developer", ("", ""), body.clone())
                         })
                     },
                 )
@@ -216,10 +212,12 @@ impl ThreadLifecycleContributor<Config> for ElpisContinuityExtension {
         input: ThreadStartInput<'a, Config>,
     ) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
-            input.thread_store.insert(ElpisContinuityConfig::from_config(
-                input.config,
-                elpis_continuity_is_eligible(input.session_source),
-            ));
+            input
+                .thread_store
+                .insert(ElpisContinuityConfig::from_config(
+                    input.config,
+                    elpis_continuity_is_eligible(input.session_source),
+                ));
         })
     }
 }

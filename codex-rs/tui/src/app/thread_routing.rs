@@ -907,6 +907,7 @@ impl App {
         thread_id: ThreadId,
         notification: ServerNotification,
     ) -> Result<()> {
+        let best_effort_ephemeral = notification_is_ephemeral(&notification);
         if matches!(notification, ServerNotification::ThreadSettingsUpdated(_))
             && self.primary_thread_id.is_some()
             && self.primary_thread_id != Some(thread_id)
@@ -941,6 +942,7 @@ impl App {
         if should_send {
             match sender.try_send(ThreadBufferedEvent::Notification(notification)) {
                 Ok(()) => {}
+                Err(TrySendError::Full(_)) if best_effort_ephemeral => {}
                 Err(TrySendError::Full(event)) => {
                     tokio::spawn(async move {
                         if let Err(err) = sender.send(event).await {
@@ -1153,8 +1155,8 @@ impl App {
         turns: Vec<Turn>,
         presentation: ThreadAttachPresentation,
     ) -> Result<()> {
-        self.chat_widget.reset_activity();
         let thread_id = session.thread_id;
+        self.reset_activity_before_thread_session(Some(thread_id));
         self.primary_thread_id = Some(thread_id);
         self.primary_session_configured = Some(session.clone());
         self.upsert_agent_picker_thread(
@@ -1368,7 +1370,9 @@ impl App {
         snapshot: ThreadEventSnapshot,
         resume_restored_queue: bool,
     ) {
-        self.chat_widget.reset_activity();
+        self.reset_activity_before_thread_session(
+            snapshot.session.as_ref().map(|session| session.thread_id),
+        );
         self.refresh_mcp_startup_expected_servers_from_config();
         let should_buffer_replay = !snapshot.turns.is_empty() || !snapshot.events.is_empty();
         if should_buffer_replay {
@@ -1423,6 +1427,16 @@ impl App {
         }
         self.activate_manual_memory_view();
         self.refresh_status_line();
+    }
+
+    fn reset_activity_before_thread_session(&mut self, next_thread_id: Option<ThreadId>) {
+        let thread_will_change =
+            next_thread_id.is_some_and(|thread_id| self.chat_widget.thread_id() != Some(thread_id));
+        if thread_will_change {
+            self.chat_widget.reset_activity_for_thread_change();
+        } else {
+            self.chat_widget.reset_activity();
+        }
     }
 
     pub(super) fn should_wait_for_initial_session(session_selection: &SessionSelection) -> bool {

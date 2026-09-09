@@ -372,6 +372,28 @@ fn post_tool_use_feedback_output_keeps_code_mode_result_typed() {
     );
 }
 
+/// Break caught: explicit PostToolUse policy feedback is passed into the semantic
+/// optimizer and rewritten, overriding the hook that intentionally replaced the output.
+#[test]
+fn post_tool_use_feedback_is_not_smart_prune_eligible() {
+    let ordinary: Box<dyn crate::tools::context::ToolOutput> = Box::new(
+        codex_tools::JsonToolOutput::new(serde_json::json!({"ok": true})),
+    );
+    assert!(ordinary.smart_prune_eligible());
+
+    let feedback: Box<dyn crate::tools::context::ToolOutput> =
+        Box::new(PostToolUseFeedbackOutput {
+            original: Box::new(codex_tools::JsonToolOutput::new(
+                serde_json::json!({"secret": "kept behind hook"}),
+            )),
+            model_visible: crate::tools::context::FunctionToolOutput::from_text(
+                "hook-authored response".to_string(),
+                /*success*/ None,
+            ),
+        });
+    assert!(!feedback.smart_prune_eligible());
+}
+
 #[tokio::test]
 async fn dispatch_notifies_tool_lifecycle_contributors() -> anyhow::Result<()> {
     let (mut session, turn) = crate::session::tests::make_session_and_context().await;

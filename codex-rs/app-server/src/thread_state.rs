@@ -495,13 +495,13 @@ impl ThreadStateManager {
         thread_id: ThreadId,
         connection_id: ConnectionId,
         experimental_raw_events: bool,
-    ) -> Option<Arc<Mutex<ThreadState>>> {
-        let thread_state = {
+    ) -> Option<(Arc<Mutex<ThreadState>>, bool)> {
+        let (thread_state, newly_subscribed) = {
             let mut state = self.state.lock().await;
             if !state.live_connections.contains_key(&connection_id) {
                 return None;
             }
-            state
+            let newly_subscribed = state
                 .thread_ids_by_connection
                 .entry(connection_id)
                 .or_default()
@@ -509,7 +509,7 @@ impl ThreadStateManager {
             let thread_entry = state.threads.entry(thread_id).or_default();
             thread_entry.connection_ids.insert(connection_id);
             thread_entry.update_has_connections();
-            thread_entry.state.clone()
+            (thread_entry.state.clone(), newly_subscribed)
         };
         {
             let mut thread_state_guard = thread_state.lock().await;
@@ -517,27 +517,7 @@ impl ThreadStateManager {
                 thread_state_guard.set_experimental_raw_events(/*enabled*/ true);
             }
         }
-        Some(thread_state)
-    }
-
-    pub(crate) async fn try_add_connection_to_thread(
-        &self,
-        thread_id: ThreadId,
-        connection_id: ConnectionId,
-    ) -> bool {
-        let mut state = self.state.lock().await;
-        if !state.live_connections.contains_key(&connection_id) {
-            return false;
-        }
-        state
-            .thread_ids_by_connection
-            .entry(connection_id)
-            .or_default()
-            .insert(thread_id);
-        let thread_entry = state.threads.entry(thread_id).or_default();
-        thread_entry.connection_ids.insert(connection_id);
-        thread_entry.update_has_connections();
-        true
+        Some((thread_state, newly_subscribed))
     }
 
     pub(crate) async fn remove_connection(&self, connection_id: ConnectionId) -> Vec<ThreadId> {

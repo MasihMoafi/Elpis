@@ -62,8 +62,8 @@ impl AgentsMdManager {
             if admission_error.get() {
                 return None;
             }
-            let admitted = loaded.admitted_by(&|path| {
-                match elpis_context::instruction_source_admitted(
+            let admitted =
+                loaded.admitted_by(&|path| match elpis_context::instruction_source_admitted(
                     Some(config.memory_dir.as_path()),
                     config.cwd.as_path(),
                     path,
@@ -73,8 +73,7 @@ impl AgentsMdManager {
                         admission_error.set(true);
                         false
                     }
-                }
-            });
+                });
             (!admission_error.get() && !admitted.is_empty()).then(|| Arc::new(admitted))
         });
         let mut cache = self.cache.lock().await;
@@ -172,7 +171,11 @@ mod tests {
             manager.refresh(&config, &environments).await;
         }
         assert_eq!(
-            manager.get_loaded().await.expect("discovery retained").text(),
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
             "optional instruction"
         );
         assert!(manager.get_admitted().await.is_none());
@@ -190,7 +193,11 @@ mod tests {
         std::fs::write(&admission, "not valid = [").expect("corrupt admission");
         manager.refresh(&config, &environments).await;
         assert_eq!(
-            manager.get_loaded().await.expect("discovery retained").text(),
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
             "optional instruction"
         );
         assert!(manager.get_admitted().await.is_none());
@@ -205,7 +212,11 @@ mod tests {
         std::fs::remove_file(&admission).expect("delete admission");
         manager.refresh(&config, &environments).await;
         assert_eq!(
-            manager.get_loaded().await.expect("discovery retained").text(),
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
             "optional instruction"
         );
         assert!(
@@ -216,7 +227,11 @@ mod tests {
         std::fs::create_dir(&admission).expect("non-file admission");
         manager.refresh(&config, &environments).await;
         assert_eq!(
-            manager.get_loaded().await.expect("discovery retained").text(),
+            manager
+                .get_loaded()
+                .await
+                .expect("discovery retained")
+                .text(),
             "optional instruction"
         );
         assert!(manager.get_admitted().await.is_none());
@@ -240,7 +255,11 @@ mod tests {
             .await;
 
         assert_eq!(
-            manager.get_admitted().await.expect("default-on dev rule").text(),
+            manager
+                .get_admitted()
+                .await
+                .expect("default-on dev rule")
+                .text(),
             "development instruction"
         );
     }

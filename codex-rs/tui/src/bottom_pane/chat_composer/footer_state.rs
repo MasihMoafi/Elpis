@@ -26,7 +26,6 @@ pub(super) struct FooterState {
     pub(super) context_window_used_tokens: Option<i64>,
     pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     pub(super) goal_status_indicator: Option<GoalStatusIndicator>,
-    pub(super) ide_context_active: bool,
     pub(super) status_line_value: Option<Line<'static>>,
     pub(super) status_line_hyperlink_url: Option<String>,
     pub(super) status_line_enabled: bool,

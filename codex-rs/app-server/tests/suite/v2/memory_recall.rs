@@ -70,10 +70,7 @@ async fn manual_memory_request_boundaries_follow_current_admission() -> Result<(
     complete_turn(&mut app, &thread.id).await?;
     assert_no_manual_memory(&response_mock.requests()[0].message_input_texts("developer"));
 
-    codex_core::elpis_context::create_manual_memory(
-        Some(memory_root.as_path()),
-        workspace.path(),
-    )?;
+    codex_core::elpis_context::create_manual_memory(Some(memory_root.as_path()), workspace.path())?;
     tokio::fs::write(memory_root.join("MEMORY.md"), MEMORY_CREATE_MARKER).await?;
     complete_turn(&mut app, &thread.id).await?;
     assert_no_manual_memory(&response_mock.requests()[1].message_input_texts("developer"));
@@ -86,7 +83,11 @@ async fn manual_memory_request_boundaries_follow_current_admission() -> Result<(
     )?;
     complete_turn(&mut app, &thread.id).await?;
     let admitted = response_mock.requests()[2].message_input_texts("developer");
-    assert!(admitted.iter().any(|text| text.contains(MEMORY_CREATE_MARKER)));
+    assert!(
+        admitted
+            .iter()
+            .any(|text| text.contains(MEMORY_CREATE_MARKER))
+    );
 
     tokio::fs::write(memory_root.join("MEMORY.md"), MEMORY_UPDATED_MARKER).await?;
     complete_turn(&mut app, &thread.id).await?;
@@ -180,11 +181,15 @@ async fn complete_turn(app: &mut TestAppServer, thread_id: &str) -> Result<()> {
 
 fn assert_no_manual_memory(developer: &[String]) {
     assert!(
-        developer.iter().all(|text| !text.contains(MEMORY_SOURCE_HEADER)),
+        developer
+            .iter()
+            .all(|text| !text.contains(MEMORY_SOURCE_HEADER)),
         "manual memory source unexpectedly reached the model: {developer:#?}"
     );
     assert!(
-        developer.iter().all(|text| !text.contains(MEMORY_CREATE_MARKER)),
+        developer
+            .iter()
+            .all(|text| !text.contains(MEMORY_CREATE_MARKER)),
         "manual memory fixture unexpectedly reached the model: {developer:#?}"
     );
 }
@@ -202,7 +207,10 @@ fn manual_memory_body(developer: &[String]) -> String {
 fn elpis_continuity_fragments(developer: &[String]) -> Vec<&str> {
     developer
         .iter()
-        .filter_map(|text| text.contains(ELPIS_CONTINUITY_HEADER).then_some(text.as_str()))
+        .filter_map(|text| {
+            text.contains(ELPIS_CONTINUITY_HEADER)
+                .then_some(text.as_str())
+        })
         .collect()
 }
 

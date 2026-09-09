@@ -473,7 +473,8 @@ impl ModelClient {
     /// settings and dropping transport state that only makes sense for the old
     /// endpoint (cached websocket session, websocket fallback, auth fallback).
     pub(crate) fn with_provider(&self, provider_info: ModelProviderInfo) -> Self {
-        let model_provider = create_model_provider(provider_info, self.state.provider.auth_manager());
+        let model_provider =
+            create_model_provider(provider_info, self.state.provider.auth_manager());
         let include_attestation = model_provider.supports_attestation();
         Self {
             state: Arc::new(ModelClientState {
@@ -901,6 +902,9 @@ impl ModelClient {
     }
 
     fn prepare_response_items_for_request(&self, input: &mut Vec<ResponseItem>, store: bool) {
+        if self.state.provider.info().wire_api != WireApi::GeminiGenerateContent {
+            input.retain(|item| !crate::chat_completions::is_gemini_signature(item));
+        }
         for item in input.iter_mut() {
             if item.id().is_some_and(|id| !id.is_prefixed()) {
                 item.set_id(/*new_id*/ None);

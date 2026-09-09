@@ -36,12 +36,23 @@ impl StreamingSseServer {
         self.requests.lock().await.clone()
     }
 
+    /// Waits until `count` requests have arrived. Bounded so a runtime regression fails the
+    /// test instead of hanging it until the CI job timeout.
     pub async fn wait_for_request_count(&self, count: usize) {
-        loop {
-            if self.requests.lock().await.len() >= count {
-                return;
+        let wait = async {
+            loop {
+                if self.requests.lock().await.len() >= count {
+                    return;
+                }
+                self.request_notify.notified().await;
             }
-            self.request_notify.notified().await;
+        };
+        if tokio::time::timeout(std::time::Duration::from_secs(30), wait)
+            .await
+            .is_err()
+        {
+            let seen = self.requests.lock().await.len();
+            panic!("expected {count} model requests within 30s, saw {seen}");
         }
     }
 

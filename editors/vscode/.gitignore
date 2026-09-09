@@ -1,0 +1,8 @@
+node_modules
+bin/
+assets/style.css
+assets/markdown-it.min.js
+assets/markdown-it.LICENSE.txt
+*.vsix
+.test-data/
+!package-lock.json

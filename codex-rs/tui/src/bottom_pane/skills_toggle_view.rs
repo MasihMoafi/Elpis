@@ -150,7 +150,10 @@ impl SkillsToggleView {
                     let name = format!("{prefix} [{marker}] {item_name}");
                     GenericDisplayRow {
                         name,
-                        description: Some(format!("{} · Source: {}", item.description, item.origin)),
+                        description: Some(format!(
+                            "{} · Source: {}",
+                            item.description, item.origin
+                        )),
                         ..Default::default()
                     }
                 })
@@ -606,6 +609,14 @@ mod tests {
         let view = SkillsToggleView::new(
             vec![
                 SkillsToggleItem {
+                    name: "Enabled personal skill".to_string(),
+                    skill_name: "enabled-personal".to_string(),
+                    description: "Enabled description".to_string(),
+                    origin: "repo".to_string(),
+                    enabled: true,
+                    path: test_path_buf("/tmp/skills/enabled/SKILL.md").abs(),
+                },
+                SkillsToggleItem {
                     name: "Bundled candidate".to_string(),
                     skill_name: "bundled-candidate".to_string(),
                     description: "Bundled description".to_string(),
@@ -620,14 +631,6 @@ mod tests {
                     origin: "yours".to_string(),
                     enabled: false,
                     path: test_path_buf("/tmp/skills/personal/SKILL.md").abs(),
-                },
-                SkillsToggleItem {
-                    name: "Enabled personal skill".to_string(),
-                    skill_name: "enabled-personal".to_string(),
-                    description: "Enabled description".to_string(),
-                    origin: "repo".to_string(),
-                    enabled: true,
-                    path: test_path_buf("/tmp/skills/enabled/SKILL.md").abs(),
                 },
             ],
             tx,

@@ -224,7 +224,7 @@ pub enum Feature {
     Goals,
     /// Add current context-window metadata to model-visible context.
     TokenBudget,
-    /// Run the model-backed Ace pruner automatically under context pressure.
+    /// Optimize large fresh tool outputs before their first main-model exposure.
     AutomaticContextPruning,
     /// Track and report a shared token budget across a session's agent threads.
     RolloutBudget,
@@ -1265,8 +1265,8 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::AutomaticContextPruning,
         key: "automatic_context_pruning",
         stage: Stage::Experimental {
-            name: "Automatic pruning — Experimental",
-            menu_description: "Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.",
+            name: "Smart Prune — Experimental",
+            menu_description: "Optimizes eligible fresh tool results before their first main-model request. Uses an extra AI call and may slow a turn or remove useful detail; failures keep the original.",
             announcement: "",
         },
         default_enabled: false,

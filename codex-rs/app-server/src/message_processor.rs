@@ -48,9 +48,9 @@ use crate::thread_state::ConnectionCapabilities;
 use crate::thread_state::ThreadStateManager;
 use crate::transport::AppServerTransport;
 use crate::transport::RemoteControlHandle;
-use crate::turn_cost_worker::TurnCostWorker;
 use crate::turn_cost_worker::TurnCostAvailabilityPolicy;
 use crate::turn_cost_worker::TurnCostLateNotifier;
+use crate::turn_cost_worker::TurnCostWorker;
 use codex_app_server_protocol::ClientNotification;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
@@ -295,10 +295,8 @@ impl MessageProcessor {
         let models_manager = thread_manager.get_models_manager();
         let models_refresh_worker =
             crate::models_refresh_worker::spawn(&models_manager, config.http_client_factory());
-        let turn_cost_policy = TurnCostAvailabilityPolicy::new(
-            Arc::clone(&config),
-            Arc::clone(&auth_manager),
-        );
+        let turn_cost_policy =
+            TurnCostAvailabilityPolicy::new(Arc::clone(&config), Arc::clone(&auth_manager));
         let turn_cost_worker = TurnCostWorker::spawn(
             Arc::clone(&config),
             Arc::clone(&auth_manager),

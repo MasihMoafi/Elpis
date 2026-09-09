@@ -893,8 +893,7 @@ impl Session {
             ActiveTurnForAbort::Missing => {}
             ActiveTurnForAbort::WaitForCompletion(identity)
             | ActiveTurnForAbort::AbnormallyFinished(identity) => {
-                let recovered = identity.completion.wait().await
-                    == TaskCompletionOutcome::Abnormal
+                let recovered = identity.completion.wait().await == TaskCompletionOutcome::Abnormal
                     && self.recover_abnormally_finished_task(&identity).await;
                 if recovered && reason == TurnAbortReason::Interrupted {
                     self.maybe_start_turn_for_pending_work().await;
@@ -936,8 +935,7 @@ impl Session {
             ActiveTurnForAbort::Missing => return false,
             ActiveTurnForAbort::WaitForCompletion(identity)
             | ActiveTurnForAbort::AbnormallyFinished(identity) => {
-                let recovered = identity.completion.wait().await
-                    == TaskCompletionOutcome::Abnormal
+                let recovered = identity.completion.wait().await == TaskCompletionOutcome::Abnormal
                     && self.recover_abnormally_finished_task(&identity).await;
                 if recovered && reason == TurnAbortReason::Interrupted {
                     self.maybe_start_turn_for_pending_work().await;
@@ -1164,11 +1162,7 @@ impl Session {
                 time_to_first_token_ms,
             })
         };
-        let profile_event = build_turn_profile_event(
-            turn_context.sub_id.clone(),
-            &event,
-            profile,
-        );
+        let profile_event = build_turn_profile_event(turn_context.sub_id.clone(), &event, profile);
         emit_terminal_event_sequence(self, turn_context.as_ref(), profile_event, event).await;
         self.services
             .guardian_rejection_circuit_breaker
@@ -1251,9 +1245,10 @@ impl Session {
             let mut active = self.active_turn.lock().await;
             let matches_failed_task = active.as_ref().is_some_and(|active_turn| {
                 Arc::ptr_eq(&active_turn.turn_state, &identity.turn_state)
-                    && active_turn.task_completion.as_ref().is_some_and(|completion| {
-                        Arc::ptr_eq(completion, &identity.completion)
-                    })
+                    && active_turn
+                        .task_completion
+                        .as_ref()
+                        .is_some_and(|completion| Arc::ptr_eq(completion, &identity.completion))
                     && active_turn
                         .task_turn_context
                         .as_ref()
@@ -1387,11 +1382,8 @@ impl Session {
             completed_at,
             duration_ms,
         });
-        let profile_event = build_turn_profile_event(
-            task.turn_context.sub_id.clone(),
-            &event,
-            profile,
-        );
+        let profile_event =
+            build_turn_profile_event(task.turn_context.sub_id.clone(), &event, profile);
         emit_terminal_event_sequence(self, task.turn_context.as_ref(), profile_event, event).await;
         self.services
             .guardian_rejection_circuit_breaker

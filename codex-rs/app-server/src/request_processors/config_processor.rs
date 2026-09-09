@@ -30,6 +30,8 @@ use codex_app_server_protocol::NetworkRequirements;
 use codex_app_server_protocol::NetworkUnixSocketPermission;
 use codex_app_server_protocol::NewThreadModelDefaults;
 use codex_app_server_protocol::SandboxMode;
+use codex_app_server_protocol::ServerNotification;
+use codex_app_server_protocol::ThreadSmartPruneUpdatedNotification;
 use codex_app_server_protocol::WindowsSandboxSetupMode;
 use codex_config::ConfigRequirementsToml;
 use codex_config::HookEventsToml;
@@ -274,7 +276,19 @@ impl ConfigRequestProcessor {
             let Ok(thread) = self.thread_manager.get_thread(thread_id).await else {
                 continue;
             };
+            let previous_smart_prune = thread.smart_prune_snapshot().await;
             thread.refresh_runtime_config(next_config.clone()).await;
+            let smart_prune = thread.smart_prune_snapshot().await;
+            if previous_smart_prune.enabled != smart_prune.enabled {
+                self.outgoing
+                    .send_server_notification(ServerNotification::ThreadSmartPruneUpdated(
+                        ThreadSmartPruneUpdatedNotification {
+                            thread_id: thread_id.to_string(),
+                            smart_prune: smart_prune.into(),
+                        },
+                    ))
+                    .await;
+            }
         }
     }
 }

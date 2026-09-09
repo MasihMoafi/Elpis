@@ -1,5 +1,6 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+use crate::app_backtrack::ContextUsageTranscriptTotals;
 use crate::bottom_pane::goal_status_indicator_line;
 use crate::chatwidget::rate_limits::NUDGE_MODEL_SLUG;
 use crate::chatwidget::rate_limits::get_limits_duration;
@@ -169,6 +170,351 @@ async fn token_usage_notification_preserves_reported_cache_write_tokens() {
     assert!(
         rendered.contains("37 cache writes"),
         "status output: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn status_uses_thread_scoped_manual_prune_savings() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let notification = serde_json::from_value::<
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification,
+    >(serde_json::json!({
+        "threadId": chat.thread_id().map(|id| id.to_string()).unwrap_or_default(),
+        "turnId": "turn-pruned",
+        "tokenUsage": {
+            "total": {
+                "totalTokens": 17_300,
+                "inputTokens": 17_300,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningOutputTokens": 0
+            },
+            "last": {
+                "totalTokens": 17_300,
+                "inputTokens": 17_300,
+                "cachedInputTokens": 0,
+                "outputTokens": 0,
+                "reasoningOutputTokens": 0
+            },
+            "modelContextWindow": 121_600,
+            "contextPruneSavedTokens": 29_268
+        }
+    }))
+    .expect("token usage notification");
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(notification),
+        /*replay_kind*/ None,
+    );
+    while rx.try_recv().is_ok() {}
+
+    chat.add_status_output(
+        /*refreshing_rate_limits*/ false, /*request_id*/ None,
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = lines_to_single_string(cells.last().expect("status output inserted"));
+
+    assert!(
+        rendered.contains("~29.3K tokens removed earlier in this history"),
+        "status output: {rendered}"
+    );
+    assert!(
+        !rendered.contains("0 Ace passes"),
+        "status output: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn context_report_separates_current_tool_context_from_prior_manual_savings() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.animations = false;
+    chat.set_token_info(Some(make_token_info(17_259, 121_600)));
+    chat.context_attribution = Some(codex_app_server_protocol::ThreadContextAttribution {
+        tool_results: 704,
+        estimated_total: 704,
+        ..Default::default()
+    });
+    assert!(chat.update_context_prune_savings(29_268, /*from_replay*/ true));
+    while rx.try_recv().is_ok() {}
+
+    chat.add_context_usage_output(crate::app_backtrack::ContextUsageTranscriptTotals {
+        checkpoints: 1,
+        user_message_bytes: 344,
+        agent_response_bytes: 1_080,
+        tool_activity_bytes: 2_816,
+    });
+    let lines = chat
+        .active_cell_transcript_lines(/*width*/ 100)
+        .expect("context output rendered");
+    let tool_lines = lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .filter(|line| line.contains("Tool results"))
+        .collect::<Vec<_>>();
+    let rendered = lines_to_single_string(&lines);
+
+    assert!(
+        rendered.contains("Tool results"),
+        "context output: {rendered}"
+    );
+    assert!(!tool_lines.is_empty(), "context output: {rendered}");
+    assert!(
+        tool_lines.iter().all(|line| line.contains("704")),
+        "tool rows: {tool_lines:?}"
+    );
+    assert!(
+        tool_lines
+            .iter()
+            .all(|line| !line.contains("removed earlier")),
+        "tool estimate rows must exclude historical savings: {tool_lines:?}"
+    );
+    assert!(
+        rendered.contains("~29.3k tokens removed earlier in this history"),
+        "context output: {rendered}"
+    );
+    assert!(
+        !rendered.contains("Built-in + estimate gap"),
+        "context output fabricated a gap bucket: {rendered}"
+    );
+    assert!(
+        !rendered.contains("Unattributed"),
+        "context output: {rendered}"
+    );
+    assert!(
+        !rendered.contains("saved in session"),
+        "context output: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn context_and_usage_link_rollout_and_latest_smart_prune_attempt_evidence()
+-> anyhow::Result<()> {
+    let root = tempdir()?;
+    let rollout = root.path().join("rollout.jsonl");
+    let attempt = root
+        .path()
+        .join("logs/smart-prune/attempts/019d0000-attempt.json");
+    std::fs::create_dir_all(attempt.parent().expect("attempt parent"))?;
+    std::fs::write(&rollout, "{}\n")?;
+    std::fs::write(&attempt, "{}\n")?;
+
+    let configure = |chat: &mut ChatWidget| {
+        chat.config.codex_home = root.path().to_path_buf().abs();
+        chat.current_rollout_path = Some(rollout.clone());
+        chat.smart_prune_synced = true;
+        chat.smart_prune.latest_attempt =
+            Some(codex_app_server_protocol::ThreadSmartPruneAttemptSnapshot {
+                attempt_id: "019d0000-attempt".to_string(),
+                audit_path: Some("smart-prune/attempts/019d0000-attempt.json".to_string()),
+                status: "timed_out".to_string(),
+                model_slug: "gpt-5.6-luna".to_string(),
+                reasoning_effort: "low".to_string(),
+                candidate_outputs: 1,
+                admitted_outputs: 0,
+                approx_saved_tokens: 0,
+                latency_ms: 20_000,
+                usage: None,
+            });
+    };
+    let expected = [
+        crate::dashboard_server::evidence_url(root.path(), "Rollout", &rollout)
+            .expect("rollout report URL"),
+        crate::dashboard_server::evidence_url(root.path(), "Smart Prune attempt", &attempt)
+            .expect("attempt report URL"),
+    ];
+
+    let (mut context_chat, _context_rx, _ops) = make_chatwidget_manual(None).await;
+    configure(&mut context_chat);
+    context_chat.config.animations = false;
+    context_chat.add_context_usage_output(ContextUsageTranscriptTotals::default());
+    let context_links = context_chat
+        .transcript
+        .active_cell
+        .as_ref()
+        .expect("context output")
+        .display_hyperlink_lines(100)
+        .into_iter()
+        .flat_map(|line| line.hyperlinks)
+        .map(|link| link.destination)
+        .collect::<Vec<_>>();
+    for destination in &expected {
+        assert!(
+            context_links.contains(destination),
+            "/context omitted evidence destination {destination:?}: {context_links:?}"
+        );
+    }
+
+    let (mut usage_chat, mut usage_rx, _ops) = make_chatwidget_manual(None).await;
+    configure(&mut usage_chat);
+    while usage_rx.try_recv().is_ok() {}
+    usage_chat.add_status_output(false, None);
+    let usage_cell = std::iter::from_fn(|| usage_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .expect("/usage output");
+    let usage_links = usage_cell
+        .display_hyperlink_lines(100)
+        .into_iter()
+        .flat_map(|line| line.hyperlinks)
+        .map(|link| link.destination)
+        .collect::<Vec<_>>();
+    for destination in &expected {
+        assert!(
+            usage_links.contains(destination),
+            "/usage omitted evidence destination {destination:?}: {usage_links:?}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_and_usage_do_not_invent_evidence_links_before_a_session_or_attempt() {
+    let (mut context_chat, _context_rx, _ops) = make_chatwidget_manual(None).await;
+    context_chat.config.animations = false;
+    context_chat.current_rollout_path = None;
+    context_chat.smart_prune.latest_attempt = None;
+    context_chat.add_context_usage_output(ContextUsageTranscriptTotals::default());
+    assert!(
+        context_chat
+            .transcript
+            .active_cell
+            .as_ref()
+            .expect("context output")
+            .display_hyperlink_lines(100)
+            .iter()
+            .all(|line| line.hyperlinks.is_empty())
+    );
+
+    let (mut usage_chat, mut usage_rx, _ops) = make_chatwidget_manual(None).await;
+    usage_chat.current_rollout_path = None;
+    usage_chat.smart_prune.latest_attempt = None;
+    while usage_rx.try_recv().is_ok() {}
+    usage_chat.add_status_output(false, None);
+    let usage_cell = std::iter::from_fn(|| usage_rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .expect("/usage output");
+    assert!(
+        usage_cell
+            .display_hyperlink_lines(100)
+            .iter()
+            .all(|line| line.hyperlinks.is_empty())
+    );
+}
+
+#[tokio::test]
+async fn token_usage_notification_stores_smart_prune_evidence_and_refreshes_dashboard() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let notification = serde_json::from_value::<
+        codex_app_server_protocol::ThreadTokenUsageUpdatedNotification,
+    >(serde_json::json!({
+        "threadId": chat.thread_id().map(|id| id.to_string()).unwrap_or_default(),
+        "turnId": "turn-smart-prune",
+        "tokenUsage": {
+            "total": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "last": {
+                "totalTokens": 2_100,
+                "inputTokens": 1_200,
+                "cachedInputTokens": 200,
+                "outputTokens": 900,
+                "reasoningOutputTokens": 0
+            },
+            "modelContextWindow": 100_000,
+            "smartPrune": {
+                "enabled": true,
+                "examinedOutputs": 2,
+                "admittedOutputs": 1,
+                "unchangedOutputs": 1,
+                "failedBatches": 0,
+                "approxSourceTokens": 4_000,
+                "approxAdmittedTokens": 700,
+                "approxSavedTokens": 3_300,
+                "mainRequestSequence": 3
+            }
+        }
+    }))
+    .expect("smart prune token usage notification");
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(notification),
+        /*replay_kind*/ None,
+    );
+
+    assert!(chat.smart_prune_synced);
+    assert!(chat.smart_prune.enabled);
+    assert_eq!(chat.smart_prune.admitted_outputs, 1);
+    assert_eq!(chat.smart_prune.approx_saved_tokens, 3_300);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::RefreshContextDashboard))
+    );
+}
+
+#[tokio::test]
+async fn smart_prune_config_notification_reconciles_the_current_thread_immediately() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = true;
+    smart_prune.optimizer_requests = 2;
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadSmartPruneUpdated(
+            codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                smart_prune,
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+
+    assert!(chat.smart_prune_synced);
+    assert!(chat.smart_prune.enabled);
+    assert_eq!(chat.smart_prune.optimizer_requests, 2);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::RefreshContextDashboard))
+    );
+}
+
+#[tokio::test]
+async fn smart_prune_config_notification_ignores_another_thread() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = true;
+
+    chat.handle_server_notification(
+        codex_app_server_protocol::ServerNotification::ThreadSmartPruneUpdated(
+            codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+                thread_id: "another-thread".to_string(),
+                smart_prune,
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+
+    assert!(!chat.smart_prune_synced);
+    assert!(!chat.smart_prune.enabled);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .all(|event| !matches!(event, AppEvent::RefreshContextDashboard))
     );
 }
 

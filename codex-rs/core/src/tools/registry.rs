@@ -199,6 +199,10 @@ impl ToolOutput for PostToolUseFeedbackOutput {
         self.original.success_for_logging()
     }
 
+    fn smart_prune_eligible(&self) -> bool {
+        false
+    }
+
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
         self.model_visible.to_response_item(call_id, payload)
     }

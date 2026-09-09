@@ -1,0 +1,9 @@
+node_modules/**
+test/**
+scripts/**
+.test-data/**
+src/style.css
+package-lock.json
+*.vsix
+evidence/**
+.gitignore

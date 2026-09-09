@@ -45,7 +45,9 @@ fn test_engine_directory_search_with_filtering() {
         language: None,
     };
 
-    let results = engine.search_dir(base_path, &query, &mut tracker).expect("search dir");
+    let results = engine
+        .search_dir(base_path, &query, &mut tracker)
+        .expect("search dir");
     assert_eq!(results.matches.len(), 2);
 
     let rs_match = results

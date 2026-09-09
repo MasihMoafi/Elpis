@@ -1192,6 +1192,18 @@ async fn thread_resume_can_skip_turns_for_metadata_only_resume() -> Result<()> {
     assert_eq!(thread.id, conversation_id);
     assert!(thread.turns.is_empty());
 
+    let note = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("thread/smartPrune/updated"),
+    )
+    .await??;
+    let parsed: ServerNotification = note.try_into()?;
+    let ServerNotification::ThreadSmartPruneUpdated(notification) = parsed else {
+        panic!("expected thread/smartPrune/updated notification");
+    };
+    assert_eq!(notification.thread_id, thread.id);
+    assert!(!notification.smart_prune.enabled);
+
     Ok(())
 }
 
@@ -1810,6 +1822,26 @@ async fn thread_goal_lifecycle_clear_deletes_goal() -> Result<()> {
 
 #[tokio::test]
 async fn thread_resume_emits_restored_token_usage_before_next_turn() -> Result<()> {
+    assert_restored_token_usage_without_sampling(None).await
+}
+
+#[tokio::test]
+async fn thread_resume_emits_restored_token_usage_with_context_categories() -> Result<()> {
+    assert_restored_token_usage_without_sampling(Some(
+        codex_protocol::protocol::ContextAttributionSnapshot {
+            user_messages: 17,
+            agent_messages: 29,
+            system_instructions: 41,
+            estimated_total: 87,
+            ..Default::default()
+        },
+    ))
+    .await
+}
+
+async fn assert_restored_token_usage_without_sampling(
+    context_attribution: Option<codex_protocol::protocol::ContextAttributionSnapshot>,
+) -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path(), &server.uri())?;
@@ -1821,6 +1853,19 @@ async fn thread_resume_emits_restored_token_usage_before_next_turn() -> Result<(
         "Saved user message",
         Some("mock_provider"),
     )?;
+
+    let saved_path = rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
+    let saved = std::fs::read_to_string(&saved_path)?;
+    let mut updated = String::new();
+    for line in saved.lines() {
+        let mut item: serde_json::Value = serde_json::from_str(line)?;
+        if item["payload"]["type"] == "token_count" {
+            item["payload"]["context_attribution"] = serde_json::to_value(&context_attribution)?;
+        }
+        updated.push_str(&serde_json::to_string(&item)?);
+        updated.push('\n');
+    }
+    std::fs::write(saved_path, updated)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -1860,6 +1905,19 @@ async fn thread_resume_emits_restored_token_usage_before_next_turn() -> Result<(
     assert_eq!(notification.token_usage.total.reasoning_output_tokens, 10);
     assert_eq!(notification.token_usage.last.total_tokens, 90);
     assert_eq!(notification.token_usage.model_context_window, Some(200_000));
+    assert_eq!(
+        notification.token_usage.context_attribution,
+        context_attribution.map(Into::into),
+    );
+    assert!(
+        server
+            .received_requests()
+            .await
+            .expect("mock requests")
+            .iter()
+            .all(|request| request.method.as_str() != "POST"),
+        "resuming saved context must not make an inference request"
+    );
 
     Ok(())
 }
@@ -2096,6 +2154,52 @@ async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Re
                 }),
                 rate_limits: None,
                 context_prune_saved_tokens: 0,
+                smart_prune: codex_protocol::protocol::SmartPruneSnapshot {
+                    enabled: true,
+                    examined_outputs: 1,
+                    admitted_outputs: 1,
+                    unchanged_outputs: 0,
+                    failed_batches: 0,
+                    approx_source_tokens: 3_000,
+                    approx_admitted_tokens: 500,
+                    approx_saved_tokens: 2_500,
+                    optimizer_requests: 1,
+                    optimizer_usage_reports: 1,
+                    optimizer_usage: TokenUsage {
+                        cache_write_tokens: Some(0),
+                        input_tokens: 600,
+                        cached_input_tokens: 400,
+                        output_tokens: 50,
+                        reasoning_output_tokens: 10,
+                        total_tokens: 650,
+                    },
+                    optimizer_latency_ms: 321,
+                    main_request_sequence: 4,
+                    latest: Some(codex_protocol::protocol::SmartPruneAdmissionSnapshot {
+                        admission_id: "resume-admission".to_string(),
+                        audit_path: "smart-prune/admissions/resume-admission".to_string(),
+                        examined_outputs: 1,
+                        admitted_outputs: 1,
+                        approx_source_tokens: 3_000,
+                        approx_admitted_tokens: 500,
+                        approx_saved_tokens: 2_500,
+                        request_sequence: Some(4),
+                        request_input_sha256: Some("resume-hash".to_string()),
+                        request_linkage_verified: true,
+                        response_id: Some("resume-response".to_string()),
+                        response_usage: Some(TokenUsage {
+                            cache_write_tokens: None,
+                            input_tokens: 100,
+                            cached_input_tokens: 80,
+                            output_tokens: 10,
+                            reasoning_output_tokens: 2,
+                            total_tokens: 112,
+                        }),
+                        response_linkage_verified: true,
+                    }),
+                    latest_attempt: None,
+                },
+                context_attribution: None,
             }))?,
         })
         .to_string(),
@@ -2156,6 +2260,38 @@ async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Re
     assert_eq!(notification.turn_id, interrupted_turn_id);
     assert_eq!(notification.token_usage.total.total_tokens, 230);
     assert_eq!(notification.token_usage.last.total_tokens, 130);
+    assert_eq!(notification.token_usage.smart_prune.admitted_outputs, 1);
+    assert_eq!(notification.token_usage.smart_prune.optimizer_requests, 1);
+    assert_eq!(
+        notification.token_usage.smart_prune.optimizer_usage_reports,
+        1
+    );
+    assert_eq!(
+        notification
+            .token_usage
+            .smart_prune
+            .optimizer_usage
+            .cache_write_tokens,
+        Some(0)
+    );
+    assert_eq!(
+        notification.token_usage.smart_prune.optimizer_latency_ms,
+        321
+    );
+    let latest = notification
+        .token_usage
+        .smart_prune
+        .latest
+        .expect("restored Smart Prune evidence");
+    assert_eq!(latest.request_input_sha256.as_deref(), Some("resume-hash"));
+    assert_eq!(latest.response_id.as_deref(), Some("resume-response"));
+    assert_eq!(
+        latest
+            .response_usage
+            .expect("restored response usage")
+            .cache_write_tokens,
+        None
+    );
 
     Ok(())
 }
@@ -3130,6 +3266,16 @@ async fn thread_resume_rejoins_running_thread_even_with_override_mismatch() -> R
         ThreadStatus::Idle => {}
         status => panic!("unexpected thread status after running resume: {status:?}"),
     }
+
+    assert!(
+        timeout(
+            std::time::Duration::from_millis(250),
+            primary.read_stream_until_notification_message("thread/smartPrune/updated"),
+        )
+        .await
+        .is_err(),
+        "an already-subscribed connection must not receive a duplicate initial snapshot"
+    );
 
     timeout(
         DEFAULT_READ_TIMEOUT,

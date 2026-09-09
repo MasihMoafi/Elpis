@@ -992,7 +992,7 @@ fn prefixed_wrapped_history_cell_indents_wrapped_lines() {
     let summary = Line::from(vec![
         "You ".into(),
         "approved".bold(),
-        " codex to run ".into(),
+        " Elpis to run ".into(),
         "echo something really long to ensure wrapping happens".dim(),
         " this time".bold(),
     ]);
@@ -1001,12 +1001,36 @@ fn prefixed_wrapped_history_cell_indents_wrapped_lines() {
     assert_eq!(
         rendered,
         vec![
-            "✔ You approved codex to".to_string(),
+            "✔ You approved Elpis to".to_string(),
             "  run echo something".to_string(),
             "  really long to ensure".to_string(),
             "  wrapping happens this".to_string(),
             "  time".to_string(),
         ]
+    );
+}
+
+#[test]
+fn execpolicy_amendment_history_names_elpis() {
+    let cell = new_approval_decision_cell(
+        ApprovalDecisionSubject::Command(vec!["source".to_string(), "~/.bash_aliases".to_string()]),
+        ReviewDecision::ApprovedExecpolicyAmendment {
+            proposed_execpolicy_amendment: ExecPolicyAmendment::new(vec![
+                "source".to_string(),
+                "~/.bash_aliases".to_string(),
+            ]),
+        },
+        ApprovalDecisionActor::User,
+    );
+    let rendered = render_lines(&cell.display_lines(/*width*/ 120)).join("\n");
+
+    assert!(
+        rendered.contains("You approved Elpis to always run commands that start with"),
+        "unexpected approval history: {rendered}"
+    );
+    assert!(
+        !rendered.to_ascii_lowercase().contains("codex"),
+        "approval history leaked the upstream brand: {rendered}"
     );
 }
 

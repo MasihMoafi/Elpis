@@ -1,33 +1,58 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use super::*;
+use pretty_assertions::assert_eq;
 
 #[tokio::test]
-async fn semantic_token_snapshot_changes_request_dashboard_publication_once() {
+async fn semantic_token_snapshot_changes_request_dashboard_refresh_once() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let info = make_token_info(120, 1_000);
 
     chat.set_token_info(Some(info.clone()));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
     chat.set_token_info(Some(info.clone()));
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 
     chat.set_token_info(None);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
     chat.set_token_info(None);
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 
     chat.set_token_info(Some(info));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
     chat.clear_token_usage();
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
     chat.clear_token_usage();
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
-fn token_usage_notification(
+#[tokio::test]
+async fn context_projection_survives_same_turn_usage_and_clears_on_the_later_turn() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.context_ledger.projected_token_delta = -20;
+    chat.context_ledger.projection_baseline_turn_id = Some("turn-1".to_string());
+
+    chat.handle_server_notification(
+        dashboard_token_usage_notification(&chat, 0, false),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.context_ledger.projected_token_delta, -20);
+
+    let mut later_notification = dashboard_token_usage_notification(&chat, 0, false);
+    let ServerNotification::ThreadTokenUsageUpdated(later) = &mut later_notification else {
+        unreachable!("token usage notification")
+    };
+    later.turn_id = "turn-2".to_string();
+    chat.handle_server_notification(later_notification, /*replay_kind*/ None);
+
+    assert_eq!(chat.context_ledger.projected_token_delta, 0);
+    assert_eq!(chat.context_ledger.projection_baseline_turn_id, None);
+}
+
+fn dashboard_token_usage_notification(
     chat: &ChatWidget,
     saved_tokens: u64,
-) -> codex_app_server_protocol::ServerNotification {
+    smart_prune_enabled: bool,
+) -> ServerNotification {
     let usage = || codex_app_server_protocol::TokenUsageBreakdown {
         total_tokens: 120,
         input_tokens: 100,
@@ -36,7 +61,9 @@ fn token_usage_notification(
         output_tokens: 20,
         reasoning_output_tokens: 0,
     };
-    codex_app_server_protocol::ServerNotification::ThreadTokenUsageUpdated(
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = smart_prune_enabled;
+    ServerNotification::ThreadTokenUsageUpdated(
         codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
             thread_id: chat
                 .thread_id()
@@ -48,59 +75,194 @@ fn token_usage_notification(
                 last: usage(),
                 model_context_window: Some(1_000),
                 context_prune_saved_tokens: saved_tokens,
+                smart_prune,
+                context_attribution: None,
             },
         },
     )
 }
 
-#[tokio::test]
-async fn cumulative_savings_change_with_equal_tokens_publishes_exactly_once() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    let notification = token_usage_notification(&chat, 10);
-    chat.handle_server_notification(notification, /*replay_kind*/ None);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
-
-    let notification = token_usage_notification(&chat, 20);
-    chat.handle_server_notification(notification, /*replay_kind*/ None);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
-
-    let notification = token_usage_notification(&chat, 20);
-    chat.handle_server_notification(notification, /*replay_kind*/ None);
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+fn smart_prune_notification(thread_id: ThreadId, saved_tokens: u64) -> ServerNotification {
+    let mut smart_prune = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    smart_prune.enabled = true;
+    smart_prune.approx_saved_tokens = saved_tokens;
+    ServerNotification::ThreadSmartPruneUpdated(
+        codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            smart_prune,
+        },
+    )
 }
 
 #[tokio::test]
-async fn only_effective_automatic_pruning_changes_request_dashboard_publication() {
+async fn live_smart_prune_savings_flash_only_for_newly_saved_tokens() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 0),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(0));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 3_300),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved ~3.3k tokens"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 5_000),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(5_000));
+    assert!(render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved ~1.7k tokens"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 4_000),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(5_000));
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 5_500),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(5_500));
+    assert!(render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved ~500 tokens"));
+}
+
+#[tokio::test]
+async fn first_live_smart_prune_snapshot_seeds_without_flashing_historical_savings() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 3_300),
+        /*replay_kind*/ None,
+    );
+
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
+}
+
+#[tokio::test]
+async fn smart_prune_snapshot_does_not_complete_an_unpersisted_setting_request() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.smart_prune_synced = true;
+
+    assert!(chat.request_smart_prune_enabled(/*enabled*/ true));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 0),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.context_ledger.pending_smart_prune_enabled, Some(true));
+
+    chat.handle_server_notification(
+        dashboard_token_usage_notification(&chat, 0, /*smart_prune_enabled*/ true),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.context_ledger.pending_smart_prune_enabled, Some(true));
+}
+
+#[tokio::test]
+async fn replayed_and_foreign_smart_prune_savings_do_not_flash() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    chat.handle_server_notification(
+        smart_prune_notification(thread_id, 3_300),
+        Some(ReplayKind::ThreadSnapshot),
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
+
+    chat.handle_server_notification(
+        smart_prune_notification(ThreadId::new(), 5_000),
+        /*replay_kind*/ None,
+    );
+    assert_eq!(chat.last_smart_prune_saved_tokens, Some(3_300));
+    assert!(!render_bottom_popup(&chat, /*width*/ 120).contains("Smart Prune saved"));
+}
+
+#[tokio::test]
+async fn token_savings_and_smart_prune_changes_each_refresh_exactly_once() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    assert!(!chat.set_feature_enabled(
-        codex_features::Feature::AutomaticContextPruning,
-        /*enabled*/ false,
-    ));
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
+    for notification in [
+        dashboard_token_usage_notification(&chat, 10, false),
+        dashboard_token_usage_notification(&chat, 20, false),
+        dashboard_token_usage_notification(&chat, 20, true),
+    ] {
+        chat.handle_server_notification(notification, /*replay_kind*/ None);
+        assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+        assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+    }
 
-    assert!(chat.set_feature_enabled(
-        codex_features::Feature::AutomaticContextPruning,
-        /*enabled*/ true,
-    ));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
-
-    assert!(chat.set_feature_enabled(
-        codex_features::Feature::AutomaticContextPruning,
-        /*enabled*/ true,
-    ));
-    assert_matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
-
-    assert!(!chat.set_feature_enabled(
-        codex_features::Feature::AutomaticContextPruning,
-        /*enabled*/ false,
-    ));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
+    chat.handle_server_notification(
+        dashboard_token_usage_notification(&chat, 20, true),
+        /*replay_kind*/ None,
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
-use pretty_assertions::assert_eq;
+
+#[tokio::test]
+async fn only_effective_smart_prune_configuration_changes_refresh_dashboard() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    assert!(!chat.set_feature_enabled(Feature::AutomaticContextPruning, false));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    assert!(chat.set_feature_enabled(Feature::AutomaticContextPruning, true));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+
+    assert!(chat.set_feature_enabled(Feature::AutomaticContextPruning, true));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    assert!(!chat.set_feature_enabled(Feature::AutomaticContextPruning, false));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+}
+
+#[tokio::test]
+async fn only_semantic_core_smart_prune_snapshots_refresh_dashboard() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    let notification = |smart_prune| {
+        ServerNotification::ThreadSmartPruneUpdated(
+            codex_app_server_protocol::ThreadSmartPruneUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                smart_prune,
+            },
+        )
+    };
+
+    let initial = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    chat.handle_server_notification(notification(initial.clone()), /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    chat.handle_server_notification(notification(initial), /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    let mut changed = codex_app_server_protocol::ThreadSmartPruneSnapshot::default();
+    changed.enabled = true;
+    chat.handle_server_notification(notification(changed), /*replay_kind*/ None);
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
 
 const SAFETY_BUFFERING_HEADER_TEXT: &str =
     "Our systems are thinking a bit more about this request before responding.";
@@ -163,6 +325,36 @@ fn configured_thread_session(thread_id: ThreadId) -> crate::session_state::Threa
         network_proxy: None,
         rollout_path: None,
     }
+}
+
+#[tokio::test]
+async fn thread_switch_clears_thread_scoped_dashboard_usage() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let first_thread_id = ThreadId::new();
+    chat.handle_thread_session(configured_thread_session(first_thread_id));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.set_token_info(Some(make_token_info(120, 1_000)));
+    assert!(chat.update_context_prune_savings(40, /*from_replay*/ true));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.handle_thread_session(configured_thread_session(first_thread_id));
+    assert!(chat.token_info.is_some());
+    assert_eq!(chat.last_prune_saved_tokens, Some(40));
+    let _ = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+    chat.handle_thread_session(configured_thread_session(ThreadId::new()));
+
+    assert!(chat.token_info.is_none());
+    assert_eq!(chat.bottom_pane.context_window_used_tokens(), None);
+    assert_eq!(chat.last_prune_saved_tokens, None);
+    assert_eq!(chat.last_prune_saved_tokens.unwrap_or(0), 0);
+    assert_eq!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::RefreshContextDashboard))
+            .count(),
+        1
+    );
 }
 
 fn start_safety_buffering_test_turn(
@@ -1467,7 +1659,7 @@ async fn live_activity_notifications_project_only_safe_scalars_and_typed_cost() 
         /*replay_kind*/ None,
     );
 
-    let unavailable = chat.dashboard_activity_state(Some(false));
+    let unavailable = chat.dashboard_activity_state();
     let unavailable_debug = format!("{unavailable:?}");
     for private_value in [
         "prompt-secret",
@@ -1480,13 +1672,8 @@ async fn live_activity_notifications_project_only_safe_scalars_and_typed_cost() 
     ] {
         assert!(!unavailable_debug.contains(private_value));
     }
-    let crate::activity_state::DashboardActivityState {
-        current,
-        recent,
-        automatic_pruning_enabled,
-    } = unavailable;
-    let current = current
-        .expect("live turn should project as current");
+    let crate::activity_state::DashboardActivityState { current, recent } = unavailable;
+    let current = current.expect("live turn should project as current");
     let crate::activity_state::DashboardActivityRow {
         status,
         started_at,
@@ -1509,7 +1696,6 @@ async fn live_activity_notifications_project_only_safe_scalars_and_typed_cost() 
     assert_eq!(duration_ms, None);
     assert_eq!(time_to_first_token_ms, None);
     assert_eq!(profile, None);
-    assert_eq!(automatic_pruning_enabled, Some(false));
     assert!(recent.is_empty());
 
     chat.handle_server_notification(
@@ -1563,7 +1749,7 @@ async fn live_activity_notifications_project_only_safe_scalars_and_typed_cost() 
         /*replay_kind*/ None,
     );
 
-    let priced = chat.dashboard_activity_state(None);
+    let priced = chat.dashboard_activity_state();
     assert_eq!(
         priced.recent[0].cost,
         Some(TurnCostState::Unavailable {
@@ -1629,7 +1815,7 @@ async fn dropped_dashboard_publication_receiver_does_not_block_turn_completion()
     );
 
     assert!(!chat.bottom_pane.is_task_running());
-    assert_eq!(chat.dashboard_activity_state(None).recent.len(), 1);
+    assert_eq!(chat.dashboard_activity_state().recent.len(), 1);
 }
 
 #[tokio::test]
@@ -1638,9 +1824,9 @@ async fn empty_activity_reset_still_requests_dashboard_publication() {
 
     chat.reset_activity();
 
-    assert_matches!(rx.try_recv(), Ok(AppEvent::PublishDashboardSnapshot));
-    assert_eq!(chat.dashboard_activity_state(None).current, None);
-    assert!(chat.dashboard_activity_state(None).recent.is_empty());
+    assert_matches!(rx.try_recv(), Ok(AppEvent::RefreshContextDashboard));
+    assert_eq!(chat.dashboard_activity_state().current, None);
+    assert!(chat.dashboard_activity_state().recent.is_empty());
 }
 
 #[tokio::test]
@@ -1659,5 +1845,5 @@ async fn unknown_activity_cost_does_not_request_dashboard_publication() {
     );
 
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
-    assert!(chat.dashboard_activity_state(None).recent.is_empty());
+    assert!(chat.dashboard_activity_state().recent.is_empty());
 }

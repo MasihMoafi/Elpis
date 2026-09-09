@@ -7,9 +7,9 @@
 use anyhow::Result;
 use codex_core::config::Config;
 use codex_core::elpis_context::set_continuity_source_admitted;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use core_test_support::responses;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;

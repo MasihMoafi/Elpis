@@ -218,10 +218,7 @@ stream_max_retries = 0
     })
 }
 
-async fn wait_for_unhandled_turn_completed(
-    app_server: &mut AppServerSession,
-    thread_id: ThreadId,
-) {
+async fn wait_for_unhandled_turn_completed(app_server: &mut AppServerSession, thread_id: ThreadId) {
     loop {
         let event = tokio::time::timeout(
             std::time::Duration::from_secs(/*secs*/ 5),
@@ -342,8 +339,7 @@ async fn active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failed_active_turn_interrupt_clears_pending_and_allows_retry() -> Result<()> {
-    const EXPECTED_WARNING: &str =
-        "Failed to interrupt turn: turn/interrupt failed: no active turn to interrupt (code -32600)";
+    const EXPECTED_WARNING: &str = "Failed to interrupt turn: turn/interrupt failed: no active turn to interrupt (code -32600)";
     let InterruptTestApp {
         server,
         _codex_home,
@@ -376,23 +372,20 @@ async fn failed_active_turn_interrupt_clears_pending_and_allows_retry() -> Resul
         app.try_submit_active_thread_op_via_app_server(&mut app_server, thread_id, &interrupt)
             .await?
     );
-    let visible_warning = tokio::time::timeout(
-        std::time::Duration::from_secs(/*secs*/ 5),
-        async {
-            loop {
-                drain_active_thread_events(&mut app);
-                while let Ok(event) = app_event_rx.try_recv() {
-                    if let AppEvent::InsertHistoryCell(cell) = event {
-                        let text = lines_to_single_string(&cell.transcript_lines(/*width*/ 120));
-                        if text.contains(EXPECTED_WARNING) {
-                            return text;
-                        }
+    let visible_warning = tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 5), async {
+        loop {
+            drain_active_thread_events(&mut app);
+            while let Ok(event) = app_event_rx.try_recv() {
+                if let AppEvent::InsertHistoryCell(cell) = event {
+                    let text = lines_to_single_string(&cell.transcript_lines(/*width*/ 120));
+                    if text.contains(EXPECTED_WARNING) {
+                        return text;
                     }
                 }
-                tokio::task::yield_now().await;
             }
-        },
-    )
+            tokio::task::yield_now().await;
+        }
+    })
     .await
     .expect("interrupt failure warning should be visible");
     assert!(visible_warning.contains(EXPECTED_WARNING));

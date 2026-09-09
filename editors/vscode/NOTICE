@@ -1,0 +1,20 @@
+OpenAI Codex
+Copyright 2025 OpenAI
+
+Elpis includes modifications to the Codex runtime and a VS Code client.
+
+The editor bundles markdown-it 14.3.1 under the MIT license.
+Its license is included at assets/markdown-it.LICENSE.txt.
+Source: https://github.com/markdown-it/markdown-it
+
+The model/effort selection logic in src/model-catalog.js is adapted from
+zed-industries/codex-acp src/thread.rs::handle_set_config_model, retrieved
+2026-09-09. Copyright 2022-2025 Zed Industries, Inc. Licensed under Apache-2.0
+(see LICENSE). Modified to consume Elpis app-server catalog objects and apply
+model changes through turn/start while preserving the existing thread.
+Source: https://github.com/zed-industries/codex-acp/blob/c81fa46d897275ed014065a3947596bf0fd1975b/src/thread.rs
+Provider tool-loop and editor integration modifications: 2026 Masih Moafi.
+
+This project includes code derived from [Ratatui](https://github.com/ratatui/ratatui), licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers

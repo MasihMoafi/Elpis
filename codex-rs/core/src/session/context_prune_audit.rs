@@ -121,7 +121,10 @@ struct ItemArtifact<'a> {
     model_visible_after: Vec<&'a ResponseItem>,
 }
 
-pub(super) fn append_attempt_records(log_dir: &Path, attempts: &[PruneAttemptRecord]) -> Result<()> {
+pub(super) fn append_attempt_records(
+    log_dir: &Path,
+    attempts: &[PruneAttemptRecord],
+) -> Result<()> {
     if attempts.is_empty() {
         return Ok(());
     }
@@ -132,7 +135,12 @@ pub(super) fn append_attempt_records(log_dir: &Path, attempts: &[PruneAttemptRec
         .create(true)
         .append(true)
         .open(&attempts_file)
-        .with_context(|| format!("failed to open attempt log file {}", attempts_file.display()))?;
+        .with_context(|| {
+            format!(
+                "failed to open attempt log file {}",
+                attempts_file.display()
+            )
+        })?;
     let mut writer = BufWriter::new(file);
     for attempt in attempts {
         serde_json::to_writer(&mut writer, attempt)?;
@@ -143,7 +151,10 @@ pub(super) fn append_attempt_records(log_dir: &Path, attempts: &[PruneAttemptRec
     Ok(())
 }
 
-pub(super) fn record_failed_attempts(log_dir: &Path, attempts: &[PruneAttemptRecord]) -> Result<()> {
+pub(super) fn record_failed_attempts(
+    log_dir: &Path,
+    attempts: &[PruneAttemptRecord],
+) -> Result<()> {
     if attempts.is_empty() {
         return Ok(());
     }
@@ -626,10 +637,7 @@ mod tests {
         assert!(error.to_string().contains("pruning audit directory"));
     }
 
-    fn write_pass_with_usage(
-        root: &Path,
-        usage: Option<TokenUsage>,
-    ) -> serde_json::Value {
+    fn write_pass_with_usage(root: &Path, usage: Option<TokenUsage>) -> serde_json::Value {
         let before = vec![tool_call("a", "first"), tool_output("a", "result")];
         let batch = vec![("a".to_string(), "tool and output".to_string())];
         let record = PruneRecord {
@@ -679,7 +687,10 @@ mod tests {
         );
         // Reasoning tokens are billed as output but never appear in `raw_response`, so
         // without this the archive cannot say what a pass cost.
-        assert_eq!(ace["usage"]["reasoning_output_tokens"].as_i64(), Some(8_500));
+        assert_eq!(
+            ace["usage"]["reasoning_output_tokens"].as_i64(),
+            Some(8_500)
+        );
         assert_eq!(ace["usage"]["cached_input_tokens"].as_i64(), Some(1_000));
     }
 
@@ -781,7 +792,8 @@ mod tests {
         assert_eq!(attempts_json[1]["status"], "success");
         assert_eq!(attempts_json[1]["model_slug"], "gpt-4o");
 
-        let attempts_log = std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
+        let attempts_log =
+            std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
         let lines: Vec<&str> = attempts_log.trim().lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains(r#""pass_id":"shared-pass-id-123""#));
@@ -804,7 +816,8 @@ mod tests {
 
         record_failed_attempts(root.path(), &[failed_attempt]).unwrap();
 
-        let attempts_log = std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
+        let attempts_log =
+            std::fs::read_to_string(root.path().join("pruning/attempts.jsonl")).unwrap();
         assert!(attempts_log.contains("stream_error"));
         assert!(attempts_log.contains("connection reset"));
         assert!(attempts_log.contains("failed-pass-id-999"));
