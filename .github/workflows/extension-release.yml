@@ -1,0 +1,39 @@
+name: Elpis extension release checks
+on:
+  push:
+    branches: ['release/vscode-*']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - name: Install build dependencies
+        working-directory: editors/vscode
+        run: npm ci
+      - name: Extension checks
+        working-directory: editors/vscode
+        run: |
+          npm test
+          npm run build
+      - name: Download the candidate package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p 'require("./editors/vscode/package.json").version')
+          gh release download "extension-v$version" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/elpis-package" --pattern '*.vsix' --pattern SHA256SUMS
+          cd "$RUNNER_TEMP/elpis-package"
+          sha256sum --check SHA256SUMS
+          unzip -q elpis-editor-linux-x64.vsix -d unpacked
+      - name: Clean offline runtime smoke
+        run: |
+          timeout 45s docker run --rm --network none --read-only --tmpfs /tmp:rw,exec,mode=1777 --user 1000:1000 \
+            -v "$RUNNER_TEMP/elpis-package/unpacked/extension/bin/elpis-app-server:/opt/elpis-app-server:ro" \
+            -v "$GITHUB_WORKSPACE/editors/vscode/scripts/clean-runtime-smoke.sh:/opt/smoke.sh:ro" \
+            ubuntu:24.04 bash /opt/smoke.sh
