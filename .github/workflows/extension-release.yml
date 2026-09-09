@@ -17,11 +17,6 @@ jobs:
       - name: Install build dependencies
         working-directory: editors/vscode
         run: npm ci
-      - name: Extension checks
-        working-directory: editors/vscode
-        run: |
-          npm test
-          npm run build
       - name: Download the candidate package
         env:
           GH_TOKEN: ${{ github.token }}
@@ -31,6 +26,15 @@ jobs:
           cd "$RUNNER_TEMP/elpis-package"
           sha256sum --check SHA256SUMS
           unzip -q elpis-editor-linux-x64.vsix -d unpacked
+      - name: Extension checks using the packaged runtime
+        working-directory: editors/vscode
+        env:
+          ELPIS_EDITOR_TEST_RUNTIME: ${{ runner.temp }}/elpis-package/unpacked/extension/bin/elpis-app-server
+        run: |
+          npm test
+          npm run build
+          npm run test:providers
+          node test/smart-runtime-eval.js
       - name: Clean offline runtime smoke
         run: |
           timeout 45s docker run --rm --network none --read-only --tmpfs /tmp:rw,exec,mode=1777 --user 1000:1000 \
