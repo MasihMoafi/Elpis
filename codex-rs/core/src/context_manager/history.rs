@@ -554,6 +554,10 @@ fn estimate_item_token_count(item: &ResponseItem) -> i64 {
     approx_tokens_from_byte_count_i64(model_visible_bytes)
 }
 
+pub(crate) fn estimate_response_item_tokens(item: &ResponseItem) -> u64 {
+    u64::try_from(estimate_item_token_count(item).max(0)).unwrap_or(u64::MAX)
+}
+
 /// Approximate model-visible byte cost for one image input.
 ///
 /// The estimator later converts bytes to tokens using a 4-bytes/token heuristic

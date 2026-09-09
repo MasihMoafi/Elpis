@@ -52,7 +52,11 @@ impl OllamaClient {
 
     #[cfg(test)]
     async fn try_from_provider_with_base_url(base_url: &str) -> io::Result<Self> {
-        let provider = create_oss_provider_with_base_url(OLLAMA_OSS_PROVIDER_NAME, base_url, WireApi::Responses);
+        let provider = create_oss_provider_with_base_url(
+            OLLAMA_OSS_PROVIDER_NAME,
+            base_url,
+            WireApi::Responses,
+        );
         Self::try_from_provider(&provider).await
     }
 

@@ -25,6 +25,10 @@ pub use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
 pub use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::protocol::ContextAttributionSnapshot as CoreContextAttributionSnapshot;
+use codex_protocol::protocol::SmartPruneAdmissionSnapshot as CoreSmartPruneAdmissionSnapshot;
+use codex_protocol::protocol::SmartPruneAttemptSnapshot as CoreSmartPruneAttemptSnapshot;
+use codex_protocol::protocol::SmartPruneSnapshot as CoreSmartPruneSnapshot;
 use codex_protocol::protocol::ThreadGoalStatus as CoreThreadGoalStatus;
 use codex_protocol::protocol::TokenUsage as CoreTokenUsage;
 use codex_protocol::protocol::TokenUsageInfo as CoreTokenUsageInfo;
@@ -1375,6 +1379,18 @@ pub struct ThreadTokenUsageUpdatedNotification {
     pub token_usage: ThreadTokenUsage,
 }
 
+/// Thread-scoped Smart Prune state emitted after config refresh or listener attachment.
+///
+/// This is intentionally separate from token usage because a config change can
+/// happen without an active turn or a provider usage sample.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSmartPruneUpdatedNotification {
+    pub thread_id: String,
+    pub smart_prune: ThreadSmartPruneSnapshot,
+}
+
 /// Internal-only notification containing the exact usage from one upstream
 /// Responses API completion.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1399,6 +1415,11 @@ pub struct ThreadTokenUsage {
     #[serde(default)]
     #[ts(type = "number")]
     pub context_prune_saved_tokens: u64,
+    #[serde(default)]
+    pub smart_prune: ThreadSmartPruneSnapshot,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub context_attribution: Option<ThreadContextAttribution>,
 }
 
 impl From<CoreTokenUsageInfo> for ThreadTokenUsage {
@@ -1408,11 +1429,216 @@ impl From<CoreTokenUsageInfo> for ThreadTokenUsage {
             last: value.last_token_usage.into(),
             model_context_window: value.model_context_window,
             context_prune_saved_tokens: 0,
+            smart_prune: ThreadSmartPruneSnapshot::default(),
+            context_attribution: None,
         }
     }
 }
 
+/// Estimated composition of the exact request built for the latest provider attempt.
+/// Values are never padded to reconcile with provider token accounting.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextAttribution {
+    #[ts(type = "number")]
+    pub system_instructions: u64,
+    #[ts(type = "number")]
+    pub developer_messages: u64,
+    #[ts(type = "number")]
+    pub user_messages: u64,
+    #[ts(type = "number")]
+    pub agent_messages: u64,
+    #[ts(type = "number")]
+    pub reasoning: u64,
+    #[ts(type = "number")]
+    pub tool_calls: u64,
+    #[ts(type = "number")]
+    pub tool_results: u64,
+    #[ts(type = "number")]
+    pub tool_definitions: u64,
+    #[ts(type = "number")]
+    pub output_schema: u64,
+    #[ts(type = "number")]
+    pub unrecognized_items: u64,
+    #[ts(type = "number")]
+    pub estimated_total: u64,
+}
+
+impl From<CoreContextAttributionSnapshot> for ThreadContextAttribution {
+    fn from(value: CoreContextAttributionSnapshot) -> Self {
+        Self {
+            system_instructions: value.system_instructions,
+            developer_messages: value.developer_messages,
+            user_messages: value.user_messages,
+            agent_messages: value.agent_messages,
+            reasoning: value.reasoning,
+            tool_calls: value.tool_calls,
+            tool_results: value.tool_results,
+            tool_definitions: value.tool_definitions,
+            output_schema: value.output_schema,
+            unrecognized_items: value.unrecognized_items,
+            estimated_total: value.estimated_total,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSmartPruneSnapshot {
+    pub enabled: bool,
+    #[ts(type = "number")]
+    pub examined_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub unchanged_outputs: u64,
+    #[ts(type = "number")]
+    pub failed_batches: u64,
+    #[ts(type = "number")]
+    pub approx_source_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_admitted_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_requests: u64,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_usage_reports: u64,
+    #[serde(default)]
+    pub optimizer_usage: TokenUsageBreakdown,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_latency_ms: u64,
+    #[ts(type = "number")]
+    pub main_request_sequence: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub latest: Option<ThreadSmartPruneAdmissionSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub latest_attempt: Option<ThreadSmartPruneAttemptSnapshot>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSmartPruneAttemptSnapshot {
+    pub attempt_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub audit_path: Option<String>,
+    pub status: String,
+    pub model_slug: String,
+    pub reasoning_effort: String,
+    #[ts(type = "number")]
+    pub candidate_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    #[ts(type = "number")]
+    pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub usage: Option<TokenUsageBreakdown>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSmartPruneAdmissionSnapshot {
+    pub admission_id: String,
+    pub audit_path: String,
+    #[ts(type = "number")]
+    pub examined_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub approx_source_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_admitted_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null", optional)]
+    pub request_sequence: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub request_input_sha256: Option<String>,
+    pub request_linkage_verified: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub response_usage: Option<TokenUsageBreakdown>,
+    pub response_linkage_verified: bool,
+}
+
+impl From<CoreSmartPruneSnapshot> for ThreadSmartPruneSnapshot {
+    fn from(value: CoreSmartPruneSnapshot) -> Self {
+        Self {
+            enabled: value.enabled,
+            examined_outputs: value.examined_outputs,
+            admitted_outputs: value.admitted_outputs,
+            unchanged_outputs: value.unchanged_outputs,
+            failed_batches: value.failed_batches,
+            approx_source_tokens: value.approx_source_tokens,
+            approx_admitted_tokens: value.approx_admitted_tokens,
+            approx_saved_tokens: value.approx_saved_tokens,
+            optimizer_requests: value.optimizer_requests,
+            optimizer_usage_reports: value.optimizer_usage_reports,
+            optimizer_usage: value.optimizer_usage.into(),
+            optimizer_latency_ms: value.optimizer_latency_ms,
+            main_request_sequence: value.main_request_sequence,
+            latest: value.latest.map(Into::into),
+            latest_attempt: value.latest_attempt.map(Into::into),
+        }
+    }
+}
+
+impl From<CoreSmartPruneAttemptSnapshot> for ThreadSmartPruneAttemptSnapshot {
+    fn from(value: CoreSmartPruneAttemptSnapshot) -> Self {
+        Self {
+            attempt_id: value.attempt_id,
+            audit_path: value.audit_path,
+            status: value.status,
+            model_slug: value.model_slug,
+            reasoning_effort: value.reasoning_effort,
+            candidate_outputs: value.candidate_outputs,
+            admitted_outputs: value.admitted_outputs,
+            approx_saved_tokens: value.approx_saved_tokens,
+            latency_ms: value.latency_ms,
+            usage: value.usage.map(Into::into),
+        }
+    }
+}
+
+impl From<CoreSmartPruneAdmissionSnapshot> for ThreadSmartPruneAdmissionSnapshot {
+    fn from(value: CoreSmartPruneAdmissionSnapshot) -> Self {
+        Self {
+            admission_id: value.admission_id,
+            audit_path: value.audit_path,
+            examined_outputs: value.examined_outputs,
+            admitted_outputs: value.admitted_outputs,
+            approx_source_tokens: value.approx_source_tokens,
+            approx_admitted_tokens: value.approx_admitted_tokens,
+            approx_saved_tokens: value.approx_saved_tokens,
+            request_sequence: value.request_sequence,
+            request_input_sha256: value.request_input_sha256,
+            request_linkage_verified: value.request_linkage_verified,
+            response_id: value.response_id,
+            response_usage: value.response_usage.map(Into::into),
+            response_linkage_verified: value.response_linkage_verified,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct TokenUsageBreakdown {

@@ -97,9 +97,7 @@ impl AgentGrepEngine {
         };
 
         let line_index = LineIndex::new(content);
-        let lang = query
-            .language
-            .unwrap_or_else(|| Language::from_path(path));
+        let lang = query.language.unwrap_or_else(|| Language::from_path(path));
         let extractor = AstContextExtractor::new(lang);
         let scopes = extractor.extract_scopes(content);
         let lines: Vec<&str> = content.lines().collect();
@@ -221,10 +219,7 @@ impl AgentGrepEngine {
 
             // Apply includes filter if present
             if !query.includes.is_empty() {
-                let file_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 let matched_include = query.includes.iter().any(|pattern| {
                     if let Ok(glob) = glob::Pattern::new(pattern) {
                         glob.matches(file_name) || glob.matches_path(path)
@@ -239,10 +234,7 @@ impl AgentGrepEngine {
 
             // Apply excludes filter if present
             if !query.excludes.is_empty() {
-                let file_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 let matched_exclude = query.excludes.iter().any(|pattern| {
                     if let Ok(glob) = glob::Pattern::new(pattern) {
                         glob.matches(file_name) || glob.matches_path(path)

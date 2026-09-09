@@ -79,7 +79,45 @@ impl ChatWidget {
             self.restore_retry_status_header_if_present();
         }
         match notification {
+            ServerNotification::ThreadSmartPruneUpdated(notification) => {
+                let is_current_thread = self
+                    .thread_id()
+                    .is_some_and(|thread_id| thread_id.to_string() == notification.thread_id);
+                if is_current_thread {
+                    self.update_smart_prune_savings(
+                        notification.smart_prune.approx_saved_tokens,
+                        from_replay,
+                    );
+                    let dashboard_changed =
+                        !self.smart_prune_synced || self.smart_prune != notification.smart_prune;
+                    self.smart_prune = notification.smart_prune;
+                    self.smart_prune_synced = true;
+                    if dashboard_changed {
+                        self.app_event_tx.send(AppEvent::RefreshContextDashboard);
+                    }
+                    self.request_redraw();
+                }
+            }
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
+                self.reconcile_context_projection_for_turn(&notification.turn_id);
+                let context_attribution_changed = notification
+                    .token_usage
+                    .context_attribution
+                    .as_ref()
+                    .is_some_and(|next| self.context_attribution.as_ref() != Some(next));
+                if let Some(context_attribution) =
+                    notification.token_usage.context_attribution.clone()
+                {
+                    self.context_attribution = Some(context_attribution);
+                }
+                self.update_smart_prune_savings(
+                    notification.token_usage.smart_prune.approx_saved_tokens,
+                    from_replay,
+                );
+                let smart_prune_changed = !self.smart_prune_synced
+                    || self.smart_prune != notification.token_usage.smart_prune;
+                self.smart_prune = notification.token_usage.smart_prune.clone();
+                self.smart_prune_synced = true;
                 let savings_changed = self.update_context_prune_savings(
                     notification.token_usage.context_prune_saved_tokens,
                     from_replay,
@@ -91,9 +129,10 @@ impl ChatWidget {
                 let tokens_changed = self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));
-                if savings_changed && !tokens_changed {
-                    self.app_event_tx
-                        .send(AppEvent::PublishDashboardSnapshot);
+                if !tokens_changed
+                    && (smart_prune_changed || savings_changed || context_attribution_changed)
+                {
+                    self.app_event_tx.send(AppEvent::RefreshContextDashboard);
                 }
                 self.refresh_status_line();
             }
@@ -148,6 +187,9 @@ impl ChatWidget {
                 }
             }
             ServerNotification::TurnCompleted(notification) => {
+                if replay_kind.is_none() && notification.turn.status != TurnStatus::InProgress {
+                    self.commit_staged_context_admissions(&notification.turn.id);
+                }
                 self.handle_turn_completed_notification(notification, replay_kind);
             }
             ServerNotification::TurnActivityUpdated(notification) => {

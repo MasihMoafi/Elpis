@@ -14,8 +14,9 @@ use tiny_http::Request;
 use tiny_http::TestRequest;
 
 const PORT: u16 = 43123;
-const ACTIVITY_FIXTURE: &str =
-    include_str!("dashboard_assets/fixtures/activity-state.json");
+const ACTIVITY_FIXTURE: &str = include_str!("dashboard_assets/fixtures/activity-state.json");
+const DASHBOARD_SOURCE_CSS: &str = include_str!("dashboard_assets/source.css");
+const DASHBOARD_PACKAGE_JSON: &str = include_str!("dashboard_assets/package.json");
 
 fn context() -> DashboardContext {
     DashboardContext {
@@ -23,10 +24,11 @@ fn context() -> DashboardContext {
         used_tokens: Some(120),
         window_tokens: 1_000,
         used_percent: Some(12),
+        attributed_tokens: Some(120),
         categories: Some(vec![DashboardCategory {
             label: "System prompt".to_string(),
-            tokens: 20,
-            color: "#d946ef".to_string(),
+            tokens: 120,
+            color: "#f0445d".to_string(),
         }]),
         saved_tokens: 5,
         sources: vec![DashboardSource {
@@ -36,31 +38,14 @@ fn context() -> DashboardContext {
             admitted: true,
         }],
         backtrack_points: 2,
-        manual_memory: None,
     }
 }
 
-fn ready_manual_memory(state: DashboardManualMemoryState) -> DashboardManualMemory {
-    DashboardManualMemory {
-        phase: DashboardManualMemoryPhase::Ready,
-        state: Some(state),
-        request_chars_if_admitted: Some(8_000),
-        eligible_chars_now: Some(if state == DashboardManualMemoryState::Admitted {
-            8_000
-        } else {
-            0
-        }),
-        limit_chars: Some(8_000),
-        truncated: Some(true),
-        unavailable_reason: None,
-        admission_pending: false,
-    }
-}
-
-fn token_totals(total: i64) -> DashboardTokenTotals {
+fn token_totals(total: i64, cache_write: Option<i64>) -> DashboardTokenTotals {
     DashboardTokenTotals {
         input: total - 4,
         cached_input: 1,
+        cache_write,
         output: 2,
         reasoning_output: 1,
         total,
@@ -69,8 +54,49 @@ fn token_totals(total: i64) -> DashboardTokenTotals {
 
 fn tokens() -> DashboardTokens {
     DashboardTokens {
-        session_total: Some(token_totals(20)),
-        last_turn: Some(token_totals(10)),
+        session_total: Some(token_totals(20, None)),
+        last_turn: Some(token_totals(10, Some(0))),
+    }
+}
+
+fn smart_prune(
+    configured_enabled: bool,
+    current_thread_next_turn_enabled: Option<bool>,
+) -> DashboardSmartPrune {
+    DashboardSmartPrune {
+        configured_enabled,
+        current_thread_next_turn_enabled,
+        examined_outputs: 3,
+        admitted_outputs: 2,
+        unchanged_outputs: 1,
+        failed_batches: 0,
+        approx_source_tokens: 18_000,
+        approx_admitted_tokens: 1_200,
+        approx_saved_tokens: 16_800,
+        optimizer_requests: 3,
+        optimizer_usage_reports: 2,
+        optimizer_usage: token_totals(5_000, None),
+        optimizer_latency_ms: 1_250,
+        latest: Some(DashboardSmartPruneLatest {
+            examined_outputs: 3,
+            admitted_outputs: 2,
+            approx_source_tokens: 18_000,
+            approx_admitted_tokens: 1_200,
+            approx_saved_tokens: 16_800,
+            request_linkage_verified: true,
+            response_usage: Some(token_totals(4_200, Some(0))),
+            response_linkage_verified: true,
+        }),
+        latest_attempt: Some(DashboardSmartPruneAttempt {
+            status: "admitted".to_string(),
+            model: "gpt-5.6-luna".to_string(),
+            reasoning_effort: "low".to_string(),
+            candidate_outputs: 3,
+            admitted_outputs: 2,
+            approx_saved_tokens: 16_800,
+            latency_ms: 625,
+            usage: Some(token_totals(600, None)),
+        }),
     }
 }
 
@@ -78,11 +104,13 @@ fn empty_activity() -> DashboardActivityState {
     DashboardActivityState {
         current: None,
         recent: Vec::new(),
-        automatic_pruning_enabled: Some(false),
     }
 }
 
-fn running_activity(started_at: Option<i64>, cost: Option<TurnCostState>) -> DashboardActivityState {
+fn running_activity(
+    started_at: Option<i64>,
+    cost: Option<TurnCostState>,
+) -> DashboardActivityState {
     DashboardActivityState {
         current: Some(DashboardActivityRow {
             status: DashboardActivityStatus::Running,
@@ -120,7 +148,6 @@ fn completed_activity(cost: Option<TurnCostState>) -> DashboardActivityState {
             profile: Some(profile()),
             cost,
         }],
-        automatic_pruning_enabled: Some(false),
     }
 }
 
@@ -131,6 +158,7 @@ fn state() -> DashboardState {
         context(),
         tokens(),
         empty_activity(),
+        smart_prune(true, Some(true)),
         1_000,
     ));
     slot.expect("first publication creates state")
@@ -186,12 +214,14 @@ fn semantic_publication_versions_only_changed_facts() {
     let mut slot = None;
     let base_context = context();
     let base_tokens = tokens();
+    let base_smart_prune = smart_prune(true, Some(true));
 
     assert!(publish_state_into(
         &mut slot,
         base_context.clone(),
         base_tokens.clone(),
         empty_activity(),
+        base_smart_prune.clone(),
         1_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.schema_version), Some(1));
@@ -203,6 +233,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_context.clone(),
         base_tokens.clone(),
         empty_activity(),
+        base_smart_prune.clone(),
         2_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(1));
@@ -213,6 +244,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_context.clone(),
         base_tokens.clone(),
         running_activity(Some(12), None),
+        base_smart_prune.clone(),
         3_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
@@ -228,6 +260,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_context.clone(),
         base_tokens.clone(),
         completed_activity(None),
+        base_smart_prune.clone(),
         4_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
@@ -239,6 +272,7 @@ fn semantic_publication_versions_only_changed_facts() {
         completed_activity(Some(TurnCostState::Priced {
             backend_total_usd: "1.250000".to_string(),
         })),
+        base_smart_prune,
         5_000,
     ));
     let state = slot.as_ref().expect("state remains present");
@@ -253,13 +287,14 @@ fn semantic_publication_versions_only_changed_facts() {
 }
 
 #[test]
-fn context_token_and_reset_changes_each_increment_once() {
+fn context_token_and_smart_prune_changes_each_increment_once() {
     let mut slot = None;
     assert!(publish_state_into(
         &mut slot,
         context(),
         tokens(),
-        running_activity(Some(12), None),
+        empty_activity(),
+        smart_prune(true, None),
         1_000,
     ));
 
@@ -269,18 +304,20 @@ fn context_token_and_reset_changes_each_increment_once() {
         &mut slot,
         changed_context.clone(),
         tokens(),
-        running_activity(Some(12), None),
+        empty_activity(),
+        smart_prune(true, None),
         2_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
 
     let mut changed_tokens = tokens();
-    changed_tokens.last_turn = Some(token_totals(11));
+    changed_tokens.last_turn = Some(token_totals(11, Some(0)));
     assert!(publish_state_into(
         &mut slot,
         changed_context.clone(),
         changed_tokens.clone(),
-        running_activity(Some(12), None),
+        empty_activity(),
+        smart_prune(true, None),
         3_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
@@ -290,6 +327,7 @@ fn context_token_and_reset_changes_each_increment_once() {
         changed_context,
         changed_tokens,
         empty_activity(),
+        smart_prune(true, Some(false)),
         4_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(4));
@@ -297,151 +335,162 @@ fn context_token_and_reset_changes_each_increment_once() {
 }
 
 #[test]
-fn manual_memory_changes_increment_revision_without_churning_other_facts() {
+fn cache_write_unreported_and_reported_zero_are_distinct_semantic_states() {
     let mut slot = None;
-    let mut dashboard_context = context();
-    dashboard_context.manual_memory = Some(DashboardManualMemory {
-        phase: DashboardManualMemoryPhase::Loading,
-        state: None,
-        request_chars_if_admitted: None,
-        eligible_chars_now: None,
-        limit_chars: None,
-        truncated: None,
-        unavailable_reason: None,
-        admission_pending: false,
-    });
+    let mut unreported = tokens();
+    unreported.last_turn = Some(token_totals(10, None));
     assert!(publish_state_into(
         &mut slot,
-        dashboard_context.clone(),
-        tokens(),
+        context(),
+        unreported,
         empty_activity(),
+        smart_prune(true, None),
         1_000,
     ));
-    assert_eq!(slot.as_ref().map(|state| state.revision), Some(1));
+    let unreported = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
+    assert_eq!(
+        unreported["tokens"]["last_turn"]["cache_write"],
+        Value::Null
+    );
 
-    dashboard_context.manual_memory = Some(ready_manual_memory(
-        DashboardManualMemoryState::Admitted,
-    ));
     assert!(publish_state_into(
         &mut slot,
-        dashboard_context.clone(),
+        context(),
         tokens(),
         empty_activity(),
+        smart_prune(true, None),
         2_000,
     ));
+    let reported = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
+    assert_eq!(reported["tokens"]["last_turn"]["cache_write"], 0);
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
-
-    dashboard_context.manual_memory = Some(DashboardManualMemory {
-        phase: DashboardManualMemoryPhase::Loading,
-        admission_pending: true,
-        ..DashboardManualMemory::loading()
-    });
-    assert!(publish_state_into(
-        &mut slot,
-        dashboard_context.clone(),
-        tokens(),
-        empty_activity(),
-        3_000,
-    ));
-    assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
-
-    dashboard_context.manual_memory = Some(DashboardManualMemory {
-        phase: DashboardManualMemoryPhase::Unavailable,
-        unavailable_reason: Some(DashboardManualMemoryUnavailableReason::WorkerFailed),
-        ..DashboardManualMemory::loading()
-    });
-    assert!(publish_state_into(
-        &mut slot,
-        dashboard_context,
-        tokens(),
-        empty_activity(),
-        4_000,
-    ));
-    assert_eq!(slot.as_ref().map(|state| state.revision), Some(4));
 }
 
 #[test]
-fn manual_memory_wire_is_additive_snake_case_and_path_free() {
-    let mut dashboard_context = context();
-    dashboard_context.manual_memory = Some(ready_manual_memory(
-        DashboardManualMemoryState::AvailableNotAdmitted,
-    ));
+fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
     let mut slot = None;
     assert!(publish_state_into(
         &mut slot,
-        dashboard_context,
+        context(),
         tokens(),
         empty_activity(),
+        smart_prune(true, None),
         1_000,
     ));
+    let unsynced = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
+    assert_eq!(unsynced["smart_prune"]["configured_enabled"], true);
+    assert_eq!(
+        unsynced["smart_prune"]["current_thread_next_turn_enabled"],
+        Value::Null
+    );
 
-    let value = serde_json::to_value(slot.expect("typed state")).expect("serialize state");
-    let memory = &value["context"]["manual_memory"];
+    assert!(publish_state_into(
+        &mut slot,
+        context(),
+        tokens(),
+        empty_activity(),
+        smart_prune(true, Some(false)),
+        2_000,
+    ));
+    let synced = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
+    assert_eq!(synced["smart_prune"]["configured_enabled"], true);
+    assert_eq!(
+        synced["smart_prune"]["current_thread_next_turn_enabled"],
+        false
+    );
+    assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
+
+    assert!(publish_state_into(
+        &mut slot,
+        context(),
+        tokens(),
+        empty_activity(),
+        smart_prune(false, Some(false)),
+        3_000,
+    ));
+    let reconfigured = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
+    assert_eq!(reconfigured["smart_prune"]["configured_enabled"], false);
+    assert_eq!(
+        reconfigured["smart_prune"]["current_thread_next_turn_enabled"],
+        false
+    );
+    assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
+
     assert_keys(
-        memory,
+        &synced["smart_prune"],
         &[
-            "admission_pending",
-            "eligible_chars_now",
-            "limit_chars",
-            "phase",
-            "request_chars_if_admitted",
-            "state",
-            "truncated",
-            "unavailable_reason",
+            "admitted_outputs",
+            "approx_admitted_tokens",
+            "approx_saved_tokens",
+            "approx_source_tokens",
+            "configured_enabled",
+            "current_thread_next_turn_enabled",
+            "examined_outputs",
+            "failed_batches",
+            "latest",
+            "latest_attempt",
+            "optimizer_latency_ms",
+            "optimizer_requests",
+            "optimizer_usage",
+            "optimizer_usage_reports",
+            "unchanged_outputs",
         ],
     );
-    assert_eq!(memory["phase"], "ready");
-    assert_eq!(memory["state"], "available_not_admitted");
-    assert_eq!(memory["request_chars_if_admitted"], 8_000);
-    assert_eq!(memory["eligible_chars_now"], 0);
-    assert_eq!(memory["limit_chars"], 8_000);
-    assert_eq!(memory["truncated"], true);
-    assert_eq!(memory["unavailable_reason"], Value::Null);
-    assert_eq!(memory["admission_pending"], false);
+    assert_eq!(
+        synced["smart_prune"]["optimizer_usage"]["cache_write"],
+        Value::Null
+    );
 
-    let serialized = value.to_string();
+    assert_keys(
+        &synced["smart_prune"]["latest"],
+        &[
+            "admitted_outputs",
+            "approx_admitted_tokens",
+            "approx_saved_tokens",
+            "approx_source_tokens",
+            "examined_outputs",
+            "request_linkage_verified",
+            "response_linkage_verified",
+            "response_usage",
+        ],
+    );
+    assert_eq!(
+        synced["smart_prune"]["latest"]["response_usage"]["cache_write"],
+        0
+    );
+    assert_keys(
+        &synced["smart_prune"]["latest_attempt"],
+        &[
+            "admitted_outputs",
+            "approx_saved_tokens",
+            "candidate_outputs",
+            "latency_ms",
+            "model",
+            "reasoning_effort",
+            "status",
+            "usage",
+        ],
+    );
+    assert_eq!(
+        synced["smart_prune"]["latest_attempt"]["status"],
+        "admitted"
+    );
+    assert_eq!(
+        synced["smart_prune"]["latest_attempt"]["model"],
+        "gpt-5.6-luna"
+    );
+    let serialized = synced.to_string();
     for forbidden in [
-        "/home/private-user/.elpis/memories/MEMORY.md",
-        "PLANTED_MEMORY_BODY",
-        "raw admission parse failure",
-        "memory_path",
-        "body",
-        "bytes",
+        "admission_id",
+        "audit_path",
+        "main_request_sequence",
+        "request_input_sha256",
+        "request_sequence",
+        "response_id",
+        "tool_output",
+        "tool_contents",
     ] {
         assert!(!serialized.contains(forbidden), "leaked {forbidden}");
-    }
-}
-
-#[test]
-fn every_manual_memory_unavailable_reason_has_a_distinct_wire_value() {
-    for (reason, expected) in [
-        (
-            DashboardManualMemoryUnavailableReason::AdmissionUnavailable,
-            "admission_unavailable",
-        ),
-        (
-            DashboardManualMemoryUnavailableReason::MemoryUnreadable,
-            "memory_unreadable",
-        ),
-        (
-            DashboardManualMemoryUnavailableReason::InvalidUtf8,
-            "invalid_utf8",
-        ),
-        (
-            DashboardManualMemoryUnavailableReason::MemoryPathNotFile,
-            "memory_path_not_file",
-        ),
-        (
-            DashboardManualMemoryUnavailableReason::SourcesUnavailable,
-            "sources_unavailable",
-        ),
-        (
-            DashboardManualMemoryUnavailableReason::WorkerFailed,
-            "worker_failed",
-        ),
-    ] {
-        let value = serde_json::to_value(reason).expect("serialize reason");
-        assert_eq!(value, expected);
     }
 }
 
@@ -458,6 +507,7 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
                 reason: TurnCostAvailability::SubscriptionAuthentication,
             }),
         ),
+        smart_prune(true, Some(true)),
         1_000,
     ));
 
@@ -467,19 +517,16 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
     assert_eq!(current["status"], "running");
     assert_eq!(current["started_at"], Value::Null);
     assert_eq!(current["cost"]["type"], "unavailable");
-    assert_eq!(
-        current["cost"]["reason"],
-        "subscription_authentication"
-    );
+    assert_eq!(current["cost"]["reason"], "subscription_authentication");
 
-    let recent = completed_activity(Some(TurnCostState::Priced {
-        backend_total_usd: "1.250000".to_string(),
-    }));
     assert!(publish_state_into(
         &mut slot,
         context(),
         tokens(),
-        recent,
+        completed_activity(Some(TurnCostState::Priced {
+            backend_total_usd: "1.250000".to_string(),
+        })),
+        smart_prune(true, Some(true)),
         2_000,
     ));
     let value = serde_json::to_value(slot.expect("state")).expect("serialize state");
@@ -508,15 +555,10 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
         ],
     );
     assert_eq!(recent["status"], "completed");
-    assert_eq!(
-        value["activity"]["recent"][0]["profile"]["sampling_request_count"],
-        7
-    );
-    assert_eq!(
-        value["activity"]["recent"][0]["cost"]["backend_total_usd"],
-        "1.250000"
-    );
+    assert_eq!(recent["profile"]["sampling_request_count"], 7);
+    assert_eq!(recent["cost"]["backend_total_usd"], "1.250000");
     assert!(recent.get("started_at").is_none());
+    assert!(value["activity"].get("automatic_pruning_enabled").is_none());
 }
 
 #[test]
@@ -582,15 +624,267 @@ fn response_heartbeat_changes_without_revision_churn() {
 
 #[test]
 fn envelope_and_nested_wire_dtos_deserialize_for_frozen_fixtures() {
-    let envelope = DashboardEnvelope {
-        state: state(),
-        heartbeat_at: 2_000,
-    };
-    let encoded = serde_json::to_value(&envelope).expect("serialize envelope");
-    let decoded: DashboardEnvelope =
-        serde_json::from_value(encoded).expect("deserialize envelope fixture");
+    let envelope: DashboardEnvelope =
+        serde_json::from_str(ACTIVITY_FIXTURE).expect("deserialize literal dashboard fixture");
 
-    assert_eq!(decoded, envelope);
+    assert_eq!(envelope.heartbeat_at, 1_770_000_000_500);
+    assert_eq!(
+        envelope
+            .state
+            .activity
+            .current
+            .as_ref()
+            .map(|turn| turn.status),
+        Some(super::DashboardActivityStatus::Running)
+    );
+    assert_eq!(envelope.state.activity.recent.len(), 2);
+    assert_eq!(
+        envelope.state.activity.recent[0].cost,
+        Some(DashboardCostState::Priced {
+            backend_total_usd: "1.250000".to_string(),
+        })
+    );
+    assert_eq!(
+        envelope.state.activity.recent[0]
+            .profile
+            .as_ref()
+            .map(|profile| profile.sampling_retry_count),
+        Some(1)
+    );
+    assert_eq!(
+        envelope.state.activity.recent[1].cost,
+        Some(DashboardCostState::Unavailable {
+            reason: DashboardCostAvailability::SubscriptionAuthentication,
+        })
+    );
+    assert_eq!(
+        envelope
+            .state
+            .tokens
+            .session_total
+            .as_ref()
+            .expect("session totals")
+            .cache_write,
+        None
+    );
+    assert_eq!(
+        envelope
+            .state
+            .tokens
+            .last_turn
+            .as_ref()
+            .expect("last-turn totals")
+            .cache_write,
+        Some(0)
+    );
+    assert_eq!(
+        envelope
+            .state
+            .smart_prune
+            .latest
+            .as_ref()
+            .and_then(|latest| latest.response_usage.as_ref()),
+        None
+    );
+
+    let serialized = serde_json::to_string(&envelope).expect("reserialize dashboard fixture");
+    assert!(!serialized.contains("hostile_html"));
+    assert!(!serialized.contains("onerror"));
+}
+
+#[test]
+fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
+    for required in [
+        "id=\"tab-activity\"",
+        "data-tab=\"activity\"",
+        "role=\"tab\" aria-selected=\"true\"",
+        "aria-label=\"Context window usage by category\"",
+        "aria-label=\"Estimated token usage by category\"",
+        "id=\"poll-toggle\"",
+        "id=\"refresh-now\"",
+        "Smart Prune",
+        "Experimental",
+        "One window. One denominator.",
+        "measured total and estimated category attribution",
+        "Reported tokens without invented cost",
+        "Approx. saved",
+        "Latest request attribution",
+    ] {
+        assert!(
+            INDEX_HTML.contains(required),
+            "missing dashboard HTML contract: {required}"
+        );
+    }
+    for forbidden in [
+        "aria-label=\"Active context occupancy\"",
+        "aria-label=\"Latest request composition\"",
+        "Two measurements, clearly separated",
+    ] {
+        assert!(
+            !INDEX_HTML.contains(forbidden),
+            "obsolete duplicate context visual survived: {forbidden}"
+        );
+    }
+    for required in [
+        "envelope.state",
+        "envelope.heartbeat_at",
+        "nextState.revision !== lastValidState.revision",
+        "value.schema_version === 1",
+        "setText('poll-toggle', 'Resume')",
+        "Idle",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+        "tab.tabIndex",
+        "configured_enabled",
+        "current_thread_next_turn_enabled",
+        "latest_attempt",
+        "failed_batches",
+        "CATEGORY_COLORS",
+        "#6fb5fd",
+        "#039b2c",
+        "#03dae5",
+        "#a2810b",
+        "#f0445d",
+        "#ef8cff",
+        "#fcb24f",
+        "#919191",
+        "#a6fc18",
+        "const COMPOSITION_CELL_COUNT = 100",
+        "function allocateContextCells(categories, usedTokens, windowTokens)",
+        "usedTokens * COMPOSITION_CELL_COUNT / windowTokens",
+        "if (usedCells >= positive.length)",
+        "composition-free",
+        "function formatPercent(value, total)",
+        ".toFixed(1) + '%'",
+        "formatPercent(safeContext.used_tokens, safeContext.window_tokens)",
+        "if (inFlight || (paused && !force)) return;",
+        "setTimeout(() => { void poll(); }, delay)",
+        "subscription_authentication",
+        "awaiting_backend_price",
+        "renderAttempt(safeSmart.latest_attempt)",
+        "setText('smart-failed', formatNumber(safeSmart.failed_batches))",
+    ] {
+        assert!(
+            DASHBOARD_JS.contains(required),
+            "missing dashboard JavaScript contract: {required}"
+        );
+    }
+    for required in [
+        "@plugin \"daisyui\"",
+        "@plugin \"daisyui/theme\"",
+        "name: \"elpis-dashboard\"",
+        "color-scheme: dark",
+        "prefers-reduced-motion: reduce",
+        ".category-blue",
+        "background: #6fb5fd",
+        ".category-green",
+        "background: #039b2c",
+        ".category-cyan",
+        "background: #03dae5",
+        ".category-yellow",
+        "background: #a2810b",
+        ".category-orange",
+        "background: #fcb24f",
+        ".category-rose",
+        "background: #f0445d",
+        ".category-purple",
+        "background: #ef8cff",
+        ".category-gray",
+        "background: #919191",
+        ".category-lime",
+        "background: #a6fc18",
+    ] {
+        assert!(
+            DASHBOARD_SOURCE_CSS.contains(required),
+            "missing dashboard CSS source contract: {required}"
+        );
+    }
+    for required in ["\"daisyui\": \"5.7.28\"", "\"tailwindcss\": \"4.3.3\""] {
+        assert!(
+            DASHBOARD_PACKAGE_JSON.contains(required),
+            "missing pinned dashboard dependency: {required}"
+        );
+    }
+}
+
+#[test]
+fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt() {
+    for required in [
+        "data-theme=\"elpis-dashboard\"",
+        "href=\"/dashboard.css\"",
+        "src=\"/dashboard.js\"",
+        "class=\"navbar",
+        "class=\"tabs tabs-box",
+        "class=\"card",
+        "class=\"stats",
+        "class=\"stat",
+        "class=\"badge",
+        "id=\"smart-failed\"",
+        "id=\"attempt-status\"",
+        "id=\"attempt-model\"",
+        "id=\"attempt-effort\"",
+        "id=\"attempt-candidates\"",
+        "id=\"attempt-admitted\"",
+        "id=\"attempt-saved\"",
+        "id=\"attempt-latency\"",
+        "id=\"attempt-usage\"",
+        "Last optimizer attempt",
+        "No optimizer attempt observed",
+    ] {
+        assert!(
+            INDEX_HTML.contains(required),
+            "missing modern dashboard contract: {required}"
+        );
+    }
+}
+
+#[test]
+fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields() {
+    let authored_assets = format!("{INDEX_HTML}\n{DASHBOARD_JS}\n{DASHBOARD_SOURCE_CSS}");
+    for forbidden in [
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "eval(",
+        "safeContext.used_percent + '% of window'",
+        "admission_id",
+        "Admission ID",
+        "admission-id",
+        "audit_path",
+        "Audit record",
+        "audit-path",
+        "main_request_sequence",
+        "Main request sequence",
+        "request_sequence",
+        "request-sequence",
+        "request_input_sha256",
+        "Local request SHA-256",
+        "request-hash",
+        "response_id",
+        "Response ID",
+        "response-id",
+        "tool_output",
+        "tool_contents",
+        "metadata and hashes",
+        "smart.enabled",
+        "style.background = category.color",
+        "setInterval(refresh",
+        "setInterval(poll",
+        "http://",
+        "https://",
+        "color-scheme: light",
+        "--bg: #f7f4ee",
+        "'unsafe-inline'",
+    ] {
+        assert!(
+            !authored_assets.contains(forbidden),
+            "unsafe dashboard source: {forbidden}"
+        );
+    }
+    assert!(!CSP.contains("'unsafe-inline'"));
 }
 
 #[test]
@@ -607,10 +901,8 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
             session_total: None,
             last_turn: None,
         },
-        DashboardActivityState {
-            automatic_pruning_enabled: None,
-            ..empty_activity()
-        },
+        empty_activity(),
+        smart_prune(false, None),
         1_000,
     ));
     let value = serde_json::to_value(slot.expect("state")).expect("serialize state");
@@ -623,15 +915,16 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
             "generated_at",
             "revision",
             "schema_version",
+            "smart_prune",
             "tokens",
         ],
     );
     assert_keys(
         &value["context"],
         &[
+            "attributed_tokens",
             "backtrack_points",
             "categories",
-            "manual_memory",
             "model",
             "saved_tokens",
             "sources",
@@ -641,18 +934,14 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
         ],
     );
     assert_keys(&value["tokens"], &["last_turn", "session_total"]);
-    assert_keys(
-        &value["activity"],
-        &["automatic_pruning_enabled", "current", "recent"],
-    );
+    assert_keys(&value["activity"], &["current", "recent"]);
     assert_eq!(value["context"]["used_tokens"], Value::Null);
     assert_eq!(value["context"]["used_percent"], Value::Null);
     assert_eq!(value["context"]["categories"], Value::Null);
-    assert_eq!(value["context"]["manual_memory"], Value::Null);
     assert_eq!(value["tokens"]["session_total"], Value::Null);
     assert_eq!(value["tokens"]["last_turn"], Value::Null);
     assert_eq!(
-        value["activity"]["automatic_pruning_enabled"],
+        value["smart_prune"]["current_thread_next_turn_enabled"],
         Value::Null
     );
     let serialized = value.to_string();
@@ -668,7 +957,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
         "/home/private-user",
         "backendTotalUsd",
         "samplingRequestCount",
-        "automaticPruningEnabled",
+        "configuredEnabled",
         "startedAt",
         "timeToFirstTokenMs",
     ] {
@@ -724,6 +1013,16 @@ fn bind_host_method_and_path_guards_are_exact_and_read_only() {
     for (host, path, content_type) in [
         ("127.0.0.1:43123", "/", "text/html; charset=utf-8"),
         ("LOCALHOST:43123", "/index.html", "text/html; charset=utf-8"),
+        (
+            "localhost:43123",
+            "/dashboard.css",
+            "text/css; charset=utf-8",
+        ),
+        (
+            "localhost:43123",
+            "/dashboard.js",
+            "text/javascript; charset=utf-8",
+        ),
         (
             "localhost:43123",
             "/data.json",
@@ -835,536 +1134,56 @@ fn failed_server_start_does_not_latch_and_success_is_reused() {
 }
 
 #[test]
-fn activity_fixture_round_trips_only_typed_safe_facts() {
-    for hostile in [
-        "<img src=x onerror=1>",
-        "<script>",
-        "/home/private-user/secret",
+fn evidence_http_route_opens_only_registered_reports() {
+    use std::io::Read;
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("attempt.json");
+    std::fs::write(
+        &path,
+        r#"{"input":"REGISTERED_EVIDENCE_HTTP_MARKER","usage":null}"#,
+    )
+    .unwrap();
+    let url =
+        url::Url::parse(&evidence_url(dir.path(), "Smart Prune attempt", &path).unwrap()).unwrap();
+    let port = url.port().unwrap();
+    let get = |route: &str, host: &str, origin: &str| {
+        let mut socket = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        write!(
+            socket,
+            "GET {route} HTTP/1.1\r\nHost: {host}\r\n{origin}Connection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut body = String::new();
+        socket.read_to_string(&mut body).unwrap();
+        body
+    };
+    let host = format!("127.0.0.1:{port}");
+    let html = get(url.path(), &host, "");
+    assert!(html.starts_with("HTTP/1.1 200"));
+    assert!(html.contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
+    assert!(html.contains("Download Markdown"));
+    let md = get(&format!("{}.md", url.path()), &host, "");
+    assert!(md.starts_with("HTTP/1.1 200"));
+    assert!(md.contains("# Smart Prune attempt"));
+    for (route, host, origin) in [
+        ("/evidence/wrong/id", host.as_str(), ""),
+        (url.path(), "foreign.example", ""),
+        (
+            url.path(),
+            host.as_str(),
+            "Origin: https://foreign.example\r\n",
+        ),
     ] {
-        assert!(ACTIVITY_FIXTURE.contains(hostile));
+        let denied = get(route, host, origin);
+        assert!(denied.starts_with("HTTP/1.1 403"));
+        assert!(!denied.contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
     }
-
-    let raw: Value = serde_json::from_str(ACTIVITY_FIXTURE).expect("fixture is JSON");
-    assert_eq!(raw["hostile"]["markup"], "<img src=x onerror=1>");
-    assert_eq!(raw["hostile"]["script"], "<script>");
-    assert_eq!(raw["hostile"]["path"], "/home/private-user/secret");
-
-    let envelope: DashboardEnvelope =
-        serde_json::from_str(ACTIVITY_FIXTURE).expect("fixture matches dashboard wire");
-    assert_eq!(envelope.state.schema_version, 1);
-    assert_eq!(envelope.state.context.manual_memory, None);
-    assert_eq!(envelope.state.activity.recent.len(), 2);
-    assert_eq!(
-        envelope
-            .state
-            .activity
-            .current
-            .as_ref()
-            .map(|turn| turn.status),
-        Some(super::DashboardActivityStatus::Running)
-    );
-    assert_eq!(
-        envelope
-            .state
-            .activity
-            .current
-            .as_ref()
-            .and_then(|turn| turn.cost.as_ref()),
-        Some(&DashboardCostState::Unavailable {
-            reason: DashboardCostAvailability::AwaitingBackendPrice,
-        })
-    );
-
-    let interrupted = &envelope.state.activity.recent[0];
-    assert_eq!(
-        interrupted.status,
-        super::DashboardActivityStatus::Interrupted
-    );
-    assert_eq!(
-        interrupted.cost.as_ref(),
-        Some(&DashboardCostState::Unavailable {
-            reason: DashboardCostAvailability::SubscriptionAuthentication,
-        })
-    );
-
-    let completed = &envelope.state.activity.recent[1];
-    assert_eq!(completed.status, super::DashboardActivityStatus::Completed);
-    assert_eq!(completed.duration_ms, Some(930));
-    assert_eq!(completed.time_to_first_token_ms, Some(240));
-    let profile = completed.profile.as_ref().expect("measured profile");
-    assert_eq!(profile.before_first_sampling_ms, 100);
-    assert_eq!(profile.sampling_ms, 200);
-    assert_eq!(profile.compaction_ms, 30);
-    assert_eq!(profile.between_sampling_overhead_ms, 40);
-    assert_eq!(profile.tool_blocking_ms, 500);
-    assert_eq!(profile.after_last_sampling_ms, 60);
-    assert_eq!(profile.sampling_request_count, 3);
-    assert_eq!(profile.sampling_retry_count, 1);
-    assert_eq!(
-        completed.cost.as_ref(),
-        Some(&DashboardCostState::Priced {
-            backend_total_usd: "1.250000".to_string(),
-        })
-    );
-
-    let typed = serde_json::to_string(&envelope).expect("serialize typed fixture");
-    for hostile in [
-        "<img src=x onerror=1>",
-        "<script>",
-        "/home/private-user/secret",
-    ] {
-        assert!(!typed.contains(hostile), "typed wire retained {hostile}");
-    }
-}
-
-#[test]
-fn dashboard_asset_exposes_truthful_activity_and_existing_views() {
-    for id in [
-        "tab-activity",
-        "tab-context",
-        "tab-tokens",
-        "panel-activity",
-        "panel-context",
-        "panel-tokens",
-        "activity-now",
-        "activity-elapsed",
-        "activity-current-cost",
-        "activity-latest-status",
-        "activity-latest-total",
-        "activity-latest-ttft",
-        "activity-latest-requests",
-        "activity-latest-retries",
-        "activity-latest-cost",
-        "activity-profile",
-        "activity-profile-empty",
-        "activity-recent-rows",
-        "activity-recent-empty",
-        "activity-pruning",
-        "updates-toggle",
-        "refresh-now",
-        "freshness-status",
-        "ctx-used",
-        "ctx-bar",
-        "manual-memory-card",
-        "manual-memory-state",
-        "manual-memory-summary",
-        "manual-memory-detail",
-        "src-rows",
-        "tok-input",
-        "tok-last",
-    ] {
-        assert!(INDEX_HTML.contains(&format!("id=\"{id}\"")), "missing {id}");
-    }
-
-    for text in [
-        "Running",
-        "Idle",
-        "Timing breakdown unavailable for this turn",
-        "Cost unavailable for subscription authentication",
-        "Cost unavailable — awaiting backend price",
-        "Backend-reported",
-        "Pause updates",
-        "Resume updates",
-        "Refresh now",
-        "Fresh",
-        "Stale",
-        "Unavailable",
-        "Experimental · On",
-        "Experimental · Off",
-        "Experimental · Unavailable",
-        "Manual memory",
-        "Available — not admitted",
-        "Admission update pending",
-        "Memory source discovery is unavailable",
-        "The memory status worker failed",
-    ] {
-        assert!(INDEX_HTML.contains(text), "missing copy: {text}");
-    }
-
-    assert!(!INDEX_HTML.contains("Elpis is plan-based"));
-    assert!(!INDEX_HTML.contains("$0"));
-}
-
-#[test]
-fn dashboard_asset_has_no_dynamic_html_css_network_or_storage_sink() {
-    for forbidden in [
-        ".innerHTML",
-        ".outerHTML",
-        "insertAdjacentHTML",
-        "document.write",
-        "eval(",
-        "localStorage",
-        "sessionStorage",
-        "http://",
-        "https://",
-        ".style.",
-        "activity-state.json",
-        "<img src=x onerror=1>",
-        "/home/private-user",
-    ] {
-        assert!(!INDEX_HTML.contains(forbidden), "unsafe asset token: {forbidden}");
-    }
-    for safe in [
-        "document.createElement",
-        ".replaceChildren(",
-        ".append(",
-        ".textContent",
-        "const STATUS_LABELS",
-        "const COST_LABELS",
-        "const CATEGORY_CLASSES",
-        "const MEMORY_STATE_LABELS",
-        "const MEMORY_REASON_LABELS",
-        "function renderManualMemory(memory)",
-    ] {
-        assert!(INDEX_HTML.contains(safe), "missing safe DOM guard: {safe}");
-    }
-}
-
-#[test]
-fn dashboard_asset_renders_manual_memory_with_closed_safe_mappings() {
-    for source in [
-        "const MEMORY_PHASE_LABELS = Object.freeze({",
-        "const MEMORY_STATE_LABELS = Object.freeze({",
-        "const MEMORY_REASON_LABELS = Object.freeze({",
-        "admission_unavailable: 'Memory admission status is unavailable'",
-        "memory_unreadable: 'The memory file is unreadable'",
-        "invalid_utf8: 'The memory file is not valid UTF-8'",
-        "memory_path_not_file: 'The configured memory path is not a file'",
-        "sources_unavailable: 'Memory source discovery is unavailable'",
-        "worker_failed: 'The memory status worker failed'",
-        "const stateLabel = ownValue(MEMORY_STATE_LABELS, memory.state)",
-        "const reasonLabel = ownValue(MEMORY_REASON_LABELS, memory.unavailable_reason)",
-        "memory.admission_pending === true",
-        "renderManualMemory(context.manual_memory)",
-        "setText('manual-memory-summary'",
-        "setText('manual-memory-detail'",
-    ] {
-        assert!(INDEX_HTML.contains(source), "missing memory guard: {source}");
-    }
-
-    let renderer = INDEX_HTML
-        .split("function renderManualMemory(memory) {")
-        .nth(1)
-        .and_then(|tail| tail.split("\n}\n\nfunction renderContext").next())
-        .expect("manual memory renderer");
-    for forbidden in [
-        "innerHTML",
-        "outerHTML",
-        "insertAdjacentHTML",
-        "memory.path",
-        "memory.body",
-        "memory.bytes",
-        "unavailable_reason +",
-        "memory.state +",
-        "stateElement.className = 'memory-state tone-ember'",
-    ] {
-        assert!(!renderer.contains(forbidden), "unsafe memory renderer: {forbidden}");
-    }
-
-    let observation = INDEX_HTML
-        .split("<div class=\"memory-observation\"")
-        .nth(1)
-        .and_then(|tail| tail.split('>').next())
-        .expect("manual memory observation");
-    for repeated_announcement in ["role=\"status\"", "aria-live", "aria-atomic"] {
-        assert!(
-            !observation.contains(repeated_announcement),
-            "polling memory row must stay quiet: {repeated_announcement}"
-        );
-    }
-}
-
-#[test]
-fn dashboard_asset_validates_envelope_and_preserves_last_good_state() {
-    for source in [
-        "fetch('/data.json'",
-        "if (!res.ok)",
-        "envelope.state.schema_version !== 1",
-        "!Number.isFinite(envelope.heartbeat_at)",
-        "lastValidState = envelope.state",
-        "lastHeartbeat = envelope.heartbeat_at",
-        "const latest = recent.at(-1)",
-        "if (!latest)",
-        "[...recent].reverse().slice(0, 20)",
-        "Array.isArray(context.categories)",
-        "renderTokenTotals(tokens.session_total",
-        "renderTokenTotals(tokens.last_turn",
-        "lastHeartbeat - current.started_at",
-        "Date.now() - heartbeatReceivedAt",
-    ] {
-        assert!(INDEX_HTML.contains(source), "missing envelope guard: {source}");
-    }
-    assert!(!INDEX_HTML.contains("lastHeartbeat = Date.now"));
-    assert!(!INDEX_HTML.contains("current.started_at * 1000"));
-    assert!(!INDEX_HTML.contains("current.started_at*1000"));
-    let freshness = INDEX_HTML
-        .split("function renderFreshness() {")
-        .nth(1)
-        .and_then(|tail| tail.split("\n}\n\nfunction renderState").next())
-        .expect("freshness function");
-    assert!(freshness.contains("Date.now() - lastHeartbeat"));
-    assert!(!freshness.contains("heartbeatReceivedAt"));
-}
-
-#[test]
-fn dashboard_asset_maps_every_unavailable_cost_without_a_price() {
-    for mapping in [
-        "subscription_authentication: 'Cost unavailable for subscription authentication'",
-        "cost_observation_disabled: 'Cost unavailable — cost observation is disabled'",
-        "provider_unsupported: 'Cost unavailable — provider unsupported'",
-        "awaiting_backend_price: 'Cost unavailable — awaiting backend price'",
-        "backend_unavailable: 'Cost unavailable — backend unavailable'",
-        "observation_dropped: 'Cost unavailable — observation dropped'",
-    ] {
-        assert!(INDEX_HTML.contains(mapping), "missing cost map: {mapping}");
-    }
-    let unavailable_map = INDEX_HTML
-        .split("const COST_LABELS = Object.freeze({")
-        .nth(1)
-        .and_then(|tail| tail.split("});").next())
-        .expect("closed unavailable-cost map");
-    assert!(!unavailable_map.contains("Backend-reported"));
-    assert!(INDEX_HTML.contains("cost.type === 'priced'"));
-    assert!(INDEX_HTML.contains("cost.type === 'unavailable'"));
-}
-
-#[test]
-fn dashboard_asset_rejects_inherited_map_keys_and_stale_refreshes() {
-    for source in [
-        "function ownValue(map, key)",
-        "Object.hasOwn(map, key)",
-        "ownValue(STATUS_LABELS, status)",
-        "ownValue(COST_LABELS, cost.reason)",
-        "ownValue(CATEGORY_CLASSES, category.color)",
-        "let refreshEpoch = 0",
-        "let nextRequestId = 0",
-        "let newestAcceptedRequestId = 0",
-        "const requestEpoch = refreshEpoch",
-        "const requestId = ++nextRequestId",
-        "requestEpoch !== refreshEpoch",
-        "requestId < newestAcceptedRequestId",
-        "newestAcceptedRequestId = requestId",
-        "refreshEpoch += 1",
-        "const pollingEpoch = refreshEpoch",
-        "!updatesPaused && pollingEpoch === refreshEpoch",
-        "const elapsedEpoch = refreshEpoch",
-        "!updatesPaused && elapsedEpoch === refreshEpoch",
-        "byId('refresh-now').addEventListener('click', refresh)",
-    ] {
-        assert!(INDEX_HTML.contains(source), "missing race/map guard: {source}");
-    }
-    for unsafe_lookup in [
-        "STATUS_LABELS[status]",
-        "COST_LABELS[cost.reason]",
-        "CATEGORY_CLASSES[category.color]",
-    ] {
-        assert!(
-            !INDEX_HTML.contains(unsafe_lookup),
-            "prototype-chain lookup remains: {unsafe_lookup}"
-        );
-    }
-
-    assert_eq!(INDEX_HTML.matches("refreshEpoch += 1").count(), 1);
-    assert_eq!(
-        INDEX_HTML
-            .matches("newestAcceptedRequestId = requestId")
-            .count(),
-        1
-    );
-    let validated = INDEX_HTML
-        .find("envelope.state.schema_version !== 1")
-        .expect("schema validation");
-    let stale_guard = INDEX_HTML
-        .find("requestEpoch !== refreshEpoch")
-        .expect("epoch guard");
-    let accepted = INDEX_HTML
-        .find("newestAcceptedRequestId = requestId")
-        .expect("accepted request update");
-    let published = INDEX_HTML
-        .find("lastValidState = envelope.state")
-        .expect("state publication");
-    assert!(validated < stale_guard);
-    assert!(stale_guard < accepted);
-    assert!(accepted < published);
-}
-
-#[test]
-fn dashboard_asset_has_keyboard_responsive_and_timer_controls() {
-    for source in [
-        "role=\"tablist\"",
-        "role=\"tab\"",
-        "role=\"tabpanel\"",
-        "aria-selected=\"true\"",
-        "aria-selected=\"false\"",
-        "tab.tabIndex",
-        "ArrowLeft",
-        "ArrowRight",
-        "Home",
-        "End",
-        ":focus-visible",
-        "@media (max-width:",
-        "overflow-x:auto",
-        "@media (prefers-reduced-motion: reduce)",
-        "let pollTimer",
-        "let elapsedTimer",
-        "let freshnessTimer",
-        "clearInterval(pollTimer)",
-        "clearInterval(elapsedTimer)",
-    ] {
-        assert!(INDEX_HTML.contains(source), "missing interaction guard: {source}");
-    }
-
-    let activity_tab = INDEX_HTML.find("id=\"tab-activity\"").expect("Activity tab");
-    let context_tab = INDEX_HTML.find("id=\"tab-context\"").expect("Context tab");
-    assert!(activity_tab < context_tab, "Activity must be the first tab");
-    let activity_tab_tag = INDEX_HTML[activity_tab..]
-        .split('>')
-        .next()
-        .expect("Activity tab opening tag");
-    assert!(activity_tab_tag.contains("aria-selected=\"true\""));
-    let activity_panel = INDEX_HTML
-        .split("<section class=\"panel\" id=\"panel-activity\"")
-        .nth(1)
-        .and_then(|tail| tail.split('>').next())
-        .expect("Activity panel opening tag");
-    assert!(!activity_panel.contains("hidden"));
-    assert!(INDEX_HTML.contains(
-        "id=\"freshness-status\" role=\"status\" aria-live=\"polite\""
-    ));
-}
-
-#[test]
-fn dashboard_asset_uses_the_elpis_observatory_visual_system() {
-    for token in [
-        "--night-ledger:#0d0b0f",
-        "--smoked-plum:#181319",
-        "--iron-rule:#33272f",
-        "--bone:#f2e9e6",
-        "--ash-rose:#aa9ba2",
-        "--ember:#d45b6a",
-        "--flare:#f08a78",
-        "--verdigris:#70b9a4",
-    ] {
-        assert!(INDEX_HTML.contains(token), "missing palette token: {token}");
-    }
-
-    for id in [
-        "observation-frame",
-        "elpis-wordmark",
-        "live-summary",
-        "activity-signal",
-        "activity-signal-label",
-        "observation-spine",
-        "phase-meter-before-first",
-        "phase-meter-sampling",
-        "phase-meter-compaction",
-        "phase-meter-between",
-        "phase-meter-tools",
-        "phase-meter-after-last",
-    ] {
-        assert!(INDEX_HTML.contains(id), "missing observatory id: {id}");
-    }
-
-    for source in [
-        "class=\"wrap observation-frame\" id=\"observation-frame\"",
-        "class=\"live-summary\" id=\"live-summary\"",
-        "class=\"signal signal-idle\" id=\"activity-signal\"",
-        "class=\"observation-spine\" id=\"observation-spine\"",
-        "const signalRunning = current && current.status === 'running'",
-        "signal.className = signalRunning ? 'signal signal-running' : 'signal signal-idle'",
-        "signalRunning ? 'elpising' : 'Idle'",
-        "const phaseValues = PROFILE_FIELDS.map(([, field]) => profile[field]).filter(isCount)",
-        "const phaseTotal = phaseValues.reduce((total, value) => total + value, 0)",
-        "Number.isFinite(phaseTotal) && phaseTotal > 0",
-        ": Math.max(1, ...phaseValues)",
-        "if (isCount(value)) {",
-        "document.createElement('meter')",
-        "meter.id = meterId",
-        "meter.className = 'phase-meter'",
-        "meter.min = 0",
-        "meter.max = meterMax",
-        "meter.value = value",
-        "meter.setAttribute('aria-hidden', 'true')",
-    ] {
-        assert!(INDEX_HTML.contains(source), "missing visual guard: {source}");
-    }
-
-    let profile_renderer = INDEX_HTML
-        .split("function renderProfile(profile) {")
-        .nth(1)
-        .and_then(|tail| tail.split("\n}\n\nfunction renderRecent").next())
-        .expect("profile renderer");
-    let valid_phase = profile_renderer.find("if (isCount(value)) {").expect("phase guard");
-    let meter_created = profile_renderer
-        .find("document.createElement('meter')")
-        .expect("native meter");
-    let meter_min = profile_renderer.find("meter.min = 0").expect("finite minimum");
-    let meter_max = profile_renderer
-        .find("meter.max = meterMax")
-        .expect("finite maximum");
-    let meter_value = profile_renderer
-        .find("meter.value = value")
-        .expect("validated value");
-    assert!(valid_phase < meter_created);
-    assert!(meter_created < meter_min);
-    assert!(meter_min < meter_max);
-    assert!(meter_max < meter_value);
-
-    assert_eq!(INDEX_HTML.matches("@keyframes").count(), 1);
-    assert!(INDEX_HTML.contains("@keyframes elpising"));
-    for forbidden in [
-        "linear-gradient(",
-        "radial-gradient(",
-        "@import",
-        "url(",
-        "<svg",
-        "<canvas",
-        "meter.setAttribute('value'",
-        "meter.setAttribute(\"value\"",
-    ] {
-        assert!(
-            !INDEX_HTML.contains(forbidden),
-            "visual asset added forbidden token: {forbidden}"
-        );
-    }
-}
-
-#[test]
-fn dashboard_asset_uses_closed_semantic_tones_for_turn_statuses() {
-    for source in [
-        ".tone-ash{color:var(--ash-rose)}",
-        ".tone-ember{color:var(--ember)}",
-        ".tone-flare{color:var(--flare)}",
-        ".tone-bone{color:var(--bone)}",
-        "class=\"turn-primary tone-ash\" id=\"activity-now\"",
-        "class=\"turn-primary tone-ash\" id=\"activity-latest-status\"",
-        "const STATUS_TONE_CLASSES = Object.freeze({",
-        "running: 'tone-flare'",
-        "completed: 'tone-bone'",
-        "failed: 'tone-ember'",
-        "interrupted: 'tone-ember'",
-        "function setTurnStatus(id, status, fallback)",
-        "const toneClass = ownValue(STATUS_TONE_CLASSES, status) || 'tone-ash'",
-        "element.className = 'turn-primary ' + toneClass",
-        "setTurnStatus(\n    'activity-now',\n    current ? current.status : null,",
-        "current ? 'Unavailable' : 'Idle'",
-        "setTurnStatus('activity-latest-status', null, 'Unavailable')",
-        "setTurnStatus('activity-latest-status', latest.status, 'Unavailable')",
-    ] {
-        assert!(INDEX_HTML.contains(source), "missing status tone guard: {source}");
-    }
-
-    // The third verdigris use is the positive admitted-memory fact; freshness and admitted
-    // source text retain the two original uses.
-    assert_eq!(INDEX_HTML.matches("var(--verdigris)").count(), 3);
-    for unsafe_class in [
-        "element.className = 'turn-primary ' + status",
-        "element.className = `turn-primary ${status}`",
-        "STATUS_TONE_CLASSES[status]",
-    ] {
-        assert!(
-            !INDEX_HTML.contains(unsafe_class),
-            "server status can become a class: {unsafe_class}"
-        );
-    }
+    assert!(!get("/data.json", &host, "").contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
+    assert!(!get("/", &host, "").contains(url.path().split('/').nth(2).unwrap()));
 }

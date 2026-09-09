@@ -1,15 +1,12 @@
-//! `/context` command: a colored context-usage grid with a side-by-side per-category
-//! legend (grid left, numbers right), a Checkpoints section backed by Elpis's real
-//! backtrack mechanism, and a System files (auto-loaded) section backed by the same
-//! admitted-source list the Context Ledger renders.
+//! `/context` command: one category-segmented full-window usage bar, a Checkpoints
+//! section backed by Elpis's real backtrack mechanism, and a System files
+//! (auto-loaded) section backed by the same admitted-source list the Context Ledger
+//! renders.
 //!
-//! ## The math is anchored to one measured number
-//!
-//! The current request-context count (`token_info.last_token_usage`) is the only
-//! headline number. It is the same snapshot used by the status line and the
-//! Context Ledger. Transcript and portable-source byte counts are attribution
-//! estimates only: they are scaled to that measured total, and any unaccounted
-//! remainder is shown explicitly as "Other (overhead)".
+//! Total occupancy comes from core's current token state. Category proportions are
+//! estimated from the exact `Prompt` built for the latest provider attempt and
+//! reconciled to that measured total. Every bar and percentage uses the model's full
+//! context window as its denominator.
 
 use codex_features::Feature;
 use ratatui::style::Color;
@@ -17,24 +14,49 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
-use std::time::Duration;
-use std::time::Instant;
 
 use super::ChatWidget;
+use super::context_ledger::LedgerSourceGroup;
 use crate::app_backtrack::ContextUsageTranscriptTotals;
 use crate::history_cell::HistoryCell;
-use crate::legacy_core::elpis_context::ContinuitySourceCategory;
 
-const GRID_COLUMNS: usize = 26;
-const GRID_ROWS: usize = 10;
-const GRID_CELLS: usize = GRID_COLUMNS * GRID_ROWS;
+// Adjacent categories deliberately alternate light/dark luminance while retaining
+// distinct hues and at least 4.5:1 contrast against the reference charcoal surface.
+pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(111, 181, 253);
+pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(3, 155, 44);
+pub(super) const REASONING_COLOR: Color = Color::Rgb(3, 218, 229);
+pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(162, 129, 11);
+pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(252, 178, 79);
+pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
+pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(239, 140, 255);
+pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(145, 145, 145);
+pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(166, 252, 24);
 
 #[derive(Clone, Debug)]
-struct CategoryUsage {
-    label: &'static str,
-    tokens: u64,
-    saved_tokens: u64,
-    color: Color,
+pub(super) struct CategoryUsage {
+    pub(super) label: &'static str,
+    pub(super) tokens: u64,
+    pub(super) color: Color,
+}
+
+impl CategoryUsage {
+    /// A shape identifier shared by `/context` and the persistent Ledger. Shapes
+    /// keep categories distinguishable when a terminal theme or color vision
+    /// makes two hues harder to tell apart.
+    pub(super) fn marker(&self) -> &'static str {
+        match self.color {
+            USER_MESSAGES_COLOR => "●",
+            AGENT_RESPONSES_COLOR => "◆",
+            REASONING_COLOR => "▲",
+            TOOL_CALLS_COLOR => "■",
+            TOOL_RESULTS_COLOR => "⬟",
+            SYSTEM_INSTRUCTIONS_COLOR => "✦",
+            DEVELOPER_MESSAGES_COLOR => "✚",
+            TOOL_DEFINITIONS_COLOR => "▣",
+            UNRECOGNIZED_ITEMS_COLOR => "?",
+            _ => "●",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -44,6 +66,7 @@ struct ContextUsageSnapshot {
     window_tokens: u64,
     used_percent: Option<i64>,
     has_request_snapshot: bool,
+    attributed_tokens: Option<u64>,
     categories: Vec<CategoryUsage>,
     saved_tokens: u64,
     sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
@@ -57,173 +80,182 @@ fn dashboard_source_projection(
     source: &crate::legacy_core::elpis_context::ContinuitySource,
 ) -> crate::dashboard_server::DashboardSource {
     let name = if source.origin == "manual addition" {
-        source
-            .path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Custom source".to_string())
+        source.path.file_name()
     } else {
-        source.name.clone()
-    };
+        std::path::Path::new(&source.name).file_name()
+    }
+    .map(|name| name.to_string_lossy().into_owned())
+    .unwrap_or_else(|| "Custom source".to_string());
     crate::dashboard_server::DashboardSource {
         name,
-        category: match source.category {
-            ContinuitySourceCategory::Files => "files",
-            ContinuitySourceCategory::Memory => "memory",
-            ContinuitySourceCategory::Instructions => "instructions",
-        }
-        .to_string(),
+        category: LedgerSourceGroup::for_source(source)
+            .display_name()
+            .to_ascii_lowercase(),
         estimated_tokens: source.estimated_tokens,
         admitted: source.admitted,
-    }
-}
-
-fn dashboard_source_projections(
-    sources: &[crate::legacy_core::elpis_context::ContinuitySource],
-    manual_memory_path: Option<&std::path::Path>,
-) -> Vec<crate::dashboard_server::DashboardSource> {
-    sources
-        .iter()
-        .filter(|source| manual_memory_path != Some(source.path.as_path()))
-        .map(dashboard_source_projection)
-        .collect()
-}
-
-fn dashboard_manual_memory_projection(
-    phase: super::ManualMemoryPhase,
-    status: Option<&crate::legacy_core::elpis_context::ManualMemoryStatus>,
-    unavailable_reason: Option<crate::app_event::ManualMemoryUnavailableReason>,
-    pending_mutation: Option<crate::app_event::ManualMemoryMutation>,
-) -> crate::dashboard_server::DashboardManualMemory {
-    let mut projected = crate::dashboard_server::DashboardManualMemory::loading();
-
-    let apply_status =
-        |projected: &mut crate::dashboard_server::DashboardManualMemory,
-         status: &crate::legacy_core::elpis_context::ManualMemoryStatus| {
-            projected.state = Some(match status.state {
-                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing => {
-                    crate::dashboard_server::DashboardManualMemoryState::Missing
-                }
-                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::AvailableNotAdmitted => {
-                    crate::dashboard_server::DashboardManualMemoryState::AvailableNotAdmitted
-                }
-                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted => {
-                    crate::dashboard_server::DashboardManualMemoryState::Admitted
-                }
-            });
-            projected.request_chars_if_admitted = Some(status.request_chars_if_admitted);
-            projected.eligible_chars_now = Some(status.eligible_chars_now);
-            projected.limit_chars = Some(status.limit_chars);
-            projected.truncated = Some(status.truncated);
-        };
-
-    match phase {
-        super::ManualMemoryPhase::Loading => {
-            projected.admission_pending = matches!(
-                pending_mutation,
-                Some(crate::app_event::ManualMemoryMutation::Admission { .. })
-            );
-            projected
-        }
-        super::ManualMemoryPhase::Ready => {
-            let Some(status) = status else {
-                return projected;
-            };
-            projected.phase = crate::dashboard_server::DashboardManualMemoryPhase::Ready;
-            apply_status(&mut projected, status);
-            projected
-        }
-        super::ManualMemoryPhase::Creating => {
-            projected.phase = crate::dashboard_server::DashboardManualMemoryPhase::Creating;
-            if let Some(status) = status {
-                apply_status(&mut projected, status);
-            }
-            projected
-        }
-        super::ManualMemoryPhase::Unavailable => {
-            let Some(reason) = unavailable_reason else {
-                return projected;
-            };
-            projected.phase = crate::dashboard_server::DashboardManualMemoryPhase::Unavailable;
-            projected.unavailable_reason = Some(match reason {
-                crate::app_event::ManualMemoryUnavailableReason::AdmissionUnavailable => {
-                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::AdmissionUnavailable
-                }
-                crate::app_event::ManualMemoryUnavailableReason::MemoryUnreadable => {
-                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryUnreadable
-                }
-                crate::app_event::ManualMemoryUnavailableReason::InvalidUtf8 => {
-                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::InvalidUtf8
-                }
-                crate::app_event::ManualMemoryUnavailableReason::MemoryPathNotFile => {
-                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryPathNotFile
-                }
-                crate::app_event::ManualMemoryUnavailableReason::SourcesUnavailable => {
-                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::SourcesUnavailable
-                }
-                crate::app_event::ManualMemoryUnavailableReason::WorkerFailed => {
-                    crate::dashboard_server::DashboardManualMemoryUnavailableReason::WorkerFailed
-                }
-            });
-            projected
-        }
     }
 }
 
 #[derive(Debug)]
 struct ContextUsageHistoryCell {
     before_chart: Vec<Line<'static>>,
+    has_request_snapshot: bool,
     categories: Vec<CategoryUsage>,
     used: u64,
     window: u64,
     after_chart: Vec<Line<'static>>,
-    started_at: Instant,
-    animations_enabled: bool,
 }
 
 impl ContextUsageHistoryCell {
-    const ANIMATION_DURATION: Duration = Duration::from_millis(900);
-
-    fn animation_progress(&self) -> u64 {
-        if !self.animations_enabled {
-            return 1_000;
-        }
-        let elapsed = self.started_at.elapsed().as_millis() as u64;
-        (elapsed.saturating_mul(1_000) / Self::ANIMATION_DURATION.as_millis() as u64).min(1_000)
-    }
-
     fn rendered_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines = self.before_chart.clone();
-        lines.extend(build_category_bar_chart(
-            &self.categories,
-            self.used,
-            self.window,
-            self.animation_progress(),
-            width,
-        ));
+        if self.has_request_snapshot {
+            lines.extend(build_category_bar_chart(
+                &self.categories,
+                self.used,
+                self.window,
+                width,
+            ));
+        } else {
+            lines.push(" Context measurement unavailable.".dim().into());
+        }
         lines.extend(self.after_chart.clone());
         lines
     }
 }
 
-fn instruction_bucket_bytes(
-    sources: &[crate::legacy_core::elpis_context::ContinuitySource],
-) -> (usize, usize) {
-    sources
+/// Convert the latest core-built request snapshot into the one category list
+/// shared by `/context`, the dashboard, and the persistent Context Ledger.
+pub(super) fn run_built_context_categories(
+    attribution: &codex_app_server_protocol::ThreadContextAttribution,
+) -> Vec<CategoryUsage> {
+    let mut categories = vec![
+        CategoryUsage {
+            label: "User messages",
+            tokens: attribution.user_messages,
+            color: USER_MESSAGES_COLOR,
+        },
+        CategoryUsage {
+            label: "Agent messages",
+            tokens: attribution.agent_messages,
+            color: AGENT_RESPONSES_COLOR,
+        },
+        CategoryUsage {
+            label: "Reasoning",
+            tokens: attribution.reasoning,
+            color: REASONING_COLOR,
+        },
+        CategoryUsage {
+            label: "Tool calls",
+            tokens: attribution.tool_calls,
+            color: TOOL_CALLS_COLOR,
+        },
+        CategoryUsage {
+            label: "Tool results",
+            tokens: attribution.tool_results,
+            color: TOOL_RESULTS_COLOR,
+        },
+        CategoryUsage {
+            label: "System instructions",
+            tokens: attribution.system_instructions,
+            color: SYSTEM_INSTRUCTIONS_COLOR,
+        },
+        CategoryUsage {
+            label: "Developer messages",
+            tokens: attribution.developer_messages,
+            color: DEVELOPER_MESSAGES_COLOR,
+        },
+        CategoryUsage {
+            label: "Tool definitions + schema",
+            tokens: attribution
+                .tool_definitions
+                .saturating_add(attribution.output_schema),
+            color: TOOL_DEFINITIONS_COLOR,
+        },
+        CategoryUsage {
+            label: "Unrecognized request items",
+            tokens: attribution.unrecognized_items,
+            color: UNRECOGNIZED_ITEMS_COLOR,
+        },
+    ];
+    categories.retain(|category| category.tokens > 0);
+    debug_assert_eq!(
+        categories
+            .iter()
+            .map(|category| category.tokens)
+            .sum::<u64>(),
+        attribution.estimated_total,
+        "run-built categories must sum to the unpadded request estimate",
+    );
+    categories
+}
+
+/// Preserve the locally estimated category proportions while making their total
+/// equal the measured active-context total. Largest-remainder allocation keeps the
+/// result deterministic and prevents a fabricated catch-all gap.
+pub(super) fn reconcile_context_categories(
+    categories: &[CategoryUsage],
+    measured_total: u64,
+) -> Vec<CategoryUsage> {
+    let estimated_total = categories
         .iter()
-        .filter(|source| {
-            source.category == ContinuitySourceCategory::Instructions && source.admitted
+        .map(|category| u128::from(category.tokens))
+        .sum::<u128>();
+    if estimated_total == 0 || measured_total == 0 {
+        return Vec::new();
+    }
+    if estimated_total == u128::from(measured_total) {
+        return categories.to_vec();
+    }
+
+    let mut remainders = Vec::with_capacity(categories.len());
+    let mut reconciled = categories
+        .iter()
+        .enumerate()
+        .map(|(index, category)| {
+            let scaled = u128::from(category.tokens) * u128::from(measured_total);
+            remainders.push((index, scaled % estimated_total));
+            let mut category = category.clone();
+            category.tokens = (scaled / estimated_total) as u64;
+            category
         })
-        .fold((0, 0), |(system_prompt, development_rules), source| {
-            if matches!(
-                source.origin,
-                "managed development rules" | "configured development rules"
-            ) {
-                (system_prompt, development_rules + source.bytes as usize)
-            } else {
-                (system_prompt + source.bytes as usize, development_rules)
-            }
-        })
+        .collect::<Vec<_>>();
+    let allocated = reconciled
+        .iter()
+        .map(|category| category.tokens)
+        .sum::<u64>();
+    let remaining = measured_total.saturating_sub(allocated);
+    remainders.sort_by(|(left_index, left), (right_index, right)| {
+        right.cmp(left).then_with(|| left_index.cmp(right_index))
+    });
+    for (index, _) in remainders.into_iter().take(remaining as usize) {
+        reconciled[index].tokens += 1;
+    }
+    reconciled.retain(|category| category.tokens > 0);
+    debug_assert_eq!(
+        reconciled
+            .iter()
+            .map(|category| category.tokens)
+            .sum::<u64>(),
+        measured_total,
+    );
+    reconciled
+}
+
+fn dashboard_css_color(color: Color) -> String {
+    match color {
+        USER_MESSAGES_COLOR => "#6fb5fd",
+        AGENT_RESPONSES_COLOR => "#039b2c",
+        REASONING_COLOR => "#03dae5",
+        TOOL_CALLS_COLOR => "#a2810b",
+        TOOL_RESULTS_COLOR => "#fcb24f",
+        SYSTEM_INSTRUCTIONS_COLOR => "#f0445d",
+        DEVELOPER_MESSAGES_COLOR => "#ef8cff",
+        TOOL_DEFINITIONS_COLOR => "#919191",
+        UNRECOGNIZED_ITEMS_COLOR => "#a6fc18",
+        _ => "#655f59",
+    }
+    .to_string()
 }
 
 impl HistoryCell for ContextUsageHistoryCell {
@@ -232,25 +264,147 @@ impl HistoryCell for ContextUsageHistoryCell {
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        let mut lines = self.before_chart.clone();
-        lines.extend(build_category_bar_chart(
-            &self.categories,
-            self.used,
-            self.window,
-            1_000,
-            100,
-        ));
-        lines.extend(self.after_chart.clone());
-        lines
+        self.rendered_lines(100)
     }
 
-    fn transcript_animation_tick(&self) -> Option<u64> {
-        (self.animations_enabled && self.started_at.elapsed() < Self::ANIMATION_DURATION)
-            .then(|| (self.started_at.elapsed().as_millis() / 60) as u64)
+    fn display_hyperlink_lines(
+        &self,
+        width: u16,
+    ) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
+        crate::terminal_hyperlinks::annotate_terminal_urls(self.rendered_lines(width))
+    }
+
+    fn transcript_hyperlink_lines(
+        &self,
+        width: u16,
+    ) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
+        self.display_hyperlink_lines(width)
     }
 }
 
+fn strict_smart_prune_path(
+    codex_home: &std::path::Path,
+    audit_path: &str,
+    leaf_kind: &str,
+    append_manifest: bool,
+) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+
+    let relative = std::path::Path::new(audit_path);
+    let mut components = relative.components();
+    let valid = matches!(components.next(), Some(Component::Normal(part)) if part == "smart-prune")
+        && matches!(components.next(), Some(Component::Normal(part)) if part == leaf_kind)
+        && matches!(components.next(), Some(Component::Normal(leaf)) if !leaf.is_empty())
+        && components.next().is_none();
+    if !valid {
+        return None;
+    }
+    let mut path = codex_home.join("logs").join(relative);
+    if append_manifest {
+        path.push("manifest.json");
+    } else if path.extension().is_none_or(|extension| extension != "json") {
+        return None;
+    }
+    path.is_file().then_some(path)
+}
+
+pub(super) fn smart_prune_attempt_evidence_path(
+    codex_home: &std::path::Path,
+    audit_path: &str,
+) -> Option<std::path::PathBuf> {
+    strict_smart_prune_path(codex_home, audit_path, "attempts", false)
+}
+
+fn smart_prune_admission_manifest_path(
+    codex_home: &std::path::Path,
+    audit_path: &str,
+) -> Option<std::path::PathBuf> {
+    strict_smart_prune_path(codex_home, audit_path, "admissions", true)
+}
+
+fn evidence_url_line(
+    label: &'static str,
+    root: &std::path::Path,
+    path: &std::path::Path,
+) -> Option<Line<'static>> {
+    let destination = crate::dashboard_server::evidence_url(root, label, path)?;
+    Some(Line::from(vec![
+        Span::styled(
+            format!("   {label} · "),
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(destination, Style::default().fg(Color::Cyan).underlined()),
+    ]))
+}
+
 impl ChatWidget {
+    fn local_evidence_paths(
+        &self,
+        rollout_path: Option<&std::path::Path>,
+    ) -> Vec<(&'static str, std::path::PathBuf)> {
+        let mut paths = Vec::new();
+        if let Some(path) = rollout_path.filter(|path| path.is_file()) {
+            paths.push(("Rollout", path.to_path_buf()));
+        }
+        if let Some(path) = self
+            .smart_prune
+            .latest_attempt
+            .as_ref()
+            .and_then(|attempt| attempt.audit_path.as_deref())
+            .and_then(|path| smart_prune_attempt_evidence_path(&self.config.codex_home, path))
+        {
+            paths.push(("Smart Prune attempt", path));
+        }
+        if let Some(path) = self.smart_prune.latest.as_ref().and_then(|admission| {
+            smart_prune_admission_manifest_path(
+                &self.config.codex_home,
+                admission.audit_path.as_str(),
+            )
+        }) {
+            let ace = path.with_file_name("ace.json");
+            paths.push(("Smart Prune admission", path));
+            if ace.is_file() {
+                paths.push(("Optimizer conversation", ace));
+            }
+        }
+        paths
+    }
+
+    pub(super) fn local_evidence_lines(
+        &self,
+        rollout_path: Option<&std::path::Path>,
+    ) -> Vec<Line<'static>> {
+        let evidence: Vec<_> = self
+            .local_evidence_paths(rollout_path)
+            .iter()
+            .filter_map(|(label, path)| evidence_url_line(label, &self.config.codex_home, path))
+            .collect();
+        if evidence.is_empty() {
+            return Vec::new();
+        }
+        let mut lines = vec![
+            Span::styled(
+                " Local evidence · Ctrl+click to open",
+                crate::style::brand_style(),
+            )
+            .into(),
+        ];
+        lines.extend(evidence);
+        lines
+    }
+
+    pub(crate) fn set_context_usage_transcript_totals(
+        &mut self,
+        totals: ContextUsageTranscriptTotals,
+    ) {
+        self.context_usage_transcript_totals = totals;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn context_usage_transcript_totals_for_test(&self) -> ContextUsageTranscriptTotals {
+        self.context_usage_transcript_totals
+    }
+
     pub(super) fn begin_context_prune_tracking(&mut self) {
         self.context_prune_report_pending = true;
     }
@@ -280,31 +434,32 @@ impl ChatWidget {
         changed
     }
 
+    pub(super) fn update_smart_prune_savings(
+        &mut self,
+        saved_tokens: u64,
+        from_replay: bool,
+    ) -> bool {
+        let previous = self.last_smart_prune_saved_tokens;
+        let high_watermark = previous.map_or(saved_tokens, |total| total.max(saved_tokens));
+        let changed = previous != Some(high_watermark);
+        let newly_saved = previous.map_or(0, |total| saved_tokens.saturating_sub(total));
+        self.last_smart_prune_saved_tokens = Some(high_watermark);
+        if !from_replay && let Some(line) = smart_prune_saved_context_flash_line(newly_saved) {
+            self.bottom_pane.show_saved_context_flash(line);
+        }
+        changed
+    }
+
     fn context_usage_snapshot(
         &self,
         totals: &ContextUsageTranscriptTotals,
     ) -> ContextUsageSnapshot {
         let sources = self.continuity_sources();
-        // Only admitted instruction sources count. Their stable provenance, not a
-        // directory-name guess, determines which attribution bucket receives them.
-        let (system_prompt_chars, development_rule_chars) = instruction_bucket_bytes(&sources);
-
-        let estimate =
-            |chars: usize| codex_utils_string::approx_tokens_from_byte_count(chars) as u64;
-        // System prompt and Development rules are fixed on-disk costs sent as-is with each
-        // request — they must NEVER be scaled up to absorb unexplained usage
-        // (that is what previously inflated Development rules to nonsense figures).
-        let fixed_system = estimate(system_prompt_chars);
-        let fixed_development_rules = estimate(development_rule_chars);
-        let conversation_estimates: [u64; 3] = [
-            estimate(totals.user_message_chars),
-            estimate(totals.agent_response_chars),
-            estimate(totals.tool_call_chars),
-        ];
         // The one measured number: current context occupancy (not the
         // session-cumulative total, which can exceed the window). Before a provider
         // response exists, the core emits the same pre-request snapshot used for
-        // pruning and the hard-limit check; zero means no snapshot exists yet.
+        // pruning and the hard-limit check. A missing snapshot differs from zero
+        // measured usage, and above-capacity usage must remain visible in text.
         let default_usage = crate::token_usage::TokenUsage::default();
         let last_usage = self
             .token_info
@@ -319,79 +474,28 @@ impl ChatWidget {
         let used_tokens = self
             .token_info
             .as_ref()
-            .map(|_| last_usage.tokens_in_context_window().max(0) as u64)
-            .map(|used| used.min(window));
-        let used = used_tokens.unwrap_or(0);
-        let raw_categories = [
-            conversation_estimates[0],
-            conversation_estimates[1],
-            conversation_estimates[2],
-            fixed_system,
-            fixed_development_rules,
-        ];
-        let category_tokens = scale_token_counts(&raw_categories, used);
-        let conversation = [category_tokens[0], category_tokens[1], category_tokens[2]];
-        let fixed_system = category_tokens[3];
-        let fixed_development_rules = category_tokens[4];
-        let other = used.saturating_sub(category_tokens.iter().sum());
+            .map(|_| last_usage.tokens_in_context_window().max(0) as u64);
         let saved_tokens = self.last_prune_saved_tokens.unwrap_or(0);
-
-        let mut categories = vec![
-            CategoryUsage {
-                label: "User messages",
-                tokens: conversation[0],
-                saved_tokens: 0,
-                color: Color::Blue,
-            },
-            CategoryUsage {
-                label: "Agent responses",
-                tokens: conversation[1],
-                saved_tokens: 0,
-                color: Color::Green,
-            },
-            CategoryUsage {
-                label: "Tool calls",
-                tokens: conversation[2],
-                saved_tokens,
-                color: Color::Yellow,
-            },
-            CategoryUsage {
-                label: "System prompt",
-                tokens: fixed_system,
-                saved_tokens: 0,
-                color: Color::Magenta,
-            },
-            CategoryUsage {
-                label: "Development rules",
-                tokens: fixed_development_rules,
-                saved_tokens: 0,
-                color: Color::Cyan,
-            },
-        ];
-        if other > 0 {
-            categories.push(CategoryUsage {
-                label: "Other (overhead)",
-                tokens: other,
-                saved_tokens: 0,
-                color: Color::DarkGray,
-            });
-        }
-        let used_percent = has_request_snapshot
-            .then(|| self.status_line_context_used_percent())
-            .flatten();
+        let categories = self
+            .context_attribution
+            .as_ref()
+            .zip(used_tokens)
+            .map(|(attribution, used)| {
+                reconcile_context_categories(&run_built_context_categories(attribution), used)
+            })
+            .unwrap_or_default();
+        let attributed_tokens = self.context_attribution.as_ref().and(used_tokens);
+        let used_percent = used_tokens.map(|used| context_used_percent(used, window));
         let (native_compaction_count, latest_native_compaction) =
             crate::branding::compaction_evidence();
 
         ContextUsageSnapshot {
-            model: self
-                .config
-                .model
-                .clone()
-                .unwrap_or_else(|| "model".to_string()),
+            model: self.model_display_name().to_string(),
             used_tokens,
             window_tokens: window,
             used_percent,
             has_request_snapshot,
+            attributed_tokens,
             categories,
             saved_tokens,
             sources,
@@ -406,19 +510,10 @@ impl ChatWidget {
     /// the same numbers `/context` already computes and merges semantic changes.
     pub(crate) fn publish_dashboard_snapshot(&self, totals: &ContextUsageTranscriptTotals) {
         let snapshot = self.context_usage_snapshot(totals);
-        let to_css_color = |color: Color| -> String {
-            match color {
-                Color::Blue => "#3b82f6",
-                Color::Green => "#22c55e",
-                Color::Yellow => "#eab308",
-                Color::Magenta => "#d946ef",
-                Color::Cyan => "#06b6d4",
-                Color::DarkGray => "#6b635a",
-                _ => "#6b635a",
-            }
-            .to_string()
-        };
-
+        crate::dashboard_server::publish_evidence(
+            &self.config.codex_home,
+            self.local_evidence_paths(snapshot.rollout_path.as_deref()),
+        );
         let categories = snapshot.has_request_snapshot.then(|| {
             snapshot
                 .categories
@@ -426,28 +521,26 @@ impl ChatWidget {
                 .map(|category| crate::dashboard_server::DashboardCategory {
                     label: category.label.to_string(),
                     tokens: category.tokens,
-                    color: to_css_color(category.color),
+                    color: dashboard_css_color(category.color),
                 })
                 .collect()
         });
 
-        let manual_memory_path = self
-            .manual_memory_bound_target()
-            .map(|target| target.view.memory_path.as_path());
-        let sources = dashboard_source_projections(&snapshot.sources, manual_memory_path);
-        let manual_memory = Some(dashboard_manual_memory_projection(
-            self.manual_memory_phase(),
-            self.manual_memory_status(),
-            self.manual_memory_unavailable_reason(),
-            self.manual_memory_pending_mutation(),
-        ));
+        let sources = snapshot
+            .sources
+            .iter()
+            .map(dashboard_source_projection)
+            .collect();
 
-        let to_totals = |usage: &crate::token_usage::TokenUsage| crate::dashboard_server::DashboardTokenTotals {
-            input: usage.input_tokens,
-            cached_input: usage.cached_input_tokens,
-            output: usage.output_tokens,
-            reasoning_output: usage.reasoning_output_tokens,
-            total: usage.total_tokens,
+        let to_totals = |usage: &crate::token_usage::TokenUsage| {
+            crate::dashboard_server::DashboardTokenTotals {
+                input: usage.input_tokens,
+                cached_input: usage.cached_input_tokens,
+                cache_write: usage.cache_write_tokens,
+                output: usage.output_tokens,
+                reasoning_output: usage.reasoning_output_tokens,
+                total: usage.total_tokens,
+            }
         };
         let session_total = self
             .token_info
@@ -457,12 +550,75 @@ impl ChatWidget {
             .token_info
             .as_ref()
             .map(|info| to_totals(&info.last_token_usage));
-        let automatic_pruning_enabled = Some(
-            self.config
+        let smart_prune_latest = self.smart_prune.latest.as_ref().map(|latest| {
+            crate::dashboard_server::DashboardSmartPruneLatest {
+                examined_outputs: latest.examined_outputs,
+                admitted_outputs: latest.admitted_outputs,
+                approx_source_tokens: latest.approx_source_tokens,
+                approx_admitted_tokens: latest.approx_admitted_tokens,
+                approx_saved_tokens: latest.approx_saved_tokens,
+                request_linkage_verified: latest.request_linkage_verified,
+                response_usage: latest.response_usage.as_ref().map(|usage| {
+                    to_totals(&crate::token_usage::TokenUsage {
+                        input_tokens: usage.input_tokens,
+                        cached_input_tokens: usage.cached_input_tokens,
+                        cache_write_tokens: usage.cache_write_tokens,
+                        output_tokens: usage.output_tokens,
+                        reasoning_output_tokens: usage.reasoning_output_tokens,
+                        total_tokens: usage.total_tokens,
+                    })
+                }),
+                response_linkage_verified: latest.response_linkage_verified,
+            }
+        });
+        let smart_prune_latest_attempt = self.smart_prune.latest_attempt.as_ref().map(|attempt| {
+            crate::dashboard_server::DashboardSmartPruneAttempt {
+                status: attempt.status.clone(),
+                model: attempt.model_slug.clone(),
+                reasoning_effort: attempt.reasoning_effort.clone(),
+                candidate_outputs: attempt.candidate_outputs,
+                admitted_outputs: attempt.admitted_outputs,
+                approx_saved_tokens: attempt.approx_saved_tokens,
+                latency_ms: attempt.latency_ms,
+                usage: attempt.usage.as_ref().map(|usage| {
+                    crate::dashboard_server::DashboardTokenTotals {
+                        input: usage.input_tokens,
+                        cached_input: usage.cached_input_tokens,
+                        cache_write: usage.cache_write_tokens,
+                        output: usage.output_tokens,
+                        reasoning_output: usage.reasoning_output_tokens,
+                        total: usage.total_tokens,
+                    }
+                }),
+            }
+        });
+        let smart_prune = crate::dashboard_server::DashboardSmartPrune {
+            configured_enabled: self
+                .config
                 .features
                 .enabled(Feature::AutomaticContextPruning),
-        );
-        let activity = self.dashboard_activity_state(automatic_pruning_enabled);
+            current_thread_next_turn_enabled: self.current_thread_smart_prune_enabled(),
+            examined_outputs: self.smart_prune.examined_outputs,
+            admitted_outputs: self.smart_prune.admitted_outputs,
+            unchanged_outputs: self.smart_prune.unchanged_outputs,
+            failed_batches: self.smart_prune.failed_batches,
+            approx_source_tokens: self.smart_prune.approx_source_tokens,
+            approx_admitted_tokens: self.smart_prune.approx_admitted_tokens,
+            approx_saved_tokens: self.smart_prune.approx_saved_tokens,
+            optimizer_requests: self.smart_prune.optimizer_requests,
+            optimizer_usage_reports: self.smart_prune.optimizer_usage_reports,
+            optimizer_usage: crate::dashboard_server::DashboardTokenTotals {
+                input: self.smart_prune.optimizer_usage.input_tokens,
+                cached_input: self.smart_prune.optimizer_usage.cached_input_tokens,
+                cache_write: self.smart_prune.optimizer_usage.cache_write_tokens,
+                output: self.smart_prune.optimizer_usage.output_tokens,
+                reasoning_output: self.smart_prune.optimizer_usage.reasoning_output_tokens,
+                total: self.smart_prune.optimizer_usage.total_tokens,
+            },
+            optimizer_latency_ms: self.smart_prune.optimizer_latency_ms,
+            latest: smart_prune_latest,
+            latest_attempt: smart_prune_latest_attempt,
+        };
 
         crate::dashboard_server::publish_state(
             crate::dashboard_server::DashboardContext {
@@ -470,17 +626,18 @@ impl ChatWidget {
                 used_tokens: snapshot.used_tokens,
                 window_tokens: snapshot.window_tokens,
                 used_percent: snapshot.used_percent,
+                attributed_tokens: snapshot.attributed_tokens,
                 categories,
                 saved_tokens: snapshot.saved_tokens,
                 sources,
                 backtrack_points: snapshot.backtrack_points,
-                manual_memory,
             },
             crate::dashboard_server::DashboardTokens {
                 session_total,
                 last_turn,
             },
-            activity,
+            self.dashboard_activity_state(),
+            smart_prune,
         );
     }
 
@@ -490,93 +647,105 @@ impl ChatWidget {
         let window = snapshot.window_tokens;
         let categories = snapshot.categories.clone();
         let saved_tokens = snapshot.saved_tokens;
-        let free = window.saturating_sub(used);
-
-        // Right-hand legend, one entry per grid row.
         let model = snapshot.model.clone();
-        let mut legend: Vec<Line<'static>> = Vec::new();
-        // Same formula the status line uses, so /context and the "% left" indicator
-        // can never disagree.
-        let used_percent = snapshot.used_percent.unwrap_or(0);
-        legend.push(
-            format!(
-                "{model} · {}/{} tokens ({used_percent}% used)",
-                fmt_tokens(used),
-                fmt_tokens(window),
+        let before_chart = vec![
+            Span::styled(
+                " Context Usage · active context",
+                crate::style::brand_style(),
             )
-            .bold()
             .into(),
-        );
-        legend.push("Token usage by category".bold().into());
-        for category in &categories {
-            legend.push(Line::from(vec![
-                Span::styled("● ", Style::default().fg(category.color)),
-                Span::from(format!(
-                    "{}: {} tokens ({})",
-                    category.label,
-                    fmt_tokens(category.tokens),
-                    fmt_percent(category.tokens, window),
-                )),
-            ]));
-        }
-        legend.push(Line::from(vec![
-            Span::from("□ ").dim(),
-            Span::from(format!(
-                "Free space: {} ({}% left)",
-                fmt_tokens(free),
-                100 - used_percent,
-            ))
-            .dim(),
-        ]));
-        if saved_tokens > 0 {
-            legend.push(Line::from(vec![
-                Span::styled("✨ ", Style::default().fg(Color::Green)),
-                Span::styled(
-                    format!(
-                        "Saved Context: ~{} tokens reclaimed",
-                        fmt_tokens(saved_tokens)
-                    ),
-                    Style::default().fg(Color::Green).bold(),
-                ),
-                Span::styled(" (Ace Pass ⚡)", Style::default().fg(Color::Cyan)),
-            ]));
-        }
-        if !snapshot.has_request_snapshot {
-            legend.push("(no measured request snapshot yet)".dim().into());
-        }
-
-        let mut before_chart: Vec<Line<'static>> = Vec::new();
-        before_chart.push(" Context Usage".bold().into());
-        before_chart.extend(build_grid_with_legend(&categories, used, window, legend));
-        before_chart.push(Line::default());
+            format!(" {model} · one full-window scale").bold().into(),
+            if snapshot.attributed_tokens.is_some() {
+                " Measured total · estimated category attribution from the latest built request"
+                    .dim()
+                    .into()
+            } else if snapshot.has_request_snapshot {
+                " Measured total available · category attribution unavailable"
+                    .dim()
+                    .into()
+            } else {
+                " No request snapshot yet · send a provider request to measure context"
+                    .dim()
+                    .into()
+            },
+            Line::default(),
+        ];
 
         let mut after_chart = vec![Line::default()];
-        after_chart.push(" Ace Pruning Audit & Low-level Breakdown".bold().into());
+        after_chart.push(Span::styled(" Smart Prune Audit", crate::style::brand_style()).into());
+        if !self.smart_prune_synced {
+            after_chart.push(
+                "   status unavailable · syncing with current thread state"
+                    .dim()
+                    .into(),
+            );
+        } else {
+            let admitted = self.smart_prune.admitted_outputs;
+            let examined = self.smart_prune.examined_outputs;
+            let failed = self.smart_prune.failed_batches;
+            let state = if self.smart_prune.enabled {
+                "ON"
+            } else {
+                "OFF"
+            };
+            let mut summary = format!(
+                "   Smart Prune {state} · {admitted} admitted / {examined} examined · {failed} failed batches"
+            );
+            if admitted > 0 && self.smart_prune.approx_saved_tokens > 0 {
+                summary.push_str(&format!(
+                    " · ≈{} tokens estimated one-time source reduction",
+                    fmt_tokens(self.smart_prune.approx_saved_tokens)
+                ));
+            }
+            after_chart.push(summary.into());
+            if self.smart_prune.optimizer_requests > self.smart_prune.optimizer_usage_reports {
+                after_chart.push("   optimizer usage unreported".dim().into());
+            } else if self.smart_prune.optimizer_usage_reports > 0 {
+                after_chart.push(
+                    format!(
+                        "   optimizer usage · ~{} tokens",
+                        fmt_tokens(self.smart_prune.optimizer_usage.total_tokens.max(0) as u64)
+                    )
+                    .dim()
+                    .into(),
+                );
+            }
+        }
+        after_chart.push(Line::default());
+
+        after_chart
+            .push(Span::styled(" History Rewrite Audit", crate::style::brand_style()).into());
         if self.last_prune_saved_tokens.is_none() {
-            after_chart.push(no_prune_totals_line());
+            after_chart.push("   No history rewrites recorded this thread".dim().into());
         } else {
             after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
                 Span::styled(
-                    "latest pass applied",
+                    "cumulative thread history",
                     Style::default().fg(Color::Cyan).bold(),
                 ),
                 Span::from(" · "),
                 Span::styled(
-                    format!("~{} tokens saved", fmt_tokens(saved_tokens)),
+                    format!("~{} tokens removed earlier", fmt_tokens(saved_tokens)),
                     Style::default().fg(Color::Green).bold(),
                 ),
                 Span::styled(" ⚡", Style::default().fg(Color::Yellow)),
             ]));
             after_chart.push(
-                "   Ace only rewrites completed tool-call evidence; the 0-saved rows were not touched."
+                "   History rewrites replace completed tool-result history; category estimates exclude saved totals."
                     .dim()
                     .into(),
             );
         }
         after_chart.push(Line::default());
 
-        after_chart.push(" Checkpoints · Esc Esc to backtrack".bold().into());
+        after_chart.push(
+            Span::styled(
+                " Checkpoints · Esc Esc to backtrack",
+                crate::style::brand_style(),
+            )
+            .into(),
+        );
         if snapshot.backtrack_points == 0 {
             after_chart.push(
                 "   No backtrack points yet — send a message first."
@@ -593,24 +762,22 @@ impl ChatWidget {
                 .into(),
             );
         }
+        let evidence_lines = self.local_evidence_lines(snapshot.rollout_path.as_deref());
+        if !evidence_lines.is_empty() {
+            after_chart.push(Line::default());
+            after_chart.extend(evidence_lines);
+        }
         let cell = ContextUsageHistoryCell {
             before_chart,
+            has_request_snapshot: snapshot.has_request_snapshot,
             categories,
             used,
             window,
             after_chart,
-            started_at: Instant::now(),
-            animations_enabled: self.config.animations,
         };
         self.flush_active_cell();
         self.transcript.active_cell = Some(Box::new(cell));
         self.bump_active_cell_revision();
-        if self.config.animations {
-            for tick in 1..=15 {
-                self.bottom_pane
-                    .request_redraw_in(Duration::from_millis(60 * tick));
-            }
-        }
         self.request_redraw();
     }
 }
@@ -621,7 +788,12 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     let mut lines = Vec::new();
 
     match (snapshot.used_tokens, snapshot.used_percent) {
-        (Some(used), Some(used_percent)) => {
+        (Some(used), Some(_)) => {
+            let used_percent = fmt_percent(used, snapshot.window_tokens);
+            let free_percent = fmt_percent(
+                snapshot.window_tokens.saturating_sub(used),
+                snapshot.window_tokens,
+            );
             lines.push(Line::from(vec![
                 Span::from(" "),
                 snapshot.model.clone().bold(),
@@ -633,17 +805,12 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 )
                 .cyan()
                 .bold(),
-                format!(
-                    " · {used_percent}% used · {}% free",
-                    100_i64.saturating_sub(used_percent)
-                )
-                .dim(),
+                format!(" · {used_percent} used · {free_percent} free").dim(),
             ]));
             lines.extend(build_category_bar_chart(
                 &snapshot.categories,
                 used,
                 snapshot.window_tokens,
-                1_000,
                 width,
             ));
         }
@@ -654,40 +821,30 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 " · context occupancy not recorded yet".dim(),
             ]));
             lines.push(
-                "   Send the first provider request to establish a measured snapshot."
+                "   Send the first provider request to establish an occupancy snapshot."
                     .dim()
                     .into(),
             );
         }
     }
-    lines.push(if narrow {
-        "   Estimates by category/source · headline is measured."
-            .dim()
-            .into()
-    } else {
-        "   Category and source sizes are attribution estimates; the occupancy above is measured."
-            .dim()
-            .into()
-    });
-
     lines.push(Line::default());
     lines.push(" Context Ledger".bold().into());
     if snapshot.sources.is_empty() {
         lines.push("   No continuity sources discovered.".dim().into());
     } else {
-        for category in ContinuitySourceCategory::ALL {
+        for group in LedgerSourceGroup::ALL {
             let sources = snapshot
                 .sources
                 .iter()
-                .filter(|source| source.category == category);
+                .filter(|source| LedgerSourceGroup::for_source(source) == group);
             if !snapshot
                 .sources
                 .iter()
-                .any(|source| source.category == category)
+                .any(|source| LedgerSourceGroup::for_source(source) == group)
             {
                 continue;
             }
-            lines.push(format!("   {}", category.display_name()).bold().into());
+            lines.push(format!("   {}", group.display_name()).bold().into());
             for source in sources {
                 let (marker, state, style) = if source.admitted {
                     ("●", "admitted", Style::default().fg(Color::LightGreen))
@@ -728,7 +885,10 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     lines.push(Line::default());
     lines.push(" Continuity evidence".bold().into());
     let pruning = if snapshot.saved_tokens > 0 {
-        format!("~{} reclaimed", fmt_tokens(snapshot.saved_tokens))
+        format!(
+            "~{} removed earlier in history",
+            fmt_tokens(snapshot.saved_tokens)
+        )
     } else {
         "none recorded".to_string()
     };
@@ -767,8 +927,13 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     }
     if let Some(latest) = &snapshot.latest_native_compaction {
         if narrow {
-            lines
-                .push(format!("   Latest process compaction: {} · {}", latest.reason, latest.count).into());
+            lines.push(
+                format!(
+                    "   Latest process compaction: {} · {}",
+                    latest.reason, latest.count
+                )
+                .into(),
+            );
             lines.push(format!("     evidence {}", latest.evidence).dim().into());
         } else {
             lines.push(
@@ -805,213 +970,168 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     lines
 }
 
-/// Scale attribution estimates down when they exceed the measured request
-/// context. If the estimates are smaller, keep them raw and let the caller show
-/// the unassigned remainder as an explicit overhead bucket.
-fn scale_token_counts(values: &[u64], target: u64) -> Vec<u64> {
-    let source_total = values.iter().copied().sum::<u64>();
-    if source_total == 0 || target >= source_total {
-        return values.to_vec();
-    }
-
-    let mut scaled = values
-        .iter()
-        .map(|value| ((*value as u128 * target as u128) / source_total as u128) as u64)
-        .collect::<Vec<_>>();
-    let assigned = scaled.iter().copied().sum::<u64>();
-    let remainder = target.saturating_sub(assigned);
-    if remainder > 0 {
-        if let Some(value) = scaled.iter_mut().rev().find(|value| **value > 0) {
-            *value = value.saturating_add(remainder);
-        } else if let Some(value) = scaled.last_mut() {
-            *value = remainder;
-        }
-    }
-    scaled
-}
-
 fn build_category_bar_chart(
     categories: &[CategoryUsage],
     used: u64,
     window: u64,
-    savings_progress: u64,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let bar_width = 24usize;
     let narrow = width < 80;
+    // Spend the available terminal width on the only chart. A 24-cell bar made
+    // low-occupancy contexts collapse to one or two visible category colours.
+    // The cap keeps wide terminals readable while preserving enough resolution
+    // for small-but-material request categories.
+    let bar_width = usize::from(width)
+        .saturating_sub(if narrow { 13 } else { 20 })
+        .max(1)
+        .min(96);
     let mut lines = Vec::new();
     lines.push(Line::from(
-        " Category Breakdown · retained █  reclaimed ✨".bold(),
+        " Context Accounting · history savings excluded".bold(),
     ));
-
-    let overall_cells = if window > 0 {
-        (((used * bar_width as u64) / window) as usize).min(bar_width)
+    let categories = reconcile_context_categories(categories, used);
+    let used_cells = ((u128::from(used.min(window)) * bar_width as u128
+        + u128::from(window.max(1)) / 2)
+        / u128::from(window.max(1))) as usize;
+    let counts = category_grid_cell_counts(&categories, used_cells);
+    let mut bar = vec![Span::from(if narrow {
+        "   Context ["
     } else {
-        0
-    };
-    let filled_overall = "█".repeat(overall_cells);
-    let empty_overall = "░".repeat(bar_width - overall_cells);
-    if narrow {
-        lines.push(Line::from(format!(
-            "   Overall · {}/{} · {} used",
-            fmt_tokens(used),
-            fmt_tokens(window),
-            fmt_percent(used, window)
-        )));
-        lines.push(Line::from(vec![
-            Span::from("   "),
-            Span::styled(
-                format!("[{filled_overall}{empty_overall}]"),
-                Style::default().fg(Color::Cyan),
-            ),
-        ]));
+        "   Context Window ["
+    })];
+    if categories.is_empty() && used_cells > 0 {
+        bar.push(Span::styled(
+            "█".repeat(used_cells),
+            Style::default().fg(Color::DarkGray),
+        ));
     } else {
-        lines.push(Line::from(vec![
-            Span::from("   Overall Capacity "),
-            Span::styled(
-                format!("[{filled_overall}{empty_overall}] "),
-                Style::default().fg(Color::Cyan),
-            ),
-            Span::from(format!(
-                "{}/{} tokens ({} used)",
-                fmt_tokens(used),
-                fmt_tokens(window),
-                fmt_percent(used, window)
-            )),
-        ]));
-    }
-
-    let largest_before = categories
-        .iter()
-        .map(|category| category.tokens.saturating_add(category.saved_tokens))
-        .max()
-        .unwrap_or(0)
-        .max(1);
-    let progress = savings_progress.min(1_000);
-    for category in categories {
-        let before = category.tokens.saturating_add(category.saved_tokens);
-        let retained_cells = ((category.tokens * bar_width as u64) / largest_before) as usize;
-        let final_saved_cells =
-            ((category.saved_tokens * bar_width as u64) / largest_before) as usize;
-        let saved_cells = final_saved_cells * progress as usize / 1_000;
-        let empty_cells = bar_width.saturating_sub(retained_cells + saved_cells);
-        let animated_saved = category.saved_tokens.saturating_mul(progress) / 1_000;
-        let saved_percent = if before > 0 {
-            fmt_percent(category.saved_tokens, before)
-        } else {
-            "0.0%".to_string()
-        };
-        let sparkle = if progress / 80 % 2 == 0 { "✨" } else { "  " };
-        let bar = vec![
-            Span::from(if narrow { "   [" } else { "[" }),
-            Span::styled(
-                "█".repeat(retained_cells),
-                Style::default().fg(category.color),
-            ),
-            Span::styled(
-                "▓".repeat(saved_cells),
-                Style::default().fg(Color::LightGreen).bold(),
-            ),
-            Span::from("░".repeat(empty_cells)).dim(),
-            Span::from("]"),
-        ];
-        if narrow {
-            lines.push(Line::from(vec![
-                Span::from(format!("   {} · ", category.label)),
-                Span::from(format!(
-                    "{} → {}",
-                    fmt_tokens(before),
-                    fmt_tokens(category.tokens)
-                )),
-                if category.saved_tokens > 0 {
-                    Span::styled(
-                        format!(
-                            " · {sparkle} ~{} saved ({saved_percent})",
-                            fmt_tokens(animated_saved)
-                        ),
-                        Style::default().fg(Color::LightGreen).bold(),
-                    )
-                } else {
-                    Span::from(" · 0 saved").dim()
-                },
-            ]));
-            lines.push(Line::from(bar));
-        } else {
-            let mut spans = vec![Span::from(format!("   {:16} ", category.label))];
-            spans.extend(bar);
-            spans.push(Span::from(" "));
-            spans.push(Span::from(format!(
-                "{} → {}",
-                fmt_tokens(before),
-                fmt_tokens(category.tokens)
-            )));
-            spans.push(if category.saved_tokens > 0 {
-                Span::styled(
-                    format!(
-                        "  {sparkle} ~{} saved ({saved_percent})",
-                        fmt_tokens(animated_saved)
-                    ),
-                    Style::default().fg(Color::LightGreen).bold(),
-                )
-            } else {
-                Span::from("  · 0 saved").dim()
-            });
-            lines.push(Line::from(spans));
+        for (category, cells) in categories.iter().zip(counts) {
+            if cells > 0 {
+                bar.push(Span::styled(
+                    "█".repeat(cells),
+                    Style::default().fg(category.color),
+                ));
+            }
         }
     }
+    if used_cells < bar_width {
+        bar.push(Span::styled(
+            "░".repeat(bar_width - used_cells),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+    bar.push(Span::from("]"));
+    lines.push(Line::from(bar));
+    lines.push(Line::from(format!(
+        "   {}/{} · {} used",
+        fmt_tokens(used),
+        fmt_tokens(window),
+        fmt_percent(used, window)
+    )));
+
+    for category in &categories {
+        if narrow {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("   {} ", category.marker()),
+                    Style::default().fg(category.color),
+                ),
+                Span::from(format!(
+                    "{} · {} · {} of window",
+                    category.label,
+                    fmt_tokens(category.tokens),
+                    fmt_percent(category.tokens, window),
+                )),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("   {} ", category.marker()),
+                    Style::default().fg(category.color),
+                ),
+                Span::from(format!("{:<27}", category.label)),
+                Span::from(format!(
+                    "{} · {} of context window",
+                    fmt_tokens(category.tokens),
+                    fmt_percent(category.tokens, window),
+                )),
+            ]));
+        }
+    }
+    lines.push(if categories.is_empty() {
+        "   Category attribution unavailable; neutral fill is measured context."
+            .dim()
+            .into()
+    } else if narrow {
+        "   Estimated segments · measured total.".dim().into()
+    } else {
+        "   Segment proportions are estimated from the latest built request; total width is measured active context."
+            .dim()
+            .into()
+    });
     lines
 }
 
-/// Grid rows on the left, legend lines to the right of each row — the legend never
-/// changes how many cells are filled, only their colors.
-fn build_grid_with_legend(
-    categories: &[CategoryUsage],
-    used: u64,
-    window: u64,
-    legend: Vec<Line<'static>>,
-) -> Vec<Line<'static>> {
-    let used_cells = ((used.min(window) as usize) * GRID_CELLS) / window.max(1) as usize;
-    let used_total: u64 = categories.iter().map(|c| c.tokens).sum();
+fn category_grid_cell_counts(categories: &[CategoryUsage], used_cells: usize) -> Vec<usize> {
+    weighted_cell_counts(
+        &categories
+            .iter()
+            .map(|category| category.tokens)
+            .collect::<Vec<_>>(),
+        used_cells,
+    )
+}
 
-    let mut cells: Vec<Option<Color>> = Vec::with_capacity(GRID_CELLS);
-    if used_total > 0 {
-        let mut remaining = used_cells;
-        for (index, category) in categories.iter().enumerate() {
-            let share = if index + 1 == categories.len() {
-                remaining
-            } else {
-                (((category.tokens as usize) * used_cells) / used_total as usize).min(remaining)
+pub(super) fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<usize> {
+    let total = weights
+        .iter()
+        .map(|tokens| u128::from(*tokens))
+        .sum::<u128>();
+    if total == 0 || used_cells == 0 {
+        return vec![0; weights.len()];
+    }
+
+    let mut remainders = Vec::with_capacity(weights.len());
+    let mut counts = weights
+        .iter()
+        .enumerate()
+        .map(|(index, tokens)| {
+            let scaled = u128::from(*tokens) * used_cells as u128;
+            remainders.push((index, scaled % total));
+            (scaled / total) as usize
+        })
+        .collect::<Vec<_>>();
+    let remaining = used_cells.saturating_sub(counts.iter().sum());
+    remainders.sort_by(|(left_index, left), (right_index, right)| {
+        right.cmp(left).then_with(|| left_index.cmp(right_index))
+    });
+    for (index, _) in remainders.into_iter().take(remaining) {
+        counts[index] += 1;
+    }
+
+    let positive_count = weights.iter().filter(|tokens| **tokens > 0).count();
+    if used_cells >= positive_count {
+        for recipient in weights
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tokens)| (*tokens > 0 && counts[index] == 0).then_some(index))
+            .collect::<Vec<_>>()
+        {
+            let Some(donor) = counts
+                .iter()
+                .enumerate()
+                .filter(|(_, cells)| **cells > 1)
+                .max_by_key(|(index, cells)| (**cells, weights[*index]))
+                .map(|(index, _)| index)
+            else {
+                break;
             };
-            cells.extend(std::iter::repeat_n(Some(category.color), share));
-            remaining -= share;
+            counts[donor] -= 1;
+            counts[recipient] = 1;
         }
     }
-    cells.resize(used_cells, None);
-    cells.resize(GRID_CELLS, None);
-
-    let mut legend_iter = legend.into_iter();
-    let mut lines: Vec<Line<'static>> = cells
-        .chunks(GRID_COLUMNS)
-        .map(|row| {
-            let mut spans: Vec<Span<'static>> = vec![Span::from(" ")];
-            spans.extend(row.iter().map(|slot| match slot {
-                Some(color) => Span::styled("● ", Style::default().fg(*color)),
-                None => Span::from("□ ").dim(),
-            }));
-            if let Some(legend_line) = legend_iter.next() {
-                spans.push(Span::from("  "));
-                spans.extend(legend_line.spans);
-            }
-            Line::from(spans)
-        })
-        .collect();
-    // More legend entries than grid rows: continue below, aligned with the legend column.
-    for legend_line in legend_iter {
-        let mut spans: Vec<Span<'static>> = vec![Span::from(" ".repeat(1 + GRID_COLUMNS * 2 + 2))];
-        spans.extend(legend_line.spans);
-        lines.push(Line::from(spans));
-    }
-    lines
+    debug_assert_eq!(counts.iter().sum::<usize>(), used_cells);
+    counts
 }
 
 pub(super) fn saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static>> {
@@ -1029,8 +1149,23 @@ pub(super) fn saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static
     })
 }
 
+fn smart_prune_saved_context_flash_line(saved_tokens: u64) -> Option<Line<'static>> {
+    (saved_tokens > 0).then(|| {
+        Line::from(vec![
+            Span::styled("✂ ", Style::default().fg(Color::LightGreen)),
+            Span::styled(
+                format!(
+                    "Smart Prune saved ~{} tokens · snip!",
+                    fmt_tokens(saved_tokens)
+                ),
+                Style::default().fg(Color::LightGreen).bold(),
+            ),
+        ])
+    })
+}
+
 fn no_prune_totals_line() -> Line<'static> {
-    "   No Ace pruning totals recorded yet".dim().into()
+    "   No history pruning recorded this thread".dim().into()
 }
 
 fn newly_reclaimed_tokens(previous_total: Option<u64>, current_total: u64) -> u64 {
@@ -1050,231 +1185,67 @@ fn fmt_tokens(tokens: u64) -> String {
 }
 
 fn fmt_percent(tokens: u64, window: u64) -> String {
-    let tenths = tokens.saturating_mul(1000) / window.max(1);
+    let window = u128::from(window.max(1));
+    let tenths = (u128::from(tokens) * 1000 + window / 2) / window;
     format!("{}.{}%", tenths / 10, tenths % 10)
+}
+
+pub(super) fn context_used_percent(tokens: u64, window: u64) -> i64 {
+    let window = u128::from(window.max(1));
+    let percent = (u128::from(tokens) * 100 + window / 2) / window;
+    i64::try_from(percent).unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn manual_memory_dashboard_source_projection_filters_only_the_canonical_path() {
-        let canonical_path = "/home/private-user/.elpis/memories/MEMORY.md";
-        let custom_memory_path = "/home/private-user/.elpis/memories/secret-plan.md";
-        let custom_file_path = "/home/private-user/context/research.md";
-        let sources = vec![
-            crate::legacy_core::elpis_context::ContinuitySource {
-                name: "PLANTED_MEMORY_BODY".to_string(),
-                path: std::path::PathBuf::from(canonical_path),
-                bytes: 8_000,
-                estimated_tokens: 2_000,
-                category: ContinuitySourceCategory::Memory,
-                origin: "Elpis durable memory",
-                lifetime: "every turn",
-                reason: "durable memory",
-                admitted: true,
-                selectable: true,
-            },
-            crate::legacy_core::elpis_context::ContinuitySource {
-                name: custom_memory_path.to_string(),
-                path: std::path::PathBuf::from(custom_memory_path),
-                bytes: 128,
-                estimated_tokens: 32,
-                category: ContinuitySourceCategory::Memory,
-                origin: "manual addition",
-                lifetime: "every turn",
-                reason: "manually added file",
-                admitted: true,
-                selectable: true,
-            },
-            crate::legacy_core::elpis_context::ContinuitySource {
-                name: custom_file_path.to_string(),
-                path: std::path::PathBuf::from(custom_file_path),
-                bytes: 64,
-                estimated_tokens: 16,
-                category: ContinuitySourceCategory::Files,
-                origin: "manual addition",
-                lifetime: "every turn",
-                reason: "manually added file",
-                admitted: false,
-                selectable: true,
-            },
-        ];
-
-        let projected = dashboard_source_projections(
-            &sources,
-            Some(std::path::Path::new(canonical_path)),
-        );
-        let serialized = serde_json::to_string(&projected).expect("serialize projections");
-
-        assert_eq!(projected.len(), 2);
-        assert_eq!(projected[0].name, "secret-plan.md");
-        assert_eq!(projected[0].category, "memory");
-        assert_eq!(projected[1].name, "research.md");
-        assert_eq!(projected[1].category, "files");
-        for forbidden in [
-            canonical_path,
-            custom_memory_path,
-            custom_file_path,
-            "/home/private-user",
-            "PLANTED_MEMORY_BODY",
-        ] {
-            assert!(!serialized.contains(forbidden), "leaked {forbidden}");
-        }
-    }
-
-    fn manual_status(
-        state: crate::legacy_core::elpis_context::ManualMemoryAdmissionState,
-        request_chars_if_admitted: usize,
-        eligible_chars_now: usize,
-        truncated: bool,
-    ) -> crate::legacy_core::elpis_context::ManualMemoryStatus {
-        crate::legacy_core::elpis_context::ManualMemoryStatus {
-            bytes: 128,
-            state,
-            request_chars_if_admitted,
-            eligible_chars_now,
-            limit_chars: 8_000,
-            truncated,
-        }
-    }
-
-    #[test]
-    fn manual_memory_dashboard_projection_preserves_cached_phase_truth() {
-        let admitted = manual_status(
-            crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Admitted,
-            8_000,
-            8_000,
-            true,
-        );
-        let ready = dashboard_manual_memory_projection(
-            crate::chatwidget::ManualMemoryPhase::Ready,
-            Some(&admitted),
-            None,
-            None,
-        );
-        assert_eq!(
-            ready,
-            crate::dashboard_server::DashboardManualMemory {
-                phase: crate::dashboard_server::DashboardManualMemoryPhase::Ready,
-                state: Some(crate::dashboard_server::DashboardManualMemoryState::Admitted),
-                request_chars_if_admitted: Some(8_000),
-                eligible_chars_now: Some(8_000),
-                limit_chars: Some(8_000),
-                truncated: Some(true),
-                unavailable_reason: None,
-                admission_pending: false,
-            }
-        );
-
-        let ready_ignores_stale_pending_admission = dashboard_manual_memory_projection(
-            crate::chatwidget::ManualMemoryPhase::Ready,
-            Some(&admitted),
-            None,
-            Some(crate::app_event::ManualMemoryMutation::Admission { admitted: false }),
-        );
-        assert!(!ready_ignores_stale_pending_admission.admission_pending);
-
-        let loading = dashboard_manual_memory_projection(
-            crate::chatwidget::ManualMemoryPhase::Loading,
-            Some(&admitted),
-            Some(crate::app_event::ManualMemoryUnavailableReason::MemoryUnreadable),
-            Some(crate::app_event::ManualMemoryMutation::Admission { admitted: false }),
-        );
-        assert_eq!(
-            loading,
-            crate::dashboard_server::DashboardManualMemory {
-                admission_pending: true,
-                ..crate::dashboard_server::DashboardManualMemory::loading()
-            }
-        );
-
-        let creating = dashboard_manual_memory_projection(
-            crate::chatwidget::ManualMemoryPhase::Creating,
-            Some(&manual_status(
-                crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing,
-                0,
-                0,
-                false,
-            )),
-            None,
-            Some(crate::app_event::ManualMemoryMutation::Create),
-        );
-        assert_eq!(
-            creating.phase,
-            crate::dashboard_server::DashboardManualMemoryPhase::Creating
-        );
-        assert_eq!(
-            creating.state,
-            Some(crate::dashboard_server::DashboardManualMemoryState::Missing)
-        );
-        assert_eq!(creating.eligible_chars_now, Some(0));
-        assert!(!creating.admission_pending);
-
-        let unbound_loading = dashboard_manual_memory_projection(
-            crate::chatwidget::ManualMemoryPhase::Loading,
-            None,
-            None,
-            None,
-        );
-        assert_eq!(
-            unbound_loading,
-            crate::dashboard_server::DashboardManualMemory::loading()
-        );
-    }
-
-    #[test]
-    fn manual_memory_dashboard_projection_maps_all_sanitized_unavailable_reasons() {
-        for (reason, expected) in [
-            (
-                crate::app_event::ManualMemoryUnavailableReason::AdmissionUnavailable,
-                crate::dashboard_server::DashboardManualMemoryUnavailableReason::AdmissionUnavailable,
-            ),
-            (
-                crate::app_event::ManualMemoryUnavailableReason::MemoryUnreadable,
-                crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryUnreadable,
-            ),
-            (
-                crate::app_event::ManualMemoryUnavailableReason::InvalidUtf8,
-                crate::dashboard_server::DashboardManualMemoryUnavailableReason::InvalidUtf8,
-            ),
-            (
-                crate::app_event::ManualMemoryUnavailableReason::MemoryPathNotFile,
-                crate::dashboard_server::DashboardManualMemoryUnavailableReason::MemoryPathNotFile,
-            ),
-            (
-                crate::app_event::ManualMemoryUnavailableReason::SourcesUnavailable,
-                crate::dashboard_server::DashboardManualMemoryUnavailableReason::SourcesUnavailable,
-            ),
-            (
-                crate::app_event::ManualMemoryUnavailableReason::WorkerFailed,
-                crate::dashboard_server::DashboardManualMemoryUnavailableReason::WorkerFailed,
-            ),
-        ] {
-            let projected = dashboard_manual_memory_projection(
-                crate::chatwidget::ManualMemoryPhase::Unavailable,
-                None,
-                Some(reason),
-                Some(crate::app_event::ManualMemoryMutation::Admission { admitted: true }),
-            );
-            assert_eq!(
-                projected,
-                crate::dashboard_server::DashboardManualMemory {
-                    phase: crate::dashboard_server::DashboardManualMemoryPhase::Unavailable,
-                    unavailable_reason: Some(expected),
-                    ..crate::dashboard_server::DashboardManualMemory::loading()
-                }
-            );
-        }
-    }
-
-    fn filled_cells(lines: &[Line<'static>]) -> usize {
-        lines
+    fn evidence_links_use_readable_http_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("attempt.json");
+        std::fs::write(
+            &path,
+            r#"{"status":"admitted","input":"EVIDENCE_ACCESS_MARKER"}"#,
+        )
+        .unwrap();
+        let line = super::evidence_url_line("Smart Prune attempt", dir.path(), &path).unwrap();
+        let text = line
+            .spans
             .iter()
-            .flat_map(|line| line.spans.iter())
-            .filter(|span| span.content.contains('●'))
-            .count()
+            .map(|s| s.content.as_ref())
+            .collect::<String>();
+        assert!(
+            text.contains("http://127.0.0.1:"),
+            "evidence must open through HTTP: {text}"
+        );
+        assert!(!text.contains("file://"));
+    }
+
+    use super::*;
+    use crate::legacy_core::elpis_context::ContinuitySourceCategory;
+
+    #[test]
+    fn manual_memory_dashboard_source_projection_does_not_serialize_custom_absolute_paths() {
+        let absolute_path = "/home/private-user/context/secret-plan.md";
+        let source = crate::legacy_core::elpis_context::ContinuitySource {
+            name: absolute_path.to_string(),
+            path: std::path::PathBuf::from(absolute_path),
+            bytes: 128,
+            estimated_tokens: 32,
+            category: ContinuitySourceCategory::Files,
+            origin: "manual addition",
+            lifetime: "every turn",
+            reason: "manually added file",
+            admitted: true,
+            selectable: true,
+        };
+
+        let projected = dashboard_source_projection(&source);
+        let serialized = serde_json::to_string(&projected).expect("serialize dashboard source");
+
+        assert_eq!(projected.name, "secret-plan.md");
+        assert_eq!(projected.category, "user files");
+        assert!(!serialized.contains(absolute_path));
+        assert!(!serialized.contains("/home/private-user"));
     }
 
     fn plain_text(lines: Vec<Line<'static>>) -> String {
@@ -1291,28 +1262,163 @@ mod tests {
     }
 
     #[test]
-    fn grid_fill_tracks_used_share_of_window() {
+    fn single_category_bar_fill_tracks_used_share_of_window() {
         let categories = vec![CategoryUsage {
             label: "User messages",
             tokens: 500,
-            saved_tokens: 0,
             color: Color::Blue,
         }];
-        let lines = build_grid_with_legend(&categories, 500, 1_000, Vec::new());
-        assert_eq!(lines.len(), GRID_ROWS);
-        assert_eq!(filled_cells(&lines), GRID_CELLS / 2);
+        let lines = build_category_bar_chart(&categories, 500, 1_000, 100);
+        let text = plain_text(lines);
+
+        assert_eq!(text.matches('[').count(), 1);
+        assert_eq!(text.matches('█').count(), 40);
+        assert_eq!(text.matches('░').count(), 40);
     }
 
     #[test]
-    fn grid_never_exceeds_window_even_with_huge_categories() {
-        let categories = vec![CategoryUsage {
-            label: "Tool calls",
-            tokens: 10_000_000,
+    fn overfull_context_preserves_raw_counts_and_caps_only_the_bar() {
+        let categories = vec![
+            CategoryUsage {
+                label: "User messages",
+                tokens: 100_000,
+                color: USER_MESSAGES_COLOR,
+            },
+            CategoryUsage {
+                label: "Agent messages",
+                tokens: 110_000,
+                color: AGENT_RESPONSES_COLOR,
+            },
+        ];
+        let text = plain_text(build_category_bar_chart(&categories, 210_000, 200_000, 100));
+
+        assert!(text.contains("210k/200k · 105.0% used"), "{text}");
+        assert!(text.contains("100k · 50.0% of context window"), "{text}");
+        assert!(text.contains("110k · 55.0% of context window"), "{text}");
+        assert_eq!(text.matches('█').count(), 80);
+        assert_eq!(text.matches('░').count(), 0);
+        let snapshot = ContextUsageSnapshot {
+            model: "gpt-test".to_string(),
+            used_tokens: Some(210_000),
+            window_tokens: 200_000,
+            used_percent: Some(105),
+            has_request_snapshot: true,
+            attributed_tokens: Some(210_000),
+            categories,
             saved_tokens: 0,
-            color: Color::Yellow,
-        }];
-        let lines = build_grid_with_legend(&categories, 120, 1_000, Vec::new());
-        assert_eq!(filled_cells(&lines), (120 * GRID_CELLS) / 1_000);
+            sources: Vec::new(),
+            backtrack_points: 0,
+            native_compaction_count: 0,
+            latest_native_compaction: None,
+            rollout_path: None,
+        };
+        let dashboard = plain_text(render_dashboard_lines(&snapshot, 100));
+        assert!(dashboard.contains("105.0% used · 0.0% free"), "{dashboard}");
+    }
+
+    #[test]
+    fn context_percentages_handle_large_values_without_saturation_errors() {
+        let largest = i64::MAX as u64;
+        assert_eq!(fmt_percent(largest, largest), "100.0%");
+        assert_eq!(context_used_percent(largest, largest), 100);
+        assert_eq!(fmt_percent(210_000, 200_000), "105.0%");
+        assert_eq!(context_used_percent(210_000, 200_000), 105);
+        assert_eq!(fmt_percent(0, largest), "0.0%");
+        assert_eq!(context_used_percent(0, largest), 0);
+    }
+
+    #[test]
+    fn occupied_bar_keeps_nonzero_categories_visible_when_resolution_allows() {
+        let counts = weighted_cell_counts(&[1, 1, 1, 97], 10);
+
+        assert_eq!(counts.iter().sum::<usize>(), 10);
+        assert!(counts.into_iter().all(|count| count >= 1));
+    }
+
+    #[test]
+    fn run_built_categories_reconcile_to_measured_context_without_a_gap() {
+        let attribution = codex_app_server_protocol::ThreadContextAttribution {
+            user_messages: 100,
+            agent_messages: 200,
+            tool_calls: 300,
+            estimated_total: 600,
+            ..Default::default()
+        };
+
+        let categories =
+            reconcile_context_categories(&run_built_context_categories(&attribution), 10_000);
+
+        assert_eq!(
+            categories
+                .iter()
+                .map(|category| category.tokens)
+                .sum::<u64>(),
+            10_000,
+            "estimated categories must sum to measured active context",
+        );
+        assert_eq!(
+            categories
+                .iter()
+                .map(|category| category.tokens)
+                .collect::<Vec<_>>(),
+            vec![1_667, 3_333, 5_000],
+        );
+        assert!(
+            categories
+                .iter()
+                .all(|category| !category.label.contains("gap"))
+        );
+        assert!(reconcile_context_categories(&[], 10_000).is_empty());
+    }
+
+    #[test]
+    fn context_report_groups_manual_additions_as_user_files() {
+        let snapshot = ContextUsageSnapshot {
+            model: "gpt-test".to_string(),
+            used_tokens: None,
+            window_tokens: 200_000,
+            used_percent: None,
+            has_request_snapshot: false,
+            attributed_tokens: None,
+            categories: Vec::new(),
+            saved_tokens: 0,
+            sources: vec![
+                crate::legacy_core::elpis_context::ContinuitySource {
+                    name: "GOAL.md".to_string(),
+                    path: std::path::PathBuf::from("/workspace/GOAL.md"),
+                    bytes: 64,
+                    estimated_tokens: 16,
+                    category: ContinuitySourceCategory::Files,
+                    origin: "Elpis workspace state",
+                    lifetime: "every turn",
+                    reason: "active workspace goal",
+                    admitted: true,
+                    selectable: true,
+                },
+                crate::legacy_core::elpis_context::ContinuitySource {
+                    name: "/workspace/notes.md".to_string(),
+                    path: std::path::PathBuf::from("/workspace/notes.md"),
+                    bytes: 80,
+                    estimated_tokens: 20,
+                    category: ContinuitySourceCategory::Files,
+                    origin: "manual addition",
+                    lifetime: "every turn",
+                    reason: "manually added file",
+                    admitted: true,
+                    selectable: true,
+                },
+            ],
+            backtrack_points: 0,
+            native_compaction_count: 0,
+            latest_native_compaction: None,
+            rollout_path: None,
+        };
+
+        let text = plain_text(render_dashboard_lines(&snapshot, 100));
+        assert!(text.contains("SESSION CONTINUITY"));
+        assert!(text.contains("● admitted  GOAL.md"));
+        assert!(text.contains("USER FILES"));
+        assert!(text.contains("● admitted  /workspace/notes.md"));
     }
 
     #[test]
@@ -1321,38 +1427,112 @@ mod tests {
         assert_eq!(fmt_tokens(39_700), "39.7k");
         assert_eq!(fmt_tokens(1_000_000), "1m");
         assert_eq!(fmt_percent(305, 1_000), "30.5%");
+        assert_eq!(fmt_percent(11_300, 121_600), "9.3%");
+    }
+
+    fn rgb(color: Color) -> (u8, u8, u8) {
+        match color {
+            Color::Rgb(red, green, blue) => (red, green, blue),
+            other => panic!("expected explicit RGB colour, got {other:?}"),
+        }
+    }
+
+    fn colors_have_minimum_distance(colors: &[Color], minimum: f64) -> bool {
+        colors.iter().enumerate().all(|(index, left)| {
+            let (left_red, left_green, left_blue) = rgb(*left);
+            colors.iter().skip(index + 1).all(|right| {
+                let (right_red, right_green, right_blue) = rgb(*right);
+                let red = f64::from(left_red) - f64::from(right_red);
+                let green = f64::from(left_green) - f64::from(right_green);
+                let blue = f64::from(left_blue) - f64::from(right_blue);
+                red.hypot(green).hypot(blue) >= minimum
+            })
+        })
+    }
+
+    fn relative_luminance(color: Color) -> f64 {
+        let linear = |channel: u8| {
+            let channel = f64::from(channel) / 255.0;
+            if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let (red, green, blue) = rgb(color);
+        0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    }
+
+    fn contrast_ratio(left: Color, right: Color) -> f64 {
+        let left = relative_luminance(left);
+        let right = relative_luminance(right);
+        let (lighter, darker) = if left >= right {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        (lighter + 0.05) / (darker + 0.05)
     }
 
     #[test]
-    fn instruction_attribution_uses_origin_not_path_components() {
-        let sources = [
-            crate::legacy_core::elpis_context::ContinuitySource {
-                name: "dev/AGENTS.md".to_string(),
-                path: std::path::PathBuf::from("/tmp/dev-rules/AGENTS.md"),
-                bytes: 480,
-                estimated_tokens: 120,
-                category: ContinuitySourceCategory::Instructions,
-                origin: "configured development rules",
-                lifetime: "every turn",
-                reason: "configured development rules",
-                admitted: true,
-                selectable: true,
-            },
-            crate::legacy_core::elpis_context::ContinuitySource {
-                name: "Project AGENTS.md".to_string(),
-                path: std::path::PathBuf::from("/tmp/project/skills/AGENTS.md"),
-                bytes: 320,
-                estimated_tokens: 80,
-                category: ContinuitySourceCategory::Instructions,
-                origin: "runtime instructions",
-                lifetime: "every turn",
-                reason: "applicable project rules",
-                admitted: true,
-                selectable: true,
-            },
+    fn context_category_palette_uses_distinct_high_contrast_hues() {
+        const MINIMUM_RGB_DISTANCE: f64 = 100.0;
+        const MINIMUM_CONTRAST: f64 = 4.5;
+        let terminal_colors = [
+            USER_MESSAGES_COLOR,
+            AGENT_RESPONSES_COLOR,
+            REASONING_COLOR,
+            TOOL_CALLS_COLOR,
+            TOOL_RESULTS_COLOR,
+            SYSTEM_INSTRUCTIONS_COLOR,
+            DEVELOPER_MESSAGES_COLOR,
+            TOOL_DEFINITIONS_COLOR,
+            UNRECOGNIZED_ITEMS_COLOR,
         ];
+        let terminal_background = Color::Rgb(30, 30, 30);
 
-        assert_eq!(instruction_bucket_bytes(&sources), (320, 480));
+        assert!(colors_have_minimum_distance(
+            &terminal_colors,
+            MINIMUM_RGB_DISTANCE
+        ));
+        assert!(
+            terminal_colors
+                .iter()
+                .all(|color| contrast_ratio(*color, terminal_background) >= MINIMUM_CONTRAST)
+        );
+        for (index, pair) in terminal_colors.windows(2).enumerate() {
+            let left = relative_luminance(pair[0]);
+            let right = relative_luminance(pair[1]);
+            assert!(
+                if index % 2 == 0 {
+                    left - right >= 0.10
+                } else {
+                    right - left >= 0.10
+                },
+                "category {index} and {} do not alternate light/dark: {left:.3} vs {right:.3}",
+                index + 1,
+            );
+        }
+
+        let near_duplicate = [Color::Rgb(95, 135, 255), Color::Rgb(96, 136, 255)];
+        assert!(!colors_have_minimum_distance(
+            &near_duplicate,
+            MINIMUM_RGB_DISTANCE
+        ));
+        assert!(contrast_ratio(Color::Rgb(36, 36, 36), terminal_background) < MINIMUM_CONTRAST);
+    }
+
+    #[test]
+    fn dashboard_preserves_category_hues() {
+        assert_eq!(dashboard_css_color(USER_MESSAGES_COLOR), "#6fb5fd");
+        assert_eq!(dashboard_css_color(AGENT_RESPONSES_COLOR), "#039b2c");
+        assert_eq!(dashboard_css_color(REASONING_COLOR), "#03dae5");
+        assert_eq!(dashboard_css_color(TOOL_CALLS_COLOR), "#a2810b");
+        assert_eq!(dashboard_css_color(TOOL_RESULTS_COLOR), "#fcb24f");
+        assert_eq!(dashboard_css_color(SYSTEM_INSTRUCTIONS_COLOR), "#f0445d");
+        assert_eq!(dashboard_css_color(DEVELOPER_MESSAGES_COLOR), "#ef8cff");
+        assert_eq!(dashboard_css_color(TOOL_DEFINITIONS_COLOR), "#919191");
+        assert_eq!(dashboard_css_color(UNRECOGNIZED_ITEMS_COLOR), "#a6fc18");
     }
 
     #[test]
@@ -1375,6 +1555,16 @@ mod tests {
     }
 
     #[test]
+    fn smart_prune_flash_is_plain_and_specific() {
+        let line = smart_prune_saved_context_flash_line(3_300).expect("Smart Prune flash");
+        assert_eq!(
+            plain_text(vec![line]),
+            "✂ Smart Prune saved ~3.3k tokens · snip!"
+        );
+        assert!(smart_prune_saved_context_flash_line(0).is_none());
+    }
+
+    #[test]
     fn no_prune_totals_copy_is_neutral_about_automatic_triggering() {
         let text = no_prune_totals_line()
             .spans
@@ -1382,64 +1572,47 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert_eq!(text, "   No Ace pruning totals recorded yet");
+        assert_eq!(text, "   No history pruning recorded this thread");
         assert!(!text.contains("trigger"));
         assert!(!text.contains("automatic"));
     }
 
     #[test]
-    fn category_attribution_matches_measured_context() {
-        let scaled = scale_token_counts(&[70, 30, 10], 25);
-        assert_eq!(scaled.iter().copied().sum::<u64>(), 25);
-        assert!(
-            scaled
-                .iter()
-                .zip([70, 30, 10])
-                .all(|(actual, raw)| *actual <= raw)
-        );
-    }
-
-    #[test]
-    fn category_chart_attributes_and_reveals_saved_tokens() {
+    fn category_chart_excludes_history_savings_and_disclaims_estimate() {
         let categories = vec![
             CategoryUsage {
                 label: "User messages",
                 tokens: 20_000,
-                saved_tokens: 0,
                 color: Color::Blue,
             },
             CategoryUsage {
                 label: "Tool calls",
                 tokens: 24_100,
-                saved_tokens: 60_400,
                 color: Color::Yellow,
             },
         ];
 
-        let initial = build_category_bar_chart(&categories, 44_100, 258_400, 0, 100);
-        let complete = build_category_bar_chart(&categories, 44_100, 258_400, 1_000, 100);
-        let text = complete
+        let lines = build_category_bar_chart(&categories, 44_100, 258_400, 100);
+        let text = lines
             .iter()
             .flat_map(|line| line.spans.iter())
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert!(text.contains("84.5k → 24.1k"));
-        assert!(text.contains("~60.4k saved (71.4%)"));
+        assert!(text.contains("24.1k"));
+        assert!(text.contains("Context Accounting"));
+        assert!(text.contains("history savings excluded"));
+        assert!(!text.contains("current context only"));
+        assert!(!text.contains("removed earlier"));
+        assert!(!text.contains('→'));
         assert_eq!(
-            initial
-                .iter()
-                .flat_map(|line| line.spans.iter())
-                .filter(|span| span.content.contains('▓'))
-                .count(),
-            0
+            text.matches('[').count(),
+            1,
+            "context accounting must render exactly one capacity bar",
         );
-        assert!(
-            complete
-                .iter()
-                .flat_map(|line| line.spans.iter())
-                .any(|span| span.content.contains('▓'))
-        );
+        assert!(!text.contains("Active Occupancy"));
+        assert!(!text.contains("Request Composition"));
+        assert!(text.contains("9.3% of context window"));
     }
 
     #[test]
@@ -1450,10 +1623,10 @@ mod tests {
             window_tokens: 200_000,
             used_percent: Some(21),
             has_request_snapshot: true,
+            attributed_tokens: Some(12_000),
             categories: vec![CategoryUsage {
-                label: "Tool calls",
+                label: "Tool results",
                 tokens: 12_000,
-                saved_tokens: 6_000,
                 color: Color::Yellow,
             }],
             saved_tokens: 6_000,
@@ -1489,7 +1662,7 @@ mod tests {
         assert!(text.contains("GOAL.md"));
         assert!(text.contains("/workspace/GOAL.md"));
         assert!(text.contains("≈256 tokens"));
-        assert!(text.contains("6k reclaimed"));
+        assert!(text.contains("6k removed earlier in history"));
         assert!(text.contains("1 recorded"));
         assert!(text.contains("thread:t/turn:u"));
         assert!(text.contains("/tmp/rollout.jsonl"));
@@ -1502,11 +1675,12 @@ mod tests {
         );
 
         insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 100)), @r"
-gpt-test · 42k / 200k tokens · 21% used · 79% free
-Category Breakdown · retained █  reclaimed ✨
-  Overall Capacity [█████░░░░░░░░░░░░░░░░░░░] 42k/200k tokens (21.0% used)
-  Tool calls       [████████████████▓▓▓▓▓▓▓▓] 18k → 12k  ✨ ~6k saved (33.3%)
-  Category and source sizes are attribution estimates; the occupancy above is measured.
+gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
+Context Accounting · history savings excluded
+  Context Window [█████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
+  42k/200k · 21.0% used
+  ● Tool results               42k · 21.0% of context window
+  Segment proportions are estimated from the latest built request; total width is measured active context.
 
 Context Ledger
   SESSION CONTINUITY
@@ -1515,7 +1689,7 @@ Context Ledger
       the active objective · until goal completion
 
 Continuity evidence
-  Pruning ~6k reclaimed  ·  Native compaction (process) 1 recorded  ·  Backtrack 2 available
+  Pruning ~6k removed earlier in history  ·  Native compaction (process) 1 recorded  ·  Backtrack 2 available
   Pruning checkpoint count: not recorded in the current UI snapshot.
   Latest process compaction: context compaction · 1 · evidence thread:t/turn:u
   Rollout /tmp/rollout.jsonl
@@ -1523,13 +1697,12 @@ Continuity evidence
 Context accounting only · no task-quality, cost, or causal claims.
 ");
         insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 60)), @r"
-gpt-test · 42k / 200k tokens · 21% used · 79% free
-Category Breakdown · retained █  reclaimed ✨
-  Overall · 42k/200k · 21.0% used
-  [█████░░░░░░░░░░░░░░░░░░░]
-  Tool calls · 18k → 12k · ✨ ~6k saved (33.3%)
-  [████████████████▓▓▓▓▓▓▓▓]
-  Estimates by category/source · headline is measured.
+gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
+Context Accounting · history savings excluded
+  Context [██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
+  42k/200k · 21.0% used
+  ● Tool results · 42k · 21.0% of window
+  Estimated segments · measured total.
 
 Context Ledger
   SESSION CONTINUITY
@@ -1539,7 +1712,7 @@ Context Ledger
       the active objective · until goal completion
 
 Continuity evidence
-  Pruning ~6k reclaimed
+  Pruning ~6k removed earlier in history
   Native compaction (process) 1 recorded
   Backtrack 2 available
   Pruning checkpoint count unavailable in this UI snapshot.
@@ -1559,10 +1732,10 @@ Accounting only · no quality, cost, or causal claims.
             window_tokens: 200_000,
             used_percent: Some(21),
             has_request_snapshot: true,
+            attributed_tokens: Some(12_000),
             categories: vec![CategoryUsage {
                 label: "Tool calls",
                 tokens: 12_000,
-                saved_tokens: 6_000,
                 color: Color::Yellow,
             }],
             saved_tokens: 6_000,
@@ -1604,10 +1777,10 @@ Accounting only · no quality, cost, or causal claims.
             window_tokens: 200_000,
             used_percent: Some(21),
             has_request_snapshot: true,
+            attributed_tokens: Some(12_000),
             categories: vec![CategoryUsage {
                 label: "Tool calls",
                 tokens: 12_000,
-                saved_tokens: 6_000,
                 color: Color::Yellow,
             }],
             saved_tokens: 6_000,
@@ -1643,6 +1816,7 @@ Accounting only · no quality, cost, or causal claims.
             window_tokens: 200_000,
             used_percent: None,
             has_request_snapshot: false,
+            attributed_tokens: None,
             categories: Vec::new(),
             saved_tokens: 0,
             sources: Vec::new(),

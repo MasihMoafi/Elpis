@@ -44,7 +44,7 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
         .as_table()
         .and_then(|config| config.get("skills"))
     {
-        Some(skills_value) => match SkillsConfig::try_from(skills_value.clone()) {
+        Some(skills_value) => match TryInto::<SkillsConfig>::try_into(skills_value.clone()) {
             Ok(skills) => skills.default_enabled.unwrap_or(true),
             Err(err) => {
                 warn!("invalid effective skills config: {err}");

@@ -189,12 +189,10 @@ fn skills_for_cwd(
 }
 
 fn skills_toggle_items(mut core_skills: Vec<(bool, SkillMetadata)>) -> Vec<SkillsToggleItem> {
-    let colliding_names = crate::skills_helpers::skill_name_collisions(
-        core_skills.iter().map(|(_, skill)| skill),
-    );
-    core_skills.sort_by_key(|(enabled, skill)| {
-        (!*enabled, skill_display_name(skill, &colliding_names))
-    });
+    let colliding_names =
+        crate::skills_helpers::skill_name_collisions(core_skills.iter().map(|(_, skill)| skill));
+    core_skills
+        .sort_by_key(|(enabled, skill)| (!*enabled, skill_display_name(skill, &colliding_names)));
 
     core_skills
         .into_iter()
@@ -559,10 +557,19 @@ mod tests {
     #[test]
     fn management_items_sort_enabled_before_available_by_display_name_with_origins() {
         let items = skills_toggle_items(vec![
-            (false, core_skill("zulu", "Zulu candidate", SkillScope::System)),
+            (
+                false,
+                core_skill("zulu", "Zulu candidate", SkillScope::System),
+            ),
             (true, core_skill("beta", "Beta enabled", SkillScope::User)),
-            (false, core_skill("alpha", "Alpha candidate", SkillScope::Admin)),
-            (true, core_skill("alpha-enabled", "Alpha enabled", SkillScope::Repo)),
+            (
+                false,
+                core_skill("alpha", "Alpha candidate", SkillScope::Admin),
+            ),
+            (
+                true,
+                core_skill("alpha-enabled", "Alpha enabled", SkillScope::Repo),
+            ),
         ]);
 
         assert_eq!(

@@ -331,8 +331,6 @@ impl ChatWidget {
             };
         let selected_effort = effective_mode.reasoning_effort();
 
-        self.maybe_apply_ide_context(&mut items);
-
         let collaboration_mode = if self.collaboration_modes_enabled() {
             self.active_collaboration_mask.as_ref().map(|_| {
                 effective_mode.with_updates(

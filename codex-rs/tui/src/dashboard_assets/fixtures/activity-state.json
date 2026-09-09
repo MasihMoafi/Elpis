@@ -1,83 +1,108 @@
 {
   "state": {
     "schema_version": 1,
-    "revision": 12,
-    "generated_at": 1800000009000,
+    "revision": 9,
+    "generated_at": 1770000000000,
     "context": {
-      "model": "gpt-safe",
-      "used_tokens": 20200,
+      "model": "gpt-5.6-sol",
+      "used_tokens": 103300,
       "window_tokens": 258400,
-      "used_percent": 8,
+      "used_percent": 40,
+      "attributed_tokens": 103300,
       "categories": [
         {
-          "label": "Conversation",
-          "tokens": 19000,
-          "color": "#3b82f6"
+          "label": "User messages",
+          "tokens": 161,
+          "color": "#6fb5fd"
         },
         {
-          "label": "Instructions",
-          "tokens": 1200,
-          "color": "#d946ef"
+          "label": "Agent messages",
+          "tokens": 2084,
+          "color": "#039b2c"
+        },
+        {
+          "label": "Reasoning",
+          "tokens": 1172,
+          "color": "#03dae5"
+        },
+        {
+          "label": "Tool calls",
+          "tokens": 5209,
+          "color": "#a2810b"
+        },
+        {
+          "label": "Tool results",
+          "tokens": 80740,
+          "color": "#fcb24f"
+        },
+        {
+          "label": "System instructions",
+          "tokens": 3777,
+          "color": "#f0445d"
+        },
+        {
+          "label": "Developer messages",
+          "tokens": 3776,
+          "color": "#ef8cff"
+        },
+        {
+          "label": "Tool definitions + schema",
+          "tokens": 5600,
+          "color": "#919191"
+        },
+        {
+          "label": "Unrecognized request items",
+          "tokens": 781,
+          "color": "#a6fc18"
         }
       ],
-      "saved_tokens": 3400,
+      "saved_tokens": 16800,
       "sources": [
         {
           "name": "AGENTS.md",
           "category": "instructions",
-          "estimated_tokens": 1200,
+          "estimated_tokens": 900,
           "admitted": true
         }
       ],
-      "backtrack_points": 2
+      "backtrack_points": 3
     },
     "tokens": {
       "session_total": {
-        "input": 24000,
+        "input": 40000,
         "cached_input": 18000,
+        "cache_write": null,
         "output": 1800,
-        "reasoning_output": 600,
-        "total": 26400
+        "reasoning_output": 200,
+        "total": 42000
       },
       "last_turn": {
-        "input": 4000,
-        "cached_input": 3000,
-        "output": 500,
+        "input": 6000,
+        "cached_input": 4000,
+        "cache_write": 0,
+        "output": 900,
         "reasoning_output": 100,
-        "total": 4600
+        "total": 7000
       }
     },
     "activity": {
       "current": {
         "status": "running",
-        "started_at": 1800000000000,
-        "cost": {
-          "type": "unavailable",
-          "reason": "awaiting_backend_price"
-        }
+        "started_at": 1769999995000,
+        "cost": null
       },
       "recent": [
         {
-          "status": "interrupted",
-          "duration_ms": 400,
-          "time_to_first_token_ms": null,
-          "profile": null,
-          "cost": {
-            "type": "unavailable",
-            "reason": "subscription_authentication"
-          }
-        },
-        {
           "status": "completed",
-          "duration_ms": 930,
-          "time_to_first_token_ms": 240,
+          "duration_ms": 2500,
+          "time_to_first_token_ms": 300,
           "profile": {
             "before_first_sampling_ms": 100,
-            "sampling_ms": 200,
-            "compaction_ms": 30,
-            "between_sampling_overhead_ms": 40,
+            "sampling_ms": 1200,
+            "compaction_ms": 200,
+            "between_sampling_overhead_ms": 250,
             "tool_blocking_ms": 500,
-            "after_last_sampling_ms": 60,
+            "after_last_sampling_ms": 250,
             "sampling_request_count": 3,
             "sampling_retry_count": 1
           },
@@ -85,15 +110,62 @@
             "type": "priced",
             "backend_total_usd": "1.250000"
           }
+        },
+        {
+          "status": "failed",
+          "duration_ms": null,
+          "time_to_first_token_ms": null,
+          "profile": null,
+          "cost": {
+            "type": "unavailable",
+            "reason": "subscription_authentication"
+          }
         }
-      ],
-      "automatic_pruning_enabled": false
-    }
+      ]
+    },
+    "smart_prune": {
+      "configured_enabled": true,
+      "current_thread_next_turn_enabled": true,
+      "examined_outputs": 5,
+      "admitted_outputs": 3,
+      "unchanged_outputs": 2,
+      "failed_batches": 1,
+      "approx_source_tokens": 24000,
+      "approx_admitted_tokens": 4000,
+      "approx_saved_tokens": 20000,
+      "optimizer_requests": 3,
+      "optimizer_usage_reports": 2,
+      "optimizer_usage": {
+        "input": 3500,
+        "cached_input": 500,
+        "cache_write": null,
+        "output": 600,
+        "reasoning_output": 100,
+        "total": 4200
+      },
+      "optimizer_latency_ms": 21250,
+      "latest": {
+        "examined_outputs": 2,
+        "admitted_outputs": 1,
+        "approx_source_tokens": 10000,
+        "approx_admitted_tokens": 1800,
+        "approx_saved_tokens": 8200,
+        "request_linkage_verified": true,
+        "response_usage": null,
+        "response_linkage_verified": false
+      },
+      "latest_attempt": {
+        "status": "timed_out",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "low",
+        "candidate_outputs": 5,
+        "admitted_outputs": 0,
+        "approx_saved_tokens": 0,
+        "latency_ms": 20000,
+        "usage": null
+      }
+    },
+    "hostile_html": "<img src=x onerror=alert(1)>"
   },
-  "heartbeat_at": 1800000010000,
-  "hostile": {
-    "markup": "<img src=x onerror=1>",
-    "script": "<script>",
-    "path": "/home/private-user/secret"
-  }
+  "heartbeat_at": 1770000000500
 }

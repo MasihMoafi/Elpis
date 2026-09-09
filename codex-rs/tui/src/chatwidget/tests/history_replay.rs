@@ -1426,7 +1426,7 @@ async fn resume_and_thread_snapshot_replay_leave_activity_empty() {
             Some(replay_kind),
         );
 
-        let activity = chat.dashboard_activity_state(None);
+        let activity = chat.dashboard_activity_state();
         assert_eq!(activity.current, None);
         assert!(activity.recent.is_empty());
     }

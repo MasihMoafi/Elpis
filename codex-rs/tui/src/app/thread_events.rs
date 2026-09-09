@@ -23,6 +23,13 @@ pub(super) enum ThreadBufferedEvent {
     HistoryEntryResponse(HistoryLookupResponse),
 }
 
+pub(super) fn notification_is_ephemeral(notification: &ServerNotification) -> bool {
+    matches!(
+        notification,
+        ServerNotification::TurnActivityUpdated(_) | ServerNotification::TurnCostUpdated(_)
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ThreadEventAttachment {
     Live,
@@ -98,10 +105,7 @@ impl ThreadEventStore {
     }
 
     pub(super) fn push_notification(&mut self, notification: ServerNotification) {
-        if matches!(
-            &notification,
-            ServerNotification::TurnActivityUpdated(_) | ServerNotification::TurnCostUpdated(_)
-        ) {
+        if notification_is_ephemeral(&notification) {
             return;
         }
         self.pending_interactive_replay
@@ -567,10 +571,7 @@ mod tests {
             TurnStatus::Completed,
         ));
         assert_eq!(store.active_turn_id(), Some("turn-new"));
-        assert_eq!(
-            store.pending_interrupt_turn_id.as_deref(),
-            Some("turn-new")
-        );
+        assert_eq!(store.pending_interrupt_turn_id.as_deref(), Some("turn-new"));
 
         store.push_notification(turn_completed_notification(
             thread_id,
@@ -582,11 +583,9 @@ mod tests {
 
         store.push_notification(turn_started_notification(thread_id, "turn-close"));
         store.pending_interrupt_turn_id = Some("turn-close".to_string());
-        store.push_notification(ServerNotification::ThreadClosed(
-            ThreadClosedNotification {
-                thread_id: thread_id.to_string(),
-            },
-        ));
+        store.push_notification(ServerNotification::ThreadClosed(ThreadClosedNotification {
+            thread_id: thread_id.to_string(),
+        }));
         assert_eq!(store.active_turn_id(), None);
         assert_eq!(store.pending_interrupt_turn_id, None);
     }

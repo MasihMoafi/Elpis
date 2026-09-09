@@ -1,0 +1,14 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+assert(process.platform === 'linux' && process.arch === 'x64', 'This package targets Linux x64.');
+const root = path.resolve(__dirname, '..');
+const source = process.env.ELPIS_APP_SERVER || path.join(root, '.test-data/cargo-target/debug/codex-app-server');
+const destination = path.join(root, 'bin/elpis-app-server');
+fs.mkdirSync(path.dirname(destination), { recursive: true });
+fs.copyFileSync(source, destination);
+fs.chmodSync(destination, 0o755);
+execFileSync('strip', ['--strip-unneeded', destination]);
+execFileSync(path.join(root, 'node_modules/.bin/vsce'), ['package', '--no-dependencies', '--allow-missing-repository', '--target', 'linux-x64', '--out', 'elpis-editor-linux-x64.vsix'], { cwd: root, stdio: 'inherit' });

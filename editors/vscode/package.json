@@ -1,0 +1,154 @@
+{
+  "name": "elpis-editor",
+  "displayName": "Elpis",
+  "description": "Chat with your Elpis runtime using live VS Code documents and language intelligence.",
+  "version": "0.1.17",
+  "publisher": "elpis-local",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.136.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "activationEvents": [
+    "onCommand:elpis.chat",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "elpis",
+          "title": "Elpis",
+          "icon": "assets/elpis.svg"
+        }
+      ]
+    },
+    "views": {
+      "elpis": [
+        {
+          "type": "webview",
+          "id": "elpis.chatView",
+          "name": "Elpis"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "elpis.chat",
+        "title": "Elpis: Open Chat"
+      }
+    ],
+    "configuration": {
+      "title": "Elpis",
+      "properties": {
+        "elpis.followupBehavior": {
+          "type": "string",
+          "enum": [
+            "queue",
+            "steer"
+          ],
+          "default": "queue",
+          "scope": "resource",
+          "description": "Queue follow-ups until the current turn completes or steer its active turn. Ctrl+Enter chooses the opposite behavior when Enter is the send shortcut."
+        },
+        "elpis.showContextUsage": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Show the runtime's last reported context-window usage in the composer."
+        },
+        "elpis.accountSource": {
+          "type": "string",
+          "enum": [
+            "elpis",
+            "codex"
+          ],
+          "default": "elpis",
+          "scope": "machine",
+          "description": "Use the Elpis login or the ChatGPT login saved by Codex. Elpis configuration and history stay in Elpis home. Reconnect after changing this setting."
+        },
+        "elpis.executable": {
+          "type": "string",
+          "default": "elpis-app-server",
+          "scope": "machine",
+          "description": "Standalone app-server built from Elpis (not the elpis TUI or upstream Codex). Existing Elpis authentication/configuration is used."
+        },
+        "elpis.home": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Optional Elpis state/configuration directory. Empty uses ELPIS_HOME or ~/.elpis, matching the Elpis TUI. Inherited CODEX_HOME is not used."
+        },
+        "elpis.provider": {
+          "scope": "resource",
+          "type": "string",
+          "enum": [
+            "",
+            "openai",
+            "openrouter",
+            "anthropic",
+            "google-gemini"
+          ],
+          "default": "",
+          "description": "Inference provider. Empty uses existing Elpis configuration."
+        },
+        "elpis.model": {
+          "scope": "resource",
+          "type": "string",
+          "default": "",
+          "description": "Optional model override; empty retains the Elpis configured model."
+        },
+        "elpis.reasoningEffort": {
+          "scope": "resource",
+          "type": "string",
+          "default": "",
+          "description": "Reasoning effort selected from the current model's runtime capabilities; empty uses the configured default."
+        },
+        "elpis.sendShortcut": {
+          "scope": "resource",
+          "type": "string",
+          "enum": [
+            "Enter",
+            "Ctrl+Enter"
+          ],
+          "default": "Enter",
+          "description": "Keyboard shortcut for sending a chat message. Shift+Enter always inserts a new line."
+        },
+        "elpis.editorAccess": {
+          "scope": "resource",
+          "type": "boolean",
+          "default": true,
+          "description": "Permit this window's Elpis bridge to read live editor buffers and use language providers. Disabling immediately blocks editor tools; start a new conversation to remove previously seen facts."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package:linux": "npm run build && node scripts/package-linux.js",
+    "test:providers": "node test/provider-paths.js",
+    "build": "tailwindcss -i src/style.css -o assets/style.css --minify && node scripts/build-assets.js",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --out elpis-editor-0.1.0.vsix",
+    "test": "node --test test/rpc.test.js test/provider-catalog.test.js test/approvals.test.js test/model-repair.test.js test/settings.test.js test/account-source.test.js test/approval-modes.test.js test/history-controls.test.js test/followups.test.js test/inline-approval.test.js test/ide-context.test.js test/smart-pruning.test.js",
+    "test:editor": "node test/launch.js"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "@vscode/vsce": "^3.0.0",
+    "daisyui": "^5.0.0",
+    "markdown-it": "14.3.1",
+    "playwright-core": "^1.63.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

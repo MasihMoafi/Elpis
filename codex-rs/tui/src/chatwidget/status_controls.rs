@@ -228,8 +228,7 @@ impl ChatWidget {
             .cloned()
             .collect();
         let continuity_sources = self.continuity_sources();
-        let manual_memory = self.manual_memory_display();
-        let (cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
+        let (mut cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
             self.runtime_model_provider_base_url.as_deref(),
             self.remote_connection.as_ref(),
@@ -246,11 +245,17 @@ impl ChatWidget {
             collaboration_mode,
             reasoning_effort_override,
             &continuity_sources,
-            Some(&manual_memory),
             refreshing_rate_limits,
-            crate::legacy_core::context_pruner::pass_count(),
-            crate::legacy_core::context_pruner::saved_chars(),
+            self.last_prune_saved_tokens.unwrap_or(0),
         );
+        let rollout_path = self.rollout_path();
+        let evidence_lines = self.local_evidence_lines(rollout_path.as_deref());
+        if !evidence_lines.is_empty() {
+            cell.parts
+                .push(Box::new(crate::history_cell::WebHyperlinkHistoryCell::new(
+                    evidence_lines,
+                )));
+        }
         if let Some(request_id) = request_id {
             self.refreshing_status_outputs.push((request_id, handle));
         }

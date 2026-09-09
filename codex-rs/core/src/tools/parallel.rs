@@ -29,6 +29,12 @@ use crate::tools::router::ToolRouter;
 use codex_protocol::error::CodexErr;
 use codex_protocol::models::ResponseInputItem;
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PendingToolOutput {
+    pub(crate) response: ResponseInputItem,
+    pub(crate) smart_prune_eligible: bool,
+}
+
 struct ToolCallTimingGuard {
     started_at: Instant,
     execution_started_at: Arc<OnceLock<Instant>>,
@@ -76,15 +82,26 @@ impl ToolCallRuntime {
         self,
         call: ToolCall,
         cancellation_token: CancellationToken,
-    ) -> impl std::future::Future<Output = Result<ResponseInputItem, CodexErr>> {
+    ) -> impl std::future::Future<Output = Result<PendingToolOutput, CodexErr>> {
         let error_call = call.clone();
         let future =
             self.handle_tool_call_with_source(call, ToolCallSource::Direct, cancellation_token);
         async move {
             match future.await {
-                Ok(response) => Ok(response.into_response()),
+                Ok(response) => {
+                    let smart_prune_eligible = response.result.smart_prune_eligible();
+                    Ok(PendingToolOutput {
+                        response: response.into_response(),
+                        smart_prune_eligible,
+                    })
+                }
                 Err(FunctionCallError::Fatal(message)) => Err(CodexErr::Fatal(message)),
-                Err(other) => Ok(Self::failure_response(error_call, other)),
+                Err(other) => Ok(PendingToolOutput {
+                    response: Self::failure_response(error_call, other),
+                    // Runtime-generated failures include hook and policy feedback. Keep that
+                    // model-visible control text exact instead of treating it as tool data.
+                    smart_prune_eligible: false,
+                }),
             }
         }
         .in_current_span()
@@ -540,6 +557,37 @@ mod tests {
 
     impl CoreToolRuntime for ImmediateHandler {}
 
+    struct ModelVisibleFailureHandler {
+        tool_name: codex_tools::ToolName,
+    }
+
+    impl ToolExecutor<ToolInvocation> for ModelVisibleFailureHandler {
+        fn tool_name(&self) -> codex_tools::ToolName {
+            self.tool_name.clone()
+        }
+
+        fn spec(&self) -> codex_tools::ToolSpec {
+            codex_tools::ToolSpec::Function(codex_tools::ResponsesApiTool {
+                name: self.tool_name.name.clone(),
+                description: "Model-visible failure test tool.".to_string(),
+                strict: false,
+                defer_loading: None,
+                parameters: codex_tools::JsonSchema::default(),
+                output_schema: None,
+            })
+        }
+
+        fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+            Box::pin(async {
+                Err(FunctionCallError::RespondToModel(
+                    "hook-authored policy feedback".repeat(1_024),
+                ))
+            })
+        }
+    }
+
+    impl CoreToolRuntime for ModelVisibleFailureHandler {}
+
     struct CancellationCleanupHandler {
         tool_name: codex_tools::ToolName,
         started: std::sync::Mutex<Option<oneshot::Sender<()>>>,
@@ -715,7 +763,8 @@ mod tests {
                 success: Some(true),
             },
         };
-        assert_eq!(expected_response, response);
+        assert_eq!(expected_response, response.response);
+        assert!(response.smart_prune_eligible);
 
         let actual = records
             .lock()
@@ -724,6 +773,42 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(vec![ToolCallOutcome::Completed { success: true }], actual);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn model_visible_failure_is_not_smart_prune_eligible() -> anyhow::Result<()> {
+        let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+        let session = Arc::new(session);
+        let turn_context = Arc::new(turn_context);
+        let tool_name = codex_tools::ToolName::plain("policy_tool");
+        let handler = Arc::new(ModelVisibleFailureHandler {
+            tool_name: tool_name.clone(),
+        }) as Arc<dyn CoreToolRuntime>;
+        let step_context = StepContext::for_test(Arc::clone(&turn_context));
+        let router = Arc::new(ToolRouter::from_parts(
+            ToolRegistry::from_tools([handler]),
+            Vec::new(),
+        ));
+        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+        let runtime = ToolCallRuntime::new(router, session, step_context, tracker);
+        let response = runtime
+            .handle_tool_call(
+                ToolCall {
+                    tool_name,
+                    call_id: "call-policy".to_string(),
+                    payload: ToolPayload::Function {
+                        arguments: "{}".to_string(),
+                    },
+                },
+                CancellationToken::new(),
+            )
+            .await?;
+
+        assert!(
+            !response.smart_prune_eligible,
+            "runtime-generated failure and policy feedback must remain exact"
+        );
         Ok(())
     }
 
@@ -781,7 +866,8 @@ mod tests {
             .await
             .expect("timed out waiting for tool response")
             .expect("tool response task should join")?;
-        let ResponseInputItem::FunctionCallOutput { output, .. } = response else {
+        assert!(response.smart_prune_eligible);
+        let ResponseInputItem::FunctionCallOutput { output, .. } = response.response else {
             anyhow::bail!("cancelled tool should return function output");
         };
         let FunctionCallOutputBody::Text(text) = output.body else {

@@ -28,7 +28,6 @@ pub(crate) struct DashboardActivityRow {
 pub(crate) struct DashboardActivityState {
     pub(crate) current: Option<DashboardActivityRow>,
     pub(crate) recent: Vec<DashboardActivityRow>,
-    pub(crate) automatic_pruning_enabled: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,18 +121,10 @@ impl ActivityState {
         changed
     }
 
-    pub(crate) fn project(
-        &self,
-        automatic_pruning_enabled: Option<bool>,
-    ) -> DashboardActivityState {
+    pub(crate) fn project(&self) -> DashboardActivityState {
         DashboardActivityState {
             current: self.current.as_ref().map(|entry| entry.row.clone()),
-            recent: self
-                .recent
-                .iter()
-                .map(|entry| entry.row.clone())
-                .collect(),
-            automatic_pruning_enabled,
+            recent: self.recent.iter().map(|entry| entry.row.clone()).collect(),
         }
     }
 }
@@ -163,7 +154,7 @@ mod tests {
 
         assert!(state.start("turn-a".to_string(), Some(10)));
         assert_eq!(
-            state.project(Some(true)),
+            state.project(),
             DashboardActivityState {
                 current: Some(DashboardActivityRow {
                     status: DashboardActivityStatus::Running,
@@ -174,7 +165,6 @@ mod tests {
                     cost: None,
                 }),
                 recent: Vec::new(),
-                automatic_pruning_enabled: Some(true),
             }
         );
 
@@ -187,30 +177,29 @@ mod tests {
             Some(summary.clone()),
         ));
         assert!(state.start("turn-b".to_string(), None));
-        assert!(state.finish(
-            "turn-b",
-            TurnActivityStatus::Interrupted,
-            None,
-            None,
-            None,
-        ));
+        assert!(state.finish("turn-b", TurnActivityStatus::Interrupted, None, None, None,));
 
         let exact_price = TurnCostState::Priced {
             backend_total_usd: "1.250000".to_string(),
         };
         assert!(state.update_cost("turn-a", exact_price.clone()));
-        let projected = state.project(None);
+        let projected = state.project();
         assert_eq!(projected.current, None);
         assert_eq!(projected.recent.len(), 2);
-        assert_eq!(projected.recent[0].status, DashboardActivityStatus::Completed);
+        assert_eq!(
+            projected.recent[0].status,
+            DashboardActivityStatus::Completed
+        );
         assert_eq!(projected.recent[0].started_at, None);
         assert_eq!(projected.recent[0].duration_ms, Some(20));
         assert_eq!(projected.recent[0].time_to_first_token_ms, Some(3));
         assert_eq!(projected.recent[0].profile, Some(summary));
         assert_eq!(projected.recent[0].cost, Some(exact_price));
-        assert_eq!(projected.recent[1].status, DashboardActivityStatus::Interrupted);
+        assert_eq!(
+            projected.recent[1].status,
+            DashboardActivityStatus::Interrupted
+        );
         assert_eq!(projected.recent[1].cost, None);
-        assert_eq!(projected.automatic_pruning_enabled, None);
     }
 
     #[test]
@@ -219,16 +208,10 @@ mod tests {
         for index in 0..=ACTIVITY_RECENT_LIMIT {
             let turn_id = format!("turn-{index}");
             assert!(state.start(turn_id.clone(), None));
-            assert!(state.finish(
-                &turn_id,
-                TurnActivityStatus::Completed,
-                None,
-                None,
-                None,
-            ));
+            assert!(state.finish(&turn_id, TurnActivityStatus::Completed, None, None, None,));
         }
 
-        let before = state.project(None);
+        let before = state.project();
         assert_eq!(before.recent.len(), ACTIVITY_RECENT_LIMIT);
         assert!(!state.update_cost(
             "turn-0",
@@ -242,7 +225,7 @@ mod tests {
                 backend_total_usd: "9.000000".to_string(),
             },
         ));
-        assert_eq!(state.project(None), before);
+        assert_eq!(state.project(), before);
     }
 
     #[test]
@@ -251,22 +234,10 @@ mod tests {
 
         assert!(state.start("turn-a".to_string(), None));
         assert!(!state.start("turn-a".to_string(), None));
-        assert!(state.finish(
-            "turn-a",
-            TurnActivityStatus::Failed,
-            None,
-            None,
-            None,
-        ));
-        assert!(!state.finish(
-            "turn-a",
-            TurnActivityStatus::Failed,
-            None,
-            None,
-            None,
-        ));
+        assert!(state.finish("turn-a", TurnActivityStatus::Failed, None, None, None,));
+        assert!(!state.finish("turn-a", TurnActivityStatus::Failed, None, None, None,));
 
-        let row = &state.project(None).recent[0];
+        let row = &state.project().recent[0];
         assert_eq!(row.started_at, None);
         assert_eq!(row.duration_ms, None);
         assert_eq!(row.time_to_first_token_ms, None);

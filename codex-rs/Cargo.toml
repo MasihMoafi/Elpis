@@ -440,7 +440,7 @@ uuid = "1"
 v8 = "=149.2.0"
 vt100 = "0.16.2"
 walkdir = "2.5.0"
-webbrowser = "1.0"
+webbrowser = "1.2.2"
 which = "8"
 whoami = "1.6.1"
 wildmatch = "2.6.1"
@@ -523,6 +523,19 @@ split-debuginfo = "off"
 strip = "symbols"
 
 opt-level = "z"
+
+# Local acceptance/install profile. Keep release optimizations, but avoid the
+# long ThinLTO link while preserving a separate cache from ordinary dev builds.
+[profile.local-release]
+inherits = "release"
+lto = false
+# This profile is for local acceptance, where a responsive edit/build/install
+# loop matters more than squeezing the final few percent of runtime speed.
+opt-level = 1
+codegen-units = 256
+incremental = true
+debug = "none"
+strip = "symbols"
 
 [profile.profiling]
 inherits = "release"

@@ -132,7 +132,9 @@ impl AstContextExtractor {
         byte_offset: usize,
     ) -> Option<&'a SymbolScope> {
         for scope in scopes {
-            if scope.byte_range.contains(&byte_offset) || (byte_offset == scope.byte_range.end && byte_offset > scope.byte_range.start) {
+            if scope.byte_range.contains(&byte_offset)
+                || (byte_offset == scope.byte_range.end && byte_offset > scope.byte_range.start)
+            {
                 // Check if any child scope is more specific
                 if let Some(child) = self.find_enclosing_scope(&scope.children, byte_offset) {
                     return Some(child);
@@ -161,7 +163,9 @@ impl AstContextExtractor {
         hierarchy: &mut Vec<&'a SymbolScope>,
     ) {
         for scope in scopes {
-            if scope.byte_range.contains(&byte_offset) || (byte_offset == scope.byte_range.end && byte_offset > scope.byte_range.start) {
+            if scope.byte_range.contains(&byte_offset)
+                || (byte_offset == scope.byte_range.end && byte_offset > scope.byte_range.start)
+            {
                 hierarchy.push(scope);
                 self.collect_hierarchy(&scope.children, byte_offset, hierarchy);
                 break;

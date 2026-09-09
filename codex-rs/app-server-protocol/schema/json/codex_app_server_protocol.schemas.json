@@ -4436,6 +4436,26 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/smartPrune/updated"
+              ],
+              "title": "Thread/smartPrune/updatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ThreadSmartPruneUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/smartPrune/updatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "turn/started"
               ],
               "title": "Turn/startedNotificationMethod",
@@ -17797,6 +17817,80 @@
         "title": "ThreadCompactStartResponse",
         "type": "object"
       },
+      "ThreadContextAttribution": {
+        "description": "Estimated composition of the exact request built for the latest provider attempt. Values are never padded to reconcile with provider token accounting.",
+        "properties": {
+          "agentMessages": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "developerMessages": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "estimatedTotal": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "outputSchema": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "reasoning": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "systemInstructions": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "toolCalls": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "toolDefinitions": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "toolResults": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "unrecognizedItems": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "userMessages": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentMessages",
+          "developerMessages",
+          "estimatedTotal",
+          "outputSchema",
+          "reasoning",
+          "systemInstructions",
+          "toolCalls",
+          "toolDefinitions",
+          "toolResults",
+          "unrecognizedItems",
+          "userMessages"
+        ],
+        "type": "object"
+      },
       "ThreadDeleteParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -19965,6 +20059,281 @@
         "title": "ThreadShellCommandResponse",
         "type": "object"
       },
+      "ThreadSmartPruneAdmissionSnapshot": {
+        "properties": {
+          "admissionId": {
+            "type": "string"
+          },
+          "admittedOutputs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "approxAdmittedTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "approxSavedTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "approxSourceTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "auditPath": {
+            "type": "string"
+          },
+          "examinedOutputs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "requestInputSha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestLinkageVerified": {
+            "type": "boolean"
+          },
+          "requestSequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "responseId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responseLinkageVerified": {
+            "type": "boolean"
+          },
+          "responseUsage": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/TokenUsageBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "admissionId",
+          "admittedOutputs",
+          "approxAdmittedTokens",
+          "approxSavedTokens",
+          "approxSourceTokens",
+          "auditPath",
+          "examinedOutputs",
+          "requestLinkageVerified",
+          "responseLinkageVerified"
+        ],
+        "type": "object"
+      },
+      "ThreadSmartPruneAttemptSnapshot": {
+        "properties": {
+          "admittedOutputs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "approxSavedTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "attemptId": {
+            "type": "string"
+          },
+          "auditPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "candidateOutputs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "latencyMs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "modelSlug": {
+            "type": "string"
+          },
+          "reasoningEffort": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/TokenUsageBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "admittedOutputs",
+          "approxSavedTokens",
+          "attemptId",
+          "candidateOutputs",
+          "latencyMs",
+          "modelSlug",
+          "reasoningEffort",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ThreadSmartPruneSnapshot": {
+        "properties": {
+          "admittedOutputs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "approxAdmittedTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "approxSavedTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "approxSourceTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "examinedOutputs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "failedBatches": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ThreadSmartPruneAdmissionSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestAttempt": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ThreadSmartPruneAttemptSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mainRequestSequence": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "optimizerLatencyMs": {
+            "default": 0,
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "optimizerRequests": {
+            "default": 0,
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "optimizerUsage": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/v2/TokenUsageBreakdown"
+              }
+            ],
+            "default": {
+              "cachedInputTokens": 0,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 0
+            }
+          },
+          "optimizerUsageReports": {
+            "default": 0,
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "unchangedOutputs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "admittedOutputs",
+          "approxAdmittedTokens",
+          "approxSavedTokens",
+          "approxSourceTokens",
+          "enabled",
+          "examinedOutputs",
+          "failedBatches",
+          "mainRequestSequence",
+          "unchangedOutputs"
+        ],
+        "type": "object"
+      },
+      "ThreadSmartPruneUpdatedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Thread-scoped Smart Prune state emitted after config refresh or listener attachment.\n\nThis is intentionally separate from token usage because a config change can happen without an active turn or a provider usage sample.",
+        "properties": {
+          "smartPrune": {
+            "$ref": "#/definitions/v2/ThreadSmartPruneSnapshot"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "smartPrune",
+          "threadId"
+        ],
+        "title": "ThreadSmartPruneUpdatedNotification",
+        "type": "object"
+      },
       "ThreadSortKey": {
         "enum": [
           "created_at",
@@ -20300,6 +20669,16 @@
       },
       "ThreadTokenUsage": {
         "properties": {
+          "contextAttribution": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ThreadContextAttribution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "contextPruneSavedTokens": {
             "default": 0,
             "format": "uint64",
@@ -20315,6 +20694,34 @@
               "integer",
               "null"
             ]
+          },
+          "smartPrune": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/v2/ThreadSmartPruneSnapshot"
+              }
+            ],
+            "default": {
+              "admittedOutputs": 0,
+              "approxAdmittedTokens": 0,
+              "approxSavedTokens": 0,
+              "approxSourceTokens": 0,
+              "enabled": false,
+              "examinedOutputs": 0,
+              "failedBatches": 0,
+              "mainRequestSequence": 0,
+              "optimizerLatencyMs": 0,
+              "optimizerRequests": 0,
+              "optimizerUsage": {
+                "cachedInputTokens": 0,
+                "inputTokens": 0,
+                "outputTokens": 0,
+                "reasoningOutputTokens": 0,
+                "totalTokens": 0
+              },
+              "optimizerUsageReports": 0,
+              "unchangedOutputs": 0
+            }
           },
           "total": {
             "$ref": "#/definitions/v2/TokenUsageBreakdown"

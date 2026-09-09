@@ -95,6 +95,8 @@ pub mod sandboxing;
 mod session_prefix;
 mod session_startup_prewarm;
 pub mod skills;
+#[cfg(test)]
+mod smart_prune_tests;
 pub(crate) use skills::SkillInjections;
 pub(crate) use skills::SkillMetadata;
 pub(crate) use skills::SkillsService;
@@ -145,6 +147,7 @@ pub(crate) mod safety;
 mod session_rollout_init_error;
 pub mod shell;
 pub(crate) mod shell_snapshot;
+pub(crate) mod smart_prune;
 pub mod spawn;
 pub(crate) mod state_db_bridge;
 pub use state_db_bridge::StateDbHandle;

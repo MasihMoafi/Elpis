@@ -61,7 +61,9 @@ async fn manual_memory_admission_blocks_same_loop_and_direct_user_turn_submissio
     chat.initial_user_message = Some(UserMessage::from("initial submit"));
     chat.submit_initial_user_message_if_pending();
     assert_eq!(
-        chat.initial_user_message.as_ref().map(|message| message.text.as_str()),
+        chat.initial_user_message
+            .as_ref()
+            .map(|message| message.text.as_str()),
         Some("initial submit")
     );
     assert!(op_rx.try_recv().is_err());
@@ -1460,6 +1462,7 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
 
     // Simulate an active task so further submissions are queued.
     chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.last_rendered_width.set(Some(120));
 
     for _ in 0..3 {
         // Recall the prompt from history and ensure it is what we expect.

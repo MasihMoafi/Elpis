@@ -18,9 +18,17 @@ use serde::Serialize;
 use crate::activity_state::DashboardActivityState;
 use crate::activity_state::DashboardActivityStatus as ProjectedActivityStatus;
 
+#[path = "dashboard_evidence.rs"]
+mod evidence;
+
+pub(crate) use evidence::publish as publish_evidence;
+pub(crate) use evidence::register as evidence_url;
+
 const INDEX_HTML: &str = include_str!("dashboard_assets/index.html");
+const DASHBOARD_CSS: &str = include_str!("dashboard_assets/dashboard.css");
+const DASHBOARD_JS: &str = include_str!("dashboard_assets/dashboard.js");
 const SCHEMA_VERSION: u64 = 1;
-const CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UNAVAILABLE_JSON: &[u8] = br#"{"state":null,"heartbeat_at":null}"#;
 
 type DashboardResponse = tiny_http::Response<Cursor<Vec<u8>>>;
@@ -33,6 +41,7 @@ pub(crate) struct DashboardState {
     pub(crate) context: DashboardContext,
     pub(crate) tokens: DashboardTokens,
     pub(crate) activity: DashboardActivity,
+    pub(crate) smart_prune: DashboardSmartPrune,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,12 +56,11 @@ pub(crate) struct DashboardContext {
     pub(crate) used_tokens: Option<u64>,
     pub(crate) window_tokens: u64,
     pub(crate) used_percent: Option<i64>,
+    pub(crate) attributed_tokens: Option<u64>,
     pub(crate) categories: Option<Vec<DashboardCategory>>,
     pub(crate) saved_tokens: u64,
     pub(crate) sources: Vec<DashboardSource>,
     pub(crate) backtrack_points: usize,
-    #[serde(default)]
-    pub(crate) manual_memory: Option<DashboardManualMemory>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -71,62 +79,6 @@ pub(crate) struct DashboardSource {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct DashboardManualMemory {
-    pub(crate) phase: DashboardManualMemoryPhase,
-    pub(crate) state: Option<DashboardManualMemoryState>,
-    pub(crate) request_chars_if_admitted: Option<usize>,
-    pub(crate) eligible_chars_now: Option<usize>,
-    pub(crate) limit_chars: Option<usize>,
-    pub(crate) truncated: Option<bool>,
-    pub(crate) unavailable_reason: Option<DashboardManualMemoryUnavailableReason>,
-    #[serde(default)]
-    pub(crate) admission_pending: bool,
-}
-
-impl DashboardManualMemory {
-    pub(crate) fn loading() -> Self {
-        Self {
-            phase: DashboardManualMemoryPhase::Loading,
-            state: None,
-            request_chars_if_admitted: None,
-            eligible_chars_now: None,
-            limit_chars: None,
-            truncated: None,
-            unavailable_reason: None,
-            admission_pending: false,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum DashboardManualMemoryPhase {
-    Loading,
-    Ready,
-    Creating,
-    Unavailable,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum DashboardManualMemoryState {
-    Missing,
-    AvailableNotAdmitted,
-    Admitted,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum DashboardManualMemoryUnavailableReason {
-    AdmissionUnavailable,
-    MemoryUnreadable,
-    InvalidUtf8,
-    MemoryPathNotFile,
-    SourcesUnavailable,
-    WorkerFailed,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct DashboardTokens {
     pub(crate) session_total: Option<DashboardTokenTotals>,
     pub(crate) last_turn: Option<DashboardTokenTotals>,
@@ -136,6 +88,9 @@ pub(crate) struct DashboardTokens {
 pub(crate) struct DashboardTokenTotals {
     pub(crate) input: i64,
     pub(crate) cached_input: i64,
+    /// `None` means the provider did not report cache-write usage. This must not be
+    /// collapsed into a reported zero in dashboard evidence.
+    pub(crate) cache_write: Option<i64>,
     pub(crate) output: i64,
     pub(crate) reasoning_output: i64,
     pub(crate) total: i64,
@@ -145,7 +100,6 @@ pub(crate) struct DashboardTokenTotals {
 pub(crate) struct DashboardActivity {
     pub(crate) current: Option<DashboardCurrentTurn>,
     pub(crate) recent: Vec<DashboardRecentTurn>,
-    pub(crate) automatic_pruning_enabled: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -203,38 +157,49 @@ pub(crate) enum DashboardCostAvailability {
     ObservationDropped,
 }
 
-#[cfg(test)]
-std::thread_local! {
-    // Capture call attempts before semantic de-duplication so same-state lifecycle rebinds remain
-    // observable without sharing the process-global dashboard slot across parallel tests.
-    static DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE:
-        std::cell::RefCell<Option<Vec<Option<DashboardManualMemory>>>> =
-            const { std::cell::RefCell::new(None) };
+/// Dashboard-safe Smart Prune facts. Raw content, paths, hashes, and request or
+/// response identifiers intentionally have no representation here.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardSmartPrune {
+    pub(crate) configured_enabled: bool,
+    pub(crate) current_thread_next_turn_enabled: Option<bool>,
+    pub(crate) examined_outputs: u64,
+    pub(crate) admitted_outputs: u64,
+    pub(crate) unchanged_outputs: u64,
+    pub(crate) failed_batches: u64,
+    pub(crate) approx_source_tokens: u64,
+    pub(crate) approx_admitted_tokens: u64,
+    pub(crate) approx_saved_tokens: u64,
+    pub(crate) optimizer_requests: u64,
+    pub(crate) optimizer_usage_reports: u64,
+    pub(crate) optimizer_usage: DashboardTokenTotals,
+    pub(crate) optimizer_latency_ms: u64,
+    pub(crate) latest: Option<DashboardSmartPruneLatest>,
+    pub(crate) latest_attempt: Option<DashboardSmartPruneAttempt>,
 }
 
-#[cfg(test)]
-pub(crate) fn begin_manual_memory_publication_capture_for_test() {
-    DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE.with(|capture| {
-        *capture.borrow_mut() = Some(Vec::new());
-    });
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardSmartPruneLatest {
+    pub(crate) examined_outputs: u64,
+    pub(crate) admitted_outputs: u64,
+    pub(crate) approx_source_tokens: u64,
+    pub(crate) approx_admitted_tokens: u64,
+    pub(crate) approx_saved_tokens: u64,
+    pub(crate) request_linkage_verified: bool,
+    pub(crate) response_usage: Option<DashboardTokenTotals>,
+    pub(crate) response_linkage_verified: bool,
 }
 
-#[cfg(test)]
-pub(crate) fn take_manual_memory_publication_capture_for_test(
-) -> Vec<Option<DashboardManualMemory>> {
-    DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE.with(|capture| {
-        capture.borrow_mut().take().unwrap_or_default()
-    })
-}
-
-#[cfg(test)]
-fn capture_manual_memory_publication_for_test(context: &DashboardContext) {
-    DASHBOARD_MANUAL_MEMORY_PUBLICATION_CAPTURE.with(|capture| {
-        let mut capture = capture.borrow_mut();
-        if let Some(memories) = capture.as_mut() {
-            memories.push(context.manual_memory.clone());
-        }
-    });
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardSmartPruneAttempt {
+    pub(crate) status: String,
+    pub(crate) model: String,
+    pub(crate) reasoning_effort: String,
+    pub(crate) candidate_outputs: u64,
+    pub(crate) admitted_outputs: u64,
+    pub(crate) approx_saved_tokens: u64,
+    pub(crate) latency_ms: u64,
+    pub(crate) usage: Option<DashboardTokenTotals>,
 }
 
 static DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
@@ -244,9 +209,8 @@ pub(crate) fn publish_state(
     context: DashboardContext,
     tokens: DashboardTokens,
     activity: DashboardActivityState,
+    smart_prune: DashboardSmartPrune,
 ) -> bool {
-    #[cfg(test)]
-    capture_manual_memory_publication_for_test(&context);
     let Ok(mut slot) = DASHBOARD_STATE.lock() else {
         return false;
     };
@@ -255,6 +219,7 @@ pub(crate) fn publish_state(
         context,
         tokens,
         activity,
+        smart_prune,
         Utc::now().timestamp_millis(),
     )
 }
@@ -264,6 +229,7 @@ fn publish_state_into(
     context: DashboardContext,
     tokens: DashboardTokens,
     activity: DashboardActivityState,
+    smart_prune: DashboardSmartPrune,
     generated_at: i64,
 ) -> bool {
     let activity = map_activity(activity);
@@ -271,7 +237,8 @@ fn publish_state_into(
         Some(current)
             if current.context == context
                 && current.tokens == tokens
-                && current.activity == activity =>
+                && current.activity == activity
+                && current.smart_prune == smart_prune =>
         {
             return false;
         }
@@ -285,6 +252,7 @@ fn publish_state_into(
         context,
         tokens,
         activity,
+        smart_prune,
     });
     true
 }
@@ -293,7 +261,9 @@ fn map_activity(activity: DashboardActivityState) -> DashboardActivity {
     DashboardActivity {
         current: activity.current.map(|row| DashboardCurrentTurn {
             status: map_activity_status(row.status),
-            started_at: row.started_at.and_then(|seconds| seconds.checked_mul(1_000)),
+            started_at: row
+                .started_at
+                .and_then(|seconds| seconds.checked_mul(1_000)),
             cost: row.cost.map(map_cost),
         }),
         recent: activity
@@ -307,7 +277,6 @@ fn map_activity(activity: DashboardActivityState) -> DashboardActivity {
                 cost: row.cost.map(map_cost),
             })
             .collect(),
-        automatic_pruning_enabled: activity.automatic_pruning_enabled,
     }
 }
 
@@ -367,7 +336,7 @@ pub(crate) fn ensure_running() -> Option<String> {
     ensure_server_url(&SERVER_URL, || {
         let listener = tiny_http::Server::http(dashboard_bind_addr()).ok()?;
         let port = listener.server_addr().to_ip()?.port();
-        let url = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}{}", evidence::dashboard_fragment());
         std::thread::Builder::new()
             .name("elpis-dashboard".to_string())
             .spawn(move || serve(listener, port))
@@ -395,10 +364,7 @@ fn dashboard_bind_addr() -> SocketAddr {
 
 fn serve(listener: tiny_http::Server, port: u16) {
     for request in listener.incoming_requests() {
-        let state = DASHBOARD_STATE
-            .lock()
-            .ok()
-            .and_then(|state| state.clone());
+        let state = DASHBOARD_STATE.lock().ok().and_then(|state| state.clone());
         let response = response_for_at(&request, port, state, Utc::now().timestamp_millis());
         let _ = request.respond(response);
     }
@@ -420,11 +386,24 @@ fn response_for_at(
             b"method not allowed".to_vec(),
         );
     }
+    if request.url().starts_with("/evidence/") {
+        return evidence::route(request, port);
+    }
     match request.url() {
         "/" | "/index.html" => response(
             200,
             "text/html; charset=utf-8",
             INDEX_HTML.as_bytes().to_vec(),
+        ),
+        "/dashboard.css" => response(
+            200,
+            "text/css; charset=utf-8",
+            DASHBOARD_CSS.as_bytes().to_vec(),
+        ),
+        "/dashboard.js" => response(
+            200,
+            "text/javascript; charset=utf-8",
+            DASHBOARD_JS.as_bytes().to_vec(),
         ),
         "/data.json" => match state {
             Some(state) => data_response_with(state, heartbeat_at, serde_json::to_vec),
@@ -446,8 +425,7 @@ fn valid_host(request: &tiny_http::Request, port: u16) -> bool {
         return false;
     }
     let value = host.value.as_str();
-    value == format!("127.0.0.1:{port}")
-        || value.eq_ignore_ascii_case(&format!("localhost:{port}"))
+    value == format!("127.0.0.1:{port}") || value.eq_ignore_ascii_case(&format!("localhost:{port}"))
 }
 
 fn data_response_with<E>(
@@ -478,6 +456,7 @@ fn response(status: u16, content_type: &str, body: Vec<u8>) -> DashboardResponse
     for (name, value) in [
         ("Content-Type", content_type),
         ("Cache-Control", "no-store"),
+        ("Referrer-Policy", "no-referrer"),
         ("Content-Security-Policy", CSP),
         ("X-Content-Type-Options", "nosniff"),
         ("X-Frame-Options", "DENY"),

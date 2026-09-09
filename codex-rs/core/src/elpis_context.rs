@@ -137,9 +137,7 @@ impl fmt::Display for ManualMemoryStatusError {
             }
             ManualMemoryUnavailableReason::MemoryUnreadable => "manual memory is unreadable",
             ManualMemoryUnavailableReason::InvalidUtf8 => "manual memory is not valid UTF-8",
-            ManualMemoryUnavailableReason::MemoryPathNotFile => {
-                "manual memory path is not a file"
-            }
+            ManualMemoryUnavailableReason::MemoryPathNotFile => "manual memory path is not a file",
         })
     }
 }
@@ -254,40 +252,6 @@ impl ContinuitySourceCategory {
     }
 }
 
-/// True when `GOAL.md` records a finished objective. The status line is written by the
-/// goal writer itself, so this needs no database lookup.
-fn goal_is_complete(goal_path: &Path) -> bool {
-    let Ok(contents) = std::fs::read_to_string(goal_path) else {
-        return false;
-    };
-    contents
-        .lines()
-        .take(12)
-        .filter_map(|line| line.trim().strip_prefix("- Status:"))
-        .any(|status| {
-            let status = status.trim();
-            status.eq_ignore_ascii_case("complete") || status.eq_ignore_ascii_case("completed")
-        })
-}
-
-/// True when `ES.md` records a finished or failed session checkpoint.
-fn checkpoint_is_complete(checkpoint_path: &Path) -> bool {
-    let Ok(contents) = std::fs::read_to_string(checkpoint_path) else {
-        return false;
-    };
-    contents
-        .lines()
-        .take(12)
-        .filter_map(|line| line.trim().strip_prefix("- Status:"))
-        .any(|status| {
-            let status = status.trim();
-            status.eq_ignore_ascii_case("complete")
-                || status.eq_ignore_ascii_case("completed")
-                || status.eq_ignore_ascii_case("failed")
-                || status.eq_ignore_ascii_case("abandoned")
-        })
-}
-
 pub fn workspace_context_dir(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
     let elpis_home = memories_root?.parent()?;
     Some(
@@ -328,10 +292,7 @@ pub fn manual_memory_status(
         )
     })?;
     let admission = read_admission(&workspace_dir).map_err(|error| {
-        ManualMemoryStatusError::new(
-            ManualMemoryUnavailableReason::AdmissionUnavailable,
-            error,
-        )
+        ManualMemoryStatusError::new(ManualMemoryUnavailableReason::AdmissionUnavailable, error)
     })?;
     manual_memory_status_with_admission(memories_root, admission.memory).map(Some)
 }
@@ -381,8 +342,9 @@ fn manual_memory_status_with_admission(
     })?;
     let trimmed = content.trim();
     let trimmed_chars = trimmed.chars().count();
-    let request_chars_if_admitted =
-        truncate_chars(trimmed, MANUAL_MEMORY_LIMIT_CHARS).chars().count();
+    let request_chars_if_admitted = truncate_chars(trimmed, MANUAL_MEMORY_LIMIT_CHARS)
+        .chars()
+        .count();
     let state = if admitted {
         ManualMemoryAdmissionState::Admitted
     } else {
@@ -419,12 +381,9 @@ pub fn create_manual_memory(
         .create_new(true)
         .open(&path)?;
 
-    if let Err(error) = set_continuity_source_admitted(
-        Some(memories_root),
-        cwd,
-        MANUAL_MEMORY_FILE,
-        false,
-    ) {
+    if let Err(error) =
+        set_continuity_source_admitted(Some(memories_root), cwd, MANUAL_MEMORY_FILE, false)
+    {
         return Err(std::io::Error::new(
             error.kind(),
             format!("empty memory file reserved; no template written: {error}"),
@@ -499,16 +458,17 @@ pub async fn build_continuity_prompt_with_dev_rule_roots(
         if !source.admitted || source.name == GLOBAL_RULES || source.name == PROJECT_RULES {
             continue;
         }
-        if let Some(section) =
-            read_continuity_source_section(&source, memories_root, cwd).await
-        {
+        if let Some(section) = read_continuity_source_section(&source, memories_root, cwd).await {
             sections.push(section);
         }
     }
     if sections.is_empty() {
         return None;
     }
-    Some(format!("{ELPIS_CONTINUITY_PROMPT_PREFIX}{}", sections.join("\n\n")))
+    Some(format!(
+        "{ELPIS_CONTINUITY_PROMPT_PREFIX}{}",
+        sections.join("\n\n")
+    ))
 }
 
 async fn read_continuity_source_section(
@@ -679,8 +639,7 @@ fn continuity_sources_with_state(
                 else {
                     continue;
                 };
-                if already_listed.contains(&canonical) || seen_dev_file_names.contains(&file_name)
-                {
+                if already_listed.contains(&canonical) || seen_dev_file_names.contains(&file_name) {
                     continue;
                 }
                 already_listed.insert(canonical.clone());
@@ -733,10 +692,9 @@ fn continuity_sources_with_state(
     }
 
     let goal_path = workspace_dir.join("GOAL.md");
-    // A finished goal is history, not working context. It stays listed so it can be
-    // switched back on deliberately, but a completed objective no longer occupies the
-    // window just because its file is still on disk.
-    let goal_admitted = admission.goal && !goal_is_complete(&goal_path);
+    // Completion metadata is descriptive. The user's explicit Ledger selection is the
+    // sole authority over whether this optional source occupies the next request.
+    let goal_admitted = admission.goal;
     if let Some(source) = existing_file_source(
         "GOAL.md".to_string(),
         goal_path.clone(),
@@ -753,7 +711,7 @@ fn continuity_sources_with_state(
     let checkpoint_path = workspace_dir.join("ES.md");
     // ES.md sits with GOAL.md, not under evidence. Both exist to carry the session
     // forward; neither is a tool observation, which is what the evidence category means.
-    let checkpoint_admitted = admission.checkpoint && !checkpoint_is_complete(&checkpoint_path);
+    let checkpoint_admitted = admission.checkpoint;
     if let Some(source) = existing_file_source(
         "ES.md".to_string(),
         checkpoint_path.clone(),
@@ -1208,9 +1166,7 @@ fn write_admission(workspace_dir: &Path, selection: &ContinuityAdmission) -> std
     fail_if_injected(InjectedPersistenceFailure::AdmissionTempSync)?;
     temporary.as_file().sync_all()?;
     fail_if_injected(InjectedPersistenceFailure::AdmissionRename)?;
-    temporary
-        .persist(&path)
-        .map_err(|error| error.error)?;
+    temporary.persist(&path).map_err(|error| error.error)?;
     let directory = std::fs::File::open(workspace_dir)?;
     fail_if_injected(InjectedPersistenceFailure::AdmissionDirectorySync)?;
     directory.sync_all()
@@ -1272,8 +1228,7 @@ fn parse_admission(content: &str) -> std::io::Result<ContinuityAdmission> {
     let stored = if canonical.trim().is_empty() {
         StoredContinuityAdmission::default()
     } else {
-        toml::from_str::<StoredContinuityAdmission>(&canonical)
-            .map_err(|_| invalid_admission())?
+        toml::from_str::<StoredContinuityAdmission>(&canonical).map_err(|_| invalid_admission())?
     };
     let defaults = ContinuityAdmission::default();
     let mut dev_sources = stored.dev_sources.unwrap_or_default();
@@ -1294,10 +1249,7 @@ fn parse_admission(content: &str) -> std::io::Result<ContinuityAdmission> {
             .checkpoint
             .or(legacy.checkpoint)
             .unwrap_or(defaults.checkpoint),
-        memory: stored
-            .memory
-            .or(legacy.memory)
-            .unwrap_or(defaults.memory),
+        memory: stored.memory.or(legacy.memory).unwrap_or(defaults.memory),
         dev_sources,
         custom_sources: stored.custom_sources.unwrap_or_default(),
     })
@@ -1526,21 +1478,16 @@ mod tests {
         assert_eq!(created.request_chars_if_admitted, 14);
         assert_eq!(created.eligible_chars_now, 0);
         let path = memories.path().join("MEMORY.md");
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "# Elpis Memory\n"
-        );
-        set_continuity_source_admitted(
-            Some(memories.path()),
-            cwd.path(),
-            "MEMORY.md",
-            true,
-        )
-        .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# Elpis Memory\n");
+        set_continuity_source_admitted(Some(memories.path()), cwd.path(), "MEMORY.md", true)
+            .unwrap();
         let admitted_template = manual_memory_status(Some(memories.path()), cwd.path())
             .unwrap()
             .unwrap();
-        assert_eq!(admitted_template.state, ManualMemoryAdmissionState::Admitted);
+        assert_eq!(
+            admitted_template.state,
+            ManualMemoryAdmissionState::Admitted
+        );
         assert_eq!(admitted_template.request_chars_if_admitted, 14);
         assert_eq!(admitted_template.eligible_chars_now, 14);
         std::fs::write(&path, "user content").unwrap();
@@ -1570,12 +1517,7 @@ mod tests {
             ("界".repeat(MANUAL_MEMORY_LIMIT_CHARS + 1), 8_000, true),
         ] {
             std::fs::write(&path, contents)?;
-            set_continuity_source_admitted(
-                Some(memories.path()),
-                cwd.path(),
-                "MEMORY.md",
-                false,
-            )?;
+            set_continuity_source_admitted(Some(memories.path()), cwd.path(), "MEMORY.md", false)?;
             let unadmitted = manual_memory_status(Some(memories.path()), cwd.path())?
                 .expect("configured memory status");
             assert_eq!(
@@ -1587,12 +1529,7 @@ mod tests {
             assert_eq!(unadmitted.limit_chars, 8_000);
             assert_eq!(unadmitted.truncated, expected_truncated);
 
-            set_continuity_source_admitted(
-                Some(memories.path()),
-                cwd.path(),
-                "MEMORY.md",
-                true,
-            )?;
+            set_continuity_source_admitted(Some(memories.path()), cwd.path(), "MEMORY.md", true)?;
             let admitted = manual_memory_status(Some(memories.path()), cwd.path())?
                 .expect("configured memory status");
             assert_eq!(admitted.state, ManualMemoryAdmissionState::Admitted);
@@ -1622,7 +1559,10 @@ mod tests {
             directory_error.reason,
             ManualMemoryUnavailableReason::MemoryPathNotFile
         );
-        assert_eq!(directory_error.to_string(), "manual memory path is not a file");
+        assert_eq!(
+            directory_error.to_string(),
+            "manual memory path is not a file"
+        );
 
         let utf8_case = tempdir()?;
         std::fs::write(utf8_case.path().join("MEMORY.md"), [0xff, 0xfe])?;
@@ -1668,8 +1608,7 @@ mod tests {
     }
 
     #[test]
-    fn admission_current_fields_win_over_legacy_and_rewrite_canonically()
-    -> anyhow::Result<()> {
+    fn admission_current_fields_win_over_legacy_and_rewrite_canonically() -> anyhow::Result<()> {
         let memories = tempdir()?;
         let cwd = tempdir()?;
         let custom = cwd.path().join("notes.md");
@@ -1697,9 +1636,7 @@ mod tests {
         );
         let path = write_admission_fixture(memories.path(), cwd.path(), fixture.as_bytes())?;
 
-        let admission = read_admission(
-            path.parent().expect("workspace admission directory"),
-        )?;
+        let admission = read_admission(path.parent().expect("workspace admission directory"))?;
         assert!(!admission.global_rules);
         assert!(admission.project_rules);
         assert!(!admission.goal);
@@ -1713,12 +1650,7 @@ mod tests {
             Some(&true)
         );
 
-        set_continuity_source_admitted(
-            Some(memories.path()),
-            cwd.path(),
-            PROJECT_RULES,
-            false,
-        )?;
+        set_continuity_source_admitted(Some(memories.path()), cwd.path(), PROJECT_RULES, false)?;
         let rewritten = std::fs::read_to_string(&path)?;
         assert!(!rewritten.contains("Global AGENTS.md"));
         assert!(!rewritten.contains("MEMORY.md ="));
@@ -1741,12 +1673,11 @@ mod tests {
     }
 
     #[test]
-    fn admission_not_found_defaults_but_unknown_or_duplicate_data_errors()
-    -> anyhow::Result<()> {
+    fn admission_not_found_defaults_but_unknown_or_duplicate_data_errors() -> anyhow::Result<()> {
         let memories = tempdir()?;
         let cwd = tempdir()?;
-        let workspace = workspace_context_dir(Some(memories.path()), cwd.path())
-            .expect("workspace");
+        let workspace =
+            workspace_context_dir(Some(memories.path()), cwd.path()).expect("workspace");
         assert_eq!(read_admission(&workspace)?, ContinuityAdmission::default());
 
         let path = write_admission_fixture(
@@ -1781,8 +1712,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nested_legacy_shaped_keys_are_rejected_without_rewrite_or_prompt()
-    -> anyhow::Result<()> {
+    async fn nested_legacy_shaped_keys_are_rejected_without_rewrite_or_prompt() -> anyhow::Result<()>
+    {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("project");
@@ -1846,8 +1777,7 @@ mod tests {
         let fixture = format!("memory = [\"{planted_secret}\", \"{planted_path}\"\n");
         std::fs::write(memories.path().join(MANUAL_MEMORY_FILE), "memory")?;
         std::fs::write(&custom, "notes")?;
-        let admission =
-            write_admission_fixture(memories.path(), cwd.path(), fixture.as_bytes())?;
+        let admission = write_admission_fixture(memories.path(), cwd.path(), fixture.as_bytes())?;
         let workspace = admission.parent().expect("workspace");
 
         let mut exposed = vec![
@@ -1860,14 +1790,9 @@ mod tests {
             admission_fingerprint(Some(memories.path()), cwd.path())
                 .expect_err("malformed fingerprint")
                 .to_string(),
-            set_continuity_source_admitted(
-                Some(memories.path()),
-                cwd.path(),
-                PROJECT_RULES,
-                true,
-            )
-            .expect_err("malformed toggle")
-            .to_string(),
+            set_continuity_source_admitted(Some(memories.path()), cwd.path(), PROJECT_RULES, true)
+                .expect_err("malformed toggle")
+                .to_string(),
             add_continuity_source(Some(memories.path()), cwd.path(), &custom)
                 .expect_err("malformed add")
                 .to_string(),
@@ -1909,18 +1834,19 @@ mod tests {
 
     #[test]
     fn admission_invalid_utf8_and_nonfile_are_never_defaults() -> anyhow::Result<()> {
-        let invalid_utf8 = tempdir()?;
+        let home = tempdir()?;
+        let invalid_utf8 = home.path().join("invalid-utf8/memories");
         let cwd = tempdir()?;
-        let invalid_path = write_admission_fixture(invalid_utf8.path(), cwd.path(), &[0xff])?;
+        let invalid_path = write_admission_fixture(&invalid_utf8, cwd.path(), &[0xff])?;
         let workspace = invalid_path.parent().expect("workspace");
         assert!(read_admission(workspace).is_err());
-        assert!(admission_fingerprint(Some(invalid_utf8.path()), cwd.path()).is_err());
+        assert!(admission_fingerprint(Some(&invalid_utf8), cwd.path()).is_err());
 
-        let nonfile = tempdir()?;
-        let nonfile_path = admission_path(nonfile.path(), cwd.path());
+        let nonfile = home.path().join("nonfile/memories");
+        let nonfile_path = admission_path(&nonfile, cwd.path());
         std::fs::create_dir_all(&nonfile_path)?;
         assert!(read_admission(nonfile_path.parent().expect("workspace")).is_err());
-        assert!(admission_fingerprint(Some(nonfile.path()), cwd.path()).is_err());
+        assert!(admission_fingerprint(Some(&nonfile), cwd.path()).is_err());
         Ok(())
     }
 
@@ -1949,13 +1875,8 @@ mod tests {
         let admission = write_admission_fixture(memories.path(), cwd.path(), original)?;
 
         assert!(
-            set_continuity_source_admitted(
-                Some(memories.path()),
-                cwd.path(),
-                PROJECT_RULES,
-                true,
-            )
-            .is_err()
+            set_continuity_source_admitted(Some(memories.path()), cwd.path(), PROJECT_RULES, true,)
+                .is_err()
         );
         assert!(add_continuity_source(Some(memories.path()), cwd.path(), &custom).is_err());
         assert!(
@@ -1998,13 +1919,8 @@ mod tests {
         );
 
         assert!(
-            set_continuity_source_admitted(
-                Some(memories.path()),
-                cwd.path(),
-                PROJECT_RULES,
-                true,
-            )
-            .is_err()
+            set_continuity_source_admitted(Some(memories.path()), cwd.path(), PROJECT_RULES, true,)
+                .is_err()
         );
         assert!(add_continuity_source(Some(memories.path()), cwd.path(), &custom).is_err());
         assert!(
@@ -2032,8 +1948,8 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn unreadable_admission_rejects_status_and_mutations_without_replacement()
-    -> anyhow::Result<()> {
+    fn unreadable_admission_rejects_status_and_mutations_without_replacement() -> anyhow::Result<()>
+    {
         let memories = tempdir()?;
         let cwd = tempdir()?;
         let custom = cwd.path().join("notes.md");
@@ -2050,13 +1966,8 @@ mod tests {
             ManualMemoryUnavailableReason::AdmissionUnavailable
         );
         assert!(
-            set_continuity_source_admitted(
-                Some(memories.path()),
-                cwd.path(),
-                PROJECT_RULES,
-                true,
-            )
-            .is_err()
+            set_continuity_source_admitted(Some(memories.path()), cwd.path(), PROJECT_RULES, true,)
+                .is_err()
         );
         assert!(add_continuity_source(Some(memories.path()), cwd.path(), &custom).is_err());
         assert!(
@@ -2067,7 +1978,11 @@ mod tests {
             )
             .is_err()
         );
-        assert!(std::fs::symlink_metadata(&admission)?.file_type().is_symlink());
+        assert!(
+            std::fs::symlink_metadata(&admission)?
+                .file_type()
+                .is_symlink()
+        );
 
         std::fs::remove_file(memories.path().join(MANUAL_MEMORY_FILE))?;
         let error = create_manual_memory(Some(memories.path()), cwd.path())
@@ -2077,24 +1992,26 @@ mod tests {
                 .to_string()
                 .contains("empty memory file reserved; no template written")
         );
-        assert!(std::fs::symlink_metadata(&admission)?.file_type().is_symlink());
-        assert_eq!(std::fs::read(memories.path().join(MANUAL_MEMORY_FILE))?, b"");
+        assert!(
+            std::fs::symlink_metadata(&admission)?
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read(memories.path().join(MANUAL_MEMORY_FILE))?,
+            b""
+        );
         Ok(())
     }
 
     #[test]
-    fn stale_memory_admission_cannot_admit_a_missing_file_or_survive_create()
-    -> anyhow::Result<()> {
+    fn stale_memory_admission_cannot_admit_a_missing_file_or_survive_create() -> anyhow::Result<()>
+    {
         let memories = tempdir()?;
         let cwd = tempdir()?;
         let path = memories.path().join("MEMORY.md");
         std::fs::write(&path, "memory")?;
-        set_continuity_source_admitted(
-            Some(memories.path()),
-            cwd.path(),
-            "MEMORY.md",
-            true,
-        )?;
+        set_continuity_source_admitted(Some(memories.path()), cwd.path(), "MEMORY.md", true)?;
         std::fs::remove_file(&path)?;
 
         assert_eq!(
@@ -2104,13 +2021,8 @@ mod tests {
             ManualMemoryAdmissionState::Missing
         );
         assert!(
-            set_continuity_source_admitted(
-                Some(memories.path()),
-                cwd.path(),
-                "MEMORY.md",
-                true,
-            )
-            .is_err()
+            set_continuity_source_admitted(Some(memories.path()), cwd.path(), "MEMORY.md", true,)
+                .is_err()
         );
 
         let created = create_manual_memory(Some(memories.path()), cwd.path())?;
@@ -2118,12 +2030,14 @@ mod tests {
             created.state,
             ManualMemoryAdmissionState::AvailableNotAdmitted
         );
-        assert!(!read_admission(
-            admission_path(memories.path(), cwd.path())
-                .parent()
-                .expect("workspace")
-        )?
-        .memory);
+        assert!(
+            !read_admission(
+                admission_path(memories.path(), cwd.path())
+                    .parent()
+                    .expect("workspace")
+            )?
+            .memory
+        );
         Ok(())
     }
 
@@ -2155,31 +2069,28 @@ mod tests {
                 .all(|path| Path::new(path) != memory.canonicalize().unwrap())
         );
 
-        let memory_only = tempdir()?;
-        std::fs::write(memory_only.path().join("MEMORY.md"), "memory")?;
-        let only = add_continuity_sources(Some(memory_only.path()), cwd.path(), memory_only.path())
+        let memory_only_home = tempdir()?;
+        let memory_only = memory_only_home.path().join("memories");
+        std::fs::create_dir(&memory_only)?;
+        std::fs::write(memory_only.join("MEMORY.md"), "memory")?;
+        let only = add_continuity_sources(Some(&memory_only), cwd.path(), &memory_only)
             .expect_err("a directory containing only canonical memory must fail");
         assert_eq!(only.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
-        assert!(!admission_path(memory_only.path(), cwd.path()).exists());
+        assert!(!admission_path(&memory_only, cwd.path()).exists());
 
-        let empty_memory = tempdir()?;
-        let empty_path = empty_memory.path().join(MANUAL_MEMORY_FILE);
+        let empty_memory_home = tempdir()?;
+        let empty_memory = empty_memory_home.path().join("memories");
+        std::fs::create_dir(&empty_memory)?;
+        let empty_path = empty_memory.join(MANUAL_MEMORY_FILE);
         std::fs::write(&empty_path, "")?;
-        let empty_direct =
-            add_continuity_source(Some(empty_memory.path()), cwd.path(), &empty_path)
-                .expect_err("empty canonical memory still has a dedicated row");
-        assert_eq!(
-            empty_direct.to_string(),
-            MANUAL_MEMORY_ADD_GUIDANCE
-        );
-        let empty_directory = add_continuity_sources(
-            Some(empty_memory.path()),
-            cwd.path(),
-            empty_memory.path(),
-        )
-        .expect_err("a directory containing only empty canonical memory must fail");
+        let empty_direct = add_continuity_source(Some(&empty_memory), cwd.path(), &empty_path)
+            .expect_err("empty canonical memory still has a dedicated row");
+        assert_eq!(empty_direct.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
+        let empty_directory =
+            add_continuity_sources(Some(&empty_memory), cwd.path(), &empty_memory)
+                .expect_err("a directory containing only empty canonical memory must fail");
         assert_eq!(empty_directory.to_string(), MANUAL_MEMORY_ADD_GUIDANCE);
-        assert!(!admission_path(empty_memory.path(), cwd.path()).exists());
+        assert!(!admission_path(&empty_memory, cwd.path()).exists());
         Ok(())
     }
 
@@ -2341,8 +2252,7 @@ mod tests {
 
     #[cfg(any(unix, windows))]
     #[tokio::test]
-    async fn persisted_hard_link_alias_never_projects_or_enters_the_prompt()
-    -> anyhow::Result<()> {
+    async fn persisted_hard_link_alias_never_projects_or_enters_the_prompt() -> anyhow::Result<()> {
         let memories = tempdir()?;
         let cwd = tempdir()?;
         let memory = memories.path().join(MANUAL_MEMORY_FILE);
@@ -2351,8 +2261,8 @@ mod tests {
         std::fs::write(&memory, planted_body)?;
         std::fs::hard_link(&memory, &alias)?;
         let alias = alias.canonicalize()?;
-        let workspace = workspace_context_dir(Some(memories.path()), cwd.path())
-            .expect("workspace");
+        let workspace =
+            workspace_context_dir(Some(memories.path()), cwd.path()).expect("workspace");
         let mut admission = ContinuityAdmission {
             memory: false,
             ..ContinuityAdmission::default()
@@ -2395,10 +2305,7 @@ mod tests {
 
         for (stage, expected_contents) in [
             (InjectedPersistenceFailure::TemplateWrite, ""),
-            (
-                InjectedPersistenceFailure::TemplateSync,
-                "# Elpis Memory\n",
-            ),
+            (InjectedPersistenceFailure::TemplateSync, "# Elpis Memory\n"),
         ] {
             let memories = tempdir()?;
             let cwd = tempdir()?;
@@ -2409,12 +2316,14 @@ mod tests {
                 std::fs::read_to_string(memories.path().join("MEMORY.md"))?,
                 expected_contents
             );
-            assert!(!read_admission(
-                admission_path(memories.path(), cwd.path())
-                    .parent()
-                    .expect("workspace")
-            )?
-            .memory);
+            assert!(
+                !read_admission(
+                    admission_path(memories.path(), cwd.path())
+                        .parent()
+                        .expect("workspace")
+                )?
+                .memory
+            );
         }
         Ok(())
     }
@@ -2425,8 +2334,8 @@ mod tests {
         let cwd = tempdir()?;
         let memory = memories.path().join("MEMORY.md");
         std::fs::write(&memory, "remember this")?;
-        let status = manual_memory_status(Some(memories.path()), cwd.path())?
-            .expect("memory status");
+        let status =
+            manual_memory_status(Some(memories.path()), cwd.path())?.expect("memory status");
         std::fs::remove_file(&memory)?;
         std::fs::create_dir(&memory)?;
 
@@ -2486,7 +2395,11 @@ mod tests {
         std::fs::write(workspace.join("raw.log"), "hidden")?;
 
         let sources = continuity_sources(Some(&memories), cwd, &[])?;
-        assert_eq!(sources.len(), 2, "missing Memory stays visible at zero cost");
+        assert_eq!(
+            sources.len(),
+            2,
+            "missing Memory stays visible at zero cost"
+        );
         assert_eq!(sources[0].name, "GOAL.md");
         assert_eq!(sources[0].bytes, 10);
         assert_eq!(sources[0].estimated_tokens, 3);
@@ -2572,8 +2485,8 @@ mod tests {
     /// Context Ledger admits them, while development rules start admitted on a fresh
     /// workspace and remain switchable.
     #[tokio::test]
-    async fn optional_sources_start_excluded_while_dev_rules_start_admitted()
-    -> anyhow::Result<()> {
+    async fn optional_sources_start_excluded_while_dev_rules_start_admitted() -> anyhow::Result<()>
+    {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("projects/Elpis");
@@ -2595,13 +2508,7 @@ mod tests {
         let project = cwd.join("AGENTS.md");
         let instructions = vec![global.clone(), project.clone()];
         let sources = continuity_sources(Some(&memories), &cwd, &instructions)?;
-        for name in [
-            GLOBAL_RULES,
-            PROJECT_RULES,
-            "GOAL.md",
-            "ES.md",
-            "MEMORY.md",
-        ] {
+        for name in [GLOBAL_RULES, PROJECT_RULES, "GOAL.md", "ES.md", "MEMORY.md"] {
             let source = sources
                 .iter()
                 .find(|source| source.name == name)
@@ -2746,18 +2653,43 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn an_explicitly_admitted_finished_checkpoint_reaches_the_next_prompt()
+    -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let workspace = workspace_context_dir(Some(&memories), &cwd).expect("workspace path");
+        tokio::fs::create_dir_all(&workspace).await?;
+        tokio::fs::write(
+            workspace.join("ES.md"),
+            "# Session checkpoint\n\n- Status: completed\n\nKeep this checkpoint.\n",
+        )
+        .await?;
+
+        set_continuity_source_admitted(Some(&memories), &cwd, "ES.md", true)?;
+
+        let checkpoint = continuity_sources(Some(&memories), &cwd, &[])?
+            .into_iter()
+            .find(|source| source.name == "ES.md")
+            .expect("ES.md row");
+        assert!(checkpoint.admitted, "the user's explicit toggle must win");
+        assert!(
+            build_continuity_prompt(Some(&memories), &cwd)
+                .await
+                .is_some_and(|prompt| prompt.contains("Keep this checkpoint.")),
+            "an admitted checkpoint must reach the next request"
+        );
+        Ok(())
+    }
+
     #[tokio::test(flavor = "current_thread")]
-    async fn withdrawn_prebuilt_memory_source_is_skipped_before_injection(
-    ) -> anyhow::Result<()> {
+    async fn withdrawn_prebuilt_memory_source_is_skipped_before_injection() -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("project");
         tokio::fs::create_dir_all(&memories).await?;
-        tokio::fs::write(
-            memories.join(MANUAL_MEMORY_FILE),
-            "MEMORY_WITHDRAWN_MARKER",
-        )
-        .await?;
+        tokio::fs::write(memories.join(MANUAL_MEMORY_FILE), "MEMORY_WITHDRAWN_MARKER").await?;
         set_continuity_source_admitted(Some(&memories), &cwd, MANUAL_MEMORY_FILE, true)?;
         let source = continuity_sources(Some(&memories), &cwd, &[])?
             .into_iter()
@@ -2775,8 +2707,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn post_read_memory_admission_error_skips_the_memory_section()
-    -> anyhow::Result<()> {
+    async fn post_read_memory_admission_error_skips_the_memory_section() -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("project");
@@ -2785,15 +2716,10 @@ mod tests {
         tokio::fs::write(workspace.join("GOAL.md"), "goal that must also fail closed").await?;
         tokio::fs::create_dir_all(&memories).await?;
         tokio::fs::write(memories.join(MANUAL_MEMORY_FILE), "memory").await?;
-        admit_all(
-            Some(&memories),
-            &cwd,
-            &["GOAL.md", MANUAL_MEMORY_FILE],
-        )?;
+        admit_all(Some(&memories), &cwd, &["GOAL.md", MANUAL_MEMORY_FILE])?;
 
-        let _guard = inject_persistence_failure(
-            InjectedPersistenceFailure::MemoryPostReadAdmission,
-        );
+        let _guard =
+            inject_persistence_failure(InjectedPersistenceFailure::MemoryPostReadAdmission);
         let prompt = build_continuity_prompt(Some(&memories), &cwd)
             .await
             .expect("the independently admitted goal remains available");
@@ -2889,6 +2815,7 @@ mod tests {
         assert!(
             sources
                 .iter()
+                .filter(|source| source.category == ContinuitySourceCategory::Instructions)
                 .all(|source| source.selectable && source.admitted)
         );
         assert!(sources.iter().any(|source| source.name == GLOBAL_RULES));
@@ -3084,7 +3011,7 @@ mod tests {
     }
 
     #[test]
-    fn a_completed_goal_is_listed_but_no_longer_admitted() -> anyhow::Result<()> {
+    fn a_completed_goal_keeps_the_users_explicit_admission() -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("project");
@@ -3114,8 +3041,8 @@ mod tests {
             .find(|source| source.name == "GOAL.md")
             .expect("goal row stays listed");
         assert!(
-            !finished_goal.admitted,
-            "a finished goal stops occupying the window"
+            finished_goal.admitted,
+            "completion metadata must not override the user's toggle"
         );
         Ok(())
     }
@@ -3173,11 +3100,18 @@ mod tests {
             .iter()
             .filter(|source| source.name == "dev/AGENTS.md")
             .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 1, "configured roots replace the managed fallback");
+        assert_eq!(
+            rows.len(),
+            1,
+            "configured roots replace the managed fallback"
+        );
         let source = rows[0];
         assert_eq!(source.path, configured_rule);
         assert_eq!(source.origin, "configured development rules");
-        assert!(source.admitted, "configured rules are admitted on a fresh workspace");
+        assert!(
+            source.admitted,
+            "configured rules are admitted on a fresh workspace"
+        );
 
         let prompt = build_continuity_prompt_with_dev_rule_roots(
             Some(&memories),
@@ -3210,7 +3144,10 @@ mod tests {
             .find(|source| source.name == "dev/AGENTS.md")
             .expect("configured row stays listed after exclusion");
         assert_eq!(source.path, configured_rule);
-        assert!(!source.admitted, "the configured row is excluded after persistence");
+        assert!(
+            !source.admitted,
+            "the configured row is excluded after persistence"
+        );
         Ok(())
     }
 
@@ -3247,8 +3184,7 @@ mod tests {
             AbsolutePathBuf::from_absolute_path(&duplicate_root)?,
             AbsolutePathBuf::from_absolute_path(&unique_root)?,
         ];
-        let sources =
-            continuity_sources_with_dev_rule_roots(Some(&memories), &cwd, &[], &roots)?;
+        let sources = continuity_sources_with_dev_rule_roots(Some(&memories), &cwd, &[], &roots)?;
         let dev_sources = sources
             .iter()
             .filter(|source| source.name.starts_with(DEV_SOURCE_PREFIX))

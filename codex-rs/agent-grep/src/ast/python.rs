@@ -99,7 +99,11 @@ pub fn parse_python_scopes(source: &str) -> Vec<SymbolScope> {
                     .unwrap_or(after.len());
                 (ScopeKind::Class, after[..name_end].to_string())
             } else {
-                let kw_len = if trimmed.starts_with("async def ") { 10 } else { 4 };
+                let kw_len = if trimmed.starts_with("async def ") {
+                    10
+                } else {
+                    4
+                };
                 let after = &trimmed[kw_len..];
                 let name_end = after
                     .find(|c: char| !c.is_alphanumeric() && c != '_')

@@ -116,6 +116,8 @@ pub(crate) enum CodexResponsesRequestKind {
     /// Layer 2 context-pruning pass (`core/src/session/context_prune.rs`) — a
     /// background, non-turn call, same shape as `Memory`.
     ContextPrune,
+    /// Admission-time optimization of fresh tool outputs before the turn sees them.
+    SmartPrune,
 }
 
 impl CodexResponsesRequestKind {
@@ -126,13 +128,16 @@ impl CodexResponsesRequestKind {
             CodexResponsesRequestKind::Compaction(metadata) => ("compaction", Some(metadata)),
             CodexResponsesRequestKind::Memory => ("memory", None),
             CodexResponsesRequestKind::ContextPrune => ("context_prune", None),
+            CodexResponsesRequestKind::SmartPrune => ("smart_prune", None),
         }
     }
 
     fn has_turn_identity(self) -> bool {
         !matches!(
             self,
-            CodexResponsesRequestKind::Memory | CodexResponsesRequestKind::ContextPrune
+            CodexResponsesRequestKind::Memory
+                | CodexResponsesRequestKind::ContextPrune
+                | CodexResponsesRequestKind::SmartPrune
         )
     }
 
@@ -148,6 +153,7 @@ impl CodexResponsesRequestKind {
             | CodexResponsesRequestKind::Compaction(_) => None,
             CodexResponsesRequestKind::Memory => Some("memory"),
             CodexResponsesRequestKind::ContextPrune => Some("context-prune"),
+            CodexResponsesRequestKind::SmartPrune => Some("smart-prune"),
         }
     }
 }

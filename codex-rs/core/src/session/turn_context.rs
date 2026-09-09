@@ -116,6 +116,7 @@ pub struct TurnContext {
     pub(crate) trace_id: Option<String>,
     pub(crate) realtime_active: bool,
     pub config: Arc<Config>,
+    pub(crate) smart_prune_enabled: bool,
     pub(crate) automatic_model_routing: bool,
     pub(crate) auth_manager: Option<Arc<AuthManager>>,
     pub(crate) model_info: ModelInfo,
@@ -277,6 +278,7 @@ impl TurnContext {
             trace_id: self.trace_id.clone(),
             realtime_active: self.realtime_active,
             config: Arc::new(config),
+            smart_prune_enabled: self.smart_prune_enabled,
             automatic_model_routing: self.automatic_model_routing,
             auth_manager: self.auth_manager.clone(),
             model_info: model_info.clone(),
@@ -508,6 +510,7 @@ impl Session {
         cwd: AbsolutePathBuf,
         sub_id: String,
         skills_snapshot: HostSkillsSnapshot,
+        smart_prune_enabled: bool,
     ) -> TurnContext {
         let collaboration_mode = &session_configuration.collaboration_mode;
         let reasoning_effort = collaboration_mode.reasoning_effort();
@@ -559,6 +562,7 @@ impl Session {
             trace_id: current_span_trace_id(),
             realtime_active: false,
             config: per_turn_config,
+            smart_prune_enabled,
             automatic_model_routing: session_configuration.automatic_model_routing,
             auth_manager: auth_manager_for_context,
             model_info,
@@ -633,28 +637,34 @@ impl Session {
                         permission_profile_changed,
                         previous_config,
                         new_config,
+                        self.smart_prune_enabled(),
                     ))
                 }
                 Err(err) => Err(CodexErr::InvalidRequest(err.to_string())),
             }
         };
 
-        let (session_configuration, permission_profile_changed, previous_config, new_config) =
-            match update_result {
-                Ok(update) => update,
-                Err(err) => {
-                    let message = err.to_string();
-                    self.send_event_raw(Event {
-                        id: sub_id.clone(),
-                        msg: EventMsg::Error(ErrorEvent {
-                            message: message.clone(),
-                            codex_error_info: Some(CodexErrorInfo::BadRequest),
-                        }),
-                    })
-                    .await;
-                    return Err(CodexErr::InvalidRequest(message));
-                }
-            };
+        let (
+            session_configuration,
+            permission_profile_changed,
+            previous_config,
+            new_config,
+            smart_prune_enabled,
+        ) = match update_result {
+            Ok(update) => update,
+            Err(err) => {
+                let message = err.to_string();
+                self.send_event_raw(Event {
+                    id: sub_id.clone(),
+                    msg: EventMsg::Error(ErrorEvent {
+                        message: message.clone(),
+                        codex_error_info: Some(CodexErrorInfo::BadRequest),
+                    }),
+                })
+                .await;
+                return Err(CodexErr::InvalidRequest(message));
+            }
+        };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
 
         if permission_profile_changed {
@@ -667,6 +677,7 @@ impl Session {
                 sub_id,
                 session_configuration,
                 updates.final_output_json_schema,
+                smart_prune_enabled,
             )
             .await)
     }
@@ -676,12 +687,14 @@ impl Session {
         sub_id: String,
         session_configuration: SessionConfiguration,
         final_output_json_schema: Option<Option<Value>>,
+        smart_prune_enabled: bool,
     ) -> Arc<TurnContext> {
         self.new_turn_context_from_configuration(
             sub_id,
             session_configuration,
             final_output_json_schema,
             TurnMultiAgentRuntime::ResolveAndStore,
+            smart_prune_enabled,
         )
         .await
     }
@@ -690,12 +703,14 @@ impl Session {
         &self,
         sub_id: String,
         session_configuration: SessionConfiguration,
+        smart_prune_enabled: bool,
     ) -> Arc<TurnContext> {
         self.new_turn_context_from_configuration(
             sub_id,
             session_configuration,
             /*final_output_json_schema*/ None,
             TurnMultiAgentRuntime::Preview,
+            smart_prune_enabled,
         )
         .await
     }
@@ -707,6 +722,7 @@ impl Session {
         session_configuration: SessionConfiguration,
         final_output_json_schema: Option<Option<Value>>,
         multi_agent_runtime: TurnMultiAgentRuntime,
+        smart_prune_enabled: bool,
     ) -> Arc<TurnContext> {
         let turn_environments = self.services.turn_environments.snapshot().await;
         let primary_turn_environment = turn_environments.primary();
@@ -794,6 +810,7 @@ impl Session {
             cwd,
             sub_id,
             skills_snapshot,
+            smart_prune_enabled,
         );
         turn_context.realtime_active = self.conversation.running_state().await.is_some();
 
@@ -845,11 +862,12 @@ impl Session {
     }
 
     pub(crate) async fn new_default_turn_with_sub_id(&self, sub_id: String) -> Arc<TurnContext> {
-        let session_configuration = self.default_turn_configuration().await;
+        let (session_configuration, smart_prune_enabled) = self.default_turn_configuration().await;
         self.new_turn_from_configuration(
             sub_id,
             session_configuration,
             /*final_output_json_schema*/ None,
+            smart_prune_enabled,
         )
         .await
     }
@@ -858,13 +876,20 @@ impl Session {
         &self,
         sub_id: String,
     ) -> Arc<TurnContext> {
-        let session_configuration = self.default_turn_configuration().await;
-        self.new_startup_prewarm_turn_from_configuration(sub_id, session_configuration)
-            .await
+        let (session_configuration, smart_prune_enabled) = self.default_turn_configuration().await;
+        self.new_startup_prewarm_turn_from_configuration(
+            sub_id,
+            session_configuration,
+            smart_prune_enabled,
+        )
+        .await
     }
 
-    async fn default_turn_configuration(&self) -> SessionConfiguration {
+    async fn default_turn_configuration(&self) -> (SessionConfiguration, bool) {
         let state = self.state.lock().await;
-        state.session_configuration.clone()
+        (
+            state.session_configuration.clone(),
+            self.smart_prune_enabled(),
+        )
     }
 }

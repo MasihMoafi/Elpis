@@ -101,11 +101,7 @@ impl fmt::Display for TokenUsage {
                 format_with_separators(cache_write_tokens),
             )?;
         }
-        write!(
-            f,
-            " output={}",
-            format_with_separators(self.output_tokens),
-        )?;
+        write!(f, " output={}", format_with_separators(self.output_tokens),)?;
         if self.reasoning_output_tokens > 0 {
             write!(
                 f,
@@ -153,4 +149,3 @@ mod tests {
         );
     }
 }
-

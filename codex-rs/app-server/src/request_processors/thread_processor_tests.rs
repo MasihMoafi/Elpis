@@ -1377,8 +1377,13 @@ mod thread_processor_behavior_tests {
 
         assert!(
             manager
-                .try_add_connection_to_thread(thread_id, connection_b)
+                .try_ensure_connection_subscribed(
+                    thread_id,
+                    connection_b,
+                    /*experimental_raw_events*/ false,
+                )
                 .await
+                .is_some()
         );
         tokio::time::timeout(Duration::from_secs(1), has_connections.changed())
             .await
@@ -1401,7 +1406,9 @@ mod thread_processor_behavior_tests {
         let attach_connection = async {
             tokio::task::yield_now().await;
             manager
-                .try_add_connection_to_thread(thread_id, connection)
+                .try_ensure_connection_subscribed(
+                    thread_id, connection, /*experimental_raw_events*/ false,
+                )
                 .await
         };
         let ((), attached) = tokio::time::timeout(Duration::from_secs(1), async {
@@ -1409,7 +1416,7 @@ mod thread_processor_behavior_tests {
         })
         .await?;
 
-        assert!(attached);
+        assert!(attached.is_some());
         Ok(())
     }
 
@@ -1434,6 +1441,34 @@ mod thread_processor_behavior_tests {
                 .is_none()
         );
         assert!(!manager.has_subscribers(thread_id).await);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ensuring_connection_subscription_reports_new_and_repeat() -> Result<()> {
+        let manager = ThreadStateManager::new();
+        let thread_id = ThreadId::from_string("9ac103e3-4db9-4b0c-bc3d-4cb13570e247")?;
+        let connection = ConnectionId(1);
+
+        manager
+            .connection_initialized(connection, ConnectionCapabilities::default())
+            .await;
+
+        let (_, newly_subscribed) = manager
+            .try_ensure_connection_subscribed(
+                thread_id, connection, /*experimental_raw_events*/ false,
+            )
+            .await
+            .expect("connection should be live");
+        assert!(newly_subscribed);
+
+        let (_, newly_subscribed) = manager
+            .try_ensure_connection_subscribed(
+                thread_id, connection, /*experimental_raw_events*/ false,
+            )
+            .await
+            .expect("connection should remain live");
+        assert!(!newly_subscribed);
         Ok(())
     }
 
@@ -1478,23 +1513,43 @@ mod thread_processor_behavior_tests {
 
         assert!(
             manager
-                .try_add_connection_to_thread(other_thread_id, unrelated_supported_connection)
+                .try_ensure_connection_subscribed(
+                    other_thread_id,
+                    unrelated_supported_connection,
+                    /*experimental_raw_events*/ false,
+                )
                 .await
+                .is_some()
         );
         assert!(
             manager
-                .try_add_connection_to_thread(thread_id, later_supported_connection)
+                .try_ensure_connection_subscribed(
+                    thread_id,
+                    later_supported_connection,
+                    /*experimental_raw_events*/ false,
+                )
                 .await
+                .is_some()
         );
         assert!(
             manager
-                .try_add_connection_to_thread(thread_id, earlier_supported_connection)
+                .try_ensure_connection_subscribed(
+                    thread_id,
+                    earlier_supported_connection,
+                    /*experimental_raw_events*/ false,
+                )
                 .await
+                .is_some()
         );
         assert!(
             manager
-                .try_add_connection_to_thread(thread_id, unsupported_connection)
+                .try_ensure_connection_subscribed(
+                    thread_id,
+                    unsupported_connection,
+                    /*experimental_raw_events*/ false,
+                )
                 .await
+                .is_some()
         );
 
         assert_eq!(

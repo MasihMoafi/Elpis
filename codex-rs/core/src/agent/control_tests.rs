@@ -1373,7 +1373,9 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
 
 #[tokio::test]
 async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_limit() {
-    let harness = AgentControlHarness::new().await;
+    let (home, mut config) = test_config().await;
+    let _ = config.features.enable(Feature::Plugins);
+    let harness = AgentControlHarness::new_with_config(home, config).await;
     let selected_capability_roots = vec![SelectedCapabilityRoot {
         id: "demo@1".to_string(),
         location: CapabilityRootLocation::Environment {

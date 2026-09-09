@@ -6,13 +6,10 @@
 //! action: useful evidence earns one compact conclusion, while dead ends leave no
 //! model-visible trace.
 //!
-//! Automatic pruning runs in **cycles with hysteresis**, not continuously. One cycle
-//! opens when active use reaches `AUTO_PRUNE_TRIGGER_PERCENT` (30%), spends at most
-//! `MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE` Ace passes driving use down toward
-//! `AUTO_PRUNE_TARGET_PERCENT` (20%), and then closes. Once closed, `PruneCycle` blocks
-//! every automatic pass until measured use has climbed back to the 30% trigger — so the
-//! 20–30% band is a healthy working region that no pass may touch. See
-//! `docs/cache-friendly-pruning.md`.
+//! Elpis no longer schedules this retrospective pass automatically. Smart Prune handles
+//! optional automatic optimization before first model exposure; `/force-prune` is the
+//! user-visible retrospective recovery command. The legacy pressure trigger and hysteresis
+//! types remain here for compatibility with the internal pruning operation and its tests.
 //!
 //! The historical "steady" trigger was removed; it once fired whenever completed turns held a
 //! few percent of the window in uncovered tool output, independent of how full the window was.
@@ -118,6 +115,12 @@ pub fn saved_chars() -> usize {
 pub(crate) struct PruneRecord {
     pub(crate) covered_call_ids: Vec<String>,
     pub(crate) text: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PruneSavings {
+    pub(crate) chars_removed: usize,
+    pub(crate) bytes_removed: usize,
 }
 
 impl PruneRecord {
@@ -469,10 +472,9 @@ fn completed_turn_end(input: &[ResponseItem]) -> usize {
 /// Index one past the oldest item that still fits inside the keep-recent budget: the
 /// newest items totalling `PRESSURE_KEEP_RECENT_PERCENT` of the window stay verbatim.
 fn recency_cut(input: &[ResponseItem], context_window: i64) -> usize {
-    let keep_budget = usize::try_from(
-        context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100,
-    )
-    .unwrap_or(usize::MAX);
+    let keep_budget =
+        usize::try_from(context_window.saturating_mul(PRESSURE_KEEP_RECENT_PERCENT) / 100)
+            .unwrap_or(usize::MAX);
 
     let mut kept = 0usize;
     for (index, item) in input.iter().enumerate().rev() {
@@ -715,14 +717,18 @@ fn conclusions_by_call_id(record_text: &str) -> HashMap<&str, &str> {
 pub(crate) fn apply_prune_record_untracked(
     input: &mut Vec<ResponseItem>,
     record: &PruneRecord,
-) -> usize {
+) -> PruneSavings {
     if record.is_empty() {
-        return 0;
+        return PruneSavings::default();
     }
-    let epoch = input.iter().filter(|item| is_prune_epoch_marker(item)).count() as u64 + 1;
+    let epoch = input
+        .iter()
+        .filter(|item| is_prune_epoch_marker(item))
+        .count() as u64
+        + 1;
     let covered: HashSet<&str> = record.covered_call_ids.iter().map(String::as_str).collect();
     let conclusions = conclusions_by_call_id(&record.text);
-    let mut saved = 0usize;
+    let mut savings = PruneSavings::default();
     let mut rewritten = Vec::with_capacity(input.len() + 1);
     // Index in `rewritten` just past the last covered item, whether it survived as a
     // receipt or was dropped outright. Stays `None` only if the record covered nothing
@@ -736,14 +742,16 @@ pub(crate) fn apply_prune_record_untracked(
             } if covered.contains(call_id.as_str())
                 && !conclusions.contains_key(call_id.as_str()) =>
             {
-                saved += arguments.chars().count();
+                savings.chars_removed += arguments.chars().count();
+                savings.bytes_removed += arguments.len();
                 false
             }
             ResponseItem::CustomToolCall { call_id, input, .. }
                 if covered.contains(call_id.as_str())
                     && !conclusions.contains_key(call_id.as_str()) =>
             {
-                saved += input.chars().count();
+                savings.chars_removed += input.chars().count();
+                savings.bytes_removed += input.len();
                 false
             }
             ResponseItem::LocalShellCall {
@@ -763,7 +771,10 @@ pub(crate) fn apply_prune_record_untracked(
                 match conclusions.get(call_id.as_str()) {
                     // No conclusion: a dead end, so the output goes entirely.
                     None => {
-                        saved += output.body.to_text().map_or(0, |text| text.chars().count());
+                        if let Some(text) = output.body.to_text() {
+                            savings.chars_removed += text.chars().count();
+                            savings.bytes_removed += text.len();
+                        }
                         false
                     }
                     Some(conclusion) => {
@@ -773,8 +784,9 @@ pub(crate) fn apply_prune_record_untracked(
                                 "[ELPIS CONTEXT UPDATE]\nkept={conclusion}\nevidence=rollout://tool-call/{call_id}\noriginal_chars={original_chars}"
                             );
                             let new_chars = receipt.chars().count();
-                            if new_chars < original_chars {
-                                saved += original_chars - new_chars;
+                            if new_chars < original_chars && receipt.len() < text.len() {
+                                savings.chars_removed += original_chars - new_chars;
+                                savings.bytes_removed += text.len() - receipt.len();
                                 output.body = FunctionCallOutputBody::Text(receipt);
                             }
                         }
@@ -798,7 +810,7 @@ pub(crate) fn apply_prune_record_untracked(
         rewritten.insert(boundary, prune_epoch_marker(epoch));
     }
     *input = rewritten;
-    saved
+    savings
 }
 
 pub(crate) fn record_applied_prune(saved: usize) {
@@ -989,7 +1001,10 @@ mod tests {
         let window = 1_000_000;
         let used = 300_000;
         let reclaim = reclaim_target_tokens(used, window, AUTO_PRUNE_TARGET_PERCENT);
-        assert_eq!(used - reclaim as i64, window * AUTO_PRUNE_TARGET_PERCENT / 100);
+        assert_eq!(
+            used - reclaim as i64,
+            window * AUTO_PRUNE_TARGET_PERCENT / 100
+        );
         assert_eq!(AUTO_PRUNE_TARGET_PERCENT, 20);
     }
 
@@ -1037,7 +1052,10 @@ mod tests {
             tool_output("newest", &"x".repeat(8_000)),
         ];
 
-        assert_eq!(uncovered_pressure_tokens(&input, &HashSet::new(), window), 0);
+        assert_eq!(
+            uncovered_pressure_tokens(&input, &HashSet::new(), window),
+            0
+        );
     }
 
     #[test]
@@ -1424,7 +1442,8 @@ mod tests {
         };
 
         let saved = apply_prune_record_untracked(&mut input, &record);
-        assert!(saved > 0);
+        assert!(saved.chars_removed > 0);
+        assert!(saved.bytes_removed > 0);
 
         let ResponseItem::FunctionCallOutput { output, .. } = &input[1] else {
             panic!("function output");
@@ -1487,7 +1506,10 @@ mod tests {
         assert_eq!(input[..first_frozen], epoch_one[..]);
         assert!(frozen_prefix_len(&input) > first_frozen);
         assert_eq!(
-            input.iter().filter(|item| is_prune_epoch_marker(item)).count(),
+            input
+                .iter()
+                .filter(|item| is_prune_epoch_marker(item))
+                .count(),
             2,
             "each pass seals exactly one epoch"
         );
@@ -1528,7 +1550,7 @@ mod tests {
         let mut input = vec![tool_output("a", "aaaa")];
         assert_eq!(
             apply_prune_record_untracked(&mut input, &PruneRecord::default()),
-            0
+            PruneSavings::default()
         );
         let ResponseItem::FunctionCallOutput { output, .. } = &input[0] else {
             panic!("function output");
@@ -1543,10 +1565,57 @@ mod tests {
             covered_call_ids: vec!["a".to_string()],
             text: "a: trivial".to_string(),
         };
-        assert_eq!(apply_prune_record_untracked(&mut input, &record), 0);
+        assert_eq!(
+            apply_prune_record_untracked(&mut input, &record),
+            PruneSavings::default()
+        );
         let ResponseItem::FunctionCallOutput { output, .. } = &input[0] else {
             panic!("function output");
         };
         assert_eq!(output.text_content(), Some("ok"));
+    }
+
+    #[test]
+    fn apply_prune_record_reports_utf8_bytes_for_token_estimation() {
+        let original = "سلام 🌱".repeat(400);
+        let mut input = vec![tool_output("a", &original)];
+        let record = PruneRecord {
+            covered_call_ids: vec!["a".to_string()],
+            text: "a: kept".to_string(),
+        };
+
+        let original_chars = original.chars().count();
+        let original_bytes = original.len();
+        let savings = apply_prune_record_untracked(&mut input, &record);
+        let ResponseItem::FunctionCallOutput { output, .. } = &input[0] else {
+            panic!("function output");
+        };
+        let admitted = output.text_content().expect("text receipt");
+
+        assert_eq!(
+            savings.chars_removed,
+            original_chars - admitted.chars().count()
+        );
+        assert_eq!(savings.bytes_removed, original_bytes - admitted.len());
+        assert!(savings.bytes_removed > savings.chars_removed);
+    }
+
+    #[test]
+    fn apply_prune_record_never_replaces_with_a_larger_utf8_receipt() {
+        let original = "x".repeat(160);
+        let mut input = vec![tool_output("a", &original)];
+        let record = PruneRecord {
+            covered_call_ids: vec!["a".to_string()],
+            text: format!("a: {}", "🌱".repeat(40)),
+        };
+
+        assert_eq!(
+            apply_prune_record_untracked(&mut input, &record),
+            PruneSavings::default()
+        );
+        let ResponseItem::FunctionCallOutput { output, .. } = &input[0] else {
+            panic!("function output");
+        };
+        assert_eq!(output.text_content(), Some(original.as_str()));
     }
 }

@@ -210,10 +210,7 @@ mod tests {
             }),
         });
 
-        assert!(!should_persist_event_msg(
-            &event,
-            ThreadHistoryMode::Legacy
-        ));
+        assert!(!should_persist_event_msg(&event, ThreadHistoryMode::Legacy));
         assert!(!should_persist_event_msg(
             &event,
             ThreadHistoryMode::Paginated

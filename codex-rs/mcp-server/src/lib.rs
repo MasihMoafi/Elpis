@@ -225,13 +225,10 @@ mod tests {
         config.otel.trace_exporter = exporter.clone();
         config.otel.metrics_exporter = exporter;
 
-        let provider = codex_core::otel_init::build_provider(
-            &config,
-            "0.0.0-test",
-            Some(OTEL_SERVICE_NAME),
-        )
-        .map_err(|err| anyhow::anyhow!(err.to_string()))?
-        .expect("otel provider");
+        let provider =
+            codex_core::otel_init::build_provider(&config, "0.0.0-test", Some(OTEL_SERVICE_NAME))
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?
+                .expect("otel provider");
 
         assert!(provider.logger.is_some(), "expected log exporter");
         assert!(

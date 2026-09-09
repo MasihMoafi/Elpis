@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@source "./panel.js";
+@source "../assets/chat.js";
+@source "../assets/slash.js";
+@source "../assets/messages.js";
+@source "../assets/followups.js";
+@source "./settings-panel.js";
+@source "../assets/settings.js";
+@plugin "daisyui" { themes: false; }
+
+/* VS Code updates these variables live for light, dark, custom and contrast themes. */
+body {
+  --radius-selector: 0.5rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+  --color-base-100: var(--vscode-editor-background);
+  --color-base-200: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --color-base-300: var(--vscode-input-background);
+  --color-base-content: var(--vscode-editor-foreground);
+  --color-primary: var(--vscode-button-background);
+  --color-primary-content: var(--vscode-button-foreground);
+  --color-secondary: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  --color-secondary-content: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  --color-accent: var(--vscode-button-background);
+  --color-accent-content: var(--vscode-button-foreground);
+  --color-neutral: var(--vscode-button-secondaryBackground, var(--vscode-input-background));
+  --color-neutral-content: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+  --color-info: var(--vscode-editorInfo-foreground);
+  --color-info-content: var(--vscode-editor-background);
+  --color-success: var(--vscode-testing-iconPassed, var(--vscode-editor-foreground));
+  --color-success-content: var(--vscode-editor-background);
+  --color-warning: var(--vscode-editorWarning-foreground);
+  --color-warning-content: var(--vscode-editor-background);
+  --color-error: var(--vscode-errorForeground);
+  --color-error-content: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+}
+body.vscode-light, body.vscode-high-contrast-light { color-scheme: light; }
+body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
+.textarea {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border-color: var(--vscode-input-border, var(--vscode-contrastBorder, var(--vscode-widget-border)));
+}
+.textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
+.btn, .textarea { outline-color: var(--vscode-focusBorder); }
+.btn { border-color: var(--vscode-contrastBorder, var(--vscode-button-border, transparent)); }
+
+#prompt { background: transparent; border: 0; box-shadow: none; }
+#composer:focus-within { outline: 1px solid var(--vscode-focusBorder); }
+.chat-bubble { max-width: 100%; font-size: 0.875rem; line-height: 1.6; }
+.chat-start .chat-bubble { background: transparent; color: var(--vscode-editor-foreground); padding-left: 0; }
+.chat-bubble::before { display: none; }
+.chat-header { font-size: 0.75rem; opacity: 0.65; margin-bottom: 0.375rem; }

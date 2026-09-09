@@ -62,11 +62,8 @@ async fn delivered_terminal_events(
     let (session, turn_context, rx) =
         crate::session::tests::make_session_and_context_with_rx().await;
     let terminal_event = terminal_event(&turn_context.sub_id);
-    let profile_event = super::build_turn_profile_event(
-        turn_context.sub_id.clone(),
-        &terminal_event,
-        profile,
-    );
+    let profile_event =
+        super::build_turn_profile_event(turn_context.sub_id.clone(), &terminal_event, profile);
 
     super::emit_terminal_event_sequence(
         session.as_ref(),
@@ -420,10 +417,7 @@ async fn requested_task_abort_is_not_misclassified_as_abnormal() {
     let completion = Arc::new(TaskCompletion::default());
     let guard = completion.guard();
 
-    assert_eq!(
-        completion.request_abort(),
-        TaskAbortRequest::Requested
-    );
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Requested);
     drop(guard);
 
     assert_eq!(
@@ -448,10 +442,7 @@ async fn clean_exit_after_an_abort_request_is_intentional_abort() {
     let completion = Arc::new(TaskCompletion::default());
     let guard = completion.guard();
 
-    assert_eq!(
-        completion.request_abort(),
-        TaskAbortRequest::Requested
-    );
+    assert_eq!(completion.request_abort(), TaskAbortRequest::Requested);
     guard.finish();
 
     assert_eq!(

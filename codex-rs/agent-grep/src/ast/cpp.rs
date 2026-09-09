@@ -65,7 +65,11 @@ pub fn parse_cpp_scopes(source: &str) -> Vec<SymbolScope> {
             // 1. Check for `class ` or `struct `
             if rem.starts_with("class ") || rem.starts_with("struct ") {
                 let is_class = rem.starts_with("class ");
-                let kind = if is_class { ScopeKind::Class } else { ScopeKind::Struct };
+                let kind = if is_class {
+                    ScopeKind::Class
+                } else {
+                    ScopeKind::Struct
+                };
                 let decl_start = find_line_start(source, i);
 
                 if let Some((sig, name, body_start, body_end)) = extract_brace_block(source, i) {
@@ -77,12 +81,8 @@ pub fn parse_cpp_scopes(source: &str) -> Vec<SymbolScope> {
                     class_context = Some((class_name.clone(), current_depth + 1));
 
                     let inner_source = &source[body_start..body_end.saturating_sub(1)];
-                    let mut inner_methods = parse_cpp_inner_methods(
-                        inner_source,
-                        body_start,
-                        &class_name,
-                        &line_index,
-                    );
+                    let mut inner_methods =
+                        parse_cpp_inner_methods(inner_source, body_start, &class_name, &line_index);
 
                     scopes.push(SymbolScope {
                         name: class_name.clone(),

@@ -1653,7 +1653,9 @@ pub enum TurnCostAvailability {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(tag = "type", rename_all = "camelCase")]
 pub enum TurnCostState {
-    Unavailable { reason: TurnCostAvailability },
+    Unavailable {
+        reason: TurnCostAvailability,
+    },
     Priced {
         #[serde(rename = "backendTotalUsd")]
         #[ts(rename = "backendTotalUsd")]
@@ -1690,6 +1692,7 @@ server_notification_definitions! {
     #[experimental("thread/settings/updated")]
     ThreadSettingsUpdated => "thread/settings/updated" (v2::ThreadSettingsUpdatedNotification),
     ThreadTokenUsageUpdated => "thread/tokenUsage/updated" (v2::ThreadTokenUsageUpdatedNotification),
+    ThreadSmartPruneUpdated => "thread/smartPrune/updated" (v2::ThreadSmartPruneUpdatedNotification),
     TurnStarted => "turn/started" (v2::TurnStartedNotification),
     HookStarted => "hook/started" (v2::HookStartedNotification),
     TurnCompleted => "turn/completed" (v2::TurnCompletedNotification),

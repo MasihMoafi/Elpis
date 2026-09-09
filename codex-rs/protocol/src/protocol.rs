@@ -2114,6 +2114,104 @@ pub struct TokenUsageInfo {
     pub model_context_window: Option<i64>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+pub struct SmartPruneSnapshot {
+    pub enabled: bool,
+    #[ts(type = "number")]
+    pub examined_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub unchanged_outputs: u64,
+    #[ts(type = "number")]
+    pub failed_batches: u64,
+    #[ts(type = "number")]
+    pub approx_source_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_admitted_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    /// Optimizer calls are accounted separately from the main thread's token usage.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_requests: u64,
+    /// Number of optimizer calls for which the provider supplied token usage.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_usage_reports: u64,
+    /// Cumulative provider-reported optimizer usage. A report count of zero means
+    /// these zero values are not measurements.
+    #[serde(default)]
+    pub optimizer_usage: TokenUsage,
+    /// Cumulative wall-clock time spent awaiting optimizer calls.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub optimizer_latency_ms: u64,
+    #[ts(type = "number")]
+    pub main_request_sequence: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub latest: Option<SmartPruneAdmissionSnapshot>,
+    /// Latest optimizer attempt, including unchanged and failed outcomes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub latest_attempt: Option<SmartPruneAttemptSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+pub struct SmartPruneAttemptSnapshot {
+    pub attempt_id: String,
+    /// Path relative to the Codex log directory when exact local evidence was published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub audit_path: Option<String>,
+    pub status: String,
+    pub model_slug: String,
+    pub reasoning_effort: String,
+    #[ts(type = "number")]
+    pub candidate_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    #[ts(type = "number")]
+    pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub usage: Option<TokenUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+pub struct SmartPruneAdmissionSnapshot {
+    pub admission_id: String,
+    /// Path relative to the Codex log directory; never contains raw tool content.
+    pub audit_path: String,
+    #[ts(type = "number")]
+    pub examined_outputs: u64,
+    #[ts(type = "number")]
+    pub admitted_outputs: u64,
+    #[ts(type = "number")]
+    pub approx_source_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_admitted_tokens: u64,
+    #[ts(type = "number")]
+    pub approx_saved_tokens: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null", optional)]
+    pub request_sequence: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub request_input_sha256: Option<String>,
+    pub request_linkage_verified: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub response_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub response_usage: Option<TokenUsage>,
+    pub response_linkage_verified: bool,
+}
+
 impl TokenUsageInfo {
     pub fn new_or_append(
         info: &Option<TokenUsageInfo>,
@@ -2172,6 +2270,36 @@ impl TokenUsageInfo {
     }
 }
 
+/// Local estimate of the model-visible components in one fully built request.
+///
+/// These values come from the actual `Prompt` immediately before a provider
+/// attempt. They are never scaled or padded to match provider token usage.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
+pub struct ContextAttributionSnapshot {
+    #[ts(type = "number")]
+    pub system_instructions: u64,
+    #[ts(type = "number")]
+    pub developer_messages: u64,
+    #[ts(type = "number")]
+    pub user_messages: u64,
+    #[ts(type = "number")]
+    pub agent_messages: u64,
+    #[ts(type = "number")]
+    pub reasoning: u64,
+    #[ts(type = "number")]
+    pub tool_calls: u64,
+    #[ts(type = "number")]
+    pub tool_results: u64,
+    #[ts(type = "number")]
+    pub tool_definitions: u64,
+    #[ts(type = "number")]
+    pub output_schema: u64,
+    #[ts(type = "number")]
+    pub unrecognized_items: u64,
+    #[ts(type = "number")]
+    pub estimated_total: u64,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct TokenCountEvent {
     pub info: Option<TokenUsageInfo>,
@@ -2179,6 +2307,13 @@ pub struct TokenCountEvent {
     /// Cumulative context tokens reclaimed by Ace in this thread.
     #[serde(default)]
     pub context_prune_saved_tokens: u64,
+    /// Admission-time Smart Prune mechanism and provider evidence.
+    #[serde(default)]
+    pub smart_prune: SmartPruneSnapshot,
+    /// Latest actual request construction, if a prompt has been built in this process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub context_attribution: Option<ContextAttributionSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]

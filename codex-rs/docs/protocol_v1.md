@@ -1,4 +1,4 @@
-Overview of Protocol defined in [protocol.rs](../protocol/src/protocol.rs) and [agent.rs](../core/src/agent.rs).
+Overview of Protocol defined in [protocol.rs](../protocol/src/protocol.rs) and [agent/mod.rs](../core/src/agent/mod.rs).
 
 The goal of this document is to define terminology used in the system and explain the expected behavior of the system.
 

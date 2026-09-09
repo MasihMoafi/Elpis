@@ -23,6 +23,7 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::TextPosition;
 use codex_app_server_protocol::TextRange;
 use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ThreadSmartPruneUpdatedNotification;
 use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
@@ -461,6 +462,59 @@ async fn thread_start_creates_thread_and_emits_started() -> Result<()> {
     let started: ThreadStartedNotification =
         serde_json::from_value(notif.params.expect("params must be present"))?;
     assert_eq!(started.thread, thread);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_start_emits_effective_smart_prune_state_before_first_turn() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    create_config_toml_without_approval_policy(codex_home.path(), &server.uri())?;
+    let config_path = codex_home.path().join("config.toml");
+    let config = std::fs::read_to_string(&config_path)?;
+    std::fs::write(
+        &config_path,
+        format!("{config}\n[features]\nautomatic_context_pruning = true\n"),
+    )?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams::default())
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let response: ThreadStartResponse = to_response(response)?;
+
+    let notification = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("thread/smartPrune/updated"),
+    )
+    .await??;
+    let notification: ThreadSmartPruneUpdatedNotification = serde_json::from_value(
+        notification
+            .params
+            .context("notification params must be present")?,
+    )?;
+    assert_eq!(notification.thread_id, response.thread.id);
+    assert!(notification.smart_prune.enabled);
+    assert!(
+        timeout(
+            std::time::Duration::from_millis(250),
+            mcp.read_stream_until_notification_message("thread/smartPrune/updated"),
+        )
+        .await
+        .is_err(),
+        "a connection must receive exactly one initial Smart Prune snapshot"
+    );
 
     Ok(())
 }

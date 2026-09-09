@@ -1,8 +1,8 @@
 //! Native hosted-provider protocol adapters.
 //!
-//! OpenAI and OpenRouter continue to use the existing Responses implementation. This module only
-//! translates the canonical Responses-shaped request into Anthropic Messages or Gemini
-//! GenerateContent and translates their SSE streams back into canonical `ResponseEvent`s.
+//! Translates canonical Responses-shaped requests into Chat Completions (including OpenRouter),
+//! Anthropic Messages or Gemini GenerateContent, and their streams back into `ResponseEvent`s.
+//! OpenAI's native route continues to use the existing Responses implementation.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -17,6 +17,7 @@ use codex_api::ResponsesApiRequest;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClientFactory;
 use codex_model_provider_info::WireApi;
+use codex_protocol::ResponseItemId;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::TokenUsage;
@@ -29,6 +30,13 @@ use tokio::sync::mpsc;
 
 const STREAM_CHANNEL_CAPACITY: usize = 1600;
 const ANTHROPIC_MAX_TOKENS: u64 = 8192;
+// Opaque provider reasoning state lives in the existing persisted reasoning envelope,
+// never in tool arguments or Responses API internal metadata.
+const GEMINI_SIGNATURE_PREFIX: &str = "elpis:gemini-tool-signature:v1:";
+
+pub(crate) fn is_gemini_signature(item: &ResponseItem) -> bool {
+    matches!(item, ResponseItem::Reasoning { encrypted_content: Some(value), .. } if value.starts_with(GEMINI_SIGNATURE_PREFIX))
+}
 
 pub(crate) async fn stream_native_request(
     provider: Provider,
@@ -258,6 +266,20 @@ fn anthropic_request(request: &ResponsesApiRequest) -> Result<Value, ApiError> {
 }
 
 fn gemini_request(request: &ResponsesApiRequest) -> Result<Value, ApiError> {
+    let mut signatures = HashMap::new();
+    for item in &request.input {
+        if let ResponseItem::Reasoning {
+            encrypted_content: Some(value),
+            ..
+        } = item
+            && let Some(payload) = value.strip_prefix(GEMINI_SIGNATURE_PREFIX)
+            && let Ok(value) = serde_json::from_str::<Value>(payload)
+            && let (Some(call_id), Some(signature)) =
+                (value["call_id"].as_str(), value["signature"].as_str())
+        {
+            signatures.insert(call_id.to_string(), signature.to_string());
+        }
+    }
     let mut system = vec![request.instructions.clone()];
     let mut contents = Vec::<Value>::new();
     let mut current_role: Option<&str> = None;
@@ -313,6 +335,11 @@ fn gemini_request(request: &ResponsesApiRequest) -> Result<Value, ApiError> {
                         "args": parse_object(arguments, "Gemini function arguments")?,
                     }
                 }));
+                if let Some(signature) = signatures.get(call_id) {
+                    if let Some(part) = current_parts.last_mut() {
+                        part["thoughtSignature"] = json!(signature);
+                    }
+                }
             }
             ResponseItem::FunctionCallOutput {
                 call_id, output, ..
@@ -497,6 +524,8 @@ where
     let mut stop_reason: Option<String> = None;
     let mut text = String::new();
     let mut tools = HashMap::<u64, ToolAccumulator>::new();
+    let message_id = ResponseItemId::new("msg");
+    let mut text_opened = false;
 
     loop {
         let next = tokio::select! {
@@ -534,7 +563,8 @@ where
                         let initial = block["text"].as_str().unwrap_or_default();
                         if !initial.is_empty() {
                             text.push_str(initial);
-                            send(tx, ResponseEvent::OutputTextDelta(initial.to_string())).await?;
+                            stream_assistant_text(tx, &message_id, &mut text_opened, initial)
+                                .await?;
                         }
                     }
                     Some("tool_use") => {
@@ -567,7 +597,7 @@ where
                     Some("text_delta") => {
                         let part = delta["text"].as_str().unwrap_or_default();
                         text.push_str(part);
-                        send(tx, ResponseEvent::OutputTextDelta(part.to_string())).await?;
+                        stream_assistant_text(tx, &message_id, &mut text_opened, part).await?;
                     }
                     Some("input_json_delta") => {
                         let part = delta["partial_json"].as_str().unwrap_or_default();
@@ -616,7 +646,7 @@ where
                 if !text.is_empty() {
                     send(
                         tx,
-                        ResponseEvent::OutputItemDone(assistant_message(text.clone())),
+                        ResponseEvent::OutputItemDone(assistant_message(text.clone(), &message_id)),
                     )
                     .await?;
                 }
@@ -665,6 +695,8 @@ where
     let mut response_id = String::new();
     let mut text = String::new();
     let mut usage = TokenUsage::default();
+    let message_id = ResponseItemId::new("msg");
+    let mut text_opened = false;
     let mut completed = false;
     let mut call_counter = 0_u64;
     let mut saw_function_call = false;
@@ -720,7 +752,7 @@ where
             for part in parts {
                 if let Some(delta) = part["text"].as_str() {
                     text.push_str(delta);
-                    send(tx, ResponseEvent::OutputTextDelta(delta.to_string())).await?;
+                    stream_assistant_text(tx, &message_id, &mut text_opened, delta).await?;
                 }
                 if let Some(call) = part.get("functionCall") {
                     let name = call["name"].as_str().unwrap_or_default();
@@ -729,7 +761,7 @@ where
                         .cloned()
                         .unwrap_or_else(|| json!({}))
                         .to_string();
-                    let signature = format!("{name}:{arguments}");
+                    let signature = format!("{}:{name}:{arguments}", call["id"]);
                     if !seen_function_calls.insert(signature) {
                         continue;
                     }
@@ -738,7 +770,23 @@ where
                     let call_id = call["id"]
                         .as_str()
                         .map(ToOwned::to_owned)
-                        .unwrap_or_else(|| format!("gemini-call-{call_counter}"));
+                        .unwrap_or_else(|| {
+                            format!("gemini-call-{}-{call_counter}", uuid::Uuid::new_v4())
+                        });
+                    if let Some(signature) = part["thoughtSignature"].as_str() {
+                        let record = ResponseItem::Reasoning {
+                            id: None,
+                            summary: Vec::new(),
+                            content: None,
+                            encrypted_content: Some(format!(
+                                "{GEMINI_SIGNATURE_PREFIX}{}",
+                                json!({"call_id": call_id, "signature": signature})
+                            )),
+                            internal_chat_message_metadata_passthrough: None,
+                        };
+                        send(tx, ResponseEvent::OutputItemAdded(record.clone())).await?;
+                        send(tx, ResponseEvent::OutputItemDone(record)).await?;
+                    }
                     send(
                         tx,
                         ResponseEvent::OutputItemAdded(function_call_item(
@@ -771,7 +819,7 @@ where
             if !text.is_empty() {
                 send(
                     tx,
-                    ResponseEvent::OutputItemDone(assistant_message(text.clone())),
+                    ResponseEvent::OutputItemDone(assistant_message(text.clone(), &message_id)),
                 )
                 .await?;
             }
@@ -832,9 +880,26 @@ fn function_call_item(name: &str, call_id: &str, arguments: String) -> ResponseI
     }
 }
 
-fn assistant_message(text: String) -> ResponseItem {
+async fn stream_assistant_text(
+    tx: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    id: &ResponseItemId,
+    opened: &mut bool,
+    text: &str,
+) -> Result<(), ApiError> {
+    if !*opened {
+        *opened = true;
+        send(
+            tx,
+            ResponseEvent::OutputItemAdded(assistant_message(String::new(), id)),
+        )
+        .await?;
+    }
+    send(tx, ResponseEvent::OutputTextDelta(text.to_string())).await
+}
+
+fn assistant_message(text: String, id: &ResponseItemId) -> ResponseItem {
     ResponseItem::Message {
-        id: None,
+        id: Some(id.clone()),
         role: "assistant".to_string(),
         content: vec![ContentItem::OutputText { text }],
         phase: None,
@@ -944,18 +1009,28 @@ fn chat_completions_request(request: &ResponsesApiRequest) -> Result<Value, ApiE
                 call_id,
                 ..
             } => {
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": name,
-                            "arguments": arguments,
-                        }
-                    }]
-                }));
+                let call = json!({"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}});
+                if let Some(previous) = messages.last_mut()
+                    && previous["role"] == "assistant"
+                    && let Some(calls) = previous["tool_calls"].as_array_mut()
+                {
+                    calls.push(call);
+                } else {
+                    messages
+                        .push(json!({"role": "assistant", "content": null, "tool_calls": [call]}));
+                }
+            }
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            } => {
+                let text = output
+                    .body
+                    .to_text()
+                    .ok_or_else(|| ApiError::InvalidRequest {
+                        message: "Chat tool results currently support text content only"
+                            .to_string(),
+                    })?;
+                messages.push(json!({"role": "tool", "tool_call_id": call_id, "content": text}));
             }
             _ => {}
         }
@@ -1006,6 +1081,9 @@ where
     let mut output_tokens = 0_i64;
     let mut finish_reason: Option<String> = None;
     let mut item_opened = false;
+    let message_id = ResponseItemId::new("msg");
+    let mut tools: std::collections::BTreeMap<u64, ToolAccumulator> =
+        std::collections::BTreeMap::new();
 
     loop {
         let next = tokio::select! {
@@ -1038,6 +1116,32 @@ where
             if let Some(reason) = candidate["finish_reason"].as_str() {
                 finish_reason = Some(reason.to_string());
             }
+            if let Some(deltas) = candidate["delta"]["tool_calls"].as_array() {
+                for delta in deltas {
+                    let index = delta["index"].as_u64().ok_or_else(|| {
+                        ApiError::Stream("Chat tool call is missing its index".to_string())
+                    })?;
+                    let tool = tools.entry(index).or_insert_with(|| ToolAccumulator {
+                        name: String::new(),
+                        call_id: String::new(),
+                        arguments: String::new(),
+                    });
+                    if let Some(id) = delta["id"].as_str() {
+                        if !tool.call_id.is_empty() && tool.call_id != id {
+                            return Err(ApiError::Stream(
+                                "Chat tool call changed its ID".to_string(),
+                            ));
+                        }
+                        tool.call_id = id.to_string();
+                    }
+                    if let Some(name) = delta["function"]["name"].as_str() {
+                        tool.name.push_str(name);
+                    }
+                    if let Some(arguments) = delta["function"]["arguments"].as_str() {
+                        tool.arguments.push_str(arguments);
+                    }
+                }
+            }
             if let Some(delta) = candidate["delta"]["content"].as_str()
                 && !delta.is_empty()
             {
@@ -1049,7 +1153,7 @@ where
                     send(
                         tx,
                         ResponseEvent::OutputItemAdded(ResponseItem::Message {
-                            id: None,
+                            id: Some(message_id.clone()),
                             role: "assistant".to_string(),
                             content: vec![ContentItem::OutputText {
                                 text: String::new(),
@@ -1075,7 +1179,7 @@ where
         send(
             tx,
             ResponseEvent::OutputItemDone(ResponseItem::Message {
-                id: None,
+                id: Some(message_id.clone()),
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
                     text: std::mem::take(&mut text),
@@ -1100,6 +1204,41 @@ where
         None
     };
 
+    if !tools.is_empty() && finish_reason.as_deref() != Some("tool_calls") {
+        return Err(ApiError::Stream(
+            "Chat stream ended without complete tool calls".to_string(),
+        ));
+    }
+    for tool in tools.values() {
+        if tool.name.is_empty()
+            || tool.call_id.is_empty()
+            || serde_json::from_str::<Value>(&tool.arguments).is_err()
+        {
+            return Err(ApiError::Stream(
+                "Chat stream returned an incomplete tool call".to_string(),
+            ));
+        }
+    }
+    for tool in tools.into_values() {
+        send(
+            tx,
+            ResponseEvent::OutputItemAdded(function_call_item(
+                &tool.name,
+                &tool.call_id,
+                String::new(),
+            )),
+        )
+        .await?;
+        send(
+            tx,
+            ResponseEvent::OutputItemDone(function_call_item(
+                &tool.name,
+                &tool.call_id,
+                tool.arguments,
+            )),
+        )
+        .await?;
+    }
     let end_turn = finish_reason.as_deref().map(|r| r != "tool_calls");
     send(
         tx,
@@ -1240,6 +1379,88 @@ mod tests {
         assert_eq!(
             body["tools"][0]["functionDeclarations"][0]["parameters"]["type"],
             "object"
+        );
+    }
+
+    #[test]
+    fn gemini_signature_survives_serialized_history_and_stays_on_its_call() {
+        let mut request = request();
+        let record = ResponseItem::Reasoning {
+            id: None,
+            summary: Vec::new(),
+            content: None,
+            encrypted_content: Some(format!(
+                "{GEMINI_SIGNATURE_PREFIX}{}",
+                json!({"call_id": "call-1", "signature": "opaque-signed-state"})
+            )),
+            internal_chat_message_metadata_passthrough: None,
+        };
+        let restored: ResponseItem =
+            serde_json::from_slice(&serde_json::to_vec(&record).expect("serialize"))
+                .expect("restore");
+        assert!(is_gemini_signature(&restored));
+        request.input.insert(0, restored);
+        let body = gemini_request(&request).expect("signed request");
+        let parts: Vec<_> = body["contents"]
+            .as_array()
+            .expect("contents")
+            .iter()
+            .flat_map(|content| content["parts"].as_array().expect("parts"))
+            .collect();
+        assert_eq!(
+            parts
+                .iter()
+                .find(|part| part.get("functionCall").is_some())
+                .expect("call")["thoughtSignature"],
+            "opaque-signed-state"
+        );
+        assert!(
+            parts
+                .iter()
+                .filter(|part| part.get("functionCall").is_none())
+                .all(|part| part.get("thoughtSignature").is_none())
+        );
+        request.input.retain(|item| !is_gemini_signature(item));
+        assert!(
+            !gemini_request(&request)
+                .expect("unsigned request")
+                .to_string()
+                .contains("opaque-signed-state")
+        );
+    }
+
+    #[test]
+    fn chat_request_preserves_function_results() {
+        let mut request = request();
+        let position = request
+            .input
+            .iter()
+            .position(|item| matches!(item, ResponseItem::FunctionCall { .. }))
+            .expect("call");
+        let mut parallel_call = request.input[position].clone();
+        if let ResponseItem::FunctionCall { call_id, .. } = &mut parallel_call {
+            *call_id = "call-2".to_string();
+        }
+        request.input.insert(position + 1, parallel_call);
+        let body = chat_completions_request(&request).expect("chat request");
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(
+            messages
+                .iter()
+                .find_map(|message| message["tool_calls"].as_array())
+                .expect("parallel calls")
+                .len(),
+            2
+        );
+        let result = messages
+            .iter()
+            .find(|message| message["role"] == "tool")
+            .expect("tool result");
+        assert_eq!(result["tool_call_id"], "call-1");
+        assert!(
+            result["content"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty())
         );
     }
 
@@ -1533,20 +1754,22 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    fn sse(data: &str) -> Result<Event, EventStreamError<reqwest::Error>> {
+        Ok(Event {
+            event: "message".to_string(),
+            data: data.to_string(),
+            id: String::new(),
+            retry: None,
+        })
+    }
+
     #[tokio::test]
     async fn chat_stream_opens_an_item_before_the_first_text_delta() {
-        fn sse(data: &str) -> Result<Event, EventStreamError<reqwest::Error>> {
-            Ok(Event {
-                event: "message".to_string(),
-                data: data.to_string(),
-                id: String::new(),
-                retry: None,
-            })
-        }
-
         let mut events = futures::stream::iter(vec![
             sse(r#"{"id":"gen-1","choices":[{"delta":{"content":"hi"}}]}"#),
-            sse(r#"{"id":"gen-1","choices":[{"delta":{"content":" there"},"finish_reason":"stop"}]}"#),
+            sse(
+                r#"{"id":"gen-1","choices":[{"delta":{"content":" there"},"finish_reason":"stop"}]}"#,
+            ),
             sse("[DONE]"),
         ]);
         let (tx, mut rx) = mpsc::channel(16);
@@ -1585,5 +1808,82 @@ mod tests {
         assert_eq!(gemini_end_turn(Some("STOP")), Some(true));
         assert_eq!(gemini_end_turn(Some("FINISH_REASON_UNSPECIFIED")), None);
         assert_eq!(gemini_end_turn(Some("future_reason")), None);
+    }
+
+    #[tokio::test]
+    async fn chat_tools_preserve_fragmented_arguments_and_parallel_ids() {
+        let events = vec![
+            sse(
+                r#"{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"b","function":{"name":"second","arguments":"{}"}},{"index":0,"id":"a","function":{"name":"first","arguments":"{\"city\":"}}]}}]}"#,
+            ),
+            sse(
+                r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"تهران\"}"}}]},"finish_reason":"tool_calls"}]}"#,
+            ),
+            sse("[DONE]"),
+        ];
+        let (tx, mut rx) = mpsc::channel(16);
+        stream_chat_completions_events(
+            &mut futures::stream::iter(events),
+            &tx,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("complete tools");
+        drop(tx);
+        let mut calls = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
+                name,
+                call_id,
+                arguments,
+                ..
+            }) = event.expect("event")
+            {
+                calls.push((name, call_id, arguments));
+            }
+        }
+        assert_eq!(
+            calls,
+            vec![
+                (
+                    "first".to_string(),
+                    "a".to_string(),
+                    "{\"city\":\"تهران\"}".to_string()
+                ),
+                ("second".to_string(), "b".to_string(), "{}".to_string())
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_tools_reject_truncated_arguments_without_executing() {
+        for finish in ["tool_calls", "length"] {
+            let events = vec![
+                sse(
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"edit","arguments":"{\"text\":"}}]}}]}"#,
+                ),
+                sse(&format!(
+                    r#"{{"choices":[{{"delta":{{}},"finish_reason":"{finish}"}}]}}"#
+                )),
+                sse("[DONE]"),
+            ];
+            let (tx, mut rx) = mpsc::channel(16);
+            assert!(
+                stream_chat_completions_events(
+                    &mut futures::stream::iter(events),
+                    &tx,
+                    Duration::from_secs(1)
+                )
+                .await
+                .is_err()
+            );
+            drop(tx);
+            while let Some(event) = rx.recv().await {
+                assert!(!matches!(
+                    event.expect("event"),
+                    ResponseEvent::OutputItemDone(ResponseItem::FunctionCall { .. })
+                ));
+            }
+        }
     }
 }

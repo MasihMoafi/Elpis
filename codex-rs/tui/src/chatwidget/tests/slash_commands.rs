@@ -149,59 +149,6 @@ async fn slash_compact_eagerly_queues_follow_up_before_turn_start() {
 }
 
 #[tokio::test]
-async fn slash_prune_submits_selective_prune_instead_of_compaction() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.dispatch_command(SlashCommand::Prune);
-
-    assert!(chat.bottom_pane.is_task_running());
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
-    match rx.try_recv() {
-        Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => {}
-        other => panic!("expected selective prune op to be submitted, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn slash_prune_status_identifies_a_manual_action() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.dispatch_command(SlashCommand::Prune);
-
-    let event = rx.try_recv().expect("manual prune status");
-    let AppEvent::InsertHistoryCell(cell) = event else {
-        panic!("expected manual prune status, got {event:?}");
-    };
-    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-    assert!(rendered.contains("Manual pruning"), "status: {rendered:?}");
-    assert!(
-        !rendered.contains("Automatic pruning"),
-        "manual status must not claim automatic invocation: {rendered:?}"
-    );
-}
-
-#[tokio::test]
-async fn slash_prune_takes_no_arguments_so_a_bare_prune_always_runs() {
-    // The regression this guards: `/prune` accepted an optional percentage, so a
-    // bare `/prune` went through the argument path and could be swallowed there
-    // instead of running a pass. Force-pruning lives in `/force-prune` now.
-    assert!(!SlashCommand::Prune.supports_inline_args());
-    assert!(SlashCommand::ForcePrune.supports_inline_args());
-
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.dispatch_command_with_args(SlashCommand::Prune, String::new(), Vec::new());
-
-    assert!(chat.bottom_pane.is_task_running());
-    loop {
-        match rx.try_recv() {
-            Ok(AppEvent::CodexOp(Op::Prune { target_pct: None })) => break,
-            Ok(_) => continue,
-            other => panic!("expected a bare prune to run a pass, got {other:?}"),
-        }
-    }
-}
-
-#[tokio::test]
 async fn slash_dashboard_requests_a_read_only_context_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -211,6 +158,77 @@ async fn slash_dashboard_requests_a_read_only_context_snapshot() {
         Ok(AppEvent::OpenContextDashboard) => {}
         other => panic!("expected dashboard event, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn slash_smart_prune_toggles_and_accepts_explicit_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    assert!(
+        !chat
+            .config
+            .features
+            .enabled(Feature::AutomaticContextPruning)
+    );
+
+    chat.smart_prune_synced = true;
+    chat.dispatch_command(SlashCommand::SmartPrune);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    chat.cancel_pending_smart_prune_update();
+
+    chat.smart_prune_synced = false;
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "off".to_string(), Vec::new());
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, false)]
+    ));
+}
+
+#[tokio::test]
+async fn slash_prune_only_enables_smart_prune_and_never_runs_manual_pruning() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.smart_prune_synced = true;
+
+    chat.dispatch_command(SlashCommand::Prune);
+
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UpdateFeatureFlags { updates })
+            if updates == vec![(Feature::AutomaticContextPruning, true)]
+    ));
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, AppEvent::CodexOp(Op::Prune { .. })),
+            "/prune must enable Smart Prune, not rewrite existing history"
+        );
+    }
+}
+
+#[tokio::test]
+async fn slash_smart_prune_rejects_invalid_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::SmartPrune,
+        "sometimes".to_string(),
+        Vec::new(),
+    );
+
+    match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+            assert!(rendered.contains("Usage: /smart-prune [on|off]"));
+        }
+        other => panic!("expected usage error, got {other:?}"),
+    }
+    assert!(
+        rx.try_recv().is_err(),
+        "invalid input dispatched a feature update"
+    );
 }
 
 #[tokio::test]
@@ -251,10 +269,10 @@ async fn slash_force_prune_status_identifies_its_manual_targeting() {
 }
 
 #[tokio::test]
-async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() {
+async fn manual_force_prune_tracking_only_finishes_after_its_normal_turn_completion() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     seed_manual_memory_cache_from_disk(&mut chat).expect("seed manual-memory cache");
-    chat.dispatch_command(SlashCommand::Prune);
+    chat.dispatch_command_with_args(SlashCommand::ForcePrune, "20".to_string(), Vec::new());
     let _ = rx.try_recv().expect("manual prune start status");
     let _ = rx.try_recv().expect("manual prune operation");
 
@@ -264,24 +282,28 @@ async fn manual_prune_tracking_only_finishes_after_its_normal_turn_completion() 
     let mut requested_context_report = false;
     while let Ok(event) = rx.try_recv() {
         match event {
-            AppEvent::InsertHistoryCell(cell) => completion_messages
-                .push(lines_to_single_string(&cell.display_lines(/*width*/ 80))),
+            AppEvent::InsertHistoryCell(cell) => {
+                completion_messages.push(lines_to_single_string(&cell.display_lines(/*width*/ 80)))
+            }
             AppEvent::RequestContextUsageReport(_) => requested_context_report = true,
             _ => {}
         }
     }
-    assert!(requested_context_report, "normal manual completion refreshes context usage");
+    assert!(
+        requested_context_report,
+        "normal manual completion refreshes context usage"
+    );
     assert_eq!(
         completion_messages,
-        vec!["Manual pruning command finished\n"],
+        vec!["• Manual pruning command finished\n"],
         "normal completion must be neutral about applied work"
     );
 }
 
 #[tokio::test]
-async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() {
+async fn manual_force_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.dispatch_command(SlashCommand::Prune);
+    chat.dispatch_command_with_args(SlashCommand::ForcePrune, "20".to_string(), Vec::new());
     let _ = rx.try_recv().expect("manual prune start status");
     let _ = rx.try_recv().expect("manual prune operation");
 
@@ -294,9 +316,9 @@ async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() 
             "failed or interrupted manual tracking must not refresh a later turn"
         );
         if let AppEvent::InsertHistoryCell(cell) = event {
-            assert_ne!(
-                lines_to_single_string(&cell.display_lines(/*width*/ 80)),
-                "Manual pruning command finished\n",
+            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+            assert!(
+                !rendered.contains("Manual pruning command finished"),
                 "failed or interrupted manual tracking must not complete later"
             );
         }
@@ -304,8 +326,8 @@ async fn manual_prune_tracking_does_not_leak_after_failed_or_interrupted_turn() 
 }
 
 #[tokio::test]
-async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
-) -> anyhow::Result<()> {
+async fn manual_memory_add_invalidates_cached_sources_after_success_or_error() -> anyhow::Result<()>
+{
     let root = tempdir()?;
     let cwd = root.path().join("workspace");
     let memories = root.path().join("memories");
@@ -319,16 +341,12 @@ async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
     chat.config.memory_dir = memories.abs();
     seed_manual_memory_cache_from_disk(&mut chat)?;
 
-    chat.dispatch_command_with_args(
-        SlashCommand::Add,
-        source.display().to_string(),
-        Vec::new(),
-    );
+    chat.dispatch_command_with_args(SlashCommand::Add, source.display().to_string(), Vec::new());
     assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
-    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
-        event,
-        AppEvent::ManualMemoryStatusRefreshRequested(_)
-    )));
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)))
+    );
 
     seed_manual_memory_cache_from_disk(&mut chat)?;
     chat.dispatch_command_with_args(
@@ -337,10 +355,10 @@ async fn manual_memory_add_invalidates_cached_sources_after_success_or_error(
         Vec::new(),
     );
     assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
-    assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
-        event,
-        AppEvent::ManualMemoryStatusRefreshRequested(_)
-    )));
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::ManualMemoryStatusRefreshRequested(_)))
+    );
     Ok(())
 }
 

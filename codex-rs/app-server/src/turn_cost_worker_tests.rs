@@ -18,12 +18,12 @@ use codex_backend_client::ApiKeyResponseCost;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::OtelExporterKind;
 use codex_core::config::ConfigBuilder;
-use codex_login::auth::BedrockApiKeyAuth;
-use codex_login::auth::save_auth;
 use codex_login::AuthDotJson;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::CodexAuth;
 use codex_login::TokenData;
+use codex_login::auth::BedrockApiKeyAuth;
+use codex_login::auth::save_auth;
 use codex_login::login_with_api_key;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 use codex_model_provider_info::built_in_model_providers;
@@ -48,7 +48,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tokio::time::timeout;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
@@ -98,12 +97,11 @@ async fn availability_policy_classifies_auth_exporter_and_provider_without_io() 
         }
     );
 
-    let bedrock_auth = AuthManager::from_auth_for_testing(CodexAuth::BedrockApiKey(
-        BedrockApiKeyAuth {
+    let bedrock_auth =
+        AuthManager::from_auth_for_testing(CodexAuth::BedrockApiKey(BedrockApiKeyAuth {
             api_key: "bedrock-test".to_string(),
             region: "us-east-1".to_string(),
-        },
-    ));
+        }));
     let policy = TurnCostAvailabilityPolicy::new(Arc::new(config.clone()), bedrock_auth);
     assert_eq!(
         policy.classify(&config),
@@ -147,7 +145,7 @@ async fn availability_policy_classifies_auth_exporter_and_provider_without_io() 
 
 #[tokio::test]
 async fn activity_notifications_listener_path_orders_initial_cost_before_enqueue_and_counts_hidden_raw()
-{
+ {
     let codex_home = TempDir::new().expect("temporary Elpis home");
     let mut config = load_default_config_for_test(&codex_home).await;
     config.otel.metrics_exporter = OtelExporterKind::OtlpGrpc {
@@ -164,9 +162,7 @@ async fn activity_notifications_listener_path_orders_initial_cost_before_enqueue
         ),
     );
     let codex_core::NewThread {
-        thread_id,
-        thread,
-        ..
+        thread_id, thread, ..
     } = thread_manager
         .start_thread(config.clone())
         .await
@@ -179,10 +175,7 @@ async fn activity_notifications_listener_path_orders_initial_cost_before_enqueue
         .track_current_turn_event(&started.id, &started.msg);
 
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("sk-test"));
-    let policy = TurnCostAvailabilityPolicy::new(
-        Arc::new(config.clone()),
-        auth_manager.clone(),
-    );
+    let policy = TurnCostAvailabilityPolicy::new(Arc::new(config.clone()), auth_manager.clone());
     let (observation_tx, mut observation_rx) = mpsc::channel(4);
     let worker = TurnCostWorkerHandle {
         sender: observation_tx,
@@ -403,6 +396,11 @@ async fn queued_start_is_terminalized_once_when_api_key_auth_is_cleared() {
         mut notifications,
         ..
     } = test_runtime(&server, auth_manager.clone()).await;
+    let dropped_turns = runtime.dropped_turns.clone();
+    assert!(register_active_turn(
+        &dropped_turns,
+        "turn-queued-before-logout",
+    ));
     let (sender, receiver) = mpsc::channel(2);
     let (session_telemetry, metrics) = test_session_telemetry(thread_id);
     sender
@@ -437,6 +435,12 @@ async fn queued_start_is_terminalized_once_when_api_key_auth_is_cleared() {
             reason: TurnCostAvailability::BackendUnavailable,
         }
     );
+    let dropped_turns = dropped_turns
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(dropped_turns.dropped.contains("turn-queued-before-logout"));
+    assert!(!dropped_turns.active.contains("turn-queued-before-logout"));
+    drop(dropped_turns);
     tokio::task::yield_now().await;
     assert!(notifications.try_recv().is_err());
     assert_eq!(turn_cost_metric_value(&metrics), None);
@@ -513,8 +517,7 @@ async fn subscription_to_api_key_keeps_a_post_change_start_eligible() {
             .await;
     });
     wait_for_request_count(&server, 1).await;
-    tokio::time::advance(POLL_INTERVAL).await;
-    wait_for_request_count(&server, 2).await;
+    advance_until_request_count(&server, 2).await;
 
     let notification = recv_turn_cost_notification(&mut notifications).await;
     assert_eq!(notification.turn_id, turn_id);
@@ -572,7 +575,16 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
         AuthKeyringBackendKind::default(),
     )
     .expect("write rotated API key");
-    assert!(auth_manager.reload().await);
+    let revision_before_rotation = current_auth_revision(auth_manager.as_ref());
+    // `reload()` reports equality by auth mode, so one API key replacing another is "no
+    // change" to it even though it loads the new key. The worker keys off the auth
+    // revision, which the reload bumps, so that is the contract to assert.
+    let _ = auth_manager.reload().await;
+    assert_ne!(
+        current_auth_revision(auth_manager.as_ref()),
+        revision_before_rotation,
+        "rotating the API key must bump the auth revision"
+    );
     let current_auth_revision = current_auth_revision(auth_manager.as_ref());
     let (current_session_telemetry, current_metrics) = test_session_telemetry(thread_id);
     let (sender, receiver) = mpsc::channel(4);
@@ -624,8 +636,7 @@ async fn api_key_rotation_discards_old_work_but_keeps_a_post_change_start_eligib
     );
     assert_eq!(turn_cost_metric_value(&old_metrics), None);
     wait_for_request_count(&server, 1).await;
-    tokio::time::advance(POLL_INTERVAL).await;
-    wait_for_request_count(&server, 2).await;
+    advance_until_request_count(&server, 2).await;
 
     let current_notification = recv_turn_cost_notification(&mut notifications).await;
     assert_eq!(current_notification.turn_id, current_turn_id);
@@ -761,7 +772,13 @@ async fn api_key_rotation_suppresses_an_already_tracked_price() {
         AuthKeyringBackendKind::default(),
     )
     .expect("write rotated API key");
-    assert!(auth_manager.reload().await);
+    let revision_before_rotation = current_auth_revision(auth_manager.as_ref());
+    let _ = auth_manager.reload().await;
+    assert_ne!(
+        current_auth_revision(auth_manager.as_ref()),
+        revision_before_rotation,
+        "rotating the API key must bump the auth revision"
+    );
 
     runtime
         .process_api_key_cost(turn_id, &priced_cost(turn_id, "0.25"))
@@ -788,28 +805,34 @@ async fn priced_cost_records_only_after_every_response_arrives() {
     let (session_telemetry, metrics) = test_session_telemetry(thread_id);
     assert!(register_active_turn(&runtime.dropped_turns, turn_id));
 
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Started {
-            session_telemetry: Box::new(session_telemetry),
-        },
-    }).await;
-    for _ in 0..2 {
-        runtime.record_observation(TurnCostObservation {
+    runtime
+        .record_observation(TurnCostObservation {
             thread_id,
             turn_id: turn_id.to_string(),
             auth_revision: 0,
-            kind: TurnCostObservationKind::ResponseCompleted,
-        }).await;
+            kind: TurnCostObservationKind::Started {
+                session_telemetry: Box::new(session_telemetry),
+            },
+        })
+        .await;
+    for _ in 0..2 {
+        runtime
+            .record_observation(TurnCostObservation {
+                thread_id,
+                turn_id: turn_id.to_string(),
+                auth_revision: 0,
+                kind: TurnCostObservationKind::ResponseCompleted,
+            })
+            .await;
     }
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Finished { interrupted: false },
-    }).await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: turn_id.to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Finished { interrupted: false },
+        })
+        .await;
 
     let mut cost = ApiKeyTurnCost {
         turn_id: turn_id.to_string(),
@@ -871,20 +894,24 @@ async fn stalled_pending_cost_is_dropped_after_the_bounded_retry_budget() {
     let turn_id = "turn-stalled";
     let (session_telemetry, _metrics) = test_session_telemetry(thread_id);
     assert!(register_active_turn(&runtime.dropped_turns, turn_id));
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Started {
-            session_telemetry: Box::new(session_telemetry),
-        },
-    }).await;
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: turn_id.to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Finished { interrupted: true },
-    }).await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: turn_id.to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Started {
+                session_telemetry: Box::new(session_telemetry),
+            },
+        })
+        .await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: turn_id.to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Finished { interrupted: true },
+        })
+        .await;
     let pending = ApiKeyTurnCost {
         turn_id: turn_id.to_string(),
         status: ApiKeyTurnCostStatus::Pending,
@@ -1016,6 +1043,11 @@ async fn unavailable_backend_reports_typed_state_without_tracking_turn() {
         mut notifications,
         ..
     } = test_runtime(&server, auth_manager).await;
+    let dropped_turns = runtime.dropped_turns.clone();
+    assert!(register_active_turn(
+        &dropped_turns,
+        "turn-backend-unavailable",
+    ));
     let (sender, receiver) = mpsc::channel(1);
     let shutdown = CancellationToken::new();
     let task_shutdown = shutdown.clone();
@@ -1048,6 +1080,12 @@ async fn unavailable_backend_reports_typed_state_without_tracking_turn() {
             reason: TurnCostAvailability::BackendUnavailable,
         }
     );
+    let dropped_turns = dropped_turns
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(dropped_turns.dropped.contains("turn-backend-unavailable"));
+    assert!(!dropped_turns.active.contains("turn-backend-unavailable"));
+    drop(dropped_turns);
     shutdown.cancel();
     task.await.expect("worker task");
 }
@@ -1108,14 +1146,16 @@ async fn malformed_and_overflow_costs_never_reach_telemetry_or_priced_ui() {
         let thread_id = runtime.thread_id;
         let turn_id = "turn-invalid";
         let (session_telemetry, metrics) = test_session_telemetry(thread_id);
-        runtime.record_observation(TurnCostObservation {
-            thread_id,
-            turn_id: turn_id.to_string(),
-            auth_revision: 0,
-            kind: TurnCostObservationKind::Started {
-                session_telemetry: Box::new(session_telemetry),
-            },
-        }).await;
+        runtime
+            .record_observation(TurnCostObservation {
+                thread_id,
+                turn_id: turn_id.to_string(),
+                auth_revision: 0,
+                kind: TurnCostObservationKind::Started {
+                    session_telemetry: Box::new(session_telemetry),
+                },
+            })
+            .await;
         let invalid = ApiKeyTurnCost {
             turn_id: turn_id.to_string(),
             status: ApiKeyTurnCostStatus::Priced,
@@ -1167,17 +1207,15 @@ async fn observation_channel_and_tracking_capacity_report_dropped() {
     let thread_id = ThreadId::new();
     let (session_telemetry, metrics) = test_session_telemetry(thread_id);
     assert_eq!(
-        handle.observe_event(thread_id, &config, &turn_started_event(), 0, || session_telemetry),
+        handle.observe_event(thread_id, &config, &turn_started_event(), 0, || {
+            session_telemetry
+        }),
         None
     );
     assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &config,
-            &raw_response_completed_event("turn-1"),
-            0,
-            || panic!("response observation does not construct telemetry"),
-        ),
+        handle.observe_event(thread_id, &config, &turn_started_event(), 0, || {
+            test_session_telemetry(thread_id).0
+        }),
         Some(TurnCostState::Unavailable {
             reason: TurnCostAvailability::ObservationDropped,
         })
@@ -1290,10 +1328,7 @@ async fn observation_channel_and_tracking_capacity_report_dropped() {
         "map capacity may terminalize a turn only once"
     );
     runtime
-        .process_api_key_cost(
-            "over-capacity",
-            &priced_cost("over-capacity", "0.25"),
-        )
+        .process_api_key_cost("over-capacity", &priced_cost("over-capacity", "0.25"))
         .await;
     assert!(!runtime.turns.contains_key("over-capacity"));
     assert_eq!(turn_cost_metric_value(&over_capacity_metrics), None);
@@ -1315,267 +1350,46 @@ async fn observation_channel_and_tracking_capacity_report_dropped() {
 }
 
 #[tokio::test]
-async fn failed_terminal_send_keeps_invalidation_until_queued_start_is_retired() {
+async fn terminal_discard_paths_demote_running_turns_without_later_observations() {
     let server = MockServer::start().await;
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("sk-test"));
-    let mut runtime = test_runtime(&server, auth_manager.clone()).await;
+    let mut runtime = test_runtime(&server, auth_manager).await;
     let thread_id = runtime.thread_id;
     let dropped_turns = runtime.dropped_turns.clone();
-    let (sender, mut receiver) = mpsc::channel(1);
-    let handle = TurnCostWorkerHandle {
-        sender,
-        auth_changes: auth_manager.auth_change_receiver(),
-        auth_manager,
-        config: runtime.config.clone(),
-        dropped_turns: dropped_turns.clone(),
-    };
-    let turn_id = "turn-terminal-channel-drop";
-    let (session_telemetry, metrics) = test_session_telemetry(thread_id);
-    let started = Event {
-        id: turn_id.to_string(),
-        msg: turn_started_event().msg,
-    };
-    assert_eq!(
-        handle.observe_event(thread_id, &runtime.config, &started, 0, || session_telemetry),
-        None
-    );
 
-    assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &turn_finished_event(turn_id),
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
-        Some(TurnCostState::Unavailable {
-            reason: TurnCostAvailability::ObservationDropped,
-        })
-    );
-    {
-        let dropped_turns = dropped_turns
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(dropped_turns.dropped.contains(turn_id));
-        assert!(!dropped_turns.active.contains(turn_id));
-        assert!(dropped_turns.unretired_starts.contains(turn_id));
-        assert!(!dropped_turns.order.iter().any(|queued| queued == turn_id));
-    }
-
-    for index in 0..=MAX_DROPPED_TURNS {
-        assert!(mark_turn_dropped(
-            &dropped_turns,
-            &format!("pre-ack-completed-drop-{index}"),
-        ));
-    }
-    {
-        let dropped_turns = dropped_turns
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert_eq!(dropped_turns.dropped.len(), MAX_DROPPED_TURNS);
-        assert_eq!(dropped_turns.order.len(), MAX_DROPPED_TURNS - 1);
-        assert!(dropped_turns.dropped.contains(turn_id));
-        assert!(dropped_turns.unretired_starts.contains(turn_id));
+    for (turn_id, auth_revision) in [("turn-stale-discard", 0), ("turn-all-discard", 1)] {
+        assert!(register_active_turn(&dropped_turns, turn_id));
+        runtime
+            .record_observation(TurnCostObservation {
+                thread_id,
+                turn_id: turn_id.to_string(),
+                auth_revision,
+                kind: TurnCostObservationKind::Started {
+                    session_telemetry: Box::new(test_session_telemetry(thread_id).0),
+                },
+            })
+            .await;
     }
 
     runtime
-        .record_observation(receiver.recv().await.expect("queued start observation"))
+        .discard_stale_entries(1, TurnCostAvailability::BackendUnavailable)
         .await;
     runtime
-        .process_api_key_cost(turn_id, &priced_cost(turn_id, "0.25"))
+        .discard_all(TurnCostAvailability::BackendUnavailable)
         .await;
 
-    assert!(!runtime.turns.contains_key(turn_id));
-    assert_eq!(turn_cost_metric_value(&metrics), None);
-    assert!(runtime.notifications.try_recv().is_err());
-    {
-        let dropped_turns = dropped_turns
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(!dropped_turns.unretired_starts.contains(turn_id));
-        assert!(dropped_turns.order.iter().any(|queued| queued == turn_id));
-    }
-
-    for index in 0..MAX_DROPPED_TURNS {
-        assert!(mark_turn_dropped(
-            &dropped_turns,
-            &format!("post-ack-completed-drop-{index}"),
-        ));
-    }
     let dropped_turns = dropped_turns
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert_eq!(dropped_turns.dropped.len(), MAX_DROPPED_TURNS);
-    assert_eq!(dropped_turns.order.len(), MAX_DROPPED_TURNS);
-    assert!(dropped_turns.active.is_empty());
-    assert!(dropped_turns.unretired_starts.is_empty());
-    assert!(!dropped_turns.dropped.contains(turn_id));
+    assert!(dropped_turns.dropped.contains("turn-stale-discard"));
+    assert!(dropped_turns.dropped.contains("turn-all-discard"));
+    assert!(!dropped_turns.active.contains("turn-stale-discard"));
+    assert!(!dropped_turns.active.contains("turn-all-discard"));
+    assert!(dropped_turns.dropped.len() <= MAX_DROPPED_TURNS);
 }
 
 #[tokio::test]
-async fn failed_terminal_send_keeps_processed_start_invalidated_until_worker_discards_it() {
-    let server = MockServer::start().await;
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("sk-test"));
-    let mut runtime = test_runtime(&server, auth_manager.clone()).await;
-    let thread_id = runtime.thread_id;
-    let dropped_turns = runtime.dropped_turns.clone();
-    let (sender, mut receiver) = mpsc::channel(1);
-    let handle = TurnCostWorkerHandle {
-        sender,
-        auth_changes: auth_manager.auth_change_receiver(),
-        auth_manager,
-        config: runtime.config.clone(),
-        dropped_turns: dropped_turns.clone(),
-    };
-    let turn_id = "turn-processed-before-terminal-drop";
-    let (session_telemetry, metrics) = test_session_telemetry(thread_id);
-    let started = Event {
-        id: turn_id.to_string(),
-        msg: turn_started_event().msg,
-    };
-    assert_eq!(
-        handle.observe_event(thread_id, &runtime.config, &started, 0, || session_telemetry),
-        None
-    );
-    runtime
-        .record_observation(receiver.recv().await.expect("queued start observation"))
-        .await;
-    assert!(runtime.turns.contains_key(turn_id));
-
-    assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &raw_response_completed_event("channel-filler"),
-            0,
-            || panic!("response observation does not construct telemetry"),
-        ),
-        None
-    );
-    assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &turn_finished_event(turn_id),
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
-        Some(TurnCostState::Unavailable {
-            reason: TurnCostAvailability::ObservationDropped,
-        })
-    );
-
-    for index in 0..=MAX_DROPPED_TURNS {
-        assert!(mark_turn_dropped(
-            &dropped_turns,
-            &format!("processed-pre-ack-completed-drop-{index}"),
-        ));
-    }
-    {
-        let dropped_turns = dropped_turns
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert_eq!(dropped_turns.dropped.len(), MAX_DROPPED_TURNS);
-        assert_eq!(dropped_turns.order.len(), MAX_DROPPED_TURNS - 1);
-        assert!(dropped_turns.dropped.contains(turn_id));
-        assert!(!dropped_turns.active.contains(turn_id));
-        assert!(dropped_turns.unretired_starts.contains(turn_id));
-    }
-
-    runtime.poll_due().await;
-    runtime
-        .process_api_key_cost(turn_id, &priced_cost(turn_id, "0.25"))
-        .await;
-
-    assert!(!runtime.turns.contains_key(turn_id));
-    assert_eq!(turn_cost_metric_value(&metrics), None);
-    assert!(runtime.notifications.try_recv().is_err());
-    let dropped_turns = dropped_turns
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert!(!dropped_turns.unretired_starts.contains(turn_id));
-    assert!(dropped_turns.order.iter().any(|queued| queued == turn_id));
-}
-
-#[tokio::test]
-async fn closed_channel_retires_failed_start_and_bounds_terminal_drop() {
-    let codex_home = TempDir::new().expect("temporary Elpis home");
-    let config = Arc::new(
-        ConfigBuilder::default()
-            .codex_home(codex_home.path().to_path_buf())
-            .build()
-            .await
-            .expect("test config"),
-    );
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("sk-test"));
-    let (sender, receiver) = mpsc::channel(1);
-    drop(receiver);
-    let dropped_turns = new_dropped_turns();
-    let handle = TurnCostWorkerHandle {
-        sender,
-        auth_changes: auth_manager.auth_change_receiver(),
-        auth_manager,
-        config: config.clone(),
-        dropped_turns: dropped_turns.clone(),
-    };
-    let thread_id = ThreadId::new();
-    let turn_id = "turn-closed-channel";
-    let started = Event {
-        id: turn_id.to_string(),
-        msg: turn_started_event().msg,
-    };
-
-    assert_eq!(
-        handle.observe_event(thread_id, &config, &started, 0, || {
-            test_session_telemetry(thread_id).0
-        }),
-        Some(TurnCostState::Unavailable {
-            reason: TurnCostAvailability::ObservationDropped,
-        })
-    );
-    {
-        let dropped_turns = dropped_turns
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(dropped_turns.active.contains(turn_id));
-        assert!(!dropped_turns.unretired_starts.contains(turn_id));
-    }
-
-    assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &config,
-            &turn_finished_event(turn_id),
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
-        None
-    );
-    {
-        let dropped_turns = dropped_turns
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(!dropped_turns.active.contains(turn_id));
-        assert!(!dropped_turns.unretired_starts.contains(turn_id));
-        assert!(dropped_turns.order.iter().any(|queued| queued == turn_id));
-    }
-
-    for index in 0..MAX_DROPPED_TURNS {
-        assert!(mark_turn_dropped(
-            &dropped_turns,
-            &format!("closed-completed-drop-{index}"),
-        ));
-    }
-    let dropped_turns = dropped_turns
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert_eq!(dropped_turns.dropped.len(), MAX_DROPPED_TURNS);
-    assert_eq!(dropped_turns.order.len(), MAX_DROPPED_TURNS);
-    assert!(!dropped_turns.dropped.contains(turn_id));
-}
-
-#[tokio::test]
-async fn running_invalidated_turn_stays_pinned_through_overload_until_received_finish() {
+async fn failed_finished_sends_demote_drops_and_bound_history_without_later_finish() {
     let server = MockServer::start().await;
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("sk-test"));
     let mut runtime = test_runtime(&server, auth_manager.clone()).await;
@@ -1590,13 +1404,15 @@ async fn running_invalidated_turn_stays_pinned_through_overload_until_received_f
         config: runtime.config.clone(),
         dropped_turns: dropped_turns.clone(),
     };
-    let (session_telemetry, metrics) = test_session_telemetry(thread_id);
+    let (session_telemetry, _metrics) = test_session_telemetry(thread_id);
     let started = Event {
         id: turn_id.to_string(),
         msg: turn_started_event().msg,
     };
     assert_eq!(
-        handle.observe_event(thread_id, &runtime.config, &started, 0, || session_telemetry),
+        handle.observe_event(thread_id, &runtime.config, &started, 0, || {
+            session_telemetry
+        }),
         None
     );
     runtime
@@ -1632,76 +1448,35 @@ async fn running_invalidated_turn_stays_pinned_through_overload_until_received_f
     assert!(!runtime.turns.contains_key(turn_id));
 
     for index in 0..=MAX_DROPPED_TURNS {
-        assert!(mark_turn_dropped(
-            &dropped_turns,
-            &format!("unrelated-drop-{index}"),
-        ));
-    }
-    {
-        let dropped_turns = dropped_turns
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(dropped_turns.dropped.contains(turn_id));
-        assert!(dropped_turns.active.contains(turn_id));
+        let terminal_turn_id = format!("failed-terminal-drop-{index}");
+        assert!(register_active_turn(&dropped_turns, &terminal_turn_id));
+        assert_eq!(
+            handle.observe_event(
+                thread_id,
+                &runtime.config,
+                &turn_finished_event(&terminal_turn_id),
+                0,
+                || panic!("finish observation does not construct telemetry"),
+            ),
+            Some(TurnCostState::Unavailable {
+                reason: TurnCostAvailability::ObservationDropped,
+            })
+        );
     }
     let finished = turn_finished_event(turn_id);
     assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &finished,
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
+        handle.observe_event(thread_id, &runtime.config, &finished, 0, || panic!(
+            "finish observation does not construct telemetry"
+        ),),
         None,
         "a failed finish must not emit a second drop notification"
     );
-
-    let filler = receiver.recv().await.expect("queued channel filler");
-    assert_eq!(filler.turn_id, "channel-filler");
-    let (replayed_telemetry, replayed_metrics) = test_session_telemetry(thread_id);
-    let replayed_start = Event {
-        id: turn_id.to_string(),
-        msg: turn_started_event().msg,
-    };
-    assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &replayed_start,
-            0,
-            || replayed_telemetry,
-        ),
-        None
-    );
-    assert!(receiver.try_recv().is_err(), "duplicate start must not enqueue");
-    runtime
-        .process_api_key_cost(turn_id, &priced_cost(turn_id, "0.25"))
-        .await;
-
-    assert!(!runtime.turns.contains_key(turn_id));
-    assert_eq!(turn_cost_metric_value(&metrics), None);
-    assert_eq!(turn_cost_metric_value(&replayed_metrics), None);
-    assert!(runtime.notifications.try_recv().is_err());
-
-    assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &finished,
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
-        None
-    );
-    runtime
-        .record_observation(receiver.recv().await.expect("queued successful finish"))
-        .await;
     let dropped_turns = dropped_turns
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert!(!dropped_turns.dropped.contains(turn_id));
-    assert!(!dropped_turns.active.contains(turn_id));
+    assert!(dropped_turns.active.is_empty());
+    assert!(dropped_turns.dropped.len() <= MAX_DROPPED_TURNS);
+    assert!(dropped_turns.order.len() <= MAX_DROPPED_TURNS);
 }
 
 #[tokio::test]
@@ -1748,19 +1523,14 @@ async fn failed_started_send_stays_active_until_received_finish() {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(dropped_turns.dropped.contains(turn_id));
         assert!(dropped_turns.active.contains(turn_id));
-        assert!(!dropped_turns.unretired_starts.contains(turn_id));
     }
 
     receiver.recv().await.expect("queued channel filler");
     let finished = turn_finished_event(turn_id);
     assert_eq!(
-        handle.observe_event(
-            thread_id,
-            &runtime.config,
-            &finished,
-            0,
-            || panic!("finish observation does not construct telemetry"),
-        ),
+        handle.observe_event(thread_id, &runtime.config, &finished, 0, || panic!(
+            "finish observation does not construct telemetry"
+        ),),
         None
     );
     runtime
@@ -1855,14 +1625,16 @@ async fn late_notifier_targets_current_subscribers_without_broadcasting() {
     let mut runtime = test_runtime(&server, auth_manager).await;
     let thread_id = runtime.thread_id;
     let (session_telemetry, _metrics) = test_session_telemetry(thread_id);
-    runtime.record_observation(TurnCostObservation {
-        thread_id,
-        turn_id: "turn-unsubscribed".to_string(),
-        auth_revision: 0,
-        kind: TurnCostObservationKind::Started {
-            session_telemetry: Box::new(session_telemetry),
-        },
-    }).await;
+    runtime
+        .record_observation(TurnCostObservation {
+            thread_id,
+            turn_id: "turn-unsubscribed".to_string(),
+            auth_revision: 0,
+            kind: TurnCostObservationKind::Started {
+                session_telemetry: Box::new(session_telemetry),
+            },
+        })
+        .await;
     assert!(
         runtime
             .thread_state_manager
@@ -1961,10 +1733,7 @@ async fn assert_start_auth_transition_is_terminal(transition: TestAuthTransition
         CodexAuth::from_api_key("sk-before-classification"),
         auth_home.path().to_path_buf(),
     );
-    let policy = TurnCostAvailabilityPolicy::new(
-        Arc::new(config.clone()),
-        auth_manager.clone(),
-    );
+    let policy = TurnCostAvailabilityPolicy::new(Arc::new(config.clone()), auth_manager.clone());
     let (observation_tx, mut observation_rx) = mpsc::channel(1);
     let worker = TurnCostWorkerHandle {
         sender: observation_tx,
@@ -2171,19 +1940,31 @@ async fn recv_cost_state(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> TurnCostS
 async fn recv_turn_cost_notification(
     rx: &mut mpsc::Receiver<OutgoingEnvelope>,
 ) -> TurnCostUpdatedNotification {
-    let ServerNotification::TurnCostUpdated(notification) = recv_server_notification(rx).await else {
+    let ServerNotification::TurnCostUpdated(notification) = recv_server_notification(rx).await
+    else {
         panic!("expected turn cost notification");
     };
     notification
 }
 
-async fn recv_server_notification(
-    rx: &mut mpsc::Receiver<OutgoingEnvelope>,
-) -> ServerNotification {
-    let envelope = timeout(Duration::from_secs(1), rx.recv())
-        .await
-        .expect("timed out waiting for cost notification")
-        .expect("cost notification channel closed");
+async fn recv_server_notification(rx: &mut mpsc::Receiver<OutgoingEnvelope>) -> ServerNotification {
+    // Wall-clock deadline without moving the paused clock (see `real_pause`).
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let envelope = loop {
+        match rx.try_recv() {
+            Ok(envelope) => break envelope,
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                panic!("cost notification channel closed")
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "timed out waiting for cost notification"
+                );
+                real_pause(5).await;
+            }
+        }
+    };
     let message = match envelope {
         OutgoingEnvelope::ToConnection {
             connection_id: ConnectionId(1),
@@ -2236,16 +2017,57 @@ fn turn_cost_metric_value(metrics: &MetricsClient) -> Option<u64> {
     }
 }
 
-async fn wait_for_request_count(server: &MockServer, expected: usize) {
-    timeout(Duration::from_secs(15), async {
-        loop {
-            let requests = server.received_requests().await.unwrap_or_default();
-            if requests.len() >= expected {
-                break;
-            }
-            tokio::task::yield_now().await;
+/// Sleeps for real time on a blocking thread without moving the paused clock. tokio
+/// inhibits paused-clock auto-advance while a blocking task runs, so the runtime keeps
+/// polling real I/O for the worker's loopback HTTP while no timer can fire underneath it.
+async fn real_pause(millis: u64) {
+    tokio::task::spawn_blocking(move || std::thread::sleep(Duration::from_millis(millis)))
+        .await
+        .expect("real-time pause");
+}
+
+/// Advances the paused clock towards the next poll tick in steps well under the worker's
+/// 15-second request timeout, with real time between steps so an in-flight loopback
+/// request completes before the clock moves again. Jumping the whole interval at once, a
+/// tokio `timeout`, or fine-grained steps that keep the runtime busy all let the paused
+/// clock outrun the real round trip: the request times out, the worker drops to retry, and
+/// the mock sees extra polls.
+async fn advance_until_request_count(server: &MockServer, expected: usize) {
+    let step = Duration::from_secs(5);
+    let mut advanced = Duration::ZERO;
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        real_pause(20).await;
+        let requests = server.received_requests().await.unwrap_or_default();
+        if requests.len() >= expected {
+            return;
         }
-    })
-    .await
-    .expect("timed out waiting for turn-cost request");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for {expected} turn-cost requests; saw {}",
+            requests.len()
+        );
+        if advanced <= POLL_INTERVAL {
+            tokio::time::advance(step).await;
+            advanced += step;
+        }
+    }
+}
+
+/// Polls the mock server for `expected` requests on a wall-clock deadline without moving
+/// the paused clock (see `real_pause`).
+async fn wait_for_request_count(server: &MockServer, expected: usize) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let requests = server.received_requests().await.unwrap_or_default();
+        if requests.len() >= expected {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for {expected} turn-cost requests; saw {}",
+            requests.len()
+        );
+        real_pause(2).await;
+    }
 }

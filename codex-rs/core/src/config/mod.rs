@@ -4330,8 +4330,7 @@ impl Config {
     }
 
     pub fn dev_rule_roots(&self) -> Vec<AbsolutePathBuf> {
-        crate::skills::service::skills_config_from_stack(&self.config_layer_stack)
-            .dev_rule_roots
+        crate::skills::service::skills_config_from_stack(&self.config_layer_stack).dev_rule_roots
     }
 
     /// Returns whether effective requirements allow selecting a concrete profile.

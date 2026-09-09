@@ -74,11 +74,8 @@ impl App {
             origin.storage.clone(),
             ManualMemoryOwnedMutation::running(origin.clone(), mutation),
         );
-        self.chat_widget.bind_manual_memory_loading(
-            target,
-            pending_context_report,
-            Some(mutation),
-        );
+        self.chat_widget
+            .bind_manual_memory_loading(target, pending_context_report, Some(mutation));
         self.publish_current_dashboard_snapshot();
         true
     }
@@ -182,12 +179,9 @@ impl App {
                     self.chat_widget.clear_manual_memory_pending_mutation();
                 }
                 ManualMemoryMutation::Admission { .. } => {
-                    let same_view = manual_memory_same_view_ignoring_epoch(
-                        &owner.origin.view,
-                        &target.view,
-                    );
-                    let may_send = mutation_completion
-                        == ManualMemoryMutationCompletion::Succeeded
+                    let same_view =
+                        manual_memory_same_view_ignoring_epoch(&owner.origin.view, &target.view);
+                    let may_send = mutation_completion == ManualMemoryMutationCompletion::Succeeded
                         && status_confirms_admission
                         && owner.allow_same_view_autosend
                         && same_view;
@@ -379,8 +373,7 @@ impl App {
             }
             AppEvent::ManualMemoryStatusLoaded(target, completion) => {
                 if self.finish_manual_memory_status(&target, completion) == Some(true) {
-                    let totals =
-                        crate::app_backtrack::context_usage_totals(&self.transcript_cells);
+                    let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
                     self.chat_widget.add_context_usage_output(totals);
                 }
                 tui.frame_requester().schedule_frame();
@@ -415,11 +408,8 @@ impl App {
             }
             AppEvent::ManualMemoryAdmissionFinished(target, admitted, completion) => {
                 let mutation = ManualMemoryMutation::Admission { admitted };
-                let disposition = self.record_manual_memory_mutation_completion(
-                    &target,
-                    mutation,
-                    completion,
-                );
+                let disposition =
+                    self.record_manual_memory_mutation_completion(&target, mutation, completion);
                 if let ManualMemoryCompletionDisposition::Refresh(fresh) = disposition {
                     self.present_manual_memory_mutation_completion(mutation, completion);
                     self.launch_manual_memory_status(fresh);
@@ -444,7 +434,9 @@ impl App {
                 }
                 tui.frame_requester().schedule_frame();
             }
-            AppEvent::PublishDashboardSnapshot => self.publish_current_dashboard_snapshot(),
+            AppEvent::RefreshContextDashboard => {
+                self.publish_current_dashboard_snapshot();
+            }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
                 match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
                     Some(target_session) => {
@@ -648,6 +640,7 @@ impl App {
                 if start < end {
                     self.transcript_cells
                         .splice(start..end, std::iter::once(consolidated.clone()));
+                    self.context_usage_transcript_dirty = true;
 
                     if let Some(Overlay::Transcript(t)) = &mut self.overlay {
                         t.consolidate_cells(start..end, consolidated.clone());
@@ -657,6 +650,7 @@ impl App {
                     self.finish_required_stream_reflow(tui)?;
                 } else {
                     self.transcript_cells.push(consolidated.clone());
+                    self.context_usage_transcript_dirty = true;
                     if let Some(Overlay::Transcript(t)) = &mut self.overlay {
                         t.insert_cell(consolidated.clone());
                         tui.frame_requester().schedule_frame();
@@ -1263,13 +1257,8 @@ impl App {
                 self.on_update_reasoning_effort(effort.clone());
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
-                self.persist_provider_model_selection(
-                    app_server,
-                    model,
-                    provider_id,
-                    effort,
-                )
-                .await;
+                self.persist_provider_model_selection(app_server, model, provider_id, effort)
+                    .await;
             }
             AppEvent::EnableAutoModelRouting => {
                 let model = crate::chatwidget::model_routing::TERRA_MODEL.to_string();
@@ -2547,9 +2536,7 @@ impl App {
             .chat_widget
             .model_provider_base_url(provider_id.as_str())
         {
-            Some(base_url)
-                if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID =>
-            {
+            Some(base_url) if provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID => {
                 crate::chatwidget::model_popups::fetch_ollama_context_window(
                     base_url,
                     model.clone(),
