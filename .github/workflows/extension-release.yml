@@ -3,12 +3,14 @@ on:
   push:
     branches: ['release/vscode-*']
 permissions:
-  contents: read
+  contents: write # GitHub requires push access to read draft release assets.
 jobs:
   verify:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
