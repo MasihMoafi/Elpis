@@ -127,3 +127,31 @@ main during this final archive pass.
 Next: review the archived pruning fixes and context changes against an agreed
 acceptance harness before integrating new runtime behavior. Website and evaluation
 work requires its own consolidation; it was not silently folded into this cleanup.
+
+## Current-source audit, September 11
+
+There is one checkout on `main`. All 20 `recovery/committed-20260910/*` branch tips
+still exist. A fresh comparison of their final preservation commits against main
+is recorded locally in `.tmp/final-candidate/recovery-current-audit.json`. This
+inventory does not by itself audit every earlier commit on those branches.
+
+Confirmed in current source:
+
+- The three-minute optimizer inactivity limit and streaming collector from
+  `ace-inactivity-180` are present in `core/src/session/smart_prune.rs`.
+- The optimizer defaults to Low effort. The archived variant's additional
+  reasoning-effort configuration field is not present.
+- Project-specific IDE approval modes, explicit full-access confirmation, and
+  applying the selected policy to the runtime are present in the VS Code source.
+
+Important remaining recovery work: the stronger fact-preservation instructions
+from `ace-fact-preservation` are absent from the current canonical default in
+`core/src/pruner_settings.rs`. The existing
+[bounded evaluation](evals/rq3/BOUNDED_SYNTHETIC_EVALUATION.md) records a canary that
+lost two unasked requirements under the earlier policy and passed under the
+revised policy. That is development evidence, not a universal guarantee. Restore
+and verify the compatible instructions through the current settings path before
+claiming recovery complete. The archived V2-agent reload implementation is also
+absent by its original entry-point names; its compatibility review remains open.
+
+Do not equate one worktree with all experiments having been integrated or accepted.
