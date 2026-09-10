@@ -53,6 +53,8 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 #[derive(Parser, Debug)]
 #[command(name = "elpis")]
 struct TopCli {
+    #[command(subcommand)]
+    command: Option<ConversationCommand>,
     /// Update the user-local Elpis installation and exit.
     #[arg(long)]
     update: bool,
@@ -92,11 +94,43 @@ struct TopCli {
     )]
     provider: Option<String>,
 
+    /// Resume one exact native Elpis session by thread ID.
+    #[arg(long = "resume", value_name = "SESSION_ID")]
+    resume_session_id: Option<String>,
+
     #[clap(flatten)]
     config_overrides: CliConfigOverrides,
 
     #[clap(flatten)]
     inner: Cli,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum ConversationCommand {
+    /// Permanently delete a conversation and its spawned descendants.
+    Delete {
+        #[arg(value_parser = parse_thread_id)]
+        session: String,
+        /// Skip confirmation for this explicit UUID.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Hide a conversation from the resume list without deleting it.
+    Archive {
+        #[arg(value_parser = parse_thread_id)]
+        session: String,
+    },
+    /// Restore an archived conversation to the resume list.
+    Unarchive {
+        #[arg(value_parser = parse_thread_id)]
+        session: String,
+    },
+}
+
+fn parse_thread_id(value: &str) -> Result<String, String> {
+    codex_protocol::ThreadId::from_string(value)
+        .map(|id| id.to_string())
+        .map_err(|error| format!("expected a conversation UUID: {error}"))
 }
 
 fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, elpis_home: &Path) {
@@ -201,6 +235,31 @@ fn append_provider_override(config_overrides: &mut CliConfigOverrides, provider:
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn conversation_commands_require_explicit_ids_and_preserve_prompts() {
+        use clap::Parser;
+        let id = "00000000-0000-0000-0000-000000000001";
+        assert!(matches!(
+            super::TopCli::try_parse_from(["elpis", "delete", "--force", id])
+                .unwrap()
+                .command,
+            Some(super::ConversationCommand::Delete { force: true, .. })
+        ));
+        assert!(matches!(
+            super::TopCli::try_parse_from(["elpis", "delete", id])
+                .unwrap()
+                .command,
+            Some(super::ConversationCommand::Delete { force: false, .. })
+        ));
+        for command in ["delete", "archive", "unarchive"] {
+            assert!(super::TopCli::try_parse_from(["elpis", command, id]).is_ok());
+            assert!(super::TopCli::try_parse_from(["elpis", command, "ambiguous title"]).is_err());
+            assert!(super::TopCli::try_parse_from(["elpis", command]).is_err());
+        }
+        let prompt = super::TopCli::try_parse_from(["elpis", "explain this code"]).unwrap();
+        assert!(prompt.command.is_none());
+        assert_eq!(prompt.inner.prompt.as_deref(), Some("explain this code"));
+    }
     use super::*;
 
     #[test]
@@ -267,6 +326,13 @@ mod tests {
     fn update_flag_is_exposed_by_the_shipped_binary() {
         let parsed = TopCli::try_parse_from(["elpis", "--update"]).expect("update flag");
         assert!(parsed.update);
+    }
+
+    #[test]
+    fn exact_resume_flag_is_exposed_by_the_shipped_binary() {
+        let parsed =
+            TopCli::try_parse_from(["elpis", "--resume", "thread-id"]).expect("exact resume flag");
+        assert_eq!(parsed.resume_session_id.as_deref(), Some("thread-id"));
     }
 
     #[test]
@@ -358,13 +424,48 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         let provider = top_cli.provider.clone();
+        let resume_session_id = top_cli.resume_session_id.take();
         append_provider_override(&mut top_cli.config_overrides, provider.as_deref());
         let mut inner = top_cli.inner;
+        inner.resume_session_id = resume_session_id;
         inner
             .config_overrides
             .raw_overrides
             .splice(0..0, top_cli.config_overrides.raw_overrides);
         prepend_elpis_memories_defaults(&mut inner.config_overrides, &elpis_home);
+        if let Some(command) = top_cli.command {
+            use codex_tui::DeleteConfirmation;
+            use codex_tui::SessionArchiveAction;
+            let (action, target) = match command {
+                ConversationCommand::Delete { session, force } => (
+                    SessionArchiveAction::Delete(if force {
+                        DeleteConfirmation::Skip
+                    } else {
+                        DeleteConfirmation::Prompt
+                    }),
+                    session,
+                ),
+                ConversationCommand::Archive { session } => {
+                    (SessionArchiveAction::Archive, session)
+                }
+                ConversationCommand::Unarchive { session } => {
+                    (SessionArchiveAction::Unarchive, session)
+                }
+            };
+            let result = codex_tui::run_session_archive_command(
+                action,
+                target,
+                codex_tui::SessionArchiveCommandOptions {
+                    cli: inner,
+                    arg0_paths,
+                    explicit_remote_endpoint: None,
+                },
+            )
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+            println!("{result}");
+            return Ok(());
+        }
         let loader_overrides = LoaderOverrides {
             project_config_dir_name: Some(".elpis".to_string()),
             ..LoaderOverrides::default()

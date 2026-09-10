@@ -795,6 +795,7 @@ pub struct Config {
 
     /// Enable ASCII animations and shimmer effects in the TUI.
     pub animations: bool,
+    pub tui_appearance: codex_config::types::TuiAppearance,
 
     /// Show startup tooltips in the TUI welcome screen.
     pub show_tooltips: bool,
@@ -4144,6 +4145,7 @@ impl Config {
                 .map(|t| t.notification_settings.clone())
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
+            tui_appearance: cfg.tui.as_ref().map(|t| t.appearance).unwrap_or_default(),
             show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
             model_availability_nux: cfg
                 .tui

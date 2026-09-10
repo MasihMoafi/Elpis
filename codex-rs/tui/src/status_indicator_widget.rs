@@ -5,8 +5,10 @@
 //! context (for example, the unified-exec background-process summary). Keeping
 //! these pieces on one line avoids vertical layout churn in the bottom pane.
 
+use std::cell::{Cell, RefCell};
 use std::time::Duration;
 use std::time::Instant;
+use tachyonfx::Shader;
 
 use crossterm::event::KeyCode;
 use ratatui::buffer::Buffer;
@@ -23,12 +25,7 @@ use crate::app_event_sender::AppEventSender;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
-use crate::motion::MotionMode;
-use crate::motion::ReducedMotionIndicator;
-use crate::motion::activity_indicator;
-use crate::motion::shimmer_text;
 use crate::render::renderable::Renderable;
-use crate::style::status_symbol_style;
 use crate::text_formatting::capitalize_first;
 use crate::tui::FrameRequester;
 use crate::wrapping::RtOptions;
@@ -45,7 +42,7 @@ pub(crate) enum StatusDetailsCapitalization {
 
 /// Displays a single-line in-progress status with optional wrapped details.
 pub(crate) struct StatusIndicatorWidget {
-    /// Animated header text (defaults to "elpising…").
+    /// Animated header text (defaults to "Elpising…").
     header: String,
     details: Option<String>,
     details_max_lines: usize,
@@ -60,6 +57,8 @@ pub(crate) struct StatusIndicatorWidget {
     app_event_tx: AppEventSender,
     frame_requester: FrameRequester,
     animations_enabled: bool,
+    text_effect: RefCell<Option<tachyonfx::Effect>>,
+    effect_last_frame: Cell<Instant>,
 }
 
 // Format elapsed seconds into a compact human-friendly form used by the status line.
@@ -86,7 +85,9 @@ impl StatusIndicatorWidget {
         animations_enabled: bool,
     ) -> Self {
         Self {
-            header: String::from("elpising…"),
+            header: String::from("Elpising…"),
+            text_effect: RefCell::new(None),
+            effect_last_frame: Cell::new(Instant::now()),
             details: None,
             details_max_lines: STATUS_DETAILS_DEFAULT_MAX_LINES,
             inline_message: None,
@@ -243,26 +244,24 @@ impl Renderable for StatusIndicatorWidget {
             return;
         }
 
-        if self.animations_enabled {
+        if self.animations_enabled && !self.is_paused {
             // Schedule next animation frame.
             self.frame_requester
-                .schedule_frame_in(Duration::from_millis(32));
+                .schedule_frame_in(Duration::from_millis(50));
         }
         let now = Instant::now();
         let elapsed_duration = self.elapsed_duration_at(now);
         let pretty_elapsed = fmt_elapsed_compact(elapsed_duration.as_secs());
-        let motion_mode = MotionMode::from_animations_enabled(self.animations_enabled);
-
         let mut spans = Vec::with_capacity(5);
-        if let Some(indicator) = activity_indicator(
-            Some(self.last_resume_at),
-            motion_mode,
-            ReducedMotionIndicator::Hidden,
-        ) {
-            spans.push(indicator.patch_style(status_symbol_style()));
-            spans.push(" ".into());
+        if self.animations_enabled {
+            let orbit = ["▂▄▆ ", "▄▆▄ ", "▆▄▂ ", "▄▂▄ "];
+            let index = (elapsed_duration.as_millis() / 500) as usize % orbit.len();
+            spans.push(Span::styled(
+                orbit[index],
+                crate::elpis_motion::accent_style(),
+            ));
         }
-        spans.extend(shimmer_text(&self.header, motion_mode));
+        spans.extend(crate::elpis_motion::text(&self.header));
         if !spans.is_empty() {
             spans.push(" ".into());
         }
@@ -297,6 +296,26 @@ impl Renderable for StatusIndicatorWidget {
         }
 
         Paragraph::new(Text::from(lines)).render_ref(area, buf);
+        let previous = self.effect_last_frame.replace(now);
+        if self.animations_enabled && !self.is_paused {
+            let effect_area = Rect::new(
+                area.x.saturating_add(4),
+                area.y,
+                (UnicodeWidthStr::width(self.header.as_str()) as u16)
+                    .min(area.width.saturating_sub(4)),
+                1,
+            );
+            let mut effect = self.text_effect.borrow_mut();
+            effect
+                .get_or_insert_with(crate::elpis_motion::elpising_effect)
+                .process(
+                    now.saturating_duration_since(previous)
+                        .min(Duration::from_millis(100))
+                        .into(),
+                    buf,
+                    effect_area,
+                );
+        }
     }
 }
 
@@ -413,7 +432,7 @@ mod tests {
             .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
 
-        assert!(line.starts_with("elpising… (0s • esc to interrupt)"));
+        assert!(line.starts_with("Elpising… (0s • esc to interrupt)"));
     }
 
     #[test]

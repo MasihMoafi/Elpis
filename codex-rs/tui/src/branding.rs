@@ -234,7 +234,7 @@ fn identity_spans(state: &RuntimeIdentity, model_hint: Option<&str>) -> Vec<Span
     let context = state
         .context_used_percent
         .map_or_else(|| "admitted".to_string(), |used| format!("{used}%"));
-    let mut spans = vec![Span::styled("ELPIS", crate::style::brand_style())];
+    let mut spans = vec![Span::styled(PRODUCT_NAME, crate::style::brand_style())];
     push_field(
         &mut spans,
         "provider",
@@ -319,9 +319,9 @@ mod tests {
         let text = line_text(&Line::from(identity_spans(&state, None)));
         assert_eq!(
             text,
-            "ELPIS · provider OpenAI · model gpt-5.6 · context 41% · evidence thread:t/turn:u"
+            "Elpis · provider OpenAI · model gpt-5.6 · context 41% · evidence thread:t/turn:u"
         );
-        assert!(text.starts_with("ELPIS · provider"));
+        assert!(text.starts_with("Elpis · provider"));
     }
 
     #[test]

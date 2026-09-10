@@ -14,8 +14,97 @@ const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 const OLLAMA_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
 pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
 pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
+pub(super) const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 
 impl ChatWidget {
+    pub(crate) fn open_pruner_model_popup(&mut self) {
+        self.request_model_catalog(Some(self.active_model_provider_id().to_string()));
+        self.refresh_pruner_model_popup();
+    }
+
+    pub(super) fn refresh_pruner_model_popup(&mut self) {
+        use crate::legacy_core::pruner_settings::PrunerSettings;
+        let settings = match PrunerSettings::load(&self.config.codex_home) {
+            Ok(settings) => settings,
+            Err(error) => {
+                self.add_error_message(format!("Cannot read pruner settings: {error}"));
+                return;
+            }
+        };
+        let mut choices = vec![(
+            None,
+            "Provider default".to_string(),
+            "Restore automatic pruner model selection".to_string(),
+        )];
+        choices.extend(
+            self.models_for_active_provider()
+                .into_iter()
+                .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
+                .map(|preset| (Some(preset.model.clone()), preset.model, preset.description)),
+        );
+        let mut seen = std::collections::HashSet::new();
+        choices.retain(|(model, _, _)| seen.insert(model.clone()));
+        let footer_note = (choices.len() == 1).then(|| {
+            Line::from(
+                if self.model_popup_request_is_pending(self.active_model_provider_id()) {
+                    "Loading available models…"
+                } else {
+                    "No models available. Reopen /pruner-model to retry."
+                },
+            )
+        });
+        let items: Vec<SelectionItem> = choices
+            .into_iter()
+            .map(|(model, name, description)| {
+                let home = self.config.codex_home.clone();
+                let is_current = settings.model == model;
+                SelectionItem {
+                    name,
+                    description: Some(description),
+                    is_current,
+                    actions: vec![Box::new(move |tx| {
+                        let result = PrunerSettings::load(&home).and_then(|mut settings| {
+                            settings.model = model.clone();
+                            settings.save(&home)
+                        });
+                        let cell = match result {
+                            Ok(()) => history_cell::new_info_event(
+                                format!(
+                                    "Smart Prune model saved: {}. Chat model unchanged.",
+                                    model.as_deref().unwrap_or("provider default")
+                                ),
+                                None,
+                            ),
+                            Err(error) => history_cell::new_error_event(format!(
+                                "Cannot save pruner model: {error}"
+                            )),
+                        };
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(cell)));
+                    })],
+                    dismiss_on_select: true,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        let initial_selected_idx = items.iter().position(|item| item.is_current);
+        self.show_model_selection_view(SelectionViewParams {
+            view_id: Some(PRUNER_MODEL_SELECTION_VIEW_ID),
+            initial_selected_idx,
+            title: Some("Choose pruner model".into()),
+            subtitle: Some(format!(
+                "Provider: {} · Current: {} · Chat model unchanged",
+                self.active_model_provider_id(),
+                settings.model.as_deref().unwrap_or("provider default")
+            )),
+            items,
+            is_searchable: true,
+            search_placeholder: Some("Search models".into()),
+            footer_note,
+            footer_hint: Some(standard_popup_hint_line()),
+            ..Default::default()
+        });
+    }
+
     /// Open a popup to choose a quick auto model. Selecting "All models"
     /// opens the full picker with every available preset.
     pub(crate) fn open_model_popup(&mut self) {

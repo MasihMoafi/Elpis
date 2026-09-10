@@ -8,6 +8,52 @@ use super::*;
 
 impl ChatWidget {
     pub(super) fn open_theme_picker(&mut self) {
+        use codex_config::types::TuiAppearance;
+        let mut items: Vec<SelectionItem> = [
+            (
+                "Dark",
+                "Quiet charcoal with orange and yellow accents",
+                TuiAppearance::Dark,
+            ),
+            (
+                "Light",
+                "Warm paper with darker gold accents",
+                TuiAppearance::Light,
+            ),
+            (
+                "System",
+                "Use your terminal's foreground and background",
+                TuiAppearance::System,
+            ),
+        ]
+        .into_iter()
+        .map(|(name, description, appearance)| SelectionItem {
+            name: name.into(),
+            description: Some(description.into()),
+            is_current: self.config.tui_appearance == appearance,
+            dismiss_on_select: true,
+            actions: vec![Box::new(move |tx| {
+                tx.send(AppEvent::AppearanceSelected(appearance))
+            })],
+            ..Default::default()
+        })
+        .collect();
+        items.push(SelectionItem {
+            name: "Code highlighting…".into(),
+            description: Some("Choose a bundled or custom syntax theme".into()),
+            dismiss_on_select: true,
+            actions: vec![Box::new(|tx| tx.send(AppEvent::OpenSyntaxThemePicker))],
+            ..Default::default()
+        });
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            title: Some("Elpis appearance".into()),
+            items,
+            footer_hint: Some(standard_popup_hint_line()),
+            ..Default::default()
+        });
+    }
+
+    pub(crate) fn open_syntax_theme_picker(&mut self) {
         let codex_home = codex_utils_home_dir::find_codex_home().ok();
         let terminal_width = self
             .last_rendered_width

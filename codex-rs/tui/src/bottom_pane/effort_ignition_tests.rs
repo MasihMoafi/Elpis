@@ -59,7 +59,7 @@ fn paint(tier: EffortTier, style: IgnitionStyle, elapsed: Duration, area: Rect, 
             area.height.saturating_sub(1).min(1),
         ),
         buf,
-        band_rgb: user_message_bg_rgb(term_bg),
+        band_rgb: composer_bg_rgb(term_bg),
         color_level: StdoutColorLevel::TrueColor,
     };
     paint_style(
@@ -111,9 +111,9 @@ fn prompt_accent_blends_with_the_terminal_foreground() {
             EffortTier::Ultra,
             (224, 220, 214),
             (18, 22, 28),
-            (191, 142, 249),
+            (226, 200, 136),
         ),
-        (EffortTier::Max, (30, 32, 36), (250, 248, 244), (155, 88, 5)),
+        (EffortTier::Max, (30, 32, 36), (250, 248, 244), (99, 69, 18)),
     ] {
         assert_eq!(
             tier.accent_color_for(
@@ -260,7 +260,7 @@ fn spark_only_fires_after_landing() {
     assert_eq!(
         [850, 950, 1050, 1150, 1250]
             .map(|millis| spark_frame(Duration::from_millis(millis), start)),
-        [None, Some("·"), Some("✦"), Some("✧"), None]
+        [None, Some("·"), Some("∙"), Some("·"), None]
     );
 }
 

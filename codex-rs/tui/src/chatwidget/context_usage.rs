@@ -24,13 +24,37 @@ use crate::history_cell::HistoryCell;
 // distinct hues and at least 4.5:1 contrast against the reference charcoal surface.
 pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(111, 181, 253);
 pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(3, 155, 44);
-pub(super) const REASONING_COLOR: Color = Color::Rgb(3, 218, 229);
+pub(super) const REASONING_COLOR: Color = Color::Rgb(245, 239, 202);
 pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(162, 129, 11);
 pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(252, 178, 79);
 pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
 pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(239, 140, 255);
 pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(145, 145, 145);
 pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(166, 252, 24);
+
+/// Shared by the Ledger and `/context`; lighten on charcoal, deepen on paper.
+pub(super) fn context_display_color(color: Color) -> Color {
+    let Color::Rgb(r, g, b) = color else {
+        return color;
+    };
+    let rgb = if crate::terminal_palette::default_bg().is_some_and(crate::color::is_light) {
+        let deepen = |v: u8| (u16::from(v) * 45 / 100) as u8;
+        (deepen(r), deepen(g), deepen(b))
+    } else {
+        (r, g, b)
+    };
+    crate::terminal_palette::best_color(rgb)
+}
+
+pub(super) fn context_free_style() -> Style {
+    let light = crate::terminal_palette::default_bg().is_some_and(crate::color::is_light);
+    let rgb = if light {
+        (105, 107, 116)
+    } else {
+        (145, 147, 156)
+    };
+    Style::default().fg(crate::terminal_palette::best_color(rgb))
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct CategoryUsage {
@@ -246,7 +270,7 @@ fn dashboard_css_color(color: Color) -> String {
     match color {
         USER_MESSAGES_COLOR => "#6fb5fd",
         AGENT_RESPONSES_COLOR => "#039b2c",
-        REASONING_COLOR => "#03dae5",
+        REASONING_COLOR => "#f5efca",
         TOOL_CALLS_COLOR => "#a2810b",
         TOOL_RESULTS_COLOR => "#fcb24f",
         SYSTEM_INSTRUCTIONS_COLOR => "#f0445d",
@@ -333,7 +357,10 @@ fn evidence_url_line(
             format!("   {label} · "),
             Style::default().fg(Color::DarkGray),
         ),
-        Span::styled(destination, Style::default().fg(Color::Cyan).underlined()),
+        Span::styled(
+            destination,
+            crate::style::brand_style().not_bold().underlined(),
+        ),
     ]))
 }
 
@@ -720,10 +747,7 @@ impl ChatWidget {
         } else {
             after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
-                Span::styled(
-                    "cumulative thread history",
-                    Style::default().fg(Color::Cyan).bold(),
-                ),
+                Span::styled("cumulative thread history", crate::style::brand_style()),
                 Span::from(" · "),
                 Span::styled(
                     format!("~{} tokens removed earlier", fmt_tokens(saved_tokens)),
@@ -803,7 +827,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                     fmt_tokens(used),
                     fmt_tokens(snapshot.window_tokens)
                 )
-                .cyan()
+                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow))
                 .bold(),
                 format!(" · {used_percent} used · {free_percent} free").dim(),
             ]));
@@ -899,7 +923,8 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
         ]));
         lines.push(Line::from(vec![
             Span::from("   Native compaction (process) "),
-            format!("{} recorded", snapshot.native_compaction_count).cyan(),
+            format!("{} recorded", snapshot.native_compaction_count)
+                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow)),
         ]));
         lines.push(Line::from(vec![
             Span::from("   Backtrack "),
@@ -915,7 +940,8 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
             Span::from("   Pruning "),
             Span::styled(pruning, Style::default().fg(Color::LightGreen).bold()),
             "  ·  Native compaction (process) ".dim(),
-            format!("{} recorded", snapshot.native_compaction_count).cyan(),
+            format!("{} recorded", snapshot.native_compaction_count)
+                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow)),
             "  ·  Backtrack ".dim(),
             format!("{} available", snapshot.backtrack_points).yellow(),
         ]));
@@ -948,7 +974,9 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     match &snapshot.rollout_path {
         Some(path) => lines.push(Line::from(vec![
             Span::from("   Rollout "),
-            path.display().to_string().cyan(),
+            path.display()
+                .to_string()
+                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow)),
         ])),
         None => lines.push(
             "   Rollout evidence not available for this session."
@@ -1009,7 +1037,7 @@ fn build_category_bar_chart(
             if cells > 0 {
                 bar.push(Span::styled(
                     "█".repeat(cells),
-                    Style::default().fg(category.color),
+                    Style::default().fg(context_display_color(category.color)),
                 ));
             }
         }
@@ -1017,7 +1045,7 @@ fn build_category_bar_chart(
     if used_cells < bar_width {
         bar.push(Span::styled(
             "░".repeat(bar_width - used_cells),
-            Style::default().fg(Color::DarkGray),
+            context_free_style(),
         ));
     }
     bar.push(Span::from("]"));
@@ -1029,12 +1057,21 @@ fn build_category_bar_chart(
         fmt_percent(used, window)
     )));
 
+    lines.push(Line::from(Span::styled(
+        format!(
+            "   Free capacity · {} · {} of window",
+            fmt_tokens(window.saturating_sub(used)),
+            fmt_percent(window.saturating_sub(used), window)
+        ),
+        context_free_style(),
+    )));
+
     for category in &categories {
         if narrow {
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("   {} ", category.marker()),
-                    Style::default().fg(category.color),
+                    Style::default().fg(context_display_color(category.color)),
                 ),
                 Span::from(format!(
                     "{} · {} · {} of window",
@@ -1047,7 +1084,7 @@ fn build_category_bar_chart(
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("   {} ", category.marker()),
-                    Style::default().fg(category.color),
+                    Style::default().fg(context_display_color(category.color)),
                 ),
                 Span::from(format!("{:<27}", category.label)),
                 Span::from(format!(
@@ -1523,10 +1560,129 @@ mod tests {
     }
 
     #[test]
+    fn context_colors_remain_visible_in_both_appearances() {
+        for bg in [(17, 18, 20), (248, 246, 239)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (220, 220, 220),
+                    bg,
+                },
+                || {
+                    for color in [
+                        USER_MESSAGES_COLOR,
+                        AGENT_RESPONSES_COLOR,
+                        REASONING_COLOR,
+                        TOOL_CALLS_COLOR,
+                        TOOL_RESULTS_COLOR,
+                        SYSTEM_INSTRUCTIONS_COLOR,
+                        DEVELOPER_MESSAGES_COLOR,
+                        TOOL_DEFINITIONS_COLOR,
+                        UNRECOGNIZED_ITEMS_COLOR,
+                    ] {
+                        assert!(
+                            contrast_ratio(
+                                context_display_color(color),
+                                Color::Rgb(bg.0, bg.1, bg.2)
+                            ) >= 4.5
+                        );
+                    }
+                    let lines = build_category_bar_chart(&[], 50, 100, 80);
+                    let free = lines
+                        .iter()
+                        .flat_map(|line| &line.spans)
+                        .find(|span| span.content.contains('░'))
+                        .unwrap();
+                    assert!(
+                        contrast_ratio(free.style.fg.unwrap(), Color::Rgb(bg.0, bg.1, bg.2)) >= 3.0
+                    );
+                    assert!(
+                        lines
+                            .iter()
+                            .flat_map(|line| &line.spans)
+                            .any(|span| span.content.contains("50.0% of window"))
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn export_context_appearance_review() {
+        use ratatui::widgets::Widget;
+        let root = std::path::PathBuf::from(std::env::var("ELPIS_VISUAL_DIR").unwrap());
+        std::fs::create_dir_all(&root).unwrap();
+        let colors = [
+            USER_MESSAGES_COLOR,
+            AGENT_RESPONSES_COLOR,
+            REASONING_COLOR,
+            TOOL_CALLS_COLOR,
+            TOOL_RESULTS_COLOR,
+            SYSTEM_INSTRUCTIONS_COLOR,
+            DEVELOPER_MESSAGES_COLOR,
+            TOOL_DEFINITIONS_COLOR,
+            UNRECOGNIZED_ITEMS_COLOR,
+        ];
+        let labels = [
+            "User messages",
+            "Agent messages",
+            "Reasoning",
+            "Tool calls",
+            "Tool results",
+            "System instructions",
+            "Developer messages",
+            "Tool definitions + schema",
+            "Unrecognized request items",
+        ];
+        let categories: Vec<_> = colors
+            .into_iter()
+            .zip(labels)
+            .enumerate()
+            .map(|(i, (color, label))| CategoryUsage {
+                label,
+                color,
+                tokens: (i as u64 + 1) * 1_000,
+            })
+            .collect();
+        for (name, bg, fg) in [
+            ("dark", (17, 18, 20), (222, 222, 219)),
+            ("light", (248, 246, 239), (45, 43, 38)),
+        ] {
+            let area = ratatui::layout::Rect::new(0, 0, 100, 18);
+            let mut buf = ratatui::buffer::Buffer::empty(area);
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors { fg, bg },
+                || {
+                    ratatui::widgets::Paragraph::new(build_category_bar_chart(
+                        &categories,
+                        45_000,
+                        90_000,
+                        100,
+                    ))
+                    .style(
+                        Style::default()
+                            .fg(Color::Rgb(fg.0, fg.1, fg.2))
+                            .bg(Color::Rgb(bg.0, bg.1, bg.2)),
+                    )
+                    .render(area, &mut buf);
+                },
+            );
+            let frame = serde_json::json!({"width":area.width,"height":area.height,
+                "cells":buf.content.iter().map(|c| serde_json::json!({"s":c.symbol(),
+                    "fg":format!("{:?}",c.fg),"bg":format!("{:?}",c.bg)})).collect::<Vec<_>>()});
+            std::fs::write(
+                root.join(format!("context-{name}.json")),
+                serde_json::to_vec(&frame).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
     fn dashboard_preserves_category_hues() {
         assert_eq!(dashboard_css_color(USER_MESSAGES_COLOR), "#6fb5fd");
         assert_eq!(dashboard_css_color(AGENT_RESPONSES_COLOR), "#039b2c");
-        assert_eq!(dashboard_css_color(REASONING_COLOR), "#03dae5");
+        assert_eq!(dashboard_css_color(REASONING_COLOR), "#f5efca");
         assert_eq!(dashboard_css_color(TOOL_CALLS_COLOR), "#a2810b");
         assert_eq!(dashboard_css_color(TOOL_RESULTS_COLOR), "#fcb24f");
         assert_eq!(dashboard_css_color(SYSTEM_INSTRUCTIONS_COLOR), "#f0445d");
@@ -1679,6 +1835,7 @@ gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
 Context Accounting · history savings excluded
   Context Window [█████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
   42k/200k · 21.0% used
+  Free capacity · 158k · 79.0% of window
   ● Tool results               42k · 21.0% of context window
   Segment proportions are estimated from the latest built request; total width is measured active context.
 
@@ -1701,6 +1858,7 @@ gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
 Context Accounting · history savings excluded
   Context [██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
   42k/200k · 21.0% used
+  Free capacity · 158k · 79.0% of window
   ● Tool results · 42k · 21.0% of window
   Estimated segments · measured total.
 

@@ -353,7 +353,7 @@ pub(super) fn status_line_text(chat: &ChatWidget) -> Option<String> {
 
 /// The configured part of the status line, with the Elpis identity prefix removed.
 ///
-/// Every status line now leads with `ELPIS · provider … · model … · context …`; the
+/// Every status line now leads with `Elpis · provider … · model … · context …`; the
 /// items chosen through `/statusline` follow it. Tests about item rendering want the
 /// items, not the banner in front of them. Returns `None` when the line carries no
 /// configured items at all, which is what an item that has no value yet produces.

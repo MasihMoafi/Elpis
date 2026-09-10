@@ -412,6 +412,7 @@ where
         let mut frame = self.get_frame();
 
         render_callback(&mut frame).map_err(Into::into)?;
+        crate::terminal_palette::paint_appearance(frame.buffer_mut());
 
         // We can't change the cursor position right away because we have to flush the frame to
         // stdout first. But we also can't keep the frame around, since it holds a &mut to
@@ -489,6 +490,10 @@ where
     /// Clear from `position` through the end of the visible screen and force a full redraw.
     pub(crate) fn clear_after_position(&mut self, position: Position) -> io::Result<()> {
         self.backend.set_cursor_position(position)?;
+        let background = crate::terminal_palette::appearance_bg(Color::Reset);
+        if background != Color::Reset {
+            queue!(self.backend, SetBackgroundColor(background.into()))?;
+        }
         self.backend.clear_region(ClearType::AfterCursor)?;
         // Reset the back buffer to make sure the next update will redraw everything.
         self.previous_buffer_mut().reset();
@@ -525,6 +530,10 @@ where
         // with an explicit cursor-home before/after, matching the common `clear`
         // sequence (`CSI 2J` + `CSI H`).
         self.set_cursor_position(home)?;
+        let background = crate::terminal_palette::appearance_bg(Color::Reset);
+        if background != Color::Reset {
+            queue!(self.backend, SetBackgroundColor(background.into()))?;
+        }
         self.backend.clear_region(ClearType::All)?;
         self.set_cursor_position(home)?;
         std::io::Write::flush(&mut self.backend)?;

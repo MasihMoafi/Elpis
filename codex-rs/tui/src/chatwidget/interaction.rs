@@ -119,8 +119,11 @@ impl ChatWidget {
             _ => {}
         }
 
+        let recall_queued_with_up = key_event.code == KeyCode::Up
+            && key_event.modifiers.is_empty()
+            && self.bottom_pane.composer_is_empty();
         if key_event.kind == KeyEventKind::Press
-            && self.chat_keymap.edit_queued_message.is_pressed(key_event)
+            && (self.chat_keymap.edit_queued_message.is_pressed(key_event) || recall_queued_with_up)
             && self.has_queued_follow_up_messages()
             && self.bottom_pane.no_modal_or_popup_active()
         {

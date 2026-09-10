@@ -3205,6 +3205,89 @@ async fn model_reasoning_selection_popup_snapshot() {
 }
 
 #[tokio::test]
+async fn pruner_model_popup_selects_without_changing_chat_and_cancel_preserves_settings() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let main_model = chat.current_model().to_string();
+    let mut preset = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    preset.id = "selectable-pruner".into();
+    preset.model = "selectable-pruner".into();
+    preset.display_name = "selectable-pruner".into();
+    preset.show_in_picker = true;
+    chat.model_catalog = Arc::new(ModelCatalog::new(vec![preset]));
+    let original = crate::legacy_core::pruner_settings::PrunerSettings {
+        model: None,
+        system_prompt: Some("Keep this prompt unchanged.".into()),
+    };
+    original.save(&chat.config.codex_home).unwrap();
+    chat.dispatch_command(SlashCommand::PrunerModel);
+    let popup = render_bottom_popup(&chat, 100);
+    assert!(popup.contains("Choose pruner model"), "{popup}");
+    assert!(popup.contains("selectable-pruner"), "{popup}");
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(
+        crate::legacy_core::pruner_settings::PrunerSettings::load(&chat.config.codex_home).unwrap(),
+        original
+    );
+    chat.dispatch_command(SlashCommand::PrunerModel);
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let saved =
+        crate::legacy_core::pruner_settings::PrunerSettings::load(&chat.config.codex_home).unwrap();
+    assert_eq!(saved.model.as_deref(), Some("selectable-pruner"));
+    assert_eq!(saved.system_prompt, original.system_prompt);
+    assert_eq!(chat.current_model(), main_model);
+    chat.dispatch_command(SlashCommand::PrunerModel);
+    assert!(render_bottom_popup(&chat, 100).contains("Current: selectable-pruner"));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Up));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    assert_eq!(
+        crate::legacy_core::pruner_settings::PrunerSettings::load(&chat.config.codex_home).unwrap(),
+        original
+    );
+    assert!(
+        !std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(
+            event,
+            AppEvent::UpdateModel(_) | AppEvent::PersistModelSelection { .. }
+        ))
+    );
+}
+
+#[tokio::test]
+async fn pruner_model_popup_refreshes_from_provider_catalog_and_ignores_stale_reply() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.model_catalog = Arc::new(ModelCatalog::new(Vec::new()));
+    chat.dispatch_command(SlashCommand::PrunerModel);
+    assert!(render_bottom_popup(&chat, 100).contains("Loading available models"));
+    let (request_id, provider_id) = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::FetchModels {
+                request_id,
+                provider_id,
+            } => Some((request_id, provider_id)),
+            _ => None,
+        })
+        .expect("provider catalog request");
+    let mut preset = crate::test_support::TEST_MODEL_PRESETS[0].clone();
+    preset.id = "live-pruner-choice".into();
+    preset.model = "live-pruner-choice".into();
+    preset.display_name = "live-pruner-choice".into();
+    preset.show_in_picker = true;
+    assert!(!chat.on_models_loaded(
+        uuid::Uuid::new_v4(),
+        provider_id.clone(),
+        Ok(vec![preset.clone()])
+    ));
+    assert!(!render_bottom_popup(&chat, 100).contains("live-pruner-choice"));
+    assert!(chat.on_models_loaded(request_id, provider_id, Ok(vec![preset])));
+    let popup = render_bottom_popup(&chat, 100);
+    assert!(popup.contains("Choose pruner model"), "{popup}");
+    assert!(popup.contains("live-pruner-choice"), "{popup}");
+    assert!(!popup.contains("Loading available models"));
+}
+
+#[tokio::test]
 async fn model_catalog_uses_live_openai_models_without_fabricated_fallbacks() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
@@ -4094,6 +4177,6 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     let after_escape = render_bottom_popup(&chat, /*width*/ 160);
-    assert!(after_escape.contains("Select Model"));
+    assert!(after_escape.contains("Choose a mind"));
     assert!(!after_escape.contains("Select Reasoning Level"));
 }

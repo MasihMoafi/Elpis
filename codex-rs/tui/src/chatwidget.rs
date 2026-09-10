@@ -711,6 +711,8 @@ pub(crate) struct ChatWidget {
     // Runtime metrics accumulated across delta snapshots for the active turn.
     turn_runtime_metrics: RuntimeMetricsSummary,
     last_rendered_width: std::cell::Cell<Option<usize>>,
+    stream_motion: std::cell::RefCell<crate::elpis_motion::CoalescingText>,
+    ledger_motion: std::cell::RefCell<crate::elpis_motion::CoalescingText>,
     // Feedback sink for /feedback
     // Current session rollout path (if known)
     current_rollout_path: Option<PathBuf>,

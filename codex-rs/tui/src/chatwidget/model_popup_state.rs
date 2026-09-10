@@ -2,6 +2,7 @@
 
 use super::model_popups::ALL_MODELS_SELECTION_VIEW_ID;
 use super::model_popups::MODEL_SELECTION_VIEW_ID;
+use super::model_popups::PRUNER_MODEL_SELECTION_VIEW_ID;
 use super::*;
 
 impl ChatWidget {
@@ -76,6 +77,14 @@ impl ChatWidget {
     fn refresh_open_model_popup(&mut self) {
         if self
             .bottom_pane
+            .selected_index_for_active_view(PRUNER_MODEL_SELECTION_VIEW_ID)
+            .is_some()
+        {
+            self.refresh_pruner_model_popup();
+            return;
+        }
+        if self
+            .bottom_pane
             .selected_index_for_active_view(MODEL_SELECTION_VIEW_ID)
             .is_some()
         {
@@ -109,7 +118,8 @@ impl ChatWidget {
         params.initial_selected_idx = params
             .items
             .iter()
-            .position(|item| Some(&item.name) == selected_model);
+            .position(|item| Some(&item.name) == selected_model)
+            .or(params.initial_selected_idx);
         self.model_popup_model_ids = params.items.iter().map(|item| item.name.clone()).collect();
         if let Some(view_id) = params.view_id.filter(|_| selected_index.is_some()) {
             self.bottom_pane

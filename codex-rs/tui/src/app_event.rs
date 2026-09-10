@@ -1080,6 +1080,8 @@ pub(crate) enum AppEvent {
 
     /// Runtime syntax theme preview changed; refresh theme-derived UI colors.
     SyntaxThemePreviewed,
+    AppearanceSelected(codex_config::types::TuiAppearance),
+    OpenSyntaxThemePicker,
 
     /// Open set/remove actions for the selected keymap action.
     OpenKeymapActionMenu {

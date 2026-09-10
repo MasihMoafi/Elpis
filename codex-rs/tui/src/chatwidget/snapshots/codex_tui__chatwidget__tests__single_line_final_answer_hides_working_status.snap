@@ -6,9 +6,9 @@ expression: normalize_snapshot_paths(terminal.backend().vt100().screen().content
 • 1
 
  Elpis · model gpt-5 · location /tmp/pro
-┌──────────────────────────────────────┐
-› Ask Codex to do anything             │
-│                                      │
-│                                      │
-└──────────────────────────────────────┘
+│
+› Ask Codex to do anything
+│
+│
+│
   100% context left · Tab Context Ledger

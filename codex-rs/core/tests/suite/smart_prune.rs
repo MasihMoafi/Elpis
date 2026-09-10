@@ -214,6 +214,91 @@ async fn harness(enabled: bool) -> Result<TestCodexHarness> {
     harness_for_model(enabled, MAIN_MODEL).await
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn saved_pruner_settings_reach_only_optimizer_and_its_audit() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    let marker = "Preserve the PRUNER_ONLY_MARKER_42 fact.";
+    for custom in [true, false] {
+        let harness = harness_for_model(true, CACHE_TEST_MODEL).await?;
+        let settings = if custom {
+            codex_core::pruner_settings::PrunerSettings {
+                model: Some(MAIN_MODEL.to_string()),
+                system_prompt: Some(marker.to_string()),
+            }
+        } else {
+            codex_core::pruner_settings::PrunerSettings::default()
+        };
+        settings.save(harness.test().codex_home_path())?;
+        let requests = mount_sse_sequence(
+            harness.server(),
+            vec![
+                tool_response(CALL_A, 90),
+                admission_response(CALL_A, COMPACT_A),
+                final_response(),
+            ],
+        )
+        .await;
+        harness.submit("generate a large diagnostic output").await?;
+        let requests = requests.requests();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].body_json()["model"], CACHE_TEST_MODEL);
+        assert_eq!(requests[2].body_json()["model"], CACHE_TEST_MODEL);
+        assert_eq!(
+            requests[1].body_json()["model"],
+            if custom {
+                MAIN_MODEL
+            } else {
+                SMART_PRUNE_MODEL
+            }
+        );
+        assert_eq!(requests[1].body_contains_text(marker), custom);
+        assert!(!requests[0].body_contains_text(marker));
+        assert!(!requests[2].body_contains_text(marker));
+        let audit = only_attempt_record(&harness)?;
+        assert_eq!(
+            audit["instructions"]
+                .as_str()
+                .is_some_and(|text| text.contains(marker)),
+            custom
+        );
+        assert_eq!(audit["model"], requests[1].body_json()["model"]);
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn invalid_saved_pruner_settings_preserve_output_and_report_failure() -> Result<()> {
+    skip_if_host_windows!(Ok(()));
+    let harness = harness(true).await?;
+    std::fs::write(
+        harness.test().codex_home_path().join("pruner.json"),
+        "not json",
+    )?;
+    let requests = mount_sse_sequence(
+        harness.server(),
+        vec![tool_response(CALL_A, 90), final_response()],
+    )
+    .await;
+    harness.submit("generate a large diagnostic output").await?;
+    let requests = requests.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "invalid settings must not start an optimizer request"
+    );
+    assert!(requests[1].body_contains_text(&"Z".repeat(256)));
+    assert_eq!(requests[1].body_json()["model"], MAIN_MODEL);
+    let audit = only_attempt_record(&harness)?;
+    assert_eq!(audit["status"], "model_error");
+    assert!(
+        audit["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Invalid pruner settings")
+    );
+    Ok(())
+}
+
 async fn submit_without_wait(harness: &TestCodexHarness, prompt: &str) -> Result<()> {
     let test = harness.test();
     let (sandbox_policy, permission_profile) =
@@ -505,7 +590,7 @@ async fn interrupt_cancels_in_flight_smart_prune_without_waiting_for_timeout() -
         wait_for_event(&codex, |event| matches!(event, EventMsg::TurnAborted(_))),
     )
     .await
-    .expect("interrupt must not wait for the 60-second Smart Prune inactivity timeout");
+    .expect("interrupt must not wait for the 180-second Smart Prune inactivity timeout");
     assert!(interrupted_at.elapsed() < Duration::from_secs(2));
 
     let snapshot = harness.test().codex.smart_prune_snapshot().await;
@@ -603,7 +688,7 @@ async fn luna_timeout_falls_back_to_openrouter_and_admits_before_main_send() -> 
         vec![
             sse_response(tool_response(CALL_A, 90)),
             sse_response(admission_response(CALL_A, "late primary result"))
-                .set_delay(Duration::from_secs(120)),
+                .set_delay(Duration::from_secs(360)),
             sse_response(final_response()),
         ],
     )
@@ -624,7 +709,7 @@ async fn luna_timeout_falls_back_to_openrouter_and_admits_before_main_send() -> 
     submit_without_wait(&harness, "generate a large diagnostic output").await?;
     wait_for_optimizer_request(&harness, &responses, CALL_A).await;
     tokio::time::pause();
-    tokio::time::sleep(Duration::from_secs(61)).await;
+    tokio::time::sleep(Duration::from_secs(181)).await;
     tokio::time::resume();
     tokio::time::timeout(
         Duration::from_secs(5),
@@ -701,7 +786,7 @@ async fn luna_timeout_does_not_cross_providers_without_openrouter_credential() -
         vec![
             sse_response(tool_response(CALL_A, 90)),
             sse_response(admission_response(CALL_A, "late primary result"))
-                .set_delay(Duration::from_secs(120)),
+                .set_delay(Duration::from_secs(360)),
             sse_response(final_response()),
         ],
     )
@@ -717,7 +802,7 @@ async fn luna_timeout_does_not_cross_providers_without_openrouter_credential() -
     assert_eq!(before_timeout.optimizer_requests, 1);
     assert_eq!(before_timeout.failed_batches, 0);
     assert_eq!(before_timeout.admitted_outputs, 0);
-    tokio::time::sleep(Duration::from_secs(40)).await;
+    tokio::time::sleep(Duration::from_secs(160)).await;
     tokio::time::resume();
     tokio::time::timeout(
         Duration::from_secs(5),
@@ -737,7 +822,7 @@ async fn luna_timeout_does_not_cross_providers_without_openrouter_credential() -
     assert_eq!(attempt["status"], "timed_out");
     assert_eq!(
         attempt["error"],
-        "60-second optimizer inactivity timeout elapsed"
+        "180-second optimizer inactivity timeout elapsed"
     );
 
     Ok(())
@@ -751,7 +836,7 @@ async fn failed_optimizer_skips_later_batches_in_same_turn() -> Result<()> {
         harness.server(),
         vec![
             sse_response(tool_response(CALL_A, 90)),
-            sse_response(admission_response(CALL_A, COMPACT_A)).set_delay(Duration::from_secs(120)),
+            sse_response(admission_response(CALL_A, COMPACT_A)).set_delay(Duration::from_secs(360)),
             sse_response(tool_response(CALL_B, 89)),
             sse_response(final_response()),
         ],
@@ -766,7 +851,7 @@ async fn failed_optimizer_skips_later_batches_in_same_turn() -> Result<()> {
     .await?;
     wait_for_optimizer_request(&harness, &requests, CALL_A).await;
     tokio::time::pause();
-    tokio::time::sleep(Duration::from_secs(61)).await;
+    tokio::time::sleep(Duration::from_secs(181)).await;
     tokio::time::resume();
     tokio::time::timeout(Duration::from_secs(5), async {
         while harness

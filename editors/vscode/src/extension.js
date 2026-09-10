@@ -31,8 +31,20 @@ function activate(context) {
   async function openChat(panel) {
     if (!vscode.workspace.isTrusted) { vscode.window.showWarningMessage('Trust the workspace before starting Elpis.'); return; }
     const roots = vscode.workspace.workspaceFolders || [];
-    if (!roots.length) { vscode.window.showWarningMessage('Open a local project folder first.'); return; }
-    const root = roots.length === 1 ? roots[0] : (await vscode.window.showQuickPick(roots.map(root => ({ label: root.name, root })) ))?.root;
+    let root;
+    if (roots.length) {
+      root = roots.length === 1 ? roots[0] : (await vscode.window.showQuickPick(roots.map(root => ({ label: root.name, root })) ))?.root;
+    } else {
+      const document = vscode.window.activeTextEditor?.document.uri;
+      if (document?.scheme === 'file') {
+        const directory = path.dirname(document.fsPath);
+        root = { name: path.basename(directory), uri: vscode.Uri.file(directory) };
+      } else {
+        const uri = vscode.Uri.joinPath(context.globalStorageUri, 'chat-workspace');
+        await vscode.workspace.fs.createDirectory(uri);
+        root = { name: 'New chat', uri: vscode.Uri.file(uri.fsPath) };
+      }
+    }
     if (!root) return;
     if (root.uri.scheme !== 'file') { vscode.window.showWarningMessage('Elpis currently supports local file workspaces.'); return; }
     const key = root.uri.toString();
@@ -41,6 +53,7 @@ function activate(context) {
     panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'assets')] };
     panels.set(key, panel);
     const config = () => vscode.workspace.getConfiguration('elpis', root.uri);
+    const configTarget = roots.length ? vscode.ConfigurationTarget.WorkspaceFolder : vscode.ConfigurationTarget.Global;
     const modeKey=`elpis.approvalMode.${key}`;
     const currentMode=()=>approvalMode(context.workspaceState.get(modeKey,'ask'));
     const bridge = new EditorBridge(vscode, root.uri, {approvalMode:()=>session?.options.approvalMode || currentMode().id});
@@ -207,16 +220,16 @@ function activate(context) {
           else if (!menuModels.some(m=>m.model === model)) throw new Error('Choose a model from the current catalog.');
           if (model === undefined) return;
           const effective=model.trim() || await configuredModel(root.uri.fsPath,await connectionOptions());
-          await config().update('model', model.trim(), vscode.ConfigurationTarget.WorkspaceFolder);
+          await config().update('model', model.trim(), configTarget);
           const effort=effortForModel(menuModels.find(p=>p.model===effective),config().get('reasoningEffort',''));
-          await config().update('reasoningEffort', effort, vscode.ConfigurationTarget.WorkspaceFolder);
+          await config().update('reasoningEffort', effort, configTarget);
           session.selectModel(effective,effort);selection();
           post({type:'status',text:`Model selected: ${model.trim() || 'Elpis configuration'}`});
         }
         if (message.type === 'effort') {
           const model = menuModels.find(m=>m.model === (session.model || session.options.model)) || menuModels.find(m=>m.isDefault);
           if (message.effort && !model?.efforts?.includes(message.effort)) throw new Error('This model does not advertise that reasoning effort.');
-          await config().update('reasoningEffort', message.effort, vscode.ConfigurationTarget.WorkspaceFolder);
+          await config().update('reasoningEffort', message.effort, configTarget);
           session.options.reasoningEffort = message.effort || model?.defaultEffort || '';
           selection();
         }
@@ -236,9 +249,9 @@ function activate(context) {
           const model = choice.custom ? await vscode.window.showInputBox({ title: `${provider.label} custom model`, prompt: 'Exact model ID', value: current, validateInput: value => value.trim() ? undefined : 'Enter a model ID' }) : choice.model;
           if (model === undefined) return;
           if (provider.provider.id && !model.trim()) throw new Error('Enter a model ID for the selected provider.');
-          await config().update('provider', provider.provider.id, vscode.ConfigurationTarget.WorkspaceFolder);
-          await config().update('model', model.trim(), vscode.ConfigurationTarget.WorkspaceFolder);
-          await config().update('reasoningEffort', '', vscode.ConfigurationTarget.WorkspaceFolder);
+          await config().update('provider', provider.provider.id, configTarget);
+          await config().update('model', model.trim(), configTarget);
+          await config().update('reasoningEffort', '', configTarget);
           await resetSession();
         }
         if (message.type === 'key') {
@@ -259,7 +272,7 @@ function activate(context) {
         }
         if (message.type === 'reconnect') { await resetSession(); await session.connect(); }
         if (message.type === 'access') {
-          await config().update('editorAccess', !config().get('editorAccess', true), vscode.ConfigurationTarget.WorkspaceFolder);
+          await config().update('editorAccess', !config().get('editorAccess', true), configTarget);
           bridge.cancel();
           post({ type: 'status', text: 'Editor access changed. Start a new conversation to remove facts already seen.' });
         }

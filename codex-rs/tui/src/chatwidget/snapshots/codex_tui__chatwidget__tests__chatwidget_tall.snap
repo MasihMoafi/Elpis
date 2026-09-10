@@ -4,25 +4,25 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
  Elpis · model gpt-5.6-sol · location /tmp/proje
-• elpising… (0s • esc to interrupt)             │CONTEXT LEDGER  Total ≈0 tokens
-                                                │admitted
-• Queued follow-up inputs                       │i = select/deselect all ·
-  ↳ Hello, world! 0                             │backspace = remove added file
+▂▄▆ Elpising… (0s • esc to interrupt)           │CONTEXT LEDGER  context not
+                                                │measured · ≈0 source estimates
+• Queued follow-up inputs                       │Tab focus · Alt+C focus/hide ·
+  ↳ Hello, world! 0                             │Ctrl+click open file
   ↳ Hello, world! 1                             │
-  ↳ Hello, world! 2                             │CONTEXT WINDOW  ≈0 of 258.4k
-  ↳ Hello, world! 3                             │used (0%)
-  ↳ Hello, world! 4                             │░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-  ↳ Hello, world! 5                             │■ Conversation (messages) ≈0
-  ↳ Hello, world! 6                             │tokens
-  ↳ Hello, world! 7                             │
-  ↳ Hello, world! 8                             │No portable context is
-  ↳ Hello, world! 9                             │available.
-  ↳ Hello, world! 10
-  ↳ Hello, world! 11
-  ↳ Hello, world! 12
-┌──────────────────────────────────────────────┐
-› Ask Codex to do anything                     │
-│                                              │
-│                                              │
-└──────────────────────────────────────────────┘
+  ↳ Hello, world! 2                             │SMART PRUNE          [···] SYNC
+  ↳ Hello, world! 3                             │Reading current thread state
+  ↳ Hello, world! 4                             │Syncing… · /smart-prune on|off
+  ↳ Hello, world! 5                             │sets an explicit state
+  ↳ Hello, world! 6                             │
+  ↳ Hello, world! 7                             │CONTEXT WINDOW  usage
+  ↳ Hello, world! 8                             │unavailable
+  ↳ Hello, world! 9                             │Context measurement unavailable
+  ↳ Hello, world! 10                            │until the first request
+  ↳ Hello, world! 11                            │snapshot
+  ↳ Hello, world! 12                            │
+│                                               │No portable context is
+› Ask Codex to do anything                      │available.
+│
+│
+│
         100% context left · Tab Context Ledger

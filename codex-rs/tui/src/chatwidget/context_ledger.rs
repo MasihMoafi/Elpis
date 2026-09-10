@@ -1,9 +1,5 @@
 //! Persistent, user-controlled view of Elpis-owned portable context.
 
-use super::context_usage::AGENT_RESPONSES_COLOR;
-use super::context_usage::SYSTEM_INSTRUCTIONS_COLOR;
-use super::context_usage::TOOL_RESULTS_COLOR;
-use super::context_usage::USER_MESSAGES_COLOR;
 use super::context_usage::context_used_percent;
 use super::context_usage::reconcile_context_categories;
 use super::context_usage::run_built_context_categories;
@@ -63,12 +59,13 @@ impl LedgerSourceGroup {
     }
 
     fn color(self) -> Color {
-        match self {
-            Self::SessionContinuity => TOOL_RESULTS_COLOR,
-            Self::UserFiles => USER_MESSAGES_COLOR,
-            Self::DurableMemory => AGENT_RESPONSES_COLOR,
-            Self::Instructions => SYSTEM_INSTRUCTIONS_COLOR,
-        }
+        let index = match self {
+            Self::SessionContinuity => 0,
+            Self::UserFiles => 1,
+            Self::DurableMemory => 2,
+            Self::Instructions => 3,
+        };
+        smart_prune_on_colors(default_bg(), stdout_color_level())[index]
     }
 
     fn marker(self) -> &'static str {
@@ -365,12 +362,9 @@ impl ChatWidget {
             .filter(|source| source.admitted)
             .map(|source| source.estimated_tokens)
             .sum::<u64>();
-        // Structural branding follows the composer. Data and admission-state
-        // colors remain independent so their meaning does not change with branding.
+        // Labels and values identify categories; the palette follows Elpis appearance.
         let brand = crate::style::brand_style().not_bold();
-        let included = Style::default().fg(Color::Cyan);
-        let amber = Style::default().fg(Color::Rgb(245, 158, 11));
-        let muted = Style::default().fg(Color::Rgb(100, 116, 139));
+        let muted = Style::default().fg(Color::Rgb(133, 134, 128));
         let context_window = self
             .status_line_context_window_size()
             .unwrap_or(258_400)
@@ -399,7 +393,12 @@ impl ChatWidget {
         let used_percent = context_used_percent(used_tokens, context_window);
         let mut attribution_segments = categories
             .iter()
-            .map(|category| (category.tokens, category.color))
+            .map(|category| {
+                (
+                    category.tokens,
+                    super::context_usage::context_display_color(category.color),
+                )
+            })
             .collect::<Vec<_>>();
         if attribution_segments.is_empty() && has_request_snapshot && used_tokens > 0 {
             attribution_segments.push((used_tokens, Color::DarkGray));
@@ -550,7 +549,7 @@ impl ChatWidget {
         {
             let status = attempt.status.replace('_', " ");
             let status_style = match attempt.status.as_str() {
-                "admitted" => Style::default().fg(Color::Green).bold(),
+                "admitted" => crate::elpis_motion::accent_style(),
                 "unchanged" => muted,
                 _ => Style::default().fg(Color::Yellow).bold(),
             };
@@ -602,7 +601,7 @@ impl ChatWidget {
                 source_links.push((lines.len(), destination));
                 lines.push(Line::from(Span::styled(
                     "Read attempt evidence",
-                    Style::default().fg(Color::Cyan).underlined(),
+                    crate::elpis_motion::accent_style().underlined(),
                 )));
             }
         }
@@ -680,7 +679,8 @@ impl ChatWidget {
                     Span::raw("  "),
                     Span::styled(
                         format!("{} ", category.marker()),
-                        Style::default().fg(category.color),
+                        Style::default()
+                            .fg(super::context_usage::context_display_color(category.color)),
                     ),
                     Span::raw(category.label),
                     Span::raw(" ".repeat(pad)),
@@ -740,7 +740,11 @@ impl ChatWidget {
                 } else {
                     "EXCLUDED"
                 };
-                let state_style = if source.admitted { included } else { amber };
+                let state_style = if source.admitted {
+                    cat_style
+                } else {
+                    cat_style.dim()
+                };
                 let marker_style = if source.admitted { cat_style } else { muted };
                 let prefix = if selected { "› " } else { "  " };
                 // Per-source estimates stay exact so similarly sized files remain
@@ -1670,7 +1674,7 @@ fn usage_bar_line(
     if cells_used < bar_width {
         spans.push(Span::styled(
             "░".repeat(bar_width - cells_used),
-            Style::default().fg(Color::Rgb(100, 116, 139)),
+            super::context_usage::context_free_style(),
         ));
     }
     Line::from(spans)
@@ -1716,17 +1720,17 @@ fn smart_prune_on_colors(
         color_level,
         StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown
     ) {
-        return [Color::Green; 4];
+        return [Color::Yellow; 4];
     }
 
     let palette = if terminal_bg.is_some_and(is_light) {
-        [(109, 40, 217), (13, 116, 144), (5, 122, 85), (21, 128, 61)]
+        [(145, 76, 0), (122, 95, 0), (96, 72, 24), (166, 99, 0)]
     } else {
         [
-            (139, 92, 246),
-            (20, 184, 166),
-            (16, 185, 129),
-            (74, 222, 128),
+            (211, 126, 22),
+            (248, 185, 52),
+            (241, 219, 110),
+            (184, 156, 89),
         ]
     };
     palette.map(|color| best_color_for_level(color, color_level))
@@ -1769,16 +1773,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ledger_source_palette_uses_fixed_rgb_colors() {
-        assert_eq!(
-            LedgerSourceGroup::ALL.map(LedgerSourceGroup::color),
-            [
-                Color::Rgb(252, 178, 79),
-                Color::Rgb(111, 181, 253),
-                Color::Rgb(3, 155, 44),
-                Color::Rgb(240, 68, 93),
-            ]
+    fn dark_ledger_accents_have_readable_contrast_and_distinct_brightness() {
+        let luminance = |rgb: (u8, u8, u8)| {
+            let linear = |v: u8| {
+                let v = f64::from(v) / 255.0;
+                if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
+        };
+        let mut levels = Vec::new();
+        for color in smart_prune_on_colors(Some((17, 18, 20)), StdoutColorLevel::TrueColor) {
+            let Color::Rgb(r, g, b) = color else {
+                panic!("expected truecolor")
+            };
+            let level = luminance((r, g, b));
+            assert!((level + 0.05) / (luminance((17, 18, 20)) + 0.05) >= 4.5);
+            levels.push(level);
+        }
+        levels.sort_by(f64::total_cmp);
+        assert!(
+            levels[3] - levels[0] > 0.35,
+            "categories need distinct brightness"
         );
+    }
+
+    #[test]
+    fn ledger_source_palette_stays_in_the_gold_family() {
+        for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
+            match color {
+                Color::Rgb(r, g, b) => assert!(r >= g && g > b),
+                Color::Yellow | Color::Indexed(_) => {}
+                other => panic!("unexpected ledger accent: {other:?}"),
+            }
+        }
     }
 
     #[test]
@@ -1788,7 +1819,7 @@ mod tests {
                 Some((0, 0, 0)),
                 crate::terminal_palette::StdoutColorLevel::Ansi16,
             ),
-            [Color::Green; 4]
+            [Color::Yellow; 4]
         );
     }
 
@@ -1800,10 +1831,10 @@ mod tests {
                 crate::terminal_palette::StdoutColorLevel::TrueColor,
             ),
             [
-                Color::Rgb(109, 40, 217),
-                Color::Rgb(13, 116, 144),
-                Color::Rgb(5, 122, 85),
-                Color::Rgb(21, 128, 61),
+                Color::Rgb(145, 76, 0),
+                Color::Rgb(122, 95, 0),
+                Color::Rgb(96, 72, 24),
+                Color::Rgb(166, 99, 0),
             ]
         );
     }

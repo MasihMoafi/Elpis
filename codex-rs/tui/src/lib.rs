@@ -137,6 +137,7 @@ mod keymap_setup;
 mod line_truncation;
 pub(crate) mod live_wrap;
 pub use live_wrap::RowBuilder;
+mod elpis_motion;
 mod local_chatgpt_auth;
 mod managed_new_thread_defaults;
 mod markdown;
@@ -1072,7 +1073,13 @@ pub async fn run_main(
     )
     .await;
 
+    if let Some(model) = &cli.pruner_model {
+        let mut settings = legacy_core::pruner_settings::PrunerSettings::load(&config.codex_home)?;
+        settings.model = (model != "default").then(|| model.clone());
+        settings.save(&config.codex_home)?;
+    }
     remove_legacy_tui_log_file(config.codex_home.as_path());
+    dashboard_server::configure_pruner_home(&config.codex_home);
 
     let otel_originator = originator().value;
     let otel = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1264,8 +1271,8 @@ async fn run_ratatui_app(
     crate::startup_timing::record("terminal");
     // Captured before `initial_config` is moved into the session below.
     let startup_log_home = initial_config.codex_home.as_path().to_path_buf();
+    crate::terminal_palette::set_appearance(initial_config.tui_appearance);
     initialized_terminal.terminal.clear()?;
-
     let mut tui = Tui::new(
         initialized_terminal.terminal,
         initialized_terminal.enhanced_keys_supported,
@@ -1698,6 +1705,7 @@ async fn run_ratatui_app(
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
     startup_animation.set_animations_enabled(config.animations);
+    crate::terminal_palette::set_appearance(config.tui_appearance);
     let mut app_server = match app_server {
         Some(app_server) => app_server,
         None => {
@@ -1805,8 +1813,6 @@ async fn run_ratatui_app(
     // accept a keystroke, so this is the wait a user actually experiences.
     crate::startup_timing::record("ready");
     crate::startup_timing::finish_and_log(&startup_log_home);
-    let startup_identity =
-        startup_animation.into_history_cell(tui.terminal.last_known_screen_size.height);
     let app_result = App::run(
         &mut tui,
         app_server,
@@ -1826,7 +1832,6 @@ async fn run_ratatui_app(
         startup_elapsed_before_app,
         startup_bootstrap,
         startup_hooks_browser,
-        startup_identity,
     )
     .await;
 

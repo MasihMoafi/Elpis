@@ -507,6 +507,58 @@ async function refreshEvidence() {
   }
 }
 
+let defaultPrunerPrompt = null;
+function prunerSettingsUrl() {
+  const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
+  return /^[a-f0-9]{32}$/.test(token || '') ? `/pruner-settings/${token}` : null;
+}
+
+async function loadPrunerSettings() {
+  const url = prunerSettingsUrl();
+  if (!url) return;
+  byId('pruner-fields').disabled = true;
+  try {
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    defaultPrunerPrompt = payload.default_system_prompt;
+    byId('pruner-model').value = payload.settings.model ?? '';
+    byId('pruner-prompt').value = payload.settings.system_prompt ?? defaultPrunerPrompt;
+    byId('pruner-fields').disabled = false;
+    setText('pruner-feedback', 'Loaded saved settings. Edits are not applied until you save.');
+  } catch (error) {
+    setText('pruner-feedback', `Settings unavailable: ${error.message}`);
+  }
+}
+
+async function savePrunerSettings() {
+  const url = prunerSettingsUrl();
+  if (!url || defaultPrunerPrompt === null) return;
+  const model = byId('pruner-model').value.trim();
+  const prompt = byId('pruner-prompt').value;
+  if (!prompt.trim()) { setText('pruner-feedback', 'The system prompt cannot be empty.'); return; }
+  byId('pruner-fields').disabled = true;
+  try {
+    const response = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: model || null, system_prompt: prompt === defaultPrunerPrompt ? null : prompt }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    setText('pruner-feedback', 'Saved. Applies to the next optimizer request; chat model unchanged.');
+  } catch (error) {
+    setText('pruner-feedback', `Not saved: ${error.message}`);
+  } finally {
+    byId('pruner-fields').disabled = false;
+  }
+}
+
+function restoreDefaultPrunerPrompt() {
+  if (defaultPrunerPrompt !== null) {
+    byId('pruner-prompt').value = defaultPrunerPrompt;
+    setText('pruner-feedback', 'Default prompt restored in the editor. Save to apply it.');
+  }
+}
+
 async function poll(force = false) {
   if (inFlight || (paused && !force)) return;
   inFlight = true;
@@ -582,6 +634,10 @@ tabs.forEach(tab => {
   });
 });
 
+byId('pruner-save').addEventListener('click', () => void savePrunerSettings());
+byId('pruner-reload').addEventListener('click', () => void loadPrunerSettings());
+byId('pruner-reset').addEventListener('click', restoreDefaultPrunerPrompt);
+void loadPrunerSettings();
 byId('poll-toggle').addEventListener('click', () => setPaused(!paused));
 byId('refresh-now').addEventListener('click', () => { void poll(true); });
 setInterval(tickClocks, 1_000);

@@ -74,6 +74,9 @@ pub use crate::remote::RemoteAppServerEndpoint;
 /// module exists so clients can remove a direct `codex-core` dependency
 /// while legacy startup/config paths are migrated to RPCs.
 pub mod legacy_core {
+    pub mod pruner_settings {
+        pub use codex_core::pruner_settings::*;
+    }
     pub mod elpis_context {
         pub use codex_core::elpis_context::*;
     }

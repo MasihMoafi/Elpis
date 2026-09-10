@@ -543,6 +543,9 @@ pub const DEFAULT_TERMINAL_RESIZE_REFLOW_FALLBACK_MAX_ROWS: usize = 1_000;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct Tui {
+    /// Interface appearance: dark (default), light, or the terminal's system colors.
+    #[serde(default)]
+    pub appearance: TuiAppearance,
     #[serde(default, flatten)]
     pub notification_settings: TuiNotificationSettings,
 
@@ -635,6 +638,37 @@ pub struct Tui {
     #[serde(default)]
     #[schemars(range(min = 0))]
     pub terminal_resize_reflow_max_rows: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TuiAppearance {
+    #[default]
+    Dark,
+    Light,
+    System,
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::*;
+
+    #[test]
+    fn dark_is_default_and_all_appearance_choices_round_trip() {
+        let defaults: Tui = toml::from_str("").unwrap();
+        assert_eq!(defaults.appearance, TuiAppearance::Dark);
+        for (name, expected) in [
+            ("dark", TuiAppearance::Dark),
+            ("light", TuiAppearance::Light),
+            ("system", TuiAppearance::System),
+        ] {
+            let config: Tui = toml::from_str(&format!("appearance = {name:?}")).unwrap();
+            assert_eq!(config.appearance, expected);
+            let saved = toml::to_string(&config).unwrap();
+            assert_eq!(toml::from_str::<Tui>(&saved).unwrap().appearance, expected);
+        }
+        assert!(toml::from_str::<Tui>("appearance = 'neon'").is_err());
+    }
 }
 
 const fn default_true() -> bool {

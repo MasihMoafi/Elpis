@@ -5,7 +5,7 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 ✔
  Elpis · model gpt-5.6-sol · location /tmp/project
-• elpising… (0s • esc to interrupt)                               │CONTEXT LEDGER  Total ≈0 tokens admitted
+• Elpising… (0s • esc to interrupt)                               │CONTEXT LEDGER  Total ≈0 tokens admitted
 ┌────────────────────────────────────────────────────────────────┐│i = select/deselect all · backspace =
 › Ask Codex to do anything                                       ││remove added file
 │                                                                ││

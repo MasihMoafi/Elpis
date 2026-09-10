@@ -11,19 +11,29 @@ use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 
-// Copper is the product accent; context categories and success/error colors are
+// Orange is the product accent; context categories and success/error colors are
 // independent semantic palettes. Use deeper ink on light terminal backgrounds.
-const LIGHT_BG_PRIMARY_RGB: (u8, u8, u8) = (151, 75, 53);
-const DARK_BG_PRIMARY_RGB: (u8, u8, u8) = (230, 162, 140);
-const LIGHT_BG_SECONDARY_RGB: (u8, u8, u8) = (113, 96, 86);
-const DARK_BG_SECONDARY_RGB: (u8, u8, u8) = (167, 148, 139);
-const LIGHT_BG_STATUS_RGB: (u8, u8, u8) = (141, 81, 61);
-const DARK_BG_STATUS_RGB: (u8, u8, u8) = (207, 165, 143);
+const LIGHT_BG_PRIMARY_RGB: (u8, u8, u8) = (150, 100, 0);
+const DARK_BG_PRIMARY_RGB: (u8, u8, u8) = (220, 151, 32);
+const LIGHT_BG_SECONDARY_RGB: (u8, u8, u8) = LIGHT_BG_PRIMARY_RGB;
+const DARK_BG_SECONDARY_RGB: (u8, u8, u8) = DARK_BG_PRIMARY_RGB;
+const LIGHT_BG_STATUS_RGB: (u8, u8, u8) = LIGHT_BG_PRIMARY_RGB;
+const DARK_BG_STATUS_RGB: (u8, u8, u8) = DARK_BG_PRIMARY_RGB;
 // Decorative table rules should remain visible without competing with cell content.
 const TABLE_SEPARATOR_FG_ALPHA: f32 = 0.20;
 
 pub fn user_message_style() -> Style {
     user_message_style_for(default_bg())
+}
+
+pub(crate) fn composer_bg_rgb(bg: (u8, u8, u8)) -> (u8, u8, u8) {
+    blend((128, 128, 128), bg, if is_light(bg) { 0.035 } else { 0.06 })
+}
+
+pub(crate) fn composer_style() -> Style {
+    Style::default().bg(default_bg()
+        .map(|bg| best_color(composer_bg_rgb(bg)))
+        .unwrap_or(Color::Reset))
 }
 
 pub fn proposed_plan_style() -> Style {
@@ -160,30 +170,30 @@ mod tests {
     use ratatui::style::Modifier;
 
     #[test]
-    fn accent_style_uses_deep_copper_on_light_backgrounds() {
+    fn accent_style_uses_deep_orange_on_light_backgrounds() {
         assert_eq!(
             adaptive_palette_color(
                 Some((255, 255, 255)),
                 LIGHT_BG_PRIMARY_RGB,
                 DARK_BG_PRIMARY_RGB
             ),
-            (151, 75, 53),
+            (150, 100, 0),
         );
         let style = accent_style_for(Some((255, 255, 255)));
 
-        assert_eq!(style.fg, Some(best_color((151, 75, 53))));
+        assert_eq!(style.fg, Some(best_color((150, 100, 0))));
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
-    fn accent_style_uses_soft_copper_on_dark_or_unknown_backgrounds() {
+    fn accent_style_uses_bright_orange_on_dark_or_unknown_backgrounds() {
         for background in [Some((0, 0, 0)), None] {
             assert_eq!(
                 adaptive_palette_color(background, LIGHT_BG_PRIMARY_RGB, DARK_BG_PRIMARY_RGB),
-                (230, 162, 140),
+                (220, 151, 32),
             );
         }
-        let expected = Style::default().fg(best_color((230, 162, 140))).bold();
+        let expected = Style::default().fg(best_color((220, 151, 32))).bold();
 
         assert_eq!(accent_style_for(Some((0, 0, 0))), expected);
         assert_eq!(accent_style_for(/*terminal_bg*/ None), expected);
@@ -220,7 +230,9 @@ mod tests {
                 ],
             ),
         ] {
-            for color in colors {
+            for color in colors.into_iter().chain((0..32).map(|step| {
+                crate::elpis_motion::pigment(f64::from(step) / 32.0, 0.0, is_light(background))
+            })) {
                 let foreground = luminance(color);
                 let background = luminance(background);
                 let contrast =

@@ -2,8 +2,8 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"┌──────────────────────────────────────────────────────────┐"
-"› /mo                                                      │"
-"│                                                          │"
-"└──────────────────────────────────────────────────────────┘"
+"│                                                           "
+"› /mo                                                       "
+"│                                                           "
+"│                                                           "
 "  /model  choose a provider-aware model and reasoning effort"
