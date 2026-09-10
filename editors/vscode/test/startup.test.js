@@ -65,6 +65,7 @@ for (const [name, options] of [['fresh project', { folder: true }], ['file-only 
     const result = await open(options);
     try {
       assert.match(result.panel.webview.html, /id="prompt"/);
+      assert.match(result.panel.webview.html, /<button id="send" disabled /);
       assert.equal(result.sessions.length, 1);
       assert.equal(result.sessions[0].options.resumeThreadId, undefined);
       assert(fs.statSync(result.sessions[0].cwd).isDirectory());
