@@ -169,6 +169,25 @@ impl Renderable for ChatWidget {
             area.height,
         );
         self.as_renderable().render(chat_area, buf);
+        let stream_height = self
+            .transcript
+            .active_cell
+            .as_ref()
+            .map(|cell| cell.desired_height(chat_area.width))
+            .unwrap_or(0)
+            .min(self.composer_top_offset(chat_area.width).saturating_sub(1));
+        let stream_area = Rect::new(chat_area.x, chat_area.y, chat_area.width, stream_height);
+        let stream_animating = self.stream_motion.borrow_mut().render(
+            buf,
+            stream_area,
+            self.config.animations
+                && (self.has_active_agent_stream() || self.has_active_plan_stream()),
+            true,
+        );
+        if stream_animating {
+            self.frame_requester
+                .schedule_frame_in(std::time::Duration::from_millis(40));
+        }
         if let Some((ledger_desired_height, ledger_lines)) =
             self.context_ledger_lines_with_height(ledger_width)
         {
@@ -194,6 +213,16 @@ impl Renderable for ChatWidget {
                 buf,
                 ledger_lines,
             );
+            let ledger_area = Rect::new(chat_area.right(), ledger_top, ledger_width, ledger_height);
+            if self.ledger_motion.borrow_mut().render(
+                buf,
+                ledger_area,
+                self.config.animations,
+                false,
+            ) {
+                self.frame_requester
+                    .schedule_frame_in(std::time::Duration::from_millis(40));
+            }
         }
         self.last_rendered_width.set(Some(area.width as usize));
     }

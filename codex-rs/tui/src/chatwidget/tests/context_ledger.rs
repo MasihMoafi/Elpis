@@ -1,5 +1,170 @@
 use super::*;
 
+#[tokio::test]
+async fn selected_motion_preserves_stream_text_and_stops_when_disabled() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = true;
+    let cwd = chat.config.cwd.to_path_buf();
+    let mut controller = crate::streaming::controller::StreamController::new(
+        Some(80),
+        cwd.as_path(),
+        HistoryRenderMode::Rich,
+    );
+    controller.push("Arriving text stays intact, including 文 and café.\n");
+    let canonical = controller.current_reveal_lines();
+    assert!(!canonical.is_empty());
+    chat.stream_controller = Some(controller);
+    chat.sync_active_stream_tail();
+    let area = ratatui::layout::Rect::new(0, 0, 120, 55);
+    let mut animated = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(&chat, area, &mut animated);
+    assert_eq!(
+        chat.stream_controller
+            .as_ref()
+            .unwrap()
+            .current_reveal_lines(),
+        canonical
+    );
+    chat.config.animations = false;
+    let mut plain = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(&chat, area, &mut plain);
+    assert_ne!(
+        animated, plain,
+        "the real widget must execute the reveal effect"
+    );
+    let mut repeat = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(&chat, area, &mut repeat);
+    assert_eq!(plain, repeat);
+    assert_eq!(
+        chat.stream_controller
+            .as_ref()
+            .unwrap()
+            .current_reveal_lines(),
+        canonical
+    );
+}
+
+#[tokio::test]
+#[ignore = "manual actual-widget motion capture; set ELPIS_VISUAL_DIR"]
+async fn export_selected_motion_review() {
+    let root = std::path::PathBuf::from(std::env::var("ELPIS_VISUAL_DIR").unwrap());
+    std::fs::create_dir_all(&root).unwrap();
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = true;
+    let fixtures = tempdir().unwrap();
+    configure_ledger_sources(&mut chat, fixtures.path()).unwrap();
+    seed_manual_memory_cache_from_disk(&mut chat).unwrap();
+    chat.set_token_info(Some(make_token_info(10_000, 20_000)));
+    seed_run_built_attribution(&mut chat);
+    let mut history = Vec::new();
+    while rx.try_recv().is_ok() {}
+    chat.bottom_pane.set_task_running(true);
+    chat.bottom_pane
+        .set_placeholder_text("What shall we work on?".into());
+    let cwd = chat.config.cwd.to_path_buf();
+    chat.stream_controller = Some(crate::streaming::controller::StreamController::new(
+        Some(80),
+        cwd.as_path(),
+        HistoryRenderMode::Rich,
+    ));
+    let mut frames = Vec::new();
+    for index in 0..170 {
+        if index >= 100 && index < 150 && index % 10 == 0 {
+            chat.stream_controller.as_mut().unwrap().push(
+                [
+                    "I’ve read the interface.\n",
+                    "New text gathers into place.\n",
+                    "The frame stays quiet.\n",
+                    "Context updates stay readable.\n",
+                    "Elpis is ready.\n",
+                ][(index - 100) / 10],
+            );
+            chat.sync_active_stream_tail();
+        }
+        if index >= 100 {
+            chat.on_commit_tick();
+            while let Ok(event) = rx.try_recv() {
+                if let AppEvent::InsertHistoryCell(cell) = event {
+                    history.extend(cell.display_lines(120));
+                }
+            }
+        }
+        let area = ratatui::layout::Rect::new(0, 0, 120, 55);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        let render_started = std::time::Instant::now();
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (222, 222, 219),
+                bg: (17, 18, 20),
+            },
+            || {
+                use ratatui::widgets::Widget;
+                let height = (history.len() as u16).min(20);
+                ratatui::widgets::Paragraph::new(history.clone())
+                    .render(ratatui::layout::Rect::new(0, 0, 120, height), &mut buf);
+                Renderable::render(
+                    &chat,
+                    ratatui::layout::Rect::new(0, height, 120, 55 - height),
+                    &mut buf,
+                );
+            },
+        );
+        let render_micros = render_started.elapsed().as_micros();
+        frames.push(serde_json::json!({"width":area.width,"height":area.height,"render_micros":render_micros,
+            "cells":buf.content.iter().map(|c| serde_json::json!({"s":c.symbol(),
+                "fg":format!("{:?}",c.fg),"bg":format!("{:?}",c.bg)})).collect::<Vec<_>>()}));
+        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+    }
+    std::fs::write(
+        root.join("selected-frames.json"),
+        serde_json::to_vec(&frames).unwrap(),
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn selected_motion_commits_each_line_once_and_disabled_motion_has_no_delay() {
+    for animated in [true, false] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+        chat.config.animations = animated;
+        let cwd = chat.config.cwd.to_path_buf();
+        let mut controller = crate::streaming::controller::StreamController::new(
+            Some(80),
+            cwd.as_path(),
+            HistoryRenderMode::Rich,
+        );
+        controller.push("One response line.\n");
+        chat.stream_controller = Some(controller);
+        chat.sync_active_stream_tail();
+        while rx.try_recv().is_ok() {}
+        chat.on_commit_tick();
+        if animated {
+            assert_eq!(chat.stream_controller.as_ref().unwrap().queued_lines(), 1);
+            assert!(chat.active_cell_is_stream_tail());
+            assert!(
+                !std::iter::from_fn(|| rx.try_recv().ok())
+                    .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+            );
+            tokio::time::sleep(
+                crate::elpis_motion::REVEAL_COMMIT_AGE + std::time::Duration::from_millis(20),
+            )
+            .await;
+            chat.on_commit_tick();
+        }
+        assert_eq!(chat.stream_controller.as_ref().unwrap().queued_lines(), 0);
+        assert!(!chat.active_cell_is_stream_tail());
+        let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+            .count();
+        assert_eq!(inserted, 1, "no duplicate history insertions");
+        chat.on_commit_tick();
+        assert!(
+            !std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+        );
+    }
+}
+
 use crate::render::renderable::Renderable;
 
 fn render_ledger(chat: &ChatWidget, height: u16) -> String {
@@ -479,7 +644,7 @@ async fn unmeasured_ledger_does_not_fabricate_context_attribution() {
 }
 
 #[tokio::test]
-async fn rendered_ledger_uses_the_context_palette_instead_of_terminal_gray() -> anyhow::Result<()> {
+async fn rendered_ledger_matches_context_category_colors_and_labels() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
@@ -502,18 +667,17 @@ async fn rendered_ledger_uses_the_context_palette_instead_of_terminal_gray() -> 
 
     let buffer = render_ledger_buffer(&chat, 80);
     let expected = [
-        ("●", "User messages", Color::Rgb(111, 181, 253)),
-        ("◆", "Agent messages", Color::Rgb(3, 155, 44)),
-        ("▲", "Reasoning", Color::Rgb(3, 218, 229)),
-        ("■", "Tool calls", Color::Rgb(162, 129, 11)),
-        ("⬟", "Tool results", Color::Rgb(252, 178, 79)),
-        ("✦", "System instructions", Color::Rgb(240, 68, 93)),
-        ("✚", "Developer messages", Color::Rgb(239, 140, 255)),
-        ("▣", "Tool definitions + schema", Color::Rgb(145, 145, 145)),
-        ("?", "Unrecognized request items", Color::Rgb(166, 252, 24)),
+        ("●", "User messages"),
+        ("◆", "Agent messages"),
+        ("▲", "Reasoning"),
+        ("■", "Tool calls"),
+        ("⬟", "Tool results"),
+        ("✦", "System instructions"),
+        ("✚", "Developer messages"),
+        ("▣", "Tool definitions + schema"),
+        ("?", "Unrecognized request items"),
     ];
-    let mut rendered_colors = Vec::new();
-    for (marker, label, expected_color) in expected {
+    for (marker, label) in expected {
         let row = (0..80)
             .find(|row| {
                 (0..52)
@@ -528,13 +692,19 @@ async fn rendered_ledger_uses_the_context_palette_instead_of_terminal_gray() -> 
                 (cell.symbol() == marker).then_some(cell.fg)
             })
             .unwrap_or_else(|| panic!("missing category marker for Ledger row: {label}"));
-        assert_eq!(color, expected_color, "wrong rendered color for {label}");
-        assert_ne!(color, Color::Gray, "terminal Gray is theme-dependent");
-        rendered_colors.push(color);
+        let categories = crate::chatwidget::context_usage::run_built_context_categories(
+            chat.context_attribution.as_ref().unwrap(),
+        );
+        let category = categories
+            .iter()
+            .find(|category| category.label == label)
+            .unwrap();
+        assert_eq!(
+            color,
+            crate::chatwidget::context_usage::context_display_color(category.color),
+            "Ledger and /context must agree for {label}"
+        );
     }
-    rendered_colors.sort_by_key(|color| format!("{color:?}"));
-    rendered_colors.dedup();
-    assert_eq!(rendered_colors.len(), expected.len());
     Ok(())
 }
 

@@ -14,6 +14,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    PrunerModel,
     Permissions,
     #[strum(serialize = "hotkeys", serialize = "keymap")]
     Keymap,
@@ -115,10 +116,13 @@ impl SlashCommand {
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
-            SlashCommand::Theme => "choose a syntax highlighting theme",
+            SlashCommand::Theme => "choose appearance and code highlighting",
             SlashCommand::Ps => "list background terminals",
             SlashCommand::Stop => "kill all background terminals",
             SlashCommand::Model => "choose a provider-aware model and reasoning effort",
+            SlashCommand::PrunerModel => {
+                "view or set the Smart Prune model: /pruner-model <id|default>"
+            }
             SlashCommand::Personality => "choose a communication style for Elpis",
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Goal => "set or view the goal for a long-running task",
@@ -154,6 +158,7 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::SmartPrune
+                | SlashCommand::PrunerModel
                 | SlashCommand::ForcePrune
                 | SlashCommand::Review
                 | SlashCommand::Add
@@ -210,6 +215,7 @@ impl SlashCommand {
             SlashCommand::Diff
             | SlashCommand::Resume
             | SlashCommand::Model
+            | SlashCommand::PrunerModel
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Copy
@@ -246,6 +252,7 @@ impl SlashCommand {
             // surfaces below. The remaining inherited commands are intentionally not
             // part of the public Elpis command contract.
             SlashCommand::Model
+            | SlashCommand::PrunerModel
             | SlashCommand::Permissions
             | SlashCommand::Add
             | SlashCommand::Skills

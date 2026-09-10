@@ -408,7 +408,11 @@ async fn queued_slash_compact_dispatches_after_active_turn() {
             .action,
         QueuedInputAction::ParseSlash
     );
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+    // Turn-state publication may refresh the dashboard, but queued work must
+    // not dispatch until the active turn completes.
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        assert_matches!(event, AppEvent::RefreshContextDashboard);
+    }
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
@@ -419,6 +423,32 @@ async fn queued_slash_compact_dispatches_after_active_turn() {
             .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact))),
         "expected queued /compact to submit compact op; events: {events:?}"
     );
+}
+
+#[tokio::test]
+async fn pruner_model_command_saves_valid_ids_without_changing_chat() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let main_model = chat.current_model().to_string();
+    let read = |chat: &ChatWidget| {
+        crate::legacy_core::pruner_settings::PrunerSettings::load(&chat.config.codex_home).unwrap()
+    };
+    chat.dispatch_command_with_args(
+        SlashCommand::PrunerModel,
+        "optimizer-test".into(),
+        Vec::new(),
+    );
+    assert_eq!(read(&chat).model.as_deref(), Some("optimizer-test"));
+    assert_eq!(chat.current_model(), main_model);
+    chat.dispatch_command_with_args(
+        SlashCommand::PrunerModel,
+        "invalid model".into(),
+        Vec::new(),
+    );
+    assert_eq!(read(&chat).model.as_deref(), Some("optimizer-test"));
+    chat.dispatch_command_with_args(SlashCommand::PrunerModel, "default".into(), Vec::new());
+    assert_eq!(read(&chat).model, None);
+    assert_eq!(chat.current_model(), main_model);
 }
 
 #[tokio::test]

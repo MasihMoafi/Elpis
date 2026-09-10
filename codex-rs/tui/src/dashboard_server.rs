@@ -8,6 +8,13 @@ use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::sync::Mutex;
 
+#[path = "dashboard_pruner.rs"]
+mod pruner;
+
+pub(crate) fn configure_pruner_home(home: &std::path::Path) {
+    pruner::configure(home);
+}
+
 use chrono::Utc;
 use codex_app_server_protocol::TurnCostAvailability;
 use codex_app_server_protocol::TurnCostState;
@@ -363,7 +370,12 @@ fn dashboard_bind_addr() -> SocketAddr {
 }
 
 fn serve(listener: tiny_http::Server, port: u16) {
-    for request in listener.incoming_requests() {
+    for mut request in listener.incoming_requests() {
+        if request.url().starts_with("/pruner-settings/") {
+            let response = pruner::route(&mut request, port);
+            let _ = request.respond(response);
+            continue;
+        }
         let state = DASHBOARD_STATE.lock().ok().and_then(|state| state.clone());
         let response = response_for_at(&request, port, state, Utc::now().timestamp_millis());
         let _ = request.respond(response);

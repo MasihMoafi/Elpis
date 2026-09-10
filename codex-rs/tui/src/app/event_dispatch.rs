@@ -2487,6 +2487,37 @@ impl App {
                 self.refresh_status_line();
                 tui.frame_requester().schedule_frame();
             }
+            AppEvent::OpenSyntaxThemePicker => self.chat_widget.open_syntax_theme_picker(),
+            AppEvent::AppearanceSelected(appearance) => {
+                use codex_config::types::TuiAppearance;
+                let name = match appearance {
+                    TuiAppearance::Dark => "dark",
+                    TuiAppearance::Light => "light",
+                    TuiAppearance::System => "system",
+                };
+                let edit = crate::legacy_core::config::edit::ConfigEdit::SetPath {
+                    segments: vec!["tui".into(), "appearance".into()],
+                    value: name.into(),
+                };
+                match ConfigEditsBuilder::for_config(&self.config)
+                    .with_edits([edit])
+                    .apply()
+                    .await
+                {
+                    Ok(()) => {
+                        self.config.tui_appearance = appearance;
+                        self.chat_widget.set_tui_appearance(appearance);
+                        crate::terminal_palette::set_appearance(appearance);
+                        self.restore_runtime_theme_from_config();
+                        self.chat_widget.refresh_status_line();
+                        tui.terminal.clear()?;
+                        tui.frame_requester().schedule_frame();
+                    }
+                    Err(err) => self
+                        .chat_widget
+                        .add_error_message(format!("Failed to save appearance: {err}")),
+                }
+            }
             AppEvent::OpenKeymapActionMenu { context, action } => {
                 self.chat_widget
                     .open_keymap_action_menu(context, action, &self.keymap);

@@ -301,12 +301,12 @@ fn write_history_line<W: Write>(
                 .style
                 .fg
                 .map(std::convert::Into::into)
-                .unwrap_or(CColor::Reset),
+                .unwrap_or_else(|| crate::terminal_palette::appearance_fg(Color::Reset).into()),
             line.line
                 .style
                 .bg
                 .map(std::convert::Into::into)
-                .unwrap_or(CColor::Reset)
+                .unwrap_or_else(|| crate::terminal_palette::appearance_bg(Color::Reset).into())
         ))
     )?;
     queue!(writer, Clear(ClearType::UntilNewLine))?;
@@ -455,8 +455,8 @@ where
             diff.queue(&mut writer)?;
             last_modifier = modifier;
         }
-        let next_fg = span.style.fg.unwrap_or(Color::Reset);
-        let next_bg = span.style.bg.unwrap_or(Color::Reset);
+        let next_fg = crate::terminal_palette::appearance_fg(span.style.fg.unwrap_or(Color::Reset));
+        let next_bg = crate::terminal_palette::appearance_bg(span.style.bg.unwrap_or(Color::Reset));
         if next_fg != fg || next_bg != bg {
             queue!(
                 writer,
@@ -471,8 +471,8 @@ where
 
     queue!(
         writer,
-        SetForegroundColor(CColor::Reset),
-        SetBackgroundColor(CColor::Reset),
+        SetForegroundColor(crate::terminal_palette::appearance_fg(Color::Reset).into()),
+        SetBackgroundColor(crate::terminal_palette::appearance_bg(Color::Reset).into()),
         SetAttribute(crossterm::style::Attribute::Reset),
     )
 }

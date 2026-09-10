@@ -352,6 +352,7 @@ quick-xml = "0.41.0"
 rand = "0.9"
 ratatui = "0.29.0"
 ratatui-macros = "0.6.0"
+tachyonfx = { version = "=0.11.1", default-features = false, features = ["sendable"] }
 rcgen = { version = "0.14.7", default-features = false, features = [
     "aws_lc_rs",
     "pem",

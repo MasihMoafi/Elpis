@@ -139,12 +139,12 @@ impl ChatWidget {
                     status.details_max_lines,
                 );
             } else if self.status_state.current_status.is_guardian_review() {
-                self.set_status_header(String::from("elpising…"));
+                self.set_status_header(String::from("Elpising…"));
             }
         } else if self.status_state.pending_guardian_review_status.is_empty()
             && self.status_state.current_status.is_guardian_review()
         {
-            self.set_status_header(String::from("elpising…"));
+            self.set_status_header(String::from("Elpising…"));
         }
 
         if ev.status == GuardianAssessmentStatus::Approved {

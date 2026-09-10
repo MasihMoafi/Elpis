@@ -1291,6 +1291,54 @@ async fn restore_thread_input_state_applies_running_state_policy() {
 }
 
 #[tokio::test]
+async fn up_recalls_queued_message_without_leaving_it_for_autosend() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_task_running(true);
+    chat.input_queue
+        .queued_user_messages
+        .push_back(UserMessage::from("edit before sending".to_string()).into());
+    chat.refresh_pending_input_preview();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(chat.bottom_pane.composer_text(), "edit before sending");
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    chat.bottom_pane.set_task_running(false);
+    assert!(!chat.maybe_send_next_queued_input());
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn up_recalls_latest_queued_message_and_preserves_earlier_messages() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_task_running(true);
+    for text in ["first queued", "second queued"] {
+        chat.input_queue
+            .queued_user_messages
+            .push_back(UserMessage::from(text.to_string()).into());
+    }
+    chat.refresh_pending_input_preview();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(chat.bottom_pane.composer_text(), "second queued");
+    assert_eq!(chat.queued_user_message_texts(), vec!["first queued"]);
+}
+
+#[tokio::test]
+async fn up_preserves_existing_draft_and_queued_message() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_task_running(true);
+    chat.input_queue
+        .queued_user_messages
+        .push_back(UserMessage::from("still queued".to_string()).into());
+    chat.bottom_pane.insert_str("unfinished draft\nsecond line");
+    chat.refresh_pending_input_preview();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(
+        chat.bottom_pane.composer_text(),
+        "unfinished draft\nsecond line"
+    );
+    assert_eq!(chat.queued_user_message_texts(), vec!["still queued"]);
+}
+
+#[tokio::test]
 async fn alt_up_edits_most_recent_queued_message() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.chat_keymap.edit_queued_message = vec![crate::key_hint::alt(KeyCode::Up)];

@@ -297,6 +297,10 @@ impl ChatWidget {
         self.config.tui_theme = theme;
     }
 
+    pub(crate) fn set_tui_appearance(&mut self, appearance: codex_config::types::TuiAppearance) {
+        self.config.tui_appearance = appearance;
+    }
+
     /// Set the model in the widget's config copy and stored collaboration mode.
     pub(crate) fn set_model(&mut self, model: &str) {
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(

@@ -213,7 +213,11 @@ impl HistoryCell for ExecCell {
             let cmd_display = adaptive_wrap_lines(
                 &highlighted_script,
                 RtOptions::new(width as usize)
-                    .initial_indent("$ ".magenta().into())
+                    .initial_indent(
+                        Span::from("$ ")
+                            .style(crate::elpis_motion::accent_style())
+                            .into(),
+                    )
                     .subsequent_indent("    ".into()),
             );
             lines.extend(cmd_display);
@@ -232,10 +236,10 @@ impl HistoryCell for ExecCell {
                     .map(format_duration)
                     .unwrap_or_else(|| "unknown".to_string());
                 let mut result: Line = if output.exit_code == 0 {
-                    Line::from("✓".green().bold())
+                    Line::from(Span::from("✓").style(crate::elpis_motion::accent_style()))
                 } else {
                     Line::from(vec![
-                        "✗".red().bold(),
+                        "✗".yellow().bold(),
                         format!(" ({})", output.exit_code).into(),
                     ])
                 };
@@ -347,7 +351,8 @@ impl ExecCell {
 
             for (title, line) in call_lines {
                 let line = Line::from(line);
-                let initial_indent = Line::from(vec![title.cyan(), " ".into()]);
+                let mut initial_indent = Line::from(crate::elpis_motion::text(title));
+                initial_indent.spans.push(" ".into());
                 let subsequent_indent = " ".repeat(initial_indent.width()).into();
                 let wrapped = adaptive_wrap_line(
                     &line,
@@ -370,8 +375,8 @@ impl ExecCell {
         let layout = EXEC_DISPLAY_LAYOUT;
         let success = call.output.as_ref().map(|o| o.exit_code == 0);
         let bullet = match success {
-            Some(true) => "•".green().bold(),
-            Some(false) => "•".red().bold(),
+            Some(true) => Span::from("•").style(crate::elpis_motion::accent_style()),
+            Some(false) => "•".yellow().bold(),
             None => activity_marker(call.start_time, self.animations_enabled()),
         };
         let is_interaction = call.is_unified_exec_interaction();

@@ -3,20 +3,20 @@ source: tui/src/chatwidget/tests/slash_commands.rs
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
-
-
-
  Elpis · model gpt-5.6-sol · location /tmp/proje
-• elpising… (0s • esc to interrupt)             │CONTEXT LEDGER  Total ≈0 tokens
-                                                │admitted
-• Messages to be submitted at end of turn       │i = select/deselect all ·
-  ↳ Steer submitted while /compact was running. │backspace = remove added file
+• Elpising… (0s • esc to interrupt)             │CONTEXT LEDGER  context not
+                                                │measured · ≈0 source estimates
+• Messages to be submitted at end of turn       │Tab focus · Alt+C focus/hide ·
+  ↳ Steer submitted while /compact was running. │Ctrl+click open file
 ┌──────────────────────────────────────────────┐│
-› Ask Codex to do anything                     ││CONTEXT WINDOW  ≈0 of 258.4k
-│                                              ││used (0%)
-│                                              ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-└──────────────────────────────────────────────┘│■ Conversation (messages) ≈0
-        100% context left · Tab Context Ledger  │tokens
+› Ask Codex to do anything                     ││SMART PRUNE          [···] SYNC
+│                                              ││Reading current thread state
+│                                              ││Syncing… · /smart-prune on|off
+└──────────────────────────────────────────────┘│sets an explicit state
+        100% context left · Tab Context Ledger  │
+                                                │CONTEXT WINDOW  usage
+                                                │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
                                                 │
-                                                │No portable context is
-                                                │available.

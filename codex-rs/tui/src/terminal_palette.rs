@@ -4,6 +4,69 @@ use codex_terminal_detection::TerminalName;
 use codex_terminal_detection::terminal_info;
 use ratatui::style::Color;
 
+// Initialized after terminal probing. System mode preserves the probed colors.
+static APPEARANCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub(crate) fn set_appearance(value: codex_config::types::TuiAppearance) {
+    use codex_config::types::TuiAppearance;
+    APPEARANCE.store(
+        match value {
+            TuiAppearance::System => 0,
+            TuiAppearance::Dark => 1,
+            TuiAppearance::Light => 2,
+        },
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+fn appearance_colors() -> Option<DefaultColors> {
+    match APPEARANCE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => Some(DefaultColors {
+            fg: (222, 222, 219),
+            bg: (17, 18, 20),
+        }),
+        2 => Some(DefaultColors {
+            fg: (41, 42, 39),
+            bg: (245, 243, 237),
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn paint_appearance(buf: &mut ratatui::buffer::Buffer) {
+    let Some(colors) = appearance_colors() else {
+        return;
+    };
+    for cell in &mut buf.content {
+        if cell.fg == Color::Reset {
+            cell.set_fg(best_color(colors.fg));
+        }
+        if cell.bg == Color::Reset {
+            cell.set_bg(best_color(colors.bg));
+        }
+    }
+}
+
+pub(crate) fn appearance_fg(color: Color) -> Color {
+    if color == Color::Reset {
+        appearance_colors()
+            .map(|c| best_color(c.fg))
+            .unwrap_or(color)
+    } else {
+        color
+    }
+}
+
+pub(crate) fn appearance_bg(color: Color) -> Color {
+    if color == Color::Reset {
+        appearance_colors()
+            .map(|c| best_color(c.bg))
+            .unwrap_or(color)
+    } else {
+        color
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StdoutColorLevel {
     TrueColor,
@@ -112,7 +175,7 @@ pub fn default_colors() -> Option<DefaultColors> {
         return Some(colors);
     }
 
-    imp::default_colors()
+    appearance_colors().or_else(imp::default_colors)
 }
 
 /// Scope a truecolor terminal palette to the current test thread while rendering a real widget.

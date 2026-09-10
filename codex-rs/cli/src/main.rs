@@ -2333,6 +2333,7 @@ fn finalize_session_archive_interactive(
 fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli) {
     let TuiCli {
         shared,
+        pruner_model,
         strict_config,
         approval_policy,
         web_search,
@@ -2343,6 +2344,9 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     interactive
         .shared
         .apply_subcommand_overrides(shared.into_inner());
+    if pruner_model.is_some() {
+        interactive.pruner_model = pruner_model;
+    }
     if let Some(approval) = approval_policy {
         interactive.approval_policy = Some(approval);
     }

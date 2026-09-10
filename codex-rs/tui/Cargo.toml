@@ -99,6 +99,7 @@ ratatui = { workspace = true, features = [
     "unstable-widget-ref",
 ] }
 ratatui-macros = { workspace = true }
+tachyonfx = { workspace = true }
 regex-lite = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "json"] }
 rmcp = { workspace = true }

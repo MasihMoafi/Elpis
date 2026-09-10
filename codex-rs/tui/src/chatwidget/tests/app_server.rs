@@ -857,7 +857,7 @@ async fn live_app_server_turn_completed_clears_working_status_after_answer_item(
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert_eq!(status.header(), "elpising…");
+    assert_eq!(status.header(), "Elpising…");
 
     chat.handle_server_notification(
         ServerNotification::ItemCompleted(ItemCompletedNotification {
@@ -1396,7 +1396,7 @@ async fn live_app_server_stream_recovery_restores_previous_status_header() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert_eq!(status.header(), "elpising…");
+    assert_eq!(status.header(), "Elpising…");
     assert_eq!(status.details(), None);
     assert!(chat.status_state.retry_status_header.is_none());
 }

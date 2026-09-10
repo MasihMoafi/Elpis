@@ -166,6 +166,12 @@ impl Evidence {
 
 static EVIDENCE: LazyLock<Mutex<Evidence>> = LazyLock::new(|| Mutex::new(Evidence::new()));
 
+pub(super) fn valid_token(token: &str) -> bool {
+    EVIDENCE
+        .lock()
+        .is_ok_and(|evidence| evidence.token == token)
+}
+
 pub(super) fn dashboard_fragment() -> String {
     EVIDENCE
         .lock()
@@ -249,7 +255,41 @@ fn read_report(entry: &mut Entry) -> Result<String, String> {
 fn render_value(value: &Value, depth: usize, out: &mut String) {
     match value {
         Value::Object(fields) => {
+            let conversation = fields.contains_key("instructions")
+                && fields.contains_key("input")
+                && fields.contains_key("raw_response");
+            if conversation {
+                out.push_str(&format!(
+                    "{} Pruner conversation\n\n",
+                    "#".repeat(depth.min(6))
+                ));
+                for (key, label) in [
+                    ("instructions", "System prompt"),
+                    ("input", "Tool input"),
+                    ("raw_response", "Pruner response"),
+                ] {
+                    out.push_str(&format!("{} {label}\n\n", "#".repeat((depth + 1).min(6))));
+                    if key != "instructions"
+                        && let Some(text) = fields[key].as_str()
+                        && let Ok(parsed) = serde_json::from_str::<Value>(text)
+                        && (parsed.is_object() || parsed.is_array())
+                    {
+                        render_value(&parsed, depth + 2, out);
+                    } else {
+                        render_value(&fields[key], depth + 2, out);
+                    }
+                }
+                out.push_str(&format!(
+                    "{} Attempt metadata\n\n",
+                    "#".repeat(depth.min(6))
+                ));
+            }
             for (name, value) in fields {
+                if conversation
+                    && matches!(name.as_str(), "instructions" | "input" | "raw_response")
+                {
+                    continue;
+                }
                 out.push_str(&format!(
                     "{} {}\n\n",
                     "#".repeat(depth.min(6)),
@@ -392,5 +432,39 @@ mod tests {
         assert!(!html.contains("<img"));
         assert!(html.contains("&lt;script&gt;"));
         assert!(html.contains("Not reported."));
+    }
+
+    #[test]
+    fn pruner_conversation_has_roles_and_unwraps_json_without_losing_text() {
+        let mut report = String::new();
+        render_value(
+            &serde_json::json!({
+                "instructions": "Keep the planted fact.",
+                "input": "{\"active_request\":\"Find the planted fact\",\"items\":[]}",
+                "raw_response": "{\"items\":[{\"decision\":\"compact\",\"content\":\"The planted fact is 42.\"}]}",
+                "usage": null,
+            }),
+            2,
+            &mut report,
+        );
+        for text in [
+            "Pruner conversation",
+            "System prompt",
+            "Tool input",
+            "Pruner response",
+            "Keep the planted fact.",
+            "The planted fact is 42.",
+            "Attempt metadata",
+            "Not reported.",
+        ] {
+            assert!(report.contains(text), "missing {text}");
+        }
+        let mut unrelated = String::new();
+        render_value(
+            &serde_json::json!({"input":"ordinary data"}),
+            2,
+            &mut unrelated,
+        );
+        assert!(!unrelated.contains("Pruner conversation"));
     }
 }

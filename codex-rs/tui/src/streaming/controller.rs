@@ -217,6 +217,10 @@ impl StreamCore {
         self.rendered_lines[start..].to_vec()
     }
 
+    fn current_reveal_lines(&self) -> Vec<HyperlinkLine> {
+        self.rendered_lines[self.emitted_stable_len.min(self.rendered_lines.len())..].to_vec()
+    }
+
     #[inline]
     fn has_tail(&self) -> bool {
         self.enqueued_stable_len < self.rendered_lines.len()
@@ -519,6 +523,10 @@ impl StreamController {
         self.core.queued_lines()
     }
 
+    pub(crate) fn set_minimum_commit_age(&mut self, age: Duration) {
+        self.core.state.minimum_commit_age = age;
+    }
+
     pub(crate) fn oldest_queued_age(&self, now: Instant) -> Option<Duration> {
         self.core.oldest_queued_age(now)
     }
@@ -526,6 +534,14 @@ impl StreamController {
     #[inline]
     pub(crate) fn current_tail_lines(&self) -> Vec<HyperlinkLine> {
         self.core.current_tail_lines()
+    }
+
+    pub(crate) fn current_reveal_lines(&self) -> Vec<HyperlinkLine> {
+        self.core.current_reveal_lines()
+    }
+
+    pub(crate) fn reveal_starts_stream(&self) -> bool {
+        !self.header_emitted && self.core.emitted_stable_len == 0
     }
 
     #[inline]
@@ -657,6 +673,18 @@ impl PlanStreamController {
             return Vec::new();
         }
         self.render_display_lines(lines, /*include_bottom_padding*/ false)
+    }
+
+    pub(crate) fn current_reveal_display_lines(&self) -> Vec<HyperlinkLine> {
+        self.render_display_lines(self.core.current_reveal_lines(), false)
+    }
+
+    pub(crate) fn reveal_starts_stream(&self) -> bool {
+        !self.header_emitted && self.core.emitted_stable_len == 0
+    }
+
+    pub(crate) fn set_minimum_commit_age(&mut self, age: Duration) {
+        self.core.state.minimum_commit_age = age;
     }
 
     pub(crate) fn oldest_queued_age(&self, now: Instant) -> Option<Duration> {

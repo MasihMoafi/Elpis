@@ -68,6 +68,19 @@
     </section>
 
     <section class="dashboard-panel" id="panel-smart-prune" role="tabpanel" aria-labelledby="tab-smart-prune" tabindex="0" hidden>
+      <article class="card surface-card"><div class="card-body compact-card-body">
+        <h2 class="text-base font-semibold">Pruner settings</h2>
+        <p>Saved for this Elpis home. Applies to the next Smart Prune request; the chat model is unchanged. In-flight requests keep their original settings.</p>
+        <fieldset class="fieldset" id="pruner-fields" disabled>
+          <label class="label" for="pruner-model">Model ID (empty uses the provider default)</label>
+          <input class="input w-full" id="pruner-model" type="text" maxlength="200" autocomplete="off" spellcheck="false">
+          <label class="label" for="pruner-prompt">System prompt</label>
+          <textarea class="textarea w-full" id="pruner-prompt" rows="12" spellcheck="false"></textarea>
+          <p>Changing this prompt can change what the optimizer retains. The model ID selects the primary optimizer; existing provider fallback remains in effect. Credentials and automatic-pruning defaults are unchanged.</p>
+          <div class="flex flex-wrap gap-3"><button class="btn" id="pruner-save" type="button">Save pruner settings</button><button class="btn btn-ghost" id="pruner-reset" type="button">Restore default prompt</button><button class="btn btn-ghost" id="pruner-reload" type="button">Reload saved settings</button></div>
+        </fieldset>
+        <p id="pruner-feedback" role="status" aria-live="polite">Open a fresh /dashboard link to edit pruner settings.</p>
+      </div></article>
       <div class="card surface-card"><div class="card-body compact-card-body"><h2 class="text-base font-semibold">Readable evidence</h2><div id="evidence-links" class="flex flex-wrap gap-4 text-sm">Open a fresh /dashboard link from Elpis to access private reports.</div></div></div>
       <header class="panel-heading"><div><p class="section-kicker">SMART PRUNE / EXPERIMENTAL</p><h2>Admission, savings, and optimizer cost</h2></div><div class="prune-state"><span class="badge badge-outline" id="smart-state-pill">Unavailable</span><span id="smart-configured">Configured: unavailable</span><span id="smart-thread">Thread: syncing</span></div></header>
       <div class="alert prune-explainer" role="note"><span class="truth-icon" aria-hidden="true">↳</span><span>Fresh eligible tool results are optimized before first main-model exposure. Sent history stays byte-stable; failures preserve the original output.</span></div>
@@ -79,6 +92,6 @@
       </div>
     </section>
   </main>
-  <footer class="dashboard-footer"><span id="state-meta">No valid state received</span><span>Local-only · read-only · no transcript content</span></footer>
+  <footer class="dashboard-footer"><span id="state-meta">No valid state received</span><span>Local-only · optimizer settings editable · private evidence requires this session link</span></footer>
 </body>
 </html>

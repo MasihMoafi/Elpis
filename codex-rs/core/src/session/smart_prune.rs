@@ -45,15 +45,10 @@ use super::turn_context::TurnContext;
 /// first main-model exposure. This request-local setting does not alter the main
 /// model's reasoning effort; the existing inactivity bound still applies.
 const SMART_PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Max;
-const ADMISSION_TIMEOUT: Duration = Duration::from_secs(60);
-const OPENROUTER_FALLBACK_TIMEOUT: Duration = Duration::from_secs(60);
+const ADMISSION_TIMEOUT: Duration = Duration::from_secs(180);
+const OPENROUTER_FALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 
-const SMART_PRUNE_INSTRUCTIONS: &str = r#"You are Elpis Smart Prune. Compress fresh tool results before their first use by the main model.
-
-Return exactly one JSON object and no markdown:
-{"items":[{"call_id":"...","decision":"compact","content":"..."},{"call_id":"...","decision":"unchanged"}]}
-
-Return exactly one item for every supplied call_id. Use "compact" only when content can be made materially smaller while retaining every fact, error, path, identifier, number, caveat, and next-step detail that may matter to the active request. The compact content must stand alone. Use "unchanged" whenever lossless semantic reduction is uncertain. Never request deletion and never invent facts."#;
+use crate::pruner_settings::DEFAULT_SYSTEM_PROMPT as SMART_PRUNE_INSTRUCTIONS;
 
 #[derive(Clone)]
 struct Candidate {
@@ -64,6 +59,7 @@ struct Candidate {
 }
 
 struct ModelAdmission {
+    instructions: String,
     attempt_id: String,
     raw_response: String,
     usage: Option<TokenUsage>,
@@ -113,6 +109,21 @@ impl std::fmt::Display for OptimizerInactivityTimeout {
 
 impl std::error::Error for OptimizerInactivityTimeout {}
 
+fn optimizer_provider_with_timeouts(
+    mut provider: codex_model_provider_info::ModelProviderInfo,
+    inactivity_timeout: Duration,
+) -> codex_model_provider_info::ModelProviderInfo {
+    // ACE must not inherit a shorter transport timeout than its own allowance.
+    // Clone-only configuration keeps the main conversation's policy unchanged.
+    if provider.websocket_connect_timeout() < inactivity_timeout {
+        provider.websocket_connect_timeout_ms = Some(inactivity_timeout.as_millis() as u64);
+    }
+    if provider.stream_idle_timeout() < inactivity_timeout {
+        provider.stream_idle_timeout_ms = Some(inactivity_timeout.as_millis() as u64);
+    }
+    provider
+}
+
 async fn next_optimizer_stream_item<S>(
     stream: &mut S,
     inactivity_timeout: Duration,
@@ -125,7 +136,37 @@ where
         .map_err(|_| OptimizerInactivityTimeout(inactivity_timeout))
 }
 
+async fn collect_optimizer_response<S>(
+    stream: &mut S,
+    inactivity_timeout: Duration,
+    progress: &mut OptimizerProgress,
+) -> anyhow::Result<String>
+where
+    S: futures::Stream<Item = codex_protocol::error::Result<ResponseEvent>> + Unpin,
+{
+    loop {
+        let event = next_optimizer_stream_item(stream, inactivity_timeout)
+            .await?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Smart Prune stream closed before response.completed")
+            })?;
+        match event? {
+            ResponseEvent::OutputItemDone(item) => progress.completed_items.push(item),
+            ResponseEvent::OutputTextDelta(delta) => progress.deltas.push_str(&delta),
+            ResponseEvent::Completed { token_usage, .. } => {
+                progress.usage = token_usage;
+                // Completion is authoritative; the connection may stay open for reuse.
+                return progress.raw_response().ok_or_else(|| {
+                    anyhow::anyhow!("Smart Prune stream completed without assistant text")
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
 struct AttemptOutcome<'a> {
+    instructions: &'a str,
     attempt_id: &'a str,
     turn_id: &'a str,
     model_slug: &'a str,
@@ -245,6 +286,7 @@ pub(super) async fn optimize_pending_outputs(
             sess,
             AttemptOutcome {
                 attempt_id: &admission.attempt_id,
+                instructions: &admission.instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug: &admission.model_slug,
                 input: &input,
@@ -280,6 +322,7 @@ pub(super) async fn optimize_pending_outputs(
                     sess,
                     AttemptOutcome {
                         attempt_id: &admission.attempt_id,
+                        instructions: &admission.instructions,
                         turn_id: &turn_context.sub_id,
                         model_slug: &admission.model_slug,
                         input: &input,
@@ -316,6 +359,7 @@ pub(super) async fn optimize_pending_outputs(
             sess,
             AttemptOutcome {
                 attempt_id: &admission.attempt_id,
+                instructions: &admission.instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug: &admission.model_slug,
                 input: &input,
@@ -359,7 +403,7 @@ pub(super) async fn optimize_pending_outputs(
             session_id: &session_id,
             turn_id: &turn_context.sub_id,
             model_slug: &admission.model_slug,
-            ace_instructions: SMART_PRUNE_INSTRUCTIONS,
+            ace_instructions: &admission.instructions,
             ace_input: &admission.input,
             raw_response: &admission.raw_response,
             usage: admission.usage.as_ref(),
@@ -372,6 +416,7 @@ pub(super) async fn optimize_pending_outputs(
             sess,
             AttemptOutcome {
                 attempt_id: &admission.attempt_id,
+                instructions: &admission.instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug: &admission.model_slug,
                 input: &input,
@@ -399,6 +444,7 @@ pub(super) async fn optimize_pending_outputs(
         sess,
         AttemptOutcome {
             attempt_id: &admission.attempt_id,
+            instructions: &admission.instructions,
             turn_id: &turn_context.sub_id,
             model_slug: &admission.model_slug,
             input: &input,
@@ -444,8 +490,43 @@ async fn run_optimizer_attempt(
     cancellation_token: &CancellationToken,
 ) -> Result<ModelAdmission, OptimizerAttemptFailure> {
     let attempt_id = uuid::Uuid::now_v7().to_string();
+    let settings =
+        match crate::pruner_settings::PrunerSettings::load(&turn_context.config.codex_home) {
+            Ok(settings) => settings,
+            Err(error) => {
+                let error = format!("Invalid pruner settings; preserving tool output: {error}");
+                record_attempt(
+                    sess,
+                    AttemptOutcome {
+                        attempt_id: &attempt_id,
+                        instructions: SMART_PRUNE_INSTRUCTIONS,
+                        turn_id: &turn_context.sub_id,
+                        model_slug: selected_model_slug(turn_context),
+                        input,
+                        status: smart_prune_audit::AttemptStatus::ModelError,
+                        raw_response: None,
+                        error: Some(&error),
+                        candidate_outputs,
+                        admitted_outputs: 0,
+                        saved_tokens: 0,
+                        latency: Duration::ZERO,
+                        usage: None,
+                        admission_id: None,
+                    },
+                )
+                .await;
+                return Err(OptimizerAttemptFailure::Failed);
+            }
+        };
+    let instructions = settings
+        .system_prompt
+        .as_deref()
+        .unwrap_or(SMART_PRUNE_INSTRUCTIONS);
     let model_slug = match route {
-        OptimizerRoute::Primary => selected_model_slug(turn_context),
+        OptimizerRoute::Primary => settings
+            .model
+            .as_deref()
+            .unwrap_or_else(|| selected_model_slug(turn_context)),
         OptimizerRoute::OpenRouter => codex_model_provider_info::OPENROUTER_FREE_MODEL_SLUG,
     };
     record_optimizer_started(sess).await;
@@ -458,6 +539,8 @@ async fn run_optimizer_attempt(
             sess,
             turn_context,
             input.to_string(),
+            model_slug,
+            instructions,
             route,
             inactivity_timeout,
             &mut progress,
@@ -472,6 +555,7 @@ async fn run_optimizer_attempt(
             sess,
             AttemptOutcome {
                 attempt_id: &attempt_id,
+                instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug,
                 input,
@@ -505,6 +589,7 @@ async fn run_optimizer_attempt(
                 sess,
                 AttemptOutcome {
                     attempt_id: &attempt_id,
+                    instructions,
                     turn_id: &turn_context.sub_id,
                     model_slug,
                     input,
@@ -532,6 +617,7 @@ async fn run_optimizer_attempt(
                 sess,
                 AttemptOutcome {
                     attempt_id: &attempt_id,
+                    instructions,
                     turn_id: &turn_context.sub_id,
                     model_slug,
                     input,
@@ -614,7 +700,7 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
             status: outcome.status,
             model_slug: outcome.model_slug,
             reasoning_effort: SMART_PRUNE_REASONING_EFFORT.as_str(),
-            instructions: SMART_PRUNE_INSTRUCTIONS,
+            instructions: outcome.instructions,
             input: outcome.input,
             raw_response: outcome.raw_response,
             error: outcome.error,
@@ -877,6 +963,8 @@ async fn run_model_admission(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     input: String,
+    primary_model: &str,
+    instructions: &str,
     route: OptimizerRoute,
     inactivity_timeout: Duration,
     progress: &mut OptimizerProgress,
@@ -886,7 +974,7 @@ async fn run_model_admission(
             sess.services
                 .models_manager
                 .get_model_info(
-                    selected_model_slug(turn_context),
+                    primary_model,
                     &turn_context.config.to_models_manager_config(),
                 )
                 .await
@@ -909,7 +997,7 @@ async fn run_model_admission(
             internal_chat_message_metadata_passthrough: None,
         }],
         base_instructions: BaseInstructions {
-            text: SMART_PRUNE_INSTRUCTIONS.to_string(),
+            text: instructions.to_string(),
         },
         ..Default::default()
     };
@@ -919,18 +1007,21 @@ async fn run_model_admission(
         CodexResponsesRequestKind::SmartPrune,
     );
     let model_client = sess.services.model_client.load();
-    let mut client_session = match route {
-        OptimizerRoute::Primary => model_client.new_session(),
-        OptimizerRoute::OpenRouter => {
-            let provider = turn_context
-                .config
-                .model_providers
-                .get(codex_model_provider_info::OPENROUTER_PROVIDER_ID)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("OpenRouter fallback provider is not configured"))?;
-            model_client.with_provider(provider).new_session()
-        }
+    let provider = match route {
+        OptimizerRoute::Primary => model_client.provider_info(),
+        OptimizerRoute::OpenRouter => turn_context
+            .config
+            .model_providers
+            .get(codex_model_provider_info::OPENROUTER_PROVIDER_ID)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("OpenRouter fallback provider is not configured"))?,
     };
+    let mut client_session = model_client
+        .with_provider(optimizer_provider_with_timeouts(
+            provider,
+            inactivity_timeout,
+        ))
+        .new_session();
     let mut stream = tokio::time::timeout(
         inactivity_timeout,
         client_session.stream(
@@ -950,30 +1041,10 @@ async fn run_model_admission(
     .await
     .map_err(|_| OptimizerInactivityTimeout(inactivity_timeout))??;
 
-    let mut saw_completed = false;
-    loop {
-        let event = next_optimizer_stream_item(&mut stream, inactivity_timeout).await?;
-        let Some(event) = event else {
-            break;
-        };
-        match event? {
-            ResponseEvent::OutputItemDone(item) => progress.completed_items.push(item),
-            ResponseEvent::OutputTextDelta(delta) => progress.deltas.push_str(&delta),
-            ResponseEvent::Completed { token_usage, .. } => {
-                progress.usage = token_usage;
-                saw_completed = true;
-            }
-            _ => {}
-        }
-    }
-    anyhow::ensure!(
-        saw_completed,
-        "Smart Prune stream closed before response.completed"
-    );
-    let raw_response = progress
-        .raw_response()
-        .ok_or_else(|| anyhow::anyhow!("Smart Prune stream completed without assistant text"))?;
+    let raw_response =
+        collect_optimizer_response(&mut stream, inactivity_timeout, progress).await?;
     Ok(ModelAdmission {
+        instructions: instructions.to_string(),
         attempt_id: String::new(),
         raw_response,
         usage: progress.usage.clone(),
@@ -1140,9 +1211,93 @@ mod tests {
     }
 
     #[test]
-    fn optimizer_waits_for_sixty_seconds_of_inactivity() {
-        assert_eq!(ADMISSION_TIMEOUT, Duration::from_secs(60));
-        assert_eq!(OPENROUTER_FALLBACK_TIMEOUT, Duration::from_secs(60));
+    fn optimizer_waits_for_three_minutes_of_inactivity() {
+        assert_eq!(ADMISSION_TIMEOUT, Duration::from_secs(180));
+        assert_eq!(OPENROUTER_FALLBACK_TIMEOUT, Duration::from_secs(180));
+    }
+
+    #[test]
+    fn optimizer_transport_limits_do_not_shorten_its_allowance_or_change_main_policy() {
+        let original = codex_model_provider_info::ModelProviderInfo::create_openai_provider(None);
+        let adjusted = optimizer_provider_with_timeouts(original.clone(), ADMISSION_TIMEOUT);
+        assert_eq!(
+            original.websocket_connect_timeout(),
+            Duration::from_secs(15)
+        );
+        assert_eq!(adjusted.websocket_connect_timeout(), ADMISSION_TIMEOUT);
+        assert_eq!(
+            adjusted.stream_idle_timeout(),
+            original.stream_idle_timeout()
+        );
+
+        let mut short = original.clone();
+        short.websocket_connect_timeout_ms = Some(5_000);
+        short.stream_idle_timeout_ms = Some(5_000);
+        let adjusted = optimizer_provider_with_timeouts(short, ADMISSION_TIMEOUT);
+        assert_eq!(adjusted.websocket_connect_timeout(), ADMISSION_TIMEOUT);
+        assert_eq!(adjusted.stream_idle_timeout(), ADMISSION_TIMEOUT);
+
+        let mut longer = original;
+        longer.websocket_connect_timeout_ms = Some(240_000);
+        longer.stream_idle_timeout_ms = Some(450_000);
+        let adjusted = optimizer_provider_with_timeouts(longer, ADMISSION_TIMEOUT);
+        assert_eq!(
+            adjusted.websocket_connect_timeout(),
+            Duration::from_secs(240)
+        );
+        assert_eq!(adjusted.stream_idle_timeout(), Duration::from_secs(450));
+    }
+
+    fn optimizer_completed_event() -> ResponseEvent {
+        ResponseEvent::Completed {
+            response_id: "optimizer-completed".to_string(),
+            token_usage: None,
+            end_turn: Some(true),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn optimizer_returns_completed_answer_without_waiting_for_stream_close() {
+        let events = vec![
+            Ok(ResponseEvent::OutputTextDelta(
+                "completed answer".to_string(),
+            )),
+            Ok(optimizer_completed_event()),
+        ];
+        let mut stream = futures::stream::iter(events).chain(futures::stream::pending());
+        let mut progress = OptimizerProgress::default();
+        let answer = tokio::time::timeout(
+            Duration::from_millis(1),
+            collect_optimizer_response(&mut stream, ADMISSION_TIMEOUT, &mut progress),
+        )
+        .await
+        .expect("a completed answer must not wait for EOF")
+        .expect("completed answer should be usable");
+        assert_eq!(answer, "completed answer");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn optimizer_never_admits_unfinished_output_or_empty_completion() {
+        let mut unfinished = futures::stream::iter(vec![Ok(ResponseEvent::OutputTextDelta(
+            "partial answer".to_string(),
+        ))]);
+        let mut progress = OptimizerProgress::default();
+        let error = collect_optimizer_response(&mut unfinished, ADMISSION_TIMEOUT, &mut progress)
+            .await
+            .expect_err("EOF without completion is not an answer");
+        assert!(error.to_string().contains("before response.completed"));
+        assert_eq!(progress.raw_response().as_deref(), Some("partial answer"));
+
+        let mut empty = futures::stream::iter(vec![Ok(optimizer_completed_event())]);
+        assert!(
+            collect_optimizer_response(
+                &mut empty,
+                ADMISSION_TIMEOUT,
+                &mut OptimizerProgress::default()
+            )
+            .await
+            .is_err()
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1151,7 +1306,7 @@ mod tests {
             if item == 2 {
                 None
             } else {
-                tokio::time::sleep(Duration::from_secs(40)).await;
+                tokio::time::sleep(Duration::from_secs(120)).await;
                 Some((item, item + 1))
             }
         }));
@@ -1165,16 +1320,16 @@ mod tests {
             next_optimizer_stream_item(&mut stream, ADMISSION_TIMEOUT).await,
             Ok(Some(1))
         );
-        assert_eq!(started.elapsed(), Duration::from_secs(80));
+        assert_eq!(started.elapsed(), Duration::from_secs(240));
     }
 
     #[tokio::test(start_paused = true)]
-    async fn optimizer_inactivity_clock_expires_after_sixty_silent_seconds() {
+    async fn optimizer_inactivity_clock_expires_after_three_silent_minutes() {
         let mut stream = Box::pin(futures::stream::unfold(false, |sent| async move {
             if sent {
                 None
             } else {
-                tokio::time::sleep(Duration::from_secs(61)).await;
+                tokio::time::sleep(Duration::from_secs(181)).await;
                 Some(((), true))
             }
         }));
@@ -1184,7 +1339,7 @@ mod tests {
             .expect_err("a silent optimizer stream must time out");
         assert_eq!(
             error.to_string(),
-            "60-second optimizer inactivity timeout elapsed"
+            "180-second optimizer inactivity timeout elapsed"
         );
     }
 
@@ -1232,11 +1387,15 @@ mod tests {
             },
             PendingToolOutput {
                 response: ResponseInputItem::FunctionCallOutput {
-                    call_id: "structured".to_string(),
+                    call_id: "mixed-image".to_string(),
                     output: FunctionCallOutputPayload {
                         body: FunctionCallOutputBody::ContentItems(vec![
                             FunctionCallOutputContentItem::InputText {
                                 text: "evidence line\n".repeat(2_000),
+                            },
+                            FunctionCallOutputContentItem::InputImage {
+                                image_url: "data:image/png;base64,AA==".to_string(),
+                                detail: None,
                             },
                         ]),
                         success: Some(true),

@@ -2,4 +2,4 @@
 source: tui/src/status_indicator_widget.rs
 expression: terminal.backend()
 ---
-"elpising… (0s • f12 to interrupt)                                               "
+"Elpising… (0s • f12 to interrupt)                                               "

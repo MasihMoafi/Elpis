@@ -150,6 +150,7 @@ struct PageLoadRequest {
 }
 
 enum PickerLoadRequest {
+    Delete { thread_id: ThreadId },
     Page(PageLoadRequest),
     Preview { thread_id: ThreadId },
     Transcript { thread_id: ThreadId },
@@ -242,6 +243,10 @@ impl From<SessionListDensity> for SessionPickerViewMode {
 
 type PickerLoader = Arc<dyn Fn(PickerLoadRequest) + Send + Sync>;
 enum BackgroundEvent {
+    Deleted {
+        thread_id: ThreadId,
+        result: std::io::Result<()>,
+    },
     Page {
         request_token: usize,
         search_token: Option<usize>,
@@ -562,6 +567,14 @@ fn spawn_app_server_page_loader(
         let mut app_server = app_server;
         while let Some(request) = request_rx.recv().await {
             match request {
+                PickerLoadRequest::Delete { thread_id } => {
+                    let result = app_server
+                        .thread_delete(thread_id)
+                        .await
+                        .map(|_| ())
+                        .map_err(std::io::Error::other);
+                    let _ = bg_tx.send(BackgroundEvent::Deleted { thread_id, result });
+                }
                 PickerLoadRequest::Page(request) => {
                     let cursor = request.cursor.map(|PageCursor::AppServer(cursor)| cursor);
                     let page = load_app_server_page(
@@ -662,6 +675,8 @@ struct PickerState {
     action: SessionPickerAction,
     sort_key: ThreadSortKey,
     inline_error: Option<String>,
+    delete_confirmation: Option<ThreadId>,
+    deleting: bool,
     expanded_thread_id: Option<ThreadId>,
     transcript_previews: HashMap<ThreadId, TranscriptPreviewState>,
     transcript_cells: HashMap<ThreadId, SessionTranscriptState>,
@@ -936,6 +951,8 @@ impl PickerState {
             action,
             sort_key: ThreadSortKey::UpdatedAt,
             inline_error: None,
+            delete_confirmation: None,
+            deleting: false,
             expanded_thread_id: None,
             transcript_previews: HashMap::new(),
             transcript_cells: HashMap::new(),
@@ -1040,9 +1057,40 @@ impl PickerState {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) -> Result<Option<SessionSelection>> {
-        self.inline_error = None;
         if self.is_transcript_loading() {
             return Ok(self.handle_transcript_loading_key(key));
+        }
+        if let Some(thread_id) = self.delete_confirmation {
+            if !self.deleting {
+                match key.code {
+                    KeyCode::Char('y') if key.modifiers.is_empty() => {
+                        self.deleting = true;
+                        (self.picker_loader)(PickerLoadRequest::Delete { thread_id });
+                    }
+                    KeyCode::Esc | KeyCode::Char('n') => {
+                        self.delete_confirmation = None;
+                    }
+                    _ => {}
+                }
+            }
+            self.request_frame();
+            return Ok(None);
+        }
+        self.inline_error = None;
+
+        if key.code == KeyCode::Delete
+            || (key.code == KeyCode::Char('x') && key.modifiers == KeyModifiers::CONTROL)
+        {
+            self.delete_confirmation = self
+                .filtered_rows
+                .get(self.selected)
+                .and_then(|row| row.thread_id);
+            if self.delete_confirmation.is_none() && !self.filtered_rows.is_empty() {
+                self.inline_error =
+                    Some("Cannot delete a session without its thread ID".to_string());
+            }
+            self.request_frame();
+            return Ok(None);
         }
         if !self.list_keymap.page_down.is_pressed(key) {
             self.pending_page_down_target = None;
@@ -1232,7 +1280,7 @@ impl PickerState {
     }
 
     fn handle_paste(&mut self, pasted: String) {
-        if self.is_transcript_loading() {
+        if self.is_transcript_loading() || self.delete_confirmation.is_some() {
             return;
         }
         let Some(pasted) = normalize_pasted_search_query(&pasted) else {
@@ -1284,6 +1332,23 @@ impl PickerState {
 
     async fn handle_background_event(&mut self, event: BackgroundEvent) -> Result<()> {
         match event {
+            BackgroundEvent::Deleted { thread_id, result } => {
+                self.delete_confirmation = None;
+                self.deleting = false;
+                match result {
+                    Ok(()) => {
+                        self.inline_error = None;
+                        self.transcript_previews.remove(&thread_id);
+                        self.transcript_cells.remove(&thread_id);
+                        self.expanded_thread_id = None;
+                        self.start_initial_load();
+                    }
+                    Err(error) => {
+                        self.inline_error = Some(format!("Could not delete session: {error}"));
+                    }
+                }
+                self.request_frame();
+            }
             BackgroundEvent::Page {
                 request_token,
                 search_token,
@@ -1900,6 +1965,16 @@ fn list_viewport_width(width: u16) -> u16 {
 }
 
 fn search_line(state: &PickerState, width: u16) -> Line<'_> {
+    if let Some(thread_id) = state.delete_confirmation {
+        return Line::from(Span::styled(
+            if state.deleting {
+                "Deleting session…".to_string()
+            } else {
+                format!("Delete thread + children · y confirm · esc cancel · {thread_id}")
+            },
+            crate::style::brand_style(),
+        ));
+    }
     if let Some(error) = state.inline_error.as_deref() {
         return Line::from(error.red());
     }
@@ -2140,6 +2215,13 @@ fn picker_footer_scroll_percent(state: &PickerState, list_height: u16) -> u8 {
 }
 
 fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
+    if state.delete_confirmation.is_some() {
+        return vec![Line::from(if state.deleting {
+            "Deleting…"
+        } else {
+            "y delete permanently · n/esc cancel"
+        })];
+    }
     if state.is_transcript_loading() {
         let hints = [
             PickerFooterHint {
@@ -2216,6 +2298,12 @@ fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
         },
     ];
     let second_row_hints = vec![
+        PickerFooterHint {
+            key: "del",
+            wide_label: String::from("delete"),
+            compact_label: String::from("delete"),
+            priority: 0,
+        },
         PickerFooterHint {
             key: "ctrl+o",
             wide_label: density_label.to_string(),
@@ -3250,6 +3338,80 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn delete_requires_confirmation_and_preserves_row_on_failure() {
+        let thread_id = ThreadId::new();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let sink = requests.clone();
+        let loader: PickerLoader = Arc::new(move |request| {
+            if let PickerLoadRequest::Delete { thread_id } = request {
+                sink.lock().unwrap().push(thread_id);
+            }
+        });
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            true,
+            None,
+            SessionPickerAction::Resume,
+        );
+        let mut row = make_row("/tmp/session", "2026-09-01T00:00:00Z", "keep me");
+        row.thread_id = Some(thread_id);
+        state.filtered_rows = vec![row.clone()];
+        state.all_rows = vec![row];
+        state
+            .handle_key(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE))
+            .await
+            .unwrap();
+        assert!(requests.lock().unwrap().is_empty());
+        state.handle_paste("y".to_string());
+        assert!(requests.lock().unwrap().is_empty());
+        state
+            .handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .await
+            .unwrap();
+        assert_eq!(state.delete_confirmation, None);
+        state
+            .handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL))
+            .await
+            .unwrap();
+        state
+            .handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE))
+            .await
+            .unwrap();
+        state
+            .handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE))
+            .await
+            .unwrap();
+        assert_eq!(*requests.lock().unwrap(), vec![thread_id]);
+        state
+            .handle_background_event(BackgroundEvent::Deleted {
+                thread_id,
+                result: Err(std::io::Error::other("active thread")),
+            })
+            .await
+            .unwrap();
+        assert_eq!(state.filtered_rows.len(), 1);
+        assert!(
+            state
+                .inline_error
+                .as_deref()
+                .unwrap()
+                .contains("active thread")
+        );
+        assert!(!state.deleting);
+        state
+            .handle_background_event(BackgroundEvent::Deleted {
+                thread_id,
+                result: Ok(()),
+            })
+            .await
+            .unwrap();
+        assert!(state.filtered_rows.is_empty());
+        assert!(state.pagination.loading.is_pending());
+    }
+
     fn footer_lines_text(state: &PickerState, width: u16) -> String {
         footer_hint_lines(state, width)
             .into_iter()
@@ -3894,7 +4056,7 @@ mod tests {
         assert!(rendered.contains("ctrl+c"));
         assert!(rendered.contains("ctrl+o"));
         assert!(rendered.contains("ctrl+t"));
-        assert!(rendered.contains("ctrl+e"));
+        assert!(rendered.contains("del"));
         assert!(rendered.contains("↑/↓"));
     }
 

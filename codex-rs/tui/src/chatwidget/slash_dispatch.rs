@@ -288,6 +288,9 @@ impl ChatWidget {
                     .counter("codex.thread.rename", /*inc*/ 1, &[]);
                 self.show_rename_prompt();
             }
+            SlashCommand::PrunerModel => {
+                self.open_pruner_model_popup();
+            }
             SlashCommand::Model => {
                 self.open_model_popup();
                 self.defer_input_until_settings_applied();
@@ -531,6 +534,20 @@ impl ChatWidget {
         }
 
         let trimmed = args.trim();
+        if cmd == SlashCommand::PrunerModel && !trimmed.is_empty() {
+            let result = (|| -> std::io::Result<()> {
+                let mut settings = crate::legacy_core::pruner_settings::PrunerSettings::load(
+                    &self.config.codex_home,
+                )?;
+                settings.model = (trimmed != "default").then(|| trimmed.to_string());
+                settings.save(&self.config.codex_home)
+            })();
+            match result {
+                Ok(()) => self.add_info_message(format!("Smart Prune model saved: {trimmed}. Applies to the next optimizer request; chat model unchanged."), None),
+                Err(error) => self.add_error_message(format!("Pruner model was not changed: {error}")),
+            }
+            return;
+        }
         if trimmed.is_empty() {
             self.dispatch_command(cmd);
             return;
@@ -741,7 +758,7 @@ impl ChatWidget {
                 if self.is_session_configured() {
                     self.reasoning_buffer.clear();
                     self.reasoning_summary_parts.clear();
-                    self.set_status_header(String::from("elpising…"));
+                    self.set_status_header(String::from("Elpising…"));
                     self.submit_user_message(user_message);
                 } else {
                     self.queue_user_message(user_message);
@@ -1048,6 +1065,7 @@ impl ChatWidget {
         }
         match cmd {
             SlashCommand::Usage
+            | SlashCommand::PrunerModel
             | SlashCommand::Context
             | SlashCommand::Dashboard
             | SlashCommand::DebugConfig

@@ -4,7 +4,7 @@ expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
 " Elpis · model gpt-5.6-sol · location /tmp/proje                                "
-"• elpising… (0s • esc to interrupt) · 1 backgro…│CONTEXT LEDGER  Total ≈0 tokens"
+"• Elpising… (0s • esc to interrupt) · 1 backgro…│CONTEXT LEDGER  Total ≈0 tokens"
 "                                                │admitted                       "
 "┌──────────────────────────────────────────────┐│Tab focus · Alt+C focus/hide · "
 "› Ask Codex to do anything                     ││Ctrl+click open file           "

@@ -238,7 +238,6 @@ use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
 use crate::style::composer_border_style;
-use crate::style::user_message_style;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
@@ -396,6 +395,7 @@ pub(crate) struct ChatComposer {
     footer: FooterState,
     has_focus: bool,
     frame_requester: Option<FrameRequester>,
+    frame_animations_enabled: bool,
     effort_tier: Option<EffortTier>,
     effort_animation_style: Option<IgnitionStyle>,
     effort_ignition: Option<EffortIgnition>,
@@ -599,6 +599,7 @@ impl ChatComposer {
             },
             has_focus: has_input_focus,
             frame_requester: None,
+            frame_animations_enabled: false,
             effort_tier: None,
             effort_animation_style: None,
             effort_ignition: None,
@@ -642,6 +643,10 @@ impl ChatComposer {
 
     pub(crate) fn set_frame_requester(&mut self, frame_requester: FrameRequester) {
         self.frame_requester = Some(frame_requester);
+    }
+
+    pub(crate) fn set_frame_animations_enabled(&mut self, enabled: bool) {
+        self.frame_animations_enabled = enabled;
     }
 
     /// Records the effective reasoning tier, captures the outgoing status
@@ -1198,7 +1203,7 @@ impl ChatComposer {
             .textarea
             .vim_mode_label()
             .map(|label| match label {
-                "Normal" => "Vim: Normal".magenta(),
+                "Normal" => Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()),
                 "Insert" => "Vim: Insert".green(),
                 _ => unreachable!(),
             })
@@ -2735,7 +2740,7 @@ impl ChatComposer {
                 if !binding.path.starts_with("plugin://") || !snapshot.text.starts_with('@') {
                     return None;
                 }
-                Some((snapshot.range, Style::default().fg(Color::Magenta)))
+                Some((snapshot.range, crate::elpis_motion::accent_style()))
             })
             .collect()
     }
@@ -3294,9 +3299,11 @@ impl ChatComposer {
     }
 
     fn shell_mode_footer_line(&self) -> Option<Line<'static>> {
-        self.is_bang_shell_command()
-            .then_some(())
-            .map(|_| Line::from(vec![Span::from("Shell mode").light_red()]))
+        self.is_bang_shell_command().then_some(()).map(|_| {
+            Line::from(vec![
+                Span::from("Shell mode").style(crate::elpis_motion::accent_style()),
+            ])
+        })
     }
 
     /// Applies any due `PasteBurst` flush at time `now`.
@@ -4610,11 +4617,24 @@ impl ChatComposer {
                 }
             }
         }
-        let style = user_message_style();
+        let style = crate::style::composer_style();
         Block::default()
             .borders(Borders::ALL)
             .border_style(composer_border_style())
             .render_ref(composer_rect, buf);
+        crate::elpis_motion::paint_frame(
+            composer_rect,
+            buf,
+            crate::elpis_motion::elapsed(),
+            self.frame_animations_enabled && self.is_task_running,
+        );
+        if self.frame_animations_enabled
+            && self.is_task_running
+            && !composer_rect.is_empty()
+            && let Some(requester) = self.frame_requester.as_ref()
+        {
+            requester.schedule_frame_in(crate::elpis_motion::FRAME_TICK);
+        }
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
                 .style(style)
@@ -4623,7 +4643,9 @@ impl ChatComposer {
         if !textarea_rect.is_empty() {
             let prompt = if self.draft.input_enabled {
                 if self.draft.is_bash_mode {
-                    Span::from("!").light_red().bold()
+                    Span::from("!")
+                        .style(crate::elpis_motion::accent_style())
+                        .bold()
                 } else if let Some(tier) = self.effort_tier {
                     let charge = self
                         .effort_ignition
@@ -4695,6 +4717,7 @@ impl ChatComposer {
                     .render_ref(textarea_rect.inner(Margin::new(0, 0)), buf);
             }
         }
+        crate::elpis_motion::paint_surface(composer_rect, buf);
         if matches!(self.popups.active, ActivePopup::None)
             && let Some(ignition) = &self.effort_ignition
             && !ignition.is_finished()
@@ -4721,6 +4744,112 @@ impl ChatComposer {
 
 #[cfg(test)]
 mod tests {
+    /// Render real widgets to inspect colors, geometry, and draft preservation.
+    #[test]
+    #[ignore = "manual visual review; set ELPIS_VISUAL_DIR"]
+    fn export_quiet_motion_visual_review() {
+        use crate::history_cell::HistoryCell;
+        use tachyonfx::Shader;
+        let output = std::path::PathBuf::from(std::env::var("ELPIS_VISUAL_DIR").unwrap());
+        std::fs::create_dir_all(&output).unwrap();
+        for (name, width, fg, bg) in [
+            ("light", 80, (35, 38, 44), (255, 255, 255)),
+            ("dark", 80, (205, 207, 214), (24, 26, 31)),
+            ("narrow", 38, (35, 38, 44), (255, 255, 255)),
+        ] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors { fg, bg },
+                || {
+                    let (tx, _rx) = unbounded_channel::<AppEvent>();
+                    let mut composer = ChatComposer::new(
+                        true,
+                        AppEventSender::new(tx),
+                        false,
+                        "What are we working on?".into(),
+                        true,
+                    );
+                    composer.set_text_content(
+                        "Make this feel unmistakably Elpis.".into(),
+                        vec![],
+                        vec![],
+                    );
+                    composer.set_approval_mode_label(Some("Full Access".into()));
+                    composer.set_status_line_enabled(true);
+                    composer.set_status_line(Some(Line::from("gpt-6-astra · low")));
+                    let header = crate::history_cell::SessionHeaderHistoryCell::new(
+                        "gpt-6-astra".into(),
+                        None,
+                        false,
+                        std::path::PathBuf::from("~/projects/elpis"),
+                        "0.2.0",
+                    );
+                    for seconds in [0, 8, 16, 24] {
+                        let area = Rect::new(0, 0, width, 25);
+                        let mut buffer = Buffer::empty(area);
+                        buffer.set_style(
+                            area,
+                            Style::default()
+                                .fg(Color::Rgb(fg.0, fg.1, fg.2))
+                                .bg(Color::Rgb(bg.0, bg.1, bg.2)),
+                        );
+                        ratatui::widgets::Widget::render(
+                            // Match the installed release; the test profile adds a debug warning.
+                            Paragraph::new(
+                                header
+                                    .display_lines(width)
+                                    .into_iter()
+                                    .filter_map(|mut line| {
+                                        line.spans
+                                            .retain(|span| !span.content.contains("DEBUG BUILD"));
+                                        (!line.to_string().trim().is_empty()).then_some(line)
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ),
+                            Rect::new(0, 0, width, 12),
+                            &mut buffer,
+                        );
+                        ratatui::widgets::Widget::render(
+                            Paragraph::new(Line::from(crate::elpis_motion::text("◜ Elpising…"))),
+                            Rect::new(0, 15, width, 1),
+                            &mut buffer,
+                        );
+                        let mut effect = crate::elpis_motion::elpising_effect();
+                        effect.process(
+                            Duration::from_millis(seconds * 100).into(),
+                            &mut buffer,
+                            Rect::new(2, 15, 9, 1),
+                        );
+                        let composer_area = Rect::new(0, 17, width, 6);
+                        composer.render(composer_area, &mut buffer);
+                        let [frame, ..] = composer.layout_areas(composer_area);
+                        crate::elpis_motion::paint_frame(
+                            frame,
+                            &mut buffer,
+                            Duration::from_secs(seconds),
+                            true,
+                        );
+                        let cells: Vec<_> = buffer
+                            .content
+                            .iter()
+                            .map(|cell| {
+                                serde_json::json!([
+                                    cell.symbol(),
+                                    format!("{:?}", cell.fg),
+                                    format!("{:?}", cell.bg)
+                                ])
+                            })
+                            .collect();
+                        let data = serde_json::json!({"width": width,"height":25,"fg":fg,"bg":bg,"cells":cells});
+                        std::fs::write(
+                            output.join(format!("{name}-{seconds}.json")),
+                            serde_json::to_vec(&data).unwrap(),
+                        )
+                        .unwrap();
+                    }
+                },
+            );
+        }
+    }
     use super::attachment_state::AttachedImage;
     use super::*;
     use crate::test_support::PathBufExt;
@@ -5117,7 +5246,10 @@ mod tests {
 
         let prompt_cell = &buf[(0, 1)];
         assert_eq!(prompt_cell.symbol(), "!");
-        assert_eq!(prompt_cell.style().fg, Some(Color::LightRed));
+        assert_eq!(
+            prompt_cell.style().fg,
+            crate::elpis_motion::accent_style().fg
+        );
 
         let footer_y = area.height - 1;
         let footer_text = (0..area.width)
@@ -5128,7 +5260,7 @@ mod tests {
             .expect("expected shell mode footer label");
         assert_eq!(
             buf[(shell_label_x as u16, footer_y)].style().fg,
-            Some(Color::LightRed)
+            crate::elpis_motion::accent_style().fg
         );
     }
 
@@ -5177,7 +5309,7 @@ mod tests {
 
         assert_eq!(
             plugin_mention_foreground_color(&composer),
-            Some(Color::Magenta)
+            crate::elpis_motion::accent_style().fg
         );
     }
 
@@ -5213,11 +5345,13 @@ mod tests {
         for x in 0..area.width {
             let cell = &buf[(x, textarea_row)];
             text.push(cell.symbol().chars().next().unwrap_or(' '));
-            magenta.push(if cell.style().fg == Some(Color::Magenta) {
-                '^'
-            } else {
-                ' '
-            });
+            magenta.push(
+                if cell.style().fg == crate::elpis_motion::accent_style().fg {
+                    '^'
+                } else {
+                    ' '
+                },
+            );
         }
         while text.ends_with(' ') {
             text.pop();
@@ -5264,7 +5398,7 @@ mod tests {
 
         assert_eq!(
             plugin_mention_foreground_color(&composer),
-            Some(Color::Magenta)
+            crate::elpis_motion::accent_style().fg
         );
     }
 
@@ -5660,7 +5794,7 @@ mod tests {
         assert!(composer.is_empty());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
         assert_eq!(composer.footer.mode, FooterMode::ComposerEmpty);
         assert!(!composer.footer.esc_backtrack_hint);
@@ -5727,7 +5861,7 @@ mod tests {
         assert!(composer.is_empty());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
         assert!(matches!(result, InputResult::Command(SlashCommand::Diff)));
     }
@@ -5759,7 +5893,7 @@ mod tests {
         assert!(needs_redraw);
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
         match result {
             InputResult::CommandWithArgs(cmd, args, text_elements) => {
@@ -5999,7 +6133,7 @@ mod tests {
         assert!(composer.draft.textarea.is_vim_enabled());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
 
         composer.handle_key_event(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
@@ -6010,7 +6144,7 @@ mod tests {
         assert!(composer.draft.textarea.is_vim_enabled());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
         assert!(composer.is_empty());
         match result {
@@ -6044,7 +6178,7 @@ mod tests {
 
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
         assert!(composer.is_empty());
         match result {
@@ -6116,7 +6250,7 @@ mod tests {
         composer.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
         assert_eq!(composer.draft.textarea.cursor(), "he".len());
     }
@@ -10792,7 +10926,7 @@ mod tests {
         assert_eq!(composer.draft.textarea.text(), "hello");
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
+            Some(Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()))
         );
         assert!(!composer.draft.textarea.is_vim_operator_pending());
     }

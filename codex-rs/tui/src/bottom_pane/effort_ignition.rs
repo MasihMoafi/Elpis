@@ -25,7 +25,7 @@ use ratatui::text::Span;
 
 use crate::color::blend;
 use crate::color::is_light;
-use crate::style::user_message_bg_rgb;
+use crate::style::composer_bg_rgb;
 use crate::terminal_palette::StdoutColorLevel;
 use crate::terminal_palette::best_color_for_level;
 use crate::terminal_palette::default_bg;
@@ -38,7 +38,7 @@ mod styles;
 use styles::Canvas;
 use styles::paint_style;
 
-const PROMPT_ACCENT_ALPHA: f32 = 0.86;
+const PROMPT_ACCENT_ALPHA: f32 = 0.48;
 const CHARGE: Duration = Duration::from_millis(150);
 
 pub(crate) const IGNITION_FRAME_TICK: Duration = Duration::from_millis(33);
@@ -111,10 +111,10 @@ impl EffortTier {
 
     pub(super) fn hues(self, on_light_bg: bool) -> [(u8, u8, u8); 3] {
         match (self, on_light_bg) {
-            (Self::Max, false) => [(255, 178, 66), (255, 214, 120), (255, 120, 60)],
-            (Self::Max, true) => [(176, 98, 0), (150, 110, 0), (200, 70, 20)],
-            (Self::Ultra, false) => [(186, 130, 255), (255, 120, 220), (120, 170, 255)],
-            (Self::Ultra, true) => [(124, 58, 217), (190, 40, 150), (30, 100, 220)],
+            (Self::Max, false) => [(220, 139, 32), (230, 169, 42), (215, 153, 32)],
+            (Self::Max, true) => [(174, 111, 0), (184, 133, 0), (174, 123, 0)],
+            (Self::Ultra, false) => [(230, 179, 52), (220, 169, 42), (208, 174, 49)],
+            (Self::Ultra, true) => [(164, 133, 0), (174, 143, 0), (164, 123, 0)],
         }
     }
 
@@ -235,7 +235,7 @@ impl EffortIgnition {
             area,
             protected,
             buf,
-            band_rgb: user_message_bg_rgb(term_bg),
+            band_rgb: composer_bg_rgb(term_bg),
             color_level,
         };
         paint_style(

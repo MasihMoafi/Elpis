@@ -2,9 +2,7 @@
 source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
-╭─────────────────────────────────────╮
-│ >_ Elpis (v0.1.1)   DEBUG BUILD     │
-│                                     │
-│ model:     gpt-5   /model to change │
-│ directory: /tmp/project             │
-╰─────────────────────────────────────╯
+◆ Elpis (v0.2.0)   DEBUG BUILD 
+│ 
+│ model:     gpt-5   /model to change
+│ directory: /tmp/project

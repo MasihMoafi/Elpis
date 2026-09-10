@@ -3,7 +3,6 @@
 
 use super::*;
 use crate::branding::CODEX_RUNTIME_TITLE;
-use crate::style::brand_style;
 
 pub(crate) const SESSION_HEADER_MAX_INNER_WIDTH: usize = 56; // Just an eyeballed value
 
@@ -167,7 +166,7 @@ pub(crate) fn new_session_info(
     } else {
         if requested_model != session.model.as_str() {
             let lines = vec![
-                "model changed:".magenta().bold().into(),
+                "model changed:".yellow().bold().into(),
                 format!("requested: {requested_model}").into(),
                 format!("used: {}", session.model).into(),
             ];
@@ -294,10 +293,10 @@ impl HistoryCell for SessionHeaderHistoryCell {
 
         let make_row = |spans: Vec<Span<'static>>| Line::from(spans);
 
-        // Title line rendered inside the box: ">_ Elpis · Codex runtime (vX)"
+        // An open continuity rail, with an ember origin and no enclosing card.
         let mut title_spans: Vec<Span<'static>> = vec![
-            Span::from(">_ ").dim(),
-            Span::from(CODEX_RUNTIME_TITLE).style(brand_style()),
+            Span::from("◆ ").style(crate::elpis_motion::accent_style()),
+            Span::from(CODEX_RUNTIME_TITLE).style(crate::elpis_motion::accent_style()),
             Span::from(" ").dim(),
             Span::from(format!("(v{})", self.version)).dim(),
         ];
@@ -305,7 +304,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         // user reporting slow startup or by us when shipping.
         if crate::startup_timing::is_debug_build() {
             title_spans.push(Span::from("  "));
-            title_spans.push(Span::from(" DEBUG BUILD ").black().on_red().bold());
+            title_spans.push(Span::from(" DEBUG BUILD ").black().on_yellow().bold());
         }
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
@@ -335,11 +334,15 @@ impl HistoryCell for SessionHeaderHistoryCell {
             }
             if self.show_fast_status {
                 spans.push("   ".into());
-                spans.push(Span::styled("fast", self.model_style.magenta()));
+                spans.push(Span::styled("fast", crate::elpis_motion::accent_style()));
             }
-            spans.push("   ".dim());
-            spans.push(CHANGE_MODEL_HINT_COMMAND.cyan());
-            spans.push(CHANGE_MODEL_HINT_EXPLANATION.dim());
+            spans.push(if width >= 60 { "   " } else { " " }.dim());
+            spans.push(
+                Span::from(CHANGE_MODEL_HINT_COMMAND).style(crate::elpis_motion::accent_style()),
+            );
+            if width >= 60 {
+                spans.push(CHANGE_MODEL_HINT_EXPLANATION.dim());
+            }
             spans
         };
 
@@ -359,11 +362,15 @@ impl HistoryCell for SessionHeaderHistoryCell {
                 } else {
                     "            "
                 };
-                make_row(vec![Span::from(label).dim(), Span::from(*entry).cyan()])
+                make_row(vec![
+                    Span::from(label).dim(),
+                    Span::from(*entry).style(crate::elpis_motion::accent_style()),
+                ])
             })
             .collect();
 
         let mut lines = vec![make_row(title_spans)];
+        let banner_lines = lines.len();
         lines.extend(whats_new_rows);
         lines.extend([
             make_row(Vec::new()),
@@ -375,7 +382,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
             let permissions_label = format!("{PERMISSIONS_LABEL:<label_width$}");
             lines.push(make_row(vec![
                 Span::from(format!("{permissions_label} ")).dim(),
-                "YOLO mode".magenta().bold(),
+                "YOLO mode".yellow().bold(),
             ]));
         }
 
@@ -390,7 +397,21 @@ impl HistoryCell for SessionHeaderHistoryCell {
             ]));
         }
 
-        with_border(lines)
+        lines
+            .into_iter()
+            .enumerate()
+            .map(|(index, line)| {
+                let mut spans = vec![Span::styled(
+                    if index < banner_lines { "" } else { "│ " },
+                    crate::elpis_motion::accent_style(),
+                )];
+                spans.extend(line.spans);
+                crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
+                    Line::from(spans),
+                    usize::from(width),
+                )
+            })
+            .collect()
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {

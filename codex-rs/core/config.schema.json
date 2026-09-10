@@ -423,6 +423,9 @@
             "auto_model_routing": {
               "type": "boolean"
             },
+            "automatic_context_pruning": {
+              "type": "boolean"
+            },
             "browser_use": {
               "type": "boolean"
             },
@@ -2805,6 +2808,17 @@
           },
           "type": "array"
         },
+        "default_enabled": {
+          "description": "Whether newly discovered skills are enabled before an explicit per-skill rule.",
+          "type": "boolean"
+        },
+        "dev_rule_roots": {
+          "description": "Ordered roots containing always-visible Elpis development-rule Markdown files.",
+          "items": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          },
+          "type": "array"
+        },
         "extra_roots": {
           "description": "Additional directories whose immediate children contain `SKILL.md` files.",
           "items": {
@@ -2975,6 +2989,15 @@
           "default": true,
           "description": "Enable animations (welcome screen, shimmer effects, spinners). Defaults to `true`.",
           "type": "boolean"
+        },
+        "appearance": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TuiAppearance"
+            }
+          ],
+          "default": "dark",
+          "description": "Interface appearance: dark (default), light, or the terminal's system colors."
         },
         "keymap": {
           "allOf": [
@@ -3227,6 +3250,14 @@
         }
       },
       "type": "object"
+    },
+    "TuiAppearance": {
+      "enum": [
+        "dark",
+        "light",
+        "system"
+      ],
+      "type": "string"
     },
     "TuiApprovalKeymap": {
       "additionalProperties": false,
@@ -4755,6 +4786,9 @@
           "type": "boolean"
         },
         "auto_model_routing": {
+          "type": "boolean"
+        },
+        "automatic_context_pruning": {
           "type": "boolean"
         },
         "browser_use": {

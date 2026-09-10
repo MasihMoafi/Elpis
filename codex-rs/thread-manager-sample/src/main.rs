@@ -214,6 +214,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         notify: None,
         tui_notifications: TuiNotificationSettings::default(),
         animations: true,
+        tui_appearance: Default::default(),
         show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         tui_alternate_screen: AltScreenMode::Auto,

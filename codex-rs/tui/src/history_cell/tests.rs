@@ -1574,6 +1574,22 @@ fn session_header_includes_reasoning_level_when_present() {
 }
 
 #[test]
+fn session_header_fits_narrow_terminals() {
+    let cell = SessionHeaderHistoryCell::new(
+        "provider/a-very-long-model-name".into(),
+        None,
+        false,
+        std::env::temp_dir(),
+        "test",
+    );
+    for width in [20, 38, 60, 80] {
+        let lines = cell.display_lines(width);
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|line| line.width() <= usize::from(width)));
+    }
+}
+
+#[test]
 fn session_header_hides_fast_status_when_disabled() {
     let cell = SessionHeaderHistoryCell::new(
         "gpt-4o".to_string(),

@@ -209,6 +209,8 @@ impl ChatWidget {
             quit_shortcut_key: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
+            stream_motion: Default::default(),
+            ledger_motion: Default::default(),
             current_rollout_path: None,
             current_cwd,
             workspace_command_runner,

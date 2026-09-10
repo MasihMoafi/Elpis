@@ -162,8 +162,12 @@ impl CollaborationModeIndicator {
     fn styled_span(self, show_cycle_hint: bool) -> Span<'static> {
         let label = self.label(show_cycle_hint);
         match self {
-            CollaborationModeIndicator::Plan => Span::from(label).magenta(),
-            CollaborationModeIndicator::PairProgramming => Span::from(label).cyan(),
+            CollaborationModeIndicator::Plan => {
+                Span::from(label).style(crate::elpis_motion::accent_style())
+            }
+            CollaborationModeIndicator::PairProgramming => {
+                Span::from(label).style(crate::elpis_motion::accent_style())
+            }
             CollaborationModeIndicator::Execute => Span::from(label).dim(),
         }
     }
@@ -573,7 +577,7 @@ pub(crate) fn goal_status_indicator_line(
         }
     };
 
-    Some(Line::from(vec![Span::from(label).magenta()]))
+    Some(Line::from(crate::elpis_motion::text(&label)))
 }
 
 pub(crate) fn status_line_right_indicator_line(
@@ -586,11 +590,7 @@ pub(crate) fn status_line_right_indicator_line(
 }
 
 pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
-    if let Some(rest) = label.strip_prefix("Side ") {
-        Line::from(vec!["Side".magenta().bold(), format!(" {rest}").magenta()])
-    } else {
-        Line::from(label.to_string()).magenta()
-    }
+    Line::from(crate::elpis_motion::text(label))
 }
 
 fn right_aligned_x(area: Rect, content_width: u16) -> Option<u16> {
@@ -784,12 +784,12 @@ pub(crate) fn passive_footer_status_line(props: &FooterProps) -> Option<Line<'st
     }
 
     if let Some(approval_mode_label) = props.approval_mode_label.as_ref() {
-        let span = Span::from(approval_mode_label.clone()).cyan();
+        let spans = crate::elpis_motion::text(approval_mode_label);
         if let Some(existing) = line.as_mut() {
             existing.spans.push(" · ".dim());
-            existing.spans.push(span);
+            existing.spans.extend(spans);
         } else {
-            line = Some(Line::from(vec![span]));
+            line = Some(Line::from(spans));
         }
     }
 
@@ -949,7 +949,7 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         "customize shortcuts with ".into(),
-        "/hotkeys".cyan(),
+        Span::from("/hotkeys").style(crate::elpis_motion::accent_style()),
     ]));
     lines
 }
