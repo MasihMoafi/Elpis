@@ -77,7 +77,8 @@ async fn switching_from_ultra_thread_restores_configured_plan_effort() {
         /*resume_restored_queue*/ false,
     );
     let plan = crate::collaboration_modes::plan_mask(&app.model_catalog).expect("plan preset");
-    app.chat_widget.set_collaboration_mask_from_user_action(plan);
+    app.chat_widget
+        .set_collaboration_mask_from_user_action(plan);
 
     assert_eq!(
         app.chat_widget.active_collaboration_mode_kind(),
