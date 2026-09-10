@@ -11,6 +11,7 @@ mod apps;
 mod chat_completions;
 mod client;
 mod client_common;
+pub mod pressure_compaction;
 mod prompt_cache;
 mod realtime_context;
 mod realtime_conversation;

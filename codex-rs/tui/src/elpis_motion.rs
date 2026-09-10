@@ -6,9 +6,6 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 pub(crate) const FRAME_TICK: Duration = Duration::from_millis(125);
-pub(crate) const REVEAL_DURATION: Duration = Duration::from_millis(420);
-// Leave a frame after the shader settles before moving text into scrollback.
-pub(crate) const REVEAL_COMMIT_AGE: Duration = Duration::from_millis(500);
 
 pub(crate) fn elapsed() -> Duration {
     static START: OnceLock<Instant> = OnceLock::new();
@@ -27,15 +24,6 @@ pub(crate) fn pigment(position: f64, seconds: f64, light: bool) -> (u8, u8, u8) 
     blend(colors[(index + 1) % 3], colors[index], mix)
 }
 
-pub(crate) fn elpising_effect() -> tachyonfx::Effect {
-    use tachyonfx::{Interpolation, fx};
-    fx::repeating(fx::sequence(&[
-        fx::sleep(1800),
-        fx::dissolve((900, Interpolation::SineInOut)),
-        fx::coalesce((900, Interpolation::SineInOut)),
-    ]))
-}
-
 pub(crate) fn accent_style() -> Style {
     Style::default().fg(best_color(pigment(
         0.35,
@@ -45,6 +33,14 @@ pub(crate) fn accent_style() -> Style {
 }
 
 pub(crate) fn text(text: &str) -> Vec<Span<'static>> {
+    gradient_text_at(text, Duration::ZERO)
+}
+
+pub(crate) fn animated_text(text: &str, animated: bool) -> Vec<Span<'static>> {
+    gradient_text_at(text, if animated { elapsed() } else { Duration::ZERO })
+}
+
+fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
     let count = text.chars().count().max(1) as f64;
     let light = default_bg().is_some_and(is_light);
     text.chars()
@@ -52,7 +48,11 @@ pub(crate) fn text(text: &str) -> Vec<Span<'static>> {
         .map(|(index, ch)| {
             Span::styled(
                 ch.to_string(),
-                Style::default().fg(best_color(pigment(index as f64 / count * 0.75, 0.0, light))),
+                Style::default().fg(best_color(pigment(
+                    index as f64 / count * 0.75,
+                    time.as_secs_f64(),
+                    light,
+                ))),
             )
         })
         .collect()
@@ -113,205 +113,9 @@ pub(crate) fn paint_surface(area: Rect, buf: &mut Buffer) {
     }
 }
 
-/// Canonical text is saved before effects, so settled text never restarts.
-#[derive(Default)]
-pub(crate) struct CoalescingText {
-    previous: Option<Buffer>,
-    reveals: Vec<(Rect, Vec<String>, tachyonfx::Effect)>,
-    last_frame: Option<Instant>,
-}
-
-impl CoalescingText {
-    pub(crate) fn render(
-        &mut self,
-        buf: &mut Buffer,
-        area: Rect,
-        enabled: bool,
-        animate_initial: bool,
-    ) -> bool {
-        use tachyonfx::Shader;
-        let area = area.intersection(buf.area);
-        let now = Instant::now();
-        let delta = self
-            .last_frame
-            .replace(now)
-            .map(|last| now.saturating_duration_since(last))
-            .unwrap_or(Duration::from_millis(1))
-            .min(Duration::from_millis(100));
-        // Committed rows leave the front of the mutable stream. Retain the
-        // suffix's effects rather than making younger text flash fully visible.
-        if let Some(old) = self.previous.as_mut()
-            && old.area.width == area.width
-            && old.area.height > area.height
-            && area.height > 0
-        {
-            let offset = (0..=old.area.height - area.height).find(|offset| {
-                (2..area.width).all(|x| {
-                    old[(old.area.x + x, old.area.y + offset)].symbol()
-                        == buf[(area.x + x, area.y)].symbol()
-                })
-            });
-            if let Some(offset) = offset {
-                let first_y = old.area.y + offset;
-                self.reveals.retain(|(rect, _, _)| {
-                    rect.y >= first_y && rect.bottom() <= first_y + area.height
-                });
-                old.content
-                    .drain(..usize::from(offset) * usize::from(area.width));
-                old.content
-                    .truncate(usize::from(area.height) * usize::from(area.width));
-                old.area.y = first_y;
-                old.area.height = area.height;
-            }
-        }
-        // Preserve ongoing effects when terminal scrolling moves the viewport.
-        if let Some(old) = self.previous.as_mut()
-            && old.area.width == area.width
-            && old.area.height <= area.height
-        {
-            let dx = i32::from(area.x) - i32::from(old.area.x);
-            let dy = i32::from(area.y) - i32::from(old.area.y);
-            for (rect, _, _) in &mut self.reveals {
-                rect.x = (i32::from(rect.x) + dx).max(0) as u16;
-                rect.y = (i32::from(rect.y) + dy).max(0) as u16;
-            }
-            old.area.x = area.x;
-            old.area.y = area.y;
-        }
-        let resized = self.previous.as_ref().is_some_and(|old| {
-            !old.area.is_empty()
-                && (old.area.x != area.x
-                    || old.area.y != area.y
-                    || old.area.width != area.width
-                    || old.area.height > area.height)
-        });
-        if !enabled || resized {
-            self.reveals.clear();
-        }
-        let mut canonical = Buffer::empty(area);
-        for y in area.y..area.bottom() {
-            for x in area.x..area.right() {
-                canonical[(x, y)] = buf[(x, y)].clone();
-            }
-        }
-        if enabled && !resized && (self.previous.is_some() || animate_initial) {
-            for y in area.y..area.bottom() {
-                let mut x = area.x;
-                while x < area.right() {
-                    let changed = |x| {
-                        !canonical[(x, y)].symbol().trim().is_empty()
-                            && self.previous.as_ref().is_none_or(|old| {
-                                !old.area.contains((x, y).into())
-                                    || old[(x, y)].symbol() != canonical[(x, y)].symbol()
-                            })
-                    };
-                    if !changed(x) {
-                        x += 1;
-                        continue;
-                    }
-                    let start = x;
-                    while x < area.right() && changed(x) {
-                        x += 1;
-                    }
-                    let rect = Rect::new(start, y, x - start, 1);
-                    let symbols = (start..x)
-                        .map(|col| canonical[(col, y)].symbol().to_owned())
-                        .collect();
-                    self.reveals.push((
-                        rect,
-                        symbols,
-                        tachyonfx::fx::coalesce((
-                            REVEAL_DURATION.as_millis() as u32,
-                            tachyonfx::Interpolation::SineOut,
-                        )),
-                    ));
-                }
-            }
-        }
-        self.previous = Some(canonical);
-        self.reveals.retain_mut(|(rect, symbols, effect)| {
-            if !area.contains((rect.x, rect.y).into())
-                || rect.right() > area.right()
-                || symbols
-                    .iter()
-                    .enumerate()
-                    .any(|(i, s)| buf[(rect.x + i as u16, rect.y)].symbol() != s)
-            {
-                return false;
-            }
-            effect.process(delta.into(), buf, *rect);
-            !effect.done()
-        });
-        !self.reveals.is_empty()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn committing_front_row_does_not_finish_younger_rows_effect() {
-        let area = Rect::new(0, 0, 40, 4);
-        let mut motion = CoalescingText::default();
-        let mut buf = Buffer::empty(area);
-        buf.set_string(0, 0, "  Older row", Style::default());
-        buf.set_string(0, 1, "  Younger row", Style::default());
-        assert!(motion.render(&mut buf, Rect::new(0, 0, 40, 2), true, true));
-        let younger_effects = motion
-            .reveals
-            .iter()
-            .filter(|(rect, _, _)| rect.y == 1)
-            .count();
-        let mut next = Buffer::empty(area);
-        next.set_string(0, 0, "  Younger row", Style::default());
-        assert!(motion.render(&mut next, Rect::new(0, 0, 40, 1), true, true));
-        assert_eq!(motion.reveals.len(), younger_effects);
-        assert!(motion.reveals.iter().all(|(rect, _, _)| rect.y == 0));
-    }
-
-    #[test]
-    fn moving_stream_viewport_preserves_reveal_progress() {
-        let mut motion = CoalescingText::default();
-        let mut initial = Buffer::empty(Rect::new(0, 0, 40, 8));
-        initial.set_string(0, 3, "Text stays in motion", Style::default());
-        let canonical = initial.clone();
-        assert!(motion.render(&mut initial, Rect::new(0, 3, 30, 1), true, true));
-        motion.last_frame = Some(Instant::now() - Duration::from_millis(100));
-        initial = canonical;
-        assert!(motion.render(&mut initial, Rect::new(0, 3, 30, 1), true, true));
-        let pending_effects = motion.reveals.len();
-        let mut moved = Buffer::empty(initial.area);
-        moved.set_string(0, 1, "Text stays in motion", Style::default());
-        assert!(motion.render(&mut moved, Rect::new(0, 1, 30, 1), true, true));
-        assert_eq!(
-            motion.reveals.len(),
-            pending_effects,
-            "moving must not restart the effect"
-        );
-        assert_eq!(motion.reveals[0].0.y, 1);
-        for x in 0..20 {
-            if initial[(x, 3)].symbol() != " " {
-                assert_eq!(moved[(x, 1)].symbol(), initial[(x, 3)].symbol());
-            }
-        }
-    }
-
-    #[test]
-    fn elpising_holds_readable_text_before_dissolving() {
-        use tachyonfx::Shader;
-        let mut canonical = Buffer::empty(Rect::new(0, 0, 20, 1));
-        canonical.set_string(0, 0, "Elpising…", Style::default());
-        let mut effect = elpising_effect();
-        for _ in 0..17 {
-            let mut rendered = canonical.clone();
-            effect.process(
-                Duration::from_millis(100).into(),
-                &mut rendered,
-                canonical.area,
-            );
-            assert_eq!(rendered, canonical);
-        }
-    }
 
     #[test]
     fn surface_gradient_preserves_draft_styles_selection_and_neighbors() {
@@ -343,67 +147,15 @@ mod tests {
         );
     }
     #[test]
-    fn coalesce_settles_without_replaying_and_reduced_motion_preserves_text() {
-        let area = Rect::new(0, 0, 30, 2);
-        let mut canonical = Buffer::empty(area);
-        canonical.set_string(0, 0, "Hello 文", Style::default());
-        let mut motion = CoalescingText::default();
-        let mut first = canonical.clone();
-        assert!(motion.render(&mut first, area, true, true));
-        assert_ne!(first, canonical);
-        for _ in 0..6 {
-            motion.last_frame = Some(Instant::now() - Duration::from_millis(100));
-            motion.render(&mut canonical.clone(), area, true, true);
-        }
-        let mut settled = canonical.clone();
-        assert!(!motion.render(&mut settled, area, true, true));
-        assert_eq!(settled, canonical);
-        canonical.set_string(0, 1, "New text", Style::default());
-        let mut changed = canonical.clone();
-        assert!(motion.render(&mut changed, area, true, true));
-        for x in 0..area.width {
-            assert_eq!(changed[(x, 0)], canonical[(x, 0)]);
-        }
-        let mut still = canonical.clone();
-        assert!(!motion.render(&mut still, area, false, true));
-        assert_eq!(still, canonical);
-        assert!(!motion.render(&mut still, Rect::new(0, 0, 20, 2), true, true));
-    }
-    #[test]
-    fn tachyonfx_dissolves_letters_without_touching_background_or_other_cells() {
-        use tachyonfx::Shader;
-        crate::terminal_palette::with_test_default_colors(
-            crate::terminal_probe::DefaultColors {
-                fg: (35, 35, 35),
-                bg: (255, 255, 255),
-            },
-            || {
-                let mut original = Buffer::empty(Rect::new(0, 0, 20, 1));
-                for (index, span) in text("Elpising…").iter().enumerate() {
-                    original[(index as u16, 0)]
-                        .set_symbol(&span.content)
-                        .set_style(span.style);
-                }
-                let mut rendered = original.clone();
-                let mut effect = elpising_effect();
-                effect.process(
-                    Duration::from_millis(2699).into(),
-                    &mut rendered,
-                    Rect::new(0, 0, 9, 1),
-                );
-                assert_ne!(rendered, original);
-                for x in 0..20 {
-                    assert_eq!(rendered[(x, 0)].bg, original[(x, 0)].bg);
-                }
-                assert_eq!(rendered[(12, 0)], original[(12, 0)]);
-            },
+    fn animated_labels_change_color_without_changing_text() {
+        let first = gradient_text_at("Read Search Full access", Duration::ZERO);
+        let later = gradient_text_at("Read Search Full access", Duration::from_secs(8));
+        assert_ne!(pigment(0.0, 0.0, false), pigment(0.0, 8.0, false));
+        assert_eq!(
+            first.iter().map(|s| s.content.as_ref()).collect::<String>(),
+            later.iter().map(|s| s.content.as_ref()).collect::<String>()
         );
-        for light in [false, true] {
-            for step in 0..100 {
-                let (r, g, b) = pigment(f64::from(step) / 100.0, 0.0, light);
-                assert!(r >= g && g > b, "palette must stay orange/yellow");
-            }
-        }
+        assert_eq!(animated_text("Elpis", false), text("Elpis"));
     }
     #[test]
     fn gradient_moves_gently_and_reduced_motion_is_static() {

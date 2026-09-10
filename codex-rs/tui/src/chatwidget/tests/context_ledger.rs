@@ -1,7 +1,25 @@
 use super::*;
 
 #[tokio::test]
-async fn selected_motion_preserves_stream_text_and_stops_when_disabled() {
+async fn ledger_closes_and_reopens_during_an_active_turn_without_submitting() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(120));
+    chat.bottom_pane.set_task_running(true);
+    chat.bottom_pane
+        .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
+    assert!(chat.context_ledger_width(120) > 0);
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    assert_eq!(chat.context_ledger_width(120), 0);
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    assert!(chat.context_ledger_width(120) > 0);
+    assert!(render_ledger(&chat, 80).contains("CONTEXT LEDGER"));
+    assert_eq!(chat.bottom_pane.composer_text(), "Keep this draft");
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn transcript_and_ledger_stay_readable_with_animations_enabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.animations = true;
     let cwd = chat.config.cwd.to_path_buf();
@@ -28,9 +46,18 @@ async fn selected_motion_preserves_stream_text_and_stops_when_disabled() {
     chat.config.animations = false;
     let mut plain = ratatui::buffer::Buffer::empty(area);
     Renderable::render(&chat, area, &mut plain);
-    assert_ne!(
-        animated, plain,
-        "the real widget must execute the reveal effect"
+    assert_eq!(
+        animated
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<Vec<_>>(),
+        plain
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<Vec<_>>(),
+        "text must not dissolve or change while a user selects it"
     );
     let mut repeat = ratatui::buffer::Buffer::empty(area);
     Renderable::render(&chat, area, &mut repeat);
@@ -123,7 +150,7 @@ async fn export_selected_motion_review() {
 }
 
 #[tokio::test]
-async fn selected_motion_commits_each_line_once_and_disabled_motion_has_no_delay() {
+async fn transcript_commits_each_line_once_without_animation_delay() {
     for animated in [true, false] {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
         chat.config.animations = animated;
@@ -138,19 +165,6 @@ async fn selected_motion_commits_each_line_once_and_disabled_motion_has_no_delay
         chat.sync_active_stream_tail();
         while rx.try_recv().is_ok() {}
         chat.on_commit_tick();
-        if animated {
-            assert_eq!(chat.stream_controller.as_ref().unwrap().queued_lines(), 1);
-            assert!(chat.active_cell_is_stream_tail());
-            assert!(
-                !std::iter::from_fn(|| rx.try_recv().ok())
-                    .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
-            );
-            tokio::time::sleep(
-                crate::elpis_motion::REVEAL_COMMIT_AGE + std::time::Duration::from_millis(20),
-            )
-            .await;
-            chat.on_commit_tick();
-        }
         assert_eq!(chat.stream_controller.as_ref().unwrap().queued_lines(), 0);
         assert!(!chat.active_cell_is_stream_tail());
         let inserted = std::iter::from_fn(|| rx.try_recv().ok())
@@ -722,6 +736,7 @@ async fn manual_memory_create_key_emits_once_and_blocks_same_loop_duplicates() -
     chat.last_rendered_width.set(Some(120));
     seed_manual_memory_cache_from_disk(&mut chat)?;
 
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('c'))));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('c'))));
@@ -747,6 +762,7 @@ async fn manual_memory_focused_ledger_does_not_capture_ctrl_c() -> anyhow::Resul
     handle_turn_started(&mut chat, "turn-1");
     while rx.try_recv().is_ok() {}
 
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(
         chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT,))
     );
@@ -779,6 +795,7 @@ async fn manual_memory_mutation_excludes_ordinary_and_add_writers_before_disk_io
     let admission_before = std::fs::read(&admission_path).ok();
     chat.seed_manual_memory_pending_mutation(Some(ManualMemoryMutation::Create));
 
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char(' '))));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Delete)));
@@ -813,9 +830,10 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
     seed_manual_memory_cache_from_disk(&mut chat)?;
 
     let unfocused = render_ledger(&chat, 80);
-    assert!(unfocused.contains("Tab focus"));
+    assert!(unfocused.contains("Tab hide/show"));
     assert!(unfocused.contains("Ctrl+click open file"));
 
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
     let rendered = render_ledger(&chat, 80);
@@ -892,6 +910,7 @@ async fn ledger_disambiguates_similarly_sized_rule_sources() -> anyhow::Result<(
     chat.last_rendered_width.set(Some(120));
     seed_manual_memory_cache_from_disk(&mut chat)?;
 
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
     let rendered = render_ledger(&chat, 100);
 
@@ -1103,6 +1122,7 @@ async fn active_turn_toggle_back_to_original_cancels_the_queued_write() -> anyho
     let before = std::fs::read(&admission_path)?;
     chat.bottom_pane.set_task_running(/*running*/ true);
     chat.last_rendered_width.set(Some(120));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(
         chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT,))
     );
@@ -1250,6 +1270,7 @@ async fn durable_memory_toggle_preserves_measured_usage_until_next_request() -> 
     while rx.try_recv().is_ok() {}
 
     chat.last_rendered_width.set(Some(120));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
     let buffer = render_ledger_buffer(&chat, 80);
     let memory_row = (0..80)
@@ -1367,6 +1388,7 @@ async fn ledger_g_sequences_exclude_and_include_all_selectable_sources() -> anyh
         .expect("manual-memory row")
         .admitted;
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
 
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('e')));
@@ -1461,6 +1483,7 @@ async fn manual_memory_bulk_enqueues_memory_last_and_uses_its_mandatory_refresh(
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     configure_ledger_sources(&mut chat, root.path())?;
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
 
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('i')));
@@ -1493,6 +1516,7 @@ async fn manual_memory_bulk_first_error_invalidates_once() -> anyhow::Result<()>
     let workspace = crate::legacy_core::elpis_context::workspace_context_dir(Some(&memories), &cwd)
         .expect("workspace context directory");
     std::fs::write(workspace.join("admission.toml"), "not valid = [")?;
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
 
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('g')));
@@ -1538,6 +1562,7 @@ async fn manual_memory_remove_refreshes_for_custom_memory_dir_source_but_not_dis
                 == crate::legacy_core::elpis_context::ContinuitySourceCategory::Memory
     }));
 
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
     for _ in 1..selectable_count {
         chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down));
@@ -1642,6 +1667,7 @@ async fn ledger_and_status_read_the_same_source_list() -> anyhow::Result<()> {
         );
     }
     // And the rendered panel shows them all too.
+    chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
     let rendered = render_ledger(&chat, 80);
     for name in ["Global AGENTS.md", "Project AGENTS.md", "dev/SKILL.md"] {
@@ -1822,6 +1848,7 @@ async fn focused_ledger_p_requests_next_turn_toggle_even_without_sources() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));
     chat.smart_prune_synced = true;
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
@@ -1850,6 +1877,7 @@ async fn focused_ledger_p_toggles_from_authoritative_snapshot_when_layers_differ
             .enabled(Feature::AutomaticContextPruning),
         "the fixture must exercise a higher-precedence effective state"
     );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
@@ -1895,6 +1923,7 @@ async fn focused_ledger_p_updates_immediately_during_active_turn() {
     chat.last_rendered_width.set(Some(120));
     chat.smart_prune_synced = true;
     chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(
         chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT,))
     );
@@ -1916,6 +1945,7 @@ async fn focused_ledger_p_ignores_repeat_while_setting_is_saving() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));
     chat.smart_prune_synced = true;
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
@@ -1937,6 +1967,7 @@ async fn focused_ledger_p_updates_immediately_while_turn_start_is_pending() {
     chat.last_rendered_width.set(Some(120));
     chat.smart_prune_synced = true;
     chat.input_queue.user_turn_pending_start = true;
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
 
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('p'))));
@@ -1978,6 +2009,7 @@ async fn ledger_switch_is_not_interactive_after_the_terminal_hides_it() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.smart_prune_synced = true;
     chat.last_rendered_width.set(Some(80));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
 
     let wide_area = ratatui::layout::Rect::new(0, 0, 80, 80);

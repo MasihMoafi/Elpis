@@ -38,7 +38,7 @@ impl ChatWidget {
                 .push_front(UserMessageHistoryRecord::UserMessageText);
         }
         let pending_steers = std::mem::take(&mut self.input_queue.pending_steers);
-        let restored = self.drain_pending_messages_for_restore();
+        let restored = self.drain_pending_messages_for_restore(true);
         self.input_queue.pending_steers = pending_steers;
         if let Some(composer) = restored {
             self.restore_composer_state(composer);
@@ -229,10 +229,10 @@ impl ChatWidget {
                 let (user_message, history_record) =
                     merge_user_messages_with_history_record(pending_steers);
                 self.submit_user_message_with_history_record(user_message, history_record);
-            } else if let Some(combined) = self.drain_pending_messages_for_restore() {
+            } else if let Some(combined) = self.drain_pending_messages_for_restore(true) {
                 self.restore_composer_state(combined);
             }
-        } else if let Some(combined) = self.drain_pending_messages_for_restore() {
+        } else if let Some(combined) = self.drain_pending_messages_for_restore(true) {
             self.restore_composer_state(combined);
         }
         self.refresh_pending_input_preview();
@@ -246,7 +246,10 @@ impl ChatWidget {
     /// placeholders in a stable order and rebase text element byte ranges so the restored composer
     /// state stays aligned with the merged attachment list. Returns `None` when there is nothing to
     /// restore.
-    fn drain_pending_messages_for_restore(&mut self) -> Option<ThreadComposerState> {
+    pub(super) fn drain_pending_messages_for_restore(
+        &mut self,
+        include_in_flight_steers: bool,
+    ) -> Option<ThreadComposerState> {
         if self.input_queue.pending_steers.is_empty() && !self.has_queued_follow_up_messages() {
             return None;
         }
@@ -280,12 +283,13 @@ impl ChatWidget {
             .zip(rejected_history_records.iter())
             .map(|(message, history_record)| user_message_for_restore(message, history_record))
             .collect();
-        to_merge.extend(
-            self.input_queue
-                .pending_steers
-                .drain(..)
-                .map(|steer| user_message_for_restore(steer.user_message, &steer.history_record)),
-        );
+        if include_in_flight_steers {
+            to_merge.extend(
+                self.input_queue.pending_steers.drain(..).map(|steer| {
+                    user_message_for_restore(steer.user_message, &steer.history_record)
+                }),
+            );
+        }
         let queued_messages = self
             .input_queue
             .queued_user_messages

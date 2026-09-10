@@ -5,10 +5,9 @@
 //! context (for example, the unified-exec background-process summary). Keeping
 //! these pieces on one line avoids vertical layout churn in the bottom pane.
 
-use std::cell::{Cell, RefCell};
 use std::time::Duration;
 use std::time::Instant;
-use tachyonfx::Shader;
+use unicode_width::UnicodeWidthStr;
 
 use crossterm::event::KeyCode;
 use ratatui::buffer::Buffer;
@@ -19,7 +18,6 @@ use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::WidgetRef;
-use unicode_width::UnicodeWidthStr;
 
 use crate::app_event_sender::AppEventSender;
 use crate::key_hint;
@@ -57,8 +55,6 @@ pub(crate) struct StatusIndicatorWidget {
     app_event_tx: AppEventSender,
     frame_requester: FrameRequester,
     animations_enabled: bool,
-    text_effect: RefCell<Option<tachyonfx::Effect>>,
-    effect_last_frame: Cell<Instant>,
 }
 
 // Format elapsed seconds into a compact human-friendly form used by the status line.
@@ -86,8 +82,6 @@ impl StatusIndicatorWidget {
     ) -> Self {
         Self {
             header: String::from("Elpising…"),
-            text_effect: RefCell::new(None),
-            effect_last_frame: Cell::new(Instant::now()),
             details: None,
             details_max_lines: STATUS_DETAILS_DEFAULT_MAX_LINES,
             inline_message: None,
@@ -247,21 +241,17 @@ impl Renderable for StatusIndicatorWidget {
         if self.animations_enabled && !self.is_paused {
             // Schedule next animation frame.
             self.frame_requester
-                .schedule_frame_in(Duration::from_millis(50));
+                .schedule_frame_in(crate::elpis_motion::FRAME_TICK);
         }
         let now = Instant::now();
         let elapsed_duration = self.elapsed_duration_at(now);
         let pretty_elapsed = fmt_elapsed_compact(elapsed_duration.as_secs());
-        let mut spans = Vec::with_capacity(5);
-        if self.animations_enabled {
-            let orbit = ["▂▄▆ ", "▄▆▄ ", "▆▄▂ ", "▄▂▄ "];
-            let index = (elapsed_duration.as_millis() / 500) as usize % orbit.len();
-            spans.push(Span::styled(
-                orbit[index],
-                crate::elpis_motion::accent_style(),
-            ));
-        }
-        spans.extend(crate::elpis_motion::text(&self.header));
+        let mut spans = crate::motion::shimmer_text(
+            &self.header,
+            crate::motion::MotionMode::from_animations_enabled(
+                self.animations_enabled && !self.is_paused,
+            ),
+        );
         if !spans.is_empty() {
             spans.push(" ".into());
         }
@@ -296,26 +286,6 @@ impl Renderable for StatusIndicatorWidget {
         }
 
         Paragraph::new(Text::from(lines)).render_ref(area, buf);
-        let previous = self.effect_last_frame.replace(now);
-        if self.animations_enabled && !self.is_paused {
-            let effect_area = Rect::new(
-                area.x.saturating_add(4),
-                area.y,
-                (UnicodeWidthStr::width(self.header.as_str()) as u16)
-                    .min(area.width.saturating_sub(4)),
-                1,
-            );
-            let mut effect = self.text_effect.borrow_mut();
-            effect
-                .get_or_insert_with(crate::elpis_motion::elpising_effect)
-                .process(
-                    now.saturating_duration_since(previous)
-                        .min(Duration::from_millis(100))
-                        .into(),
-                    buf,
-                    effect_area,
-                );
-        }
     }
 }
 

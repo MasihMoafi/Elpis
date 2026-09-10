@@ -41,10 +41,9 @@ use super::session::Session;
 use super::smart_prune_audit;
 use super::turn_context::TurnContext;
 
-/// Smart Prune uses the maintainer-selected Max-effort optimizer path before
-/// first main-model exposure. This request-local setting does not alter the main
-/// model's reasoning effort; the existing inactivity bound still applies.
-const SMART_PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Max;
+/// Keep optimizer latency bounded independently of the chat model's effort.
+/// Matched Low-effort evaluations are recorded in docs/evals/rq3.
+const SMART_PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Low;
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(180);
 const OPENROUTER_FALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 

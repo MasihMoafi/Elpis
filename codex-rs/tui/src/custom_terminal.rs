@@ -420,15 +420,19 @@ where
         let cursor_position = frame.cursor_position;
         let cursor_style = frame.cursor_style;
 
-        // Draw to stdout
+        // Some terminals expose each cursor move while applying a frame diff.
+        // Hide the caret until both the frame and its final cursor position are set.
+        if !self.hidden_cursor {
+            self.hide_cursor()?;
+        }
         self.flush()?;
 
         match cursor_position {
             None => self.hide_cursor()?,
             Some(position) => {
                 self.set_cursor_style(cursor_style)?;
-                self.show_cursor()?;
                 self.set_cursor_position(position)?;
+                self.show_cursor()?;
             }
         }
 

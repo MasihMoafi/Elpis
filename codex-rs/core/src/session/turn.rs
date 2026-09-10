@@ -719,8 +719,21 @@ async fn run_pre_sampling_compact(
     let token_status =
         super::context_window::context_window_token_status(sess.as_ref(), turn_context.as_ref())
             .await;
-    // Compact if the configured auto-compaction budget or usable context window is exhausted.
-    if token_status.token_limit_reached {
+    let pressure_reached =
+        match crate::pressure_compaction::PressureCompaction::load(&turn_context.config.codex_home)
+        {
+            Ok(settings) => settings.should_compact(
+                token_status.active_context_tokens,
+                token_status.full_context_window_limit,
+            ),
+            Err(error) => {
+                tracing::warn!(%error, "Could not load pressure compaction settings");
+                false
+            }
+        };
+    if token_status.token_limit_reached
+        || (pressure_reached && turn_context.config.automatic_compaction_enabled())
+    {
         if !turn_context.config.automatic_compaction_enabled() {
             return Err(CodexErr::ContextWindowExceeded);
         }

@@ -195,25 +195,15 @@ impl ChatWidget {
             return false;
         }
         let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
-        let is_toggle_key = (is_tab && !self.bottom_pane.should_queue_on_tab())
-            || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
-        if is_toggle_key
-            && self.bottom_pane.no_modal_or_popup_active()
-            && self
-                .last_rendered_width
-                .get()
-                .is_some_and(|width| width >= LEDGER_MIN_TERMINAL_WIDTH as usize)
-        {
-            // Visible-but-unfocused → focus; focused → hide; hidden → show + focus.
+        let is_toggle_key = is_tab || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
+        if is_toggle_key {
             if !self.context_ledger.visible {
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
-            } else if self.context_ledger.focused {
+            } else {
                 self.context_ledger.visible = false;
                 self.context_ledger.focused = false;
                 self.context_ledger.clear_rendered_geometry();
-            } else {
-                self.context_ledger.focused = true;
             }
             self.context_ledger.pending_g = false;
             self.request_redraw();
@@ -435,7 +425,7 @@ impl ChatWidget {
         let interaction_hint = if self.context_ledger.focused {
             "p Smart Prune · Up/Down move · Space/Enter toggle · i all · w why · Esc exit"
         } else {
-            "Tab focus · Alt+C focus/hide · Ctrl+click open file"
+            "Tab hide/show · Ctrl+click open file"
         };
         let mut lines = vec![
             Line::from(vec![

@@ -3,6 +3,54 @@ use super::*;
 use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use pretty_assertions::assert_eq;
 
+#[tokio::test]
+async fn pressure_compaction_command_persists_threshold_without_compacting_immediately() {
+    use crate::legacy_core::pressure_compaction::PressureCompaction;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let home = tempfile::tempdir().unwrap();
+    chat.config.codex_home =
+        codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(home.path()).unwrap();
+    assert!(
+        !PressureCompaction::load(home.path())
+            .unwrap()
+            .should_compact(900, Some(1000))
+    );
+    for value in ["0.5", "1", "25", "30%", "69.99"] {
+        chat.dispatch_command_with_args(SlashCommand::Compact, value.into(), Vec::new());
+        let settings = PressureCompaction::load(home.path()).unwrap();
+        let threshold = value.trim_end_matches('%').parse::<f64>().unwrap();
+        assert_eq!(settings.remaining_percent, Some(threshold));
+        assert!(!settings.should_compact(0, Some(1000)));
+        assert!(settings.should_compact(1000, Some(1000)));
+        assert!(!settings.should_compact(1000, None));
+        assert!(!settings.should_compact(1000, Some(0)));
+        assert!(!chat.bottom_pane.is_task_running());
+        assert!(
+            !std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact)))
+        );
+    }
+    PressureCompaction::parse("25")
+        .unwrap()
+        .save(home.path())
+        .unwrap();
+    for invalid in ["0", "-1", "70", "100", "NaN", "inf", "text", "25 30"] {
+        chat.dispatch_command_with_args(SlashCommand::Compact, invalid.into(), Vec::new());
+        assert_eq!(
+            PressureCompaction::load(home.path())
+                .unwrap()
+                .remaining_percent,
+            Some(25.0)
+        );
+    }
+    let settings = PressureCompaction::load(home.path()).unwrap();
+    assert!(!settings.should_compact(749, Some(1000)));
+    assert!(settings.should_compact(750, Some(1000)));
+    assert!(settings.should_compact(751, Some(1000)));
+    std::fs::write(home.path().join("compaction.json"), "{bad settings}").unwrap();
+    assert!(PressureCompaction::load(home.path()).is_err());
+}
+
 fn fast_tier_command() -> ServiceTierCommand {
     ServiceTierCommand {
         id: ServiceTier::Fast.request_value().to_string(),

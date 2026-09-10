@@ -1307,7 +1307,7 @@ async fn up_recalls_queued_message_without_leaving_it_for_autosend() {
 }
 
 #[tokio::test]
-async fn up_recalls_latest_queued_message_and_preserves_earlier_messages() {
+async fn up_recalls_all_queued_messages_in_order() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.bottom_pane.set_task_running(true);
     for text in ["first queued", "second queued"] {
@@ -1317,8 +1317,11 @@ async fn up_recalls_latest_queued_message_and_preserves_earlier_messages() {
     }
     chat.refresh_pending_input_preview();
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    assert_eq!(chat.bottom_pane.composer_text(), "second queued");
-    assert_eq!(chat.queued_user_message_texts(), vec!["first queued"]);
+    assert_eq!(
+        chat.bottom_pane.composer_text(),
+        "first queued\nsecond queued"
+    );
+    assert!(chat.queued_user_message_texts().is_empty());
 }
 
 #[tokio::test]
@@ -1499,7 +1502,7 @@ fn queued_message_edit_binding_mapping_covers_special_terminals_and_tmux() {
 /// it while a task is running should always enqueue the same text, even when it
 /// is queued repeatedly.
 #[tokio::test]
-async fn enqueueing_history_prompt_multiple_times_is_stable() {
+async fn tab_only_toggles_ledger_while_a_task_is_running() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
 
@@ -1517,14 +1520,12 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
         chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
         assert_eq!(chat.bottom_pane.composer_text(), "repeat me");
 
-        // Queue the prompt while the task is running.
+        // Tab must preserve the draft and never submit or queue it.
         chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(chat.bottom_pane.composer_text(), "repeat me");
     }
 
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 3);
-    for message in chat.input_queue.queued_user_messages.iter() {
-        assert_eq!(message.text, "repeat me");
-    }
+    assert!(chat.input_queue.queued_user_messages.is_empty());
 }
 
 #[tokio::test]

@@ -21,7 +21,7 @@ case "$mode" in
         ;;
     optimized)
         profile=local-release
-        cargo_args=(build --profile local-release --locked --offline -p codex-tui --bin elpis)
+        cargo_args=(build --profile local-release --locked --offline -p codex-tui --bin elpis -p codex-app-server --bin codex-app-server)
         artifact="$repo_root/codex-rs/target/local-release/elpis"
         ;;
     test-build)
@@ -44,17 +44,14 @@ logical_cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || pri
 default_jobs=$((logical_cpus / 2))
 if [ "$default_jobs" -lt 1 ]; then
     default_jobs=1
-elif [ "$default_jobs" -gt 8 ]; then
-    default_jobs=8
+elif [ "$default_jobs" -gt 2 ]; then
+    default_jobs=2
 fi
 # Keep the compiler fingerprint stable when reducing sustained Cargo concurrency.
-default_rustc_threads=$default_jobs
-if [ "$mode" != check ] && [ "$default_jobs" -gt 4 ]; then
-    default_jobs=4
-fi
+default_rustc_threads=1
 jobs=${ELPIS_BUILD_JOBS:-$default_jobs}
-if ! [[ "$jobs" =~ ^[1-9][0-9]*$ ]]; then
-    printf 'ELPIS_BUILD_JOBS must be a positive integer\n' >&2
+if ! [[ "$jobs" =~ ^[12]$ ]]; then
+    printf 'ELPIS_BUILD_JOBS must be 1 or 2 on this workstation\n' >&2
     exit 2
 fi
 

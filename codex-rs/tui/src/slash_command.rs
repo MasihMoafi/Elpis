@@ -82,7 +82,9 @@ impl SlashCommand {
         match self {
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Elpis",
-            SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
+            SlashCommand::Compact => {
+                "compact now, or /compact N to set remaining-context pressure (0 < N < 70)"
+            }
             SlashCommand::Prune => "turn Smart Prune on for subsequent turns",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
@@ -158,6 +160,7 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::SmartPrune
+                | SlashCommand::Compact
                 | SlashCommand::PrunerModel
                 | SlashCommand::ForcePrune
                 | SlashCommand::Review

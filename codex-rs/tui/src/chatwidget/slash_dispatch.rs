@@ -534,6 +534,22 @@ impl ChatWidget {
         }
 
         let trimmed = args.trim();
+        if cmd == SlashCommand::Compact && !trimmed.is_empty() {
+            let result =
+                crate::legacy_core::pressure_compaction::PressureCompaction::parse(trimmed)
+                    .and_then(|settings| {
+                        settings.save(&self.config.codex_home)?;
+                        Ok(settings.remaining_percent.unwrap_or_default())
+                    });
+            match result {
+                Ok(percent) => self.add_info_message(
+                    format!("Pressure compaction saved: {percent}% remaining. Checked before each turn. /compact alone compacts now."),
+                    None,
+                ),
+                Err(error) => self.add_error_message(format!("Compaction setting was not changed: {error}")),
+            }
+            return;
+        }
         if cmd == SlashCommand::PrunerModel && !trimmed.is_empty() {
             let result = (|| -> std::io::Result<()> {
                 let mut settings = crate::legacy_core::pruner_settings::PrunerSettings::load(

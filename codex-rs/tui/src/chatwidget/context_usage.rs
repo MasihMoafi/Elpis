@@ -141,7 +141,7 @@ impl ContextUsageHistoryCell {
                 width,
             ));
         } else {
-            lines.push(" Context measurement unavailable.".dim().into());
+            lines.push(" Context measurement unavailable.".not_dim().into());
         }
         lines.extend(self.after_chart.clone());
         lines
@@ -353,10 +353,7 @@ fn evidence_url_line(
 ) -> Option<Line<'static>> {
     let destination = crate::dashboard_server::evidence_url(root, label, path)?;
     Some(Line::from(vec![
-        Span::styled(
-            format!("   {label} · "),
-            Style::default().fg(Color::DarkGray),
-        ),
+        Span::styled(format!("   {label} · "), Style::default().fg(Color::Reset)),
         Span::styled(
             destination,
             crate::style::brand_style().not_bold().underlined(),
@@ -684,15 +681,15 @@ impl ChatWidget {
             format!(" {model} · one full-window scale").bold().into(),
             if snapshot.attributed_tokens.is_some() {
                 " Measured total · estimated category attribution from the latest built request"
-                    .dim()
+                    .not_dim()
                     .into()
             } else if snapshot.has_request_snapshot {
                 " Measured total available · category attribution unavailable"
-                    .dim()
+                    .not_dim()
                     .into()
             } else {
                 " No request snapshot yet · send a provider request to measure context"
-                    .dim()
+                    .not_dim()
                     .into()
             },
             Line::default(),
@@ -703,7 +700,7 @@ impl ChatWidget {
         if !self.smart_prune_synced {
             after_chart.push(
                 "   status unavailable · syncing with current thread state"
-                    .dim()
+                    .not_dim()
                     .into(),
             );
         } else {
@@ -726,14 +723,14 @@ impl ChatWidget {
             }
             after_chart.push(summary.into());
             if self.smart_prune.optimizer_requests > self.smart_prune.optimizer_usage_reports {
-                after_chart.push("   optimizer usage unreported".dim().into());
+                after_chart.push("   optimizer usage unreported".not_dim().into());
             } else if self.smart_prune.optimizer_usage_reports > 0 {
                 after_chart.push(
                     format!(
                         "   optimizer usage · ~{} tokens",
                         fmt_tokens(self.smart_prune.optimizer_usage.total_tokens.max(0) as u64)
                     )
-                    .dim()
+                    .not_dim()
                     .into(),
                 );
             }
@@ -743,7 +740,11 @@ impl ChatWidget {
         after_chart
             .push(Span::styled(" History Rewrite Audit", crate::style::brand_style()).into());
         if self.last_prune_saved_tokens.is_none() {
-            after_chart.push("   No history rewrites recorded this thread".dim().into());
+            after_chart.push(
+                "   No history rewrites recorded this thread"
+                    .not_dim()
+                    .into(),
+            );
         } else {
             after_chart.push(Line::from(vec![
                 Span::from("   Status: "),
@@ -757,7 +758,7 @@ impl ChatWidget {
             ]));
             after_chart.push(
                 "   History rewrites replace completed tool-result history; category estimates exclude saved totals."
-                    .dim()
+                    .not_dim()
                     .into(),
             );
         }
@@ -773,7 +774,7 @@ impl ChatWidget {
         if snapshot.backtrack_points == 0 {
             after_chart.push(
                 "   No backtrack points yet — send a message first."
-                    .dim()
+                    .not_dim()
                     .into(),
             );
         } else {
@@ -782,7 +783,7 @@ impl ChatWidget {
                     "   {} backtrack point(s) available — Esc Esc jumps to a prior message and forks from it.",
                     snapshot.backtrack_points
                 )
-                .dim()
+                .not_dim()
                 .into(),
             );
         }
@@ -821,7 +822,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
             lines.push(Line::from(vec![
                 Span::from(" "),
                 snapshot.model.clone().bold(),
-                " · ".dim(),
+                " · ".not_dim(),
                 format!(
                     "{} / {} tokens",
                     fmt_tokens(used),
@@ -829,7 +830,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 )
                 .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow))
                 .bold(),
-                format!(" · {used_percent} used · {free_percent} free").dim(),
+                format!(" · {used_percent} used · {free_percent} free").not_dim(),
             ]));
             lines.extend(build_category_bar_chart(
                 &snapshot.categories,
@@ -842,11 +843,11 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
             lines.push(Line::from(vec![
                 Span::from(" "),
                 snapshot.model.clone().bold(),
-                " · context occupancy not recorded yet".dim(),
+                " · context occupancy not recorded yet".not_dim(),
             ]));
             lines.push(
                 "   Send the first provider request to establish an occupancy snapshot."
-                    .dim()
+                    .not_dim()
                     .into(),
             );
         }
@@ -854,7 +855,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     lines.push(Line::default());
     lines.push(" Context Ledger".bold().into());
     if snapshot.sources.is_empty() {
-        lines.push("   No continuity sources discovered.".dim().into());
+        lines.push("   No continuity sources discovered.".not_dim().into());
     } else {
         for group in LedgerSourceGroup::ALL {
             let sources = snapshot
@@ -873,7 +874,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 let (marker, state, style) = if source.admitted {
                     ("●", "admitted", Style::default().fg(Color::LightGreen))
                 } else {
-                    ("○", "discovered", Style::default().fg(Color::DarkGray))
+                    ("○", "discovered", Style::default().fg(Color::Reset))
                 };
                 let control = if source.selectable {
                     "toggleable"
@@ -891,15 +892,15 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 );
                 if narrow {
                     lines.push(Line::from(source_line));
-                    lines.push(format!("       {metadata}").dim().into());
+                    lines.push(format!("       {metadata}").not_dim().into());
                 } else {
-                    source_line.push(format!(" · {metadata}").dim());
+                    source_line.push(format!(" · {metadata}").not_dim());
                     lines.push(Line::from(source_line));
                 }
-                lines.push(format!("       {}", source.path.display()).dim().into());
+                lines.push(format!("       {}", source.path.display()).not_dim().into());
                 lines.push(
                     format!("       {} · {}", source.reason, source.lifetime)
-                        .dim()
+                        .not_dim()
                         .into(),
                 );
             }
@@ -932,22 +933,22 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
         ]));
         lines.push(
             "   Pruning checkpoint count unavailable in this UI snapshot."
-                .dim()
+                .not_dim()
                 .into(),
         );
     } else {
         lines.push(Line::from(vec![
             Span::from("   Pruning "),
             Span::styled(pruning, Style::default().fg(Color::LightGreen).bold()),
-            "  ·  Native compaction (process) ".dim(),
+            "  ·  Native compaction (process) ".not_dim(),
             format!("{} recorded", snapshot.native_compaction_count)
                 .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow)),
-            "  ·  Backtrack ".dim(),
+            "  ·  Backtrack ".not_dim(),
             format!("{} available", snapshot.backtrack_points).yellow(),
         ]));
         lines.push(
             "   Pruning checkpoint count: not recorded in the current UI snapshot."
-                .dim()
+                .not_dim()
                 .into(),
         );
     }
@@ -960,7 +961,11 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
                 )
                 .into(),
             );
-            lines.push(format!("     evidence {}", latest.evidence).dim().into());
+            lines.push(
+                format!("     evidence {}", latest.evidence)
+                    .not_dim()
+                    .into(),
+            );
         } else {
             lines.push(
                 format!(
@@ -980,7 +985,7 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
         ])),
         None => lines.push(
             "   Rollout evidence not available for this session."
-                .dim()
+                .not_dim()
                 .into(),
         ),
     }
@@ -988,11 +993,11 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     lines.push(Line::default());
     lines.push(if narrow {
         " Accounting only · no quality, cost, or causal claims."
-            .dim()
+            .not_dim()
             .into()
     } else {
         " Context accounting only · no task-quality, cost, or causal claims."
-            .dim()
+            .not_dim()
             .into()
     });
     lines
@@ -1030,7 +1035,7 @@ fn build_category_bar_chart(
     if categories.is_empty() && used_cells > 0 {
         bar.push(Span::styled(
             "█".repeat(used_cells),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::Reset),
         ));
     } else {
         for (category, cells) in categories.iter().zip(counts) {
@@ -1097,13 +1102,13 @@ fn build_category_bar_chart(
     }
     lines.push(if categories.is_empty() {
         "   Category attribution unavailable; neutral fill is measured context."
-            .dim()
+            .not_dim()
             .into()
     } else if narrow {
-        "   Estimated segments · measured total.".dim().into()
+        "   Estimated segments · measured total.".not_dim().into()
     } else {
         "   Segment proportions are estimated from the latest built request; total width is measured active context."
-            .dim()
+            .not_dim()
             .into()
     });
     lines
@@ -1202,7 +1207,9 @@ fn smart_prune_saved_context_flash_line(saved_tokens: u64) -> Option<Line<'stati
 }
 
 fn no_prune_totals_line() -> Line<'static> {
-    "   No history pruning recorded this thread".dim().into()
+    "   No history pruning recorded this thread"
+        .not_dim()
+        .into()
 }
 
 fn newly_reclaimed_tokens(previous_total: Option<u64>, current_total: u64) -> u64 {
@@ -1245,6 +1252,13 @@ mod tests {
         )
         .unwrap();
         let line = super::evidence_url_line("Smart Prune attempt", dir.path(), &path).unwrap();
+        assert_eq!(line.spans[0].style.fg, Some(ratatui::style::Color::Reset));
+        assert!(
+            !line.spans[0]
+                .style
+                .add_modifier
+                .contains(ratatui::style::Modifier::DIM)
+        );
         let text = line
             .spans
             .iter()

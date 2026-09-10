@@ -65,6 +65,7 @@ use ratatui::widgets::Widget;
 /// state (for example, it does not query whether a task is running).
 #[derive(Clone, Debug)]
 pub(crate) struct FooterProps {
+    pub(crate) animations_enabled: bool,
     pub(crate) mode: FooterMode,
     pub(crate) esc_backtrack_hint: bool,
     pub(crate) use_shift_enter_hint: bool,
@@ -784,7 +785,8 @@ pub(crate) fn passive_footer_status_line(props: &FooterProps) -> Option<Line<'st
     }
 
     if let Some(approval_mode_label) = props.approval_mode_label.as_ref() {
-        let spans = crate::elpis_motion::text(approval_mode_label);
+        let spans =
+            crate::elpis_motion::animated_text(approval_mode_label, props.animations_enabled);
         if let Some(existing) = line.as_mut() {
             existing.spans.push(" · ".dim());
             existing.spans.extend(spans);
@@ -1528,6 +1530,7 @@ mod tests {
         snapshot_footer(
             "footer_shortcuts_default",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::ComposerEmpty,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1547,6 +1550,7 @@ mod tests {
         snapshot_footer(
             "footer_shortcuts_shift_and_esc",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::ShortcutOverlay,
                 esc_backtrack_hint: true,
                 use_shift_enter_hint: true,
@@ -1569,6 +1573,7 @@ mod tests {
         snapshot_footer(
             "footer_shortcuts_collaboration_modes_enabled",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::ShortcutOverlay,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1588,6 +1593,7 @@ mod tests {
         snapshot_footer(
             "footer_shortcuts_running",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::ShortcutOverlay,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1607,6 +1613,7 @@ mod tests {
         snapshot_footer(
             "footer_ctrl_c_quit_idle",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::QuitShortcutReminder,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1626,6 +1633,7 @@ mod tests {
         snapshot_footer(
             "footer_ctrl_c_quit_running",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::QuitShortcutReminder,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1645,6 +1653,7 @@ mod tests {
         snapshot_footer(
             "footer_esc_hint_idle",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::EscHint,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1664,6 +1673,7 @@ mod tests {
         snapshot_footer(
             "footer_esc_hint_primed",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::EscHint,
                 esc_backtrack_hint: true,
                 use_shift_enter_hint: false,
@@ -1683,6 +1693,7 @@ mod tests {
         snapshot_footer_with_context(
             "footer_shortcuts_context_running",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::ComposerEmpty,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1704,6 +1715,7 @@ mod tests {
         snapshot_footer_with_context(
             "footer_context_tokens_used",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::ComposerEmpty,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1725,6 +1737,7 @@ mod tests {
         snapshot_footer(
             "footer_composer_has_draft_queue_hint_enabled",
             FooterProps {
+                animations_enabled: false,
                 mode: FooterMode::ComposerHasDraft,
                 esc_backtrack_hint: false,
                 use_shift_enter_hint: false,
@@ -1742,6 +1755,7 @@ mod tests {
         );
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1772,6 +1786,7 @@ mod tests {
         );
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1795,6 +1810,7 @@ mod tests {
         );
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1813,6 +1829,7 @@ mod tests {
         snapshot_footer("footer_status_line_overrides_shortcuts", props);
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerHasDraft,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1831,6 +1848,7 @@ mod tests {
         snapshot_footer("footer_status_line_yields_to_queue_hint", props);
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerHasDraft,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1849,6 +1867,7 @@ mod tests {
         snapshot_footer("footer_status_line_overrides_draft_idle", props);
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1873,6 +1892,7 @@ mod tests {
         );
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1897,6 +1917,7 @@ mod tests {
         );
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1922,6 +1943,7 @@ mod tests {
         );
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1948,6 +1970,7 @@ mod tests {
         );
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1966,6 +1989,7 @@ mod tests {
         snapshot_footer("footer_active_agent_label", props);
 
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -1987,6 +2011,7 @@ mod tests {
     #[test]
     fn footer_status_line_truncates_to_keep_mode_indicator() {
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -2029,6 +2054,7 @@ mod tests {
     #[test]
     fn passive_footer_status_line_shows_the_current_approval_mode() {
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,
@@ -2056,6 +2082,7 @@ mod tests {
     #[test]
     fn passive_footer_status_line_combines_agent_and_approval_mode_labels() {
         let props = FooterProps {
+            animations_enabled: false,
             mode: FooterMode::ComposerEmpty,
             esc_backtrack_hint: false,
             use_shift_enter_hint: false,

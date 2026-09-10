@@ -77,6 +77,9 @@ pub mod legacy_core {
     pub mod pruner_settings {
         pub use codex_core::pruner_settings::*;
     }
+    pub mod pressure_compaction {
+        pub use codex_core::pressure_compaction::*;
+    }
     pub mod elpis_context {
         pub use codex_core::elpis_context::*;
     }

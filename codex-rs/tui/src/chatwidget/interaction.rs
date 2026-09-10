@@ -5,6 +5,11 @@ use super::*;
 
 impl ChatWidget {
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
+        let ledger_toggle = key_hint::plain(KeyCode::Tab).is_press(key_event)
+            || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
+        if ledger_toggle && self.handle_context_ledger_key_event(key_event) {
+            return;
+        }
         if self.bottom_pane.has_active_view()
             && !matches!(
                 key_event,
@@ -127,7 +132,12 @@ impl ChatWidget {
             && self.has_queued_follow_up_messages()
             && self.bottom_pane.no_modal_or_popup_active()
         {
-            if let Some(composer) = self.pop_latest_queued_composer_state() {
+            let composer = if recall_queued_with_up {
+                self.drain_pending_messages_for_restore(false)
+            } else {
+                self.pop_latest_queued_composer_state()
+            };
+            if let Some(composer) = composer {
                 self.restore_composer_state(composer);
                 self.refresh_pending_input_preview();
                 self.request_redraw();

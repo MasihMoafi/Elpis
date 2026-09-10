@@ -3563,6 +3563,7 @@ impl ChatComposer {
 
         FooterProps {
             mode,
+            animations_enabled: self.frame_animations_enabled,
             esc_backtrack_hint: self.footer.esc_backtrack_hint,
             use_shift_enter_hint: self.footer.use_shift_enter_hint,
             is_task_running: self.is_task_running,
@@ -3574,7 +3575,10 @@ impl ChatComposer {
             status_line_enabled: self.footer.status_line_enabled,
             key_hints: FooterKeyHints {
                 toggle_shortcuts: self.footer.toggle_shortcuts_key,
-                queue: self.footer.queue_key,
+                queue: self
+                    .footer
+                    .queue_key
+                    .filter(|key| *key != key_hint::plain(KeyCode::Tab)),
                 insert_newline: self.footer.insert_newline_key,
                 external_editor: self.footer.external_editor_key,
                 edit_previous: Some(key_hint::plain(KeyCode::Esc)),
@@ -4809,15 +4813,12 @@ mod tests {
                             &mut buffer,
                         );
                         ratatui::widgets::Widget::render(
-                            Paragraph::new(Line::from(crate::elpis_motion::text("◜ Elpising…"))),
+                            Paragraph::new(Line::from(crate::elpis_motion::animated_text(
+                                "Elpising…",
+                                true,
+                            ))),
                             Rect::new(0, 15, width, 1),
                             &mut buffer,
-                        );
-                        let mut effect = crate::elpis_motion::elpising_effect();
-                        effect.process(
-                            Duration::from_millis(seconds * 100).into(),
-                            &mut buffer,
-                            Rect::new(2, 15, 9, 1),
                         );
                         let composer_area = Rect::new(0, 17, width, 6);
                         composer.render(composer_area, &mut buffer);

@@ -351,7 +351,10 @@ impl ExecCell {
 
             for (title, line) in call_lines {
                 let line = Line::from(line);
-                let mut initial_indent = Line::from(crate::elpis_motion::text(title));
+                let mut initial_indent = Line::from(crate::elpis_motion::animated_text(
+                    title,
+                    self.animations_enabled() && self.active_start_time().is_some(),
+                ));
                 initial_indent.spans.push(" ".into());
                 let subsequent_indent = " ".repeat(initial_indent.width()).into();
                 let wrapped = adaptive_wrap_line(
