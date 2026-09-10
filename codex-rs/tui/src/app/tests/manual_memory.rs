@@ -9,6 +9,15 @@ fn configured_app_ids(app: &mut App) -> ThreadId {
     thread_id
 }
 
+fn assert_no_turn_submission(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {
+    while let Ok(op) = op_rx.try_recv() {
+        assert!(
+            matches!(op, Op::ListSkills { .. }),
+            "unexpected submission while manual-memory input should be held: {op:?}"
+        );
+    }
+}
+
 fn submit_user_message(app: &mut App, text: &str) {
     app.chat_widget.submit_user_message_with_mode(
         text.to_string(),
@@ -168,7 +177,7 @@ async fn manual_memory_mutation_and_status_failures_restore_without_sending() {
     };
     submit_user_message(&mut app, "blocked draft");
     assert_matches!(app_event_rx.try_recv(), Ok(AppEvent::SubmitThreadOp { .. }));
-    assert!(op_rx.try_recv().is_err());
+    assert_no_turn_submission(&mut op_rx);
 
     assert!(app.claim_manual_memory_mutation(
         &requested,
@@ -195,7 +204,7 @@ async fn manual_memory_mutation_and_status_failures_restore_without_sending() {
 
     assert_eq!(app.chat_widget.manual_memory_pending_mutation(), None);
     assert!(app.chat_widget.queued_user_message_texts().is_empty());
-    assert!(op_rx.try_recv().is_err());
+    assert_no_turn_submission(&mut op_rx);
 
     assert!(app.chat_widget.begin_manual_memory_admission(true));
     let requested = match app_event_rx.try_recv() {
@@ -225,7 +234,7 @@ async fn manual_memory_mutation_and_status_failures_restore_without_sending() {
         ),
         Some(false)
     );
-    assert!(op_rx.try_recv().is_err());
+    assert_no_turn_submission(&mut op_rx);
 
     app.chat_widget
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -282,7 +291,7 @@ async fn manual_memory_admission_success_drains_only_after_matching_fresh_ready_
     let ManualMemoryCompletionDisposition::Refresh(fresh) = disposition else {
         panic!("admission success must force a status read");
     };
-    assert!(op_rx.try_recv().is_err());
+    assert_no_turn_submission(&mut op_rx);
     app.manual_memory_status.in_flight = Some(fresh.clone());
     assert_eq!(
         app.finish_manual_memory_status(
@@ -376,10 +385,7 @@ async fn manual_memory_same_target_switch_keeps_barrier_but_disables_late_autose
         ),
         Some(false)
     );
-    assert!(
-        op_rx.try_recv().is_err(),
-        "late completion must not auto-send A's restored draft"
-    );
+    assert_no_turn_submission(&mut op_rx);
     assert_eq!(app.chat_widget.manual_memory_pending_mutation(), None);
 }
 
@@ -460,7 +466,7 @@ async fn manual_memory_closed_side_failover_restores_blocked_input_without_autos
         )
     );
     assert!(app.chat_widget.queued_user_message_texts().is_empty());
-    assert!(op_rx.try_recv().is_err());
+    assert_no_turn_submission(&mut op_rx);
     assert!(
         std::iter::from_fn(|| app_event_rx.try_recv().ok())
             .all(|event| { !matches!(event, AppEvent::CodexOp(Op::UserTurn { .. })) })

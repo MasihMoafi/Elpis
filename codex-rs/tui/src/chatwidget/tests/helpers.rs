@@ -19,6 +19,13 @@ pub(super) async fn test_config() -> Config {
     config.sqlite_home = codex_home.clone();
     config.log_dir = codex_home.join("log");
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
+    // Model-discovery tests provide their own endpoint instead of querying the workstation.
+    if let Some(provider) = config
+        .model_providers
+        .get_mut(codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID)
+    {
+        provider.base_url = None;
+    }
     config.config_layer_stack = ConfigLayerStack::default();
     config.startup_warnings.clear();
     config
