@@ -1,10 +1,14 @@
 # Worktree cleanup — 2026-09-10
 
-79 registrations reduced to 21: main plus 20 retained worktrees. Removed 54
-redundant existing checkouts and pruned four registrations whose directories were
-already missing. The temporary integration checkout was also removed. All original
-branch references remain. Approximately 12 GB of disk space was recovered net of
-the recovery archives (filesystem free space increased from 63 GB to 75 GB).
+79 registrations reduced to **one: main**. The first pass removed 54 redundant
+checkouts and four missing registrations. At Masih's request, the remaining 20
+secondary checkouts were then archived and removed. Temporary integration and
+recovery-test checkouts were also removed. All original branch references remain.
+Approximately 69 GB was recovered net of recovery archives (filesystem free space
+increased from 63 GB initially to 132 GB). The `.worktrees/` directory is empty.
+
+The last 20 trees were archived with their unfinished changes, not integrated into
+main. Each has a full source/evidence archive and a dedicated recovery branch.
 
 ## Integrated
 
@@ -34,16 +38,20 @@ report and updating TASKS.md. User edits remain uncommitted.
 - Removed-tree archives were compared against their original files before deletion.
   Cargo target directories and node_modules caches were excluded; other local
   notes, ignored evidence, and packaged artifacts were preserved.
+- All 20 final-pass archive checksums and both original and recovery branch tips
+  were verified after removal. The unfinished `ace-fact-preservation` tree was
+  restored in a temporary checkout: its status, tracked changes, staged changes,
+  and archive contents matched exactly. That temporary checkout was then removed.
 - No Rust rebuild, installation, publication, push, or new user-visible acceptance
   was performed. Checks of the existing release binary do not verify the unfinished
   fixes listed below.
 
-## Retained worktrees
+## Archived unfinished work
 
-These require separate source/evidence review. They are not asserted to be merged,
-accepted, or safe to discard merely because another release was published.
+These require separate source/evidence review before integration. They are no
+longer checked out, but their branches, edits, and evidence remain recoverable.
 
-| Worktree under `.worktrees/` | Reason retained |
+| Former worktree under `.worktrees/` | Work preserved |
 | --- | --- |
 | ace-fact-preservation | Uncommitted configuration and fact-preservation changes differ from main. |
 | ace-inactivity-180 | Uncommitted three-minute timeout/stream-completion fix is absent from the published runtime. |
@@ -72,11 +80,20 @@ The private local recovery directories are:
 
 - `.git/worktree-recovery-20260910/`
 - `.git/worktree-recovery-20260910-phase2/`
+- `.git/worktree-recovery-20260910-final/`
 
-Each contains the initial audit, selected paths, and `removed.json` with original
-HEAD/branch/path mappings. Per-tree directories contain metadata, a tracked patch,
-and, where needed, `local-files.tar.gz` plus its checksum. Integration provider
-evidence is in `integration-test-evidence.tar.gz` in the first directory.
+The first two contain the initial audit, selected paths, and `removed.json` with
+original HEAD/branch/path mappings. Per-tree directories contain metadata, a
+tracked patch, and, where needed, `local-files.tar.gz` plus its checksum.
+Integration provider evidence is in `integration-test-evidence.tar.gz` in the
+first directory.
+
+The final directory contains `archived.json` for all 20 formerly retained trees.
+Each has a complete `worktree.tar.gz`, tracked and staged patches, original status,
+and checksum. Reproducible dependency/compiler caches and the root Git link are
+excluded. `README.md` in that directory contains concrete restoration commands;
+`recovery-verification.json` records the successful recovery test. Dedicated
+`backup/archived-worktree-20260910/<name>` branches preserve their original tips.
 
 To recover a removed checkout, use `git worktree add <new-path> <retained-branch>`
 with the branch from `removed.json`, then extract its archive into that checkout.
@@ -85,6 +102,12 @@ files. Detached source/missing-checkout tips received backup branch references.
 `backup/pre-worktree-cleanup-20260910` preserves pre-integration main; do not reset
 the dirty main checkout to it. The integration branch also remains available.
 
-Next: review the retained pruning fixes and context changes against an agreed
+For a final-pass archive, create a checkout from its dedicated recovery branch,
+apply its nonempty `tracked.patch` (including deletions), extract `worktree.tar.gz`
+into that checkout, and apply its nonempty `staged.patch` with `git apply --cached`.
+Do not extract unfinished work over main. No unfinished behavior was promoted to
+main during this final archive pass.
+
+Next: review the archived pruning fixes and context changes against an agreed
 acceptance harness before integrating new runtime behavior. Website and evaluation
 work requires its own consolidation; it was not silently folded into this cleanup.
