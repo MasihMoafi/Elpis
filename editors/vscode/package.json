@@ -2,7 +2,7 @@
   "name": "elpis-editor",
   "displayName": "Elpis",
   "description": "Chat with your Elpis runtime using live VS Code documents and language intelligence.",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "publisher": "elpis-local",
   "license": "Apache-2.0",
   "engines": {
@@ -140,7 +140,7 @@
     "test:providers": "node test/provider-paths.js",
     "build": "tailwindcss -i src/style.css -o assets/style.css --minify && node scripts/build-assets.js",
     "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --out elpis-editor-0.1.0.vsix",
-    "test": "node --test test/rpc.test.js test/provider-catalog.test.js test/approvals.test.js test/model-repair.test.js test/settings.test.js test/account-source.test.js test/approval-modes.test.js test/history-controls.test.js test/followups.test.js test/inline-approval.test.js test/ide-context.test.js test/smart-pruning.test.js",
+    "test": "node --test test/rpc.test.js test/provider-catalog.test.js test/approvals.test.js test/model-repair.test.js test/settings.test.js test/account-source.test.js test/approval-modes.test.js test/history-controls.test.js test/followups.test.js test/inline-approval.test.js test/ide-context.test.js test/smart-pruning.test.js test/startup.test.js",
     "test:editor": "node test/launch.js"
   },
   "devDependencies": {
