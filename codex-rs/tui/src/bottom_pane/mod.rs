@@ -2361,10 +2361,7 @@ mod tests {
             "no active modal view after denial"
         );
 
-        // Render and ensure the top row includes the Elpising… header and a composer line below.
-        // Give the animation thread a moment to tick.
-        std::thread::sleep(Duration::from_millis(120));
-        let area = Rect::new(0, 0, 40, 6);
+        let area = Rect::new(0, 0, 40, pane.desired_height(40));
         let mut buf = Buffer::empty(area);
         pane.render(area, &mut buf);
         let mut row0 = String::new();
@@ -2413,12 +2410,13 @@ mod tests {
         pane.set_task_running(/*running*/ true);
 
         // Use a height that allows the status line to be visible above the composer.
-        let area = Rect::new(0, 0, 40, 6);
+        let area = Rect::new(0, 0, 40, pane.desired_height(40));
         let mut buf = Buffer::empty(area);
         pane.render(area, &mut buf);
 
         let bufs = snapshot_buffer(&buf);
-        assert!(bufs.contains("• Elpising…"), "expected Elpising… header");
+        assert!(bufs.contains("Elpising…"), "expected Elpising… header");
+        assert!(!bufs.contains("• Elpising…"), "unexpected leading spinner");
     }
 
     #[test]

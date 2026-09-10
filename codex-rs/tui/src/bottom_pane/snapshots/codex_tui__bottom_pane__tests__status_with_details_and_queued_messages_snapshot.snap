@@ -2,7 +2,7 @@
 source: tui/src/bottom_pane/mod.rs
 expression: "render_snapshot(&pane, area)"
 ---
-▂▄▆ Elpising… (0s • esc to interrupt)           
+Elpising… (0s • esc to interrupt)               
   └ First detail line                           
     Second detail line                          
                                                 

@@ -46,6 +46,9 @@ async fn manual_memory_admission_blocks_same_loop_and_direct_user_turn_submissio
         rollout_path: Some(rollout_file.path().to_path_buf()),
     });
     while rx.try_recv().is_ok() {}
+    while let Ok(op) = op_rx.try_recv() {
+        assert_matches!(op, Op::ListSkills { .. });
+    }
     seed_manual_memory_cache_from_disk(&mut chat).expect("manual-memory cache");
 
     assert!(chat.begin_manual_memory_admission(true));
