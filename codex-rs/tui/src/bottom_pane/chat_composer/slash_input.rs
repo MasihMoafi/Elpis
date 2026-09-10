@@ -16,6 +16,7 @@ use crate::bottom_pane::slash_commands::ServiceTierCommand;
 use crate::bottom_pane::slash_commands::SlashCommandItem;
 use crate::bottom_pane::slash_commands::find_slash_command;
 use crate::bottom_pane::slash_commands::has_slash_command_prefix;
+use crate::key_hint::KeyBindingListExt;
 use crate::slash_command::SlashCommand;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
@@ -210,6 +211,9 @@ impl ChatComposer {
         &mut self,
         key_event: KeyEvent,
     ) -> (InputResult, bool) {
+        if self.queue_keys.is_pressed(key_event) && self.should_queue_input() {
+            return self.handle_submission(true);
+        }
         if self.handle_shortcut_overlay_key(&key_event) {
             return (InputResult::None, true);
         }
