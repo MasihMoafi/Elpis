@@ -6,8 +6,8 @@ expression: popup
  Elpis · model gpt-5 · location /tmp/project
 ┌──────────────────────────────────────────────┐│CONTEXT LEDGER  ≈90.0k tokens
 │ Implement this plan?                         ││in context
-│                                              ││Tab focus · Alt+C focus/hide ·
-› 1. Yes, implement this plan   Switch to      ││Ctrl+click open file
+│                                              ││Tab hide/show · Ctrl+click open
+› 1. Yes, implement this plan   Switch to      ││file
                                 Default and    ││
                                 start coding.  ││SMART PRUNE          [···] SYNC
   2. Yes, clear context and im… Fresh thread.  ││Reading current thread state

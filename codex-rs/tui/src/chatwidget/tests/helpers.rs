@@ -361,7 +361,7 @@ pub(super) fn status_line_items_text(chat: &ChatWidget) -> Option<String> {
     let text = chat.status_line_text()?;
     let (identity, items) = text.split_once(" · context ")?;
     debug_assert!(
-        identity.starts_with("ELPIS"),
+        identity.starts_with(crate::branding::PRODUCT_NAME),
         "unexpected status line: {text}"
     );
     items
