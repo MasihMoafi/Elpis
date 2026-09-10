@@ -91,7 +91,7 @@ where
         )
         .then(|| value.clone())
     });
-    let tail = status_line_from_segments_with_resolver(
+    let tail = status_line_preview_from_segments(
         segments.into_iter().filter(|(item, _)| {
             !matches!(
                 item,
@@ -104,13 +104,24 @@ where
             )
         }),
         use_theme_colors,
-        |accent| foreground_style_for_scopes(accent.scopes()),
     );
 
     Some(crate::branding::decorate_status_line(
         tail,
         model_hint.as_deref(),
     ))
+}
+
+pub(crate) fn status_line_preview_from_segments<I>(
+    segments: I,
+    use_theme_colors: bool,
+) -> Option<Line<'static>>
+where
+    I: IntoIterator<Item = (StatusLineItem, String)>,
+{
+    status_line_from_segments_with_resolver(segments, use_theme_colors, |accent| {
+        foreground_style_for_scopes(accent.scopes())
+    })
 }
 
 fn status_line_from_segments_with_resolver<I, F>(

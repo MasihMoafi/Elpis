@@ -216,6 +216,11 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     widget
         .bottom_pane
         .set_placeholder_text(widget.normal_placeholder_text.clone());
+    // The synthetic cwd must not inherit a Git marker from the host's /tmp.
+    widget.status_line_project_root_name_cache = Some(CachedProjectRootName {
+        cwd: widget.config.cwd.to_path_buf(),
+        root_name: None,
+    });
     widget.set_model(&resolved_model);
     (widget, rx, op_rx)
 }

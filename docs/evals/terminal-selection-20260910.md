@@ -181,3 +181,20 @@ The optimized test build passed in 209,514 ms, peak 73°C. The complete TUI run,
 including the restored pruning policy, reports **3,000 passed, 141 failed,
 5 ignored** in `.tmp/final-candidate/tui-ledger-fixtures-full.log`. This batch
 corrects stale fixtures; it does not prove the remaining terminal glitch resolved.
+
+## Preview isolation, September 11
+
+Settings previews now render their selected items without the global live-session
+banner, which previously hid the actual preview values. Five existing behavior
+checks failed before this change and pass afterward. Synthetic chat-widget tests
+also seed an absent project root, so an unrelated `/tmp/.git` marker cannot supply
+their project name. Explicit project-root fixtures still provide their own values.
+
+All 17 preview checks and nine terminal-title checks pass. Thirteen snapshots were
+reviewed: selected preview values, the synthetic project fallback, and the already
+reviewed ledger text are the only changes. The optimized test build passed in
+243,101 ms, peak 72°C. The complete suite reports **3,019 passed, 122 failed,
+5 ignored**, with no new failing tests relative to the preceding run. Evidence:
+`.tmp/final-candidate/preview-isolation-build.log`, `preview-isolation-accepted.log`,
+`project-title-isolation.log`, and `tui-preview-isolation-full.log`. No new release
+or installation has occurred; terminal-selection limitations remain open.

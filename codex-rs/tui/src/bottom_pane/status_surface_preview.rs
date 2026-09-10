@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 
 use ratatui::text::Line;
 
-use super::status_line_from_segments;
 use super::status_line_setup::StatusLineItem;
+use super::status_line_style::status_line_preview_from_segments;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum StatusSurfacePreviewItem {
@@ -231,7 +231,7 @@ impl StatusSurfacePreviewData {
             self.value_for(item.preview_item())
                 .map(|value| (item, value.to_string()))
         });
-        status_line_from_segments(segments, use_theme_colors)
+        status_line_preview_from_segments(segments, use_theme_colors)
     }
 }
 
