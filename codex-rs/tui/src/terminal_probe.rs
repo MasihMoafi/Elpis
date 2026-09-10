@@ -49,6 +49,7 @@ mod imp {
         pub(crate) cursor_position: Option<Position>,
         pub(crate) default_colors: Option<DefaultColors>,
         pub(crate) keyboard_enhancement_supported: Option<bool>,
+        pub(crate) synchronized_output_supported: Option<bool>,
     }
 
     /// Whether the startup probe should query keyboard enhancement support.
@@ -254,10 +255,10 @@ mod imp {
         let mut tty = Tty::open()?;
         match keyboard_probe {
             StartupKeyboardEnhancementProbe::Query => {
-                tty.write_all(b"\x1B[6n\x1B]10;?\x1B\\\x1B]11;?\x1B\\\x1B[?u\x1B[c")?;
+                tty.write_all(b"\x1B[6n\x1B]10;?\x1B\\\x1B]11;?\x1B\\\x1B[?2026$p\x1B[?u\x1B[c")?;
             }
             StartupKeyboardEnhancementProbe::Skip => {
-                tty.write_all(b"\x1B[6n\x1B]10;?\x1B\\\x1B]11;?\x1B\\")?;
+                tty.write_all(b"\x1B[6n\x1B]10;?\x1B\\\x1B]11;?\x1B\\\x1B[?2026$p")?;
             }
         }
         read_startup_probe(&mut tty, timeout, keyboard_probe)
@@ -301,6 +302,7 @@ mod imp {
             cursor_position: None,
             default_colors: None,
             keyboard_enhancement_supported: None,
+            synchronized_output_supported: None,
         };
         let mut saw_supported_keyboard = false;
         loop {
@@ -338,6 +340,9 @@ mod imp {
         if probe.default_colors.is_none() {
             probe.default_colors = parse_default_colors(buffer);
         }
+        if probe.synchronized_output_supported.is_none() {
+            probe.synchronized_output_supported = parse_synchronized_output_support(buffer);
+        }
         if keyboard_probe == StartupKeyboardEnhancementProbe::Skip
             || probe.keyboard_enhancement_supported.is_some()
         {
@@ -363,6 +368,7 @@ mod imp {
     ) -> bool {
         probe.cursor_position.is_some()
             && probe.default_colors.is_some()
+            && probe.synchronized_output_supported.is_some()
             && (keyboard_probe == StartupKeyboardEnhancementProbe::Skip
                 || probe.keyboard_enhancement_supported.is_some())
     }
@@ -488,9 +494,39 @@ mod imp {
             .filter_map(move |(idx, window)| (window == needle).then_some(idx))
     }
 
+    fn parse_synchronized_output_support(bytes: &[u8]) -> Option<bool> {
+        const PREFIX: &[u8] = b"\x1b[?2026;";
+        bytes.windows(PREFIX.len() + 3).find_map(|response| {
+            if response.starts_with(PREFIX) && response.ends_with(b"$y") {
+                match response[PREFIX.len()] {
+                    b'1' | b'2' | b'3' => Some(true),
+                    b'0' | b'4' => Some(false),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn synchronized_output_requires_a_supported_mode_report() {
+            for status in [b'1', b'2', b'3'] {
+                let response = [b"\x1b[?2026;".as_slice(), &[status], b"$y"].concat();
+                assert_eq!(parse_synchronized_output_support(&response), Some(true));
+            }
+            for status in [b'0', b'4'] {
+                let response = [b"\x1b[?2026;".as_slice(), &[status], b"$y"].concat();
+                assert_eq!(parse_synchronized_output_support(&response), Some(false));
+            }
+            for response in [b"".as_slice(), b"\x1b[?2026;2$", b"\x1b[?2004;2$y"] {
+                assert_eq!(parse_synchronized_output_support(response), None);
+            }
+        }
         use pretty_assertions::assert_eq;
 
         #[test]
@@ -535,12 +571,13 @@ mod imp {
                 cursor_position: None,
                 default_colors: None,
                 keyboard_enhancement_supported: None,
+                synchronized_output_supported: None,
             };
             let mut saw_supported_keyboard = false;
             update_startup_probe(
                 &mut probe,
                 &mut saw_supported_keyboard,
-                b"\x1B[20;10R\x1B]11;rgb:1111/1111/1111\x07\x1B[?64;1;2c\x1B]10;rgb:eeee/eeee/eeee\x1B\\\x1B[?7u",
+                b"\x1B[20;10R\x1B]11;rgb:1111/1111/1111\x07\x1B[?64;1;2c\x1B]10;rgb:eeee/eeee/eeee\x1B\\\x1B[?7u\x1B[?2026;2$y",
                 StartupKeyboardEnhancementProbe::Query,
             );
 
@@ -553,6 +590,7 @@ mod imp {
                         bg: (17, 17, 17),
                     }),
                     keyboard_enhancement_supported: Some(true),
+                    synchronized_output_supported: Some(true),
                 }
             );
             assert!(startup_probe_complete(

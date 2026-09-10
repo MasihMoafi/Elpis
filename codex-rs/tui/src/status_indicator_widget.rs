@@ -246,11 +246,9 @@ impl Renderable for StatusIndicatorWidget {
         let now = Instant::now();
         let elapsed_duration = self.elapsed_duration_at(now);
         let pretty_elapsed = fmt_elapsed_compact(elapsed_duration.as_secs());
-        let mut spans = crate::motion::shimmer_text(
+        let mut spans = crate::elpis_motion::animated_text(
             &self.header,
-            crate::motion::MotionMode::from_animations_enabled(
-                self.animations_enabled && !self.is_paused,
-            ),
+            self.animations_enabled && !self.is_paused,
         );
         if !spans.is_empty() {
             spans.push(" ".into());
@@ -301,6 +299,39 @@ mod tests {
     use tokio::sync::mpsc::unbounded_channel;
 
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn elpising_uses_orange_yellow_gradient_without_a_leading_spinner() {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (222, 222, 219),
+                bg: (17, 18, 20),
+            },
+            || {
+                for animated in [false, true] {
+                    let (tx, _rx) = unbounded_channel::<AppEvent>();
+                    let widget = StatusIndicatorWidget::new(
+                        AppEventSender::new(tx),
+                        FrameRequester::test_dummy(),
+                        animated,
+                    );
+                    let area = Rect::new(0, 0, 80, 2);
+                    let mut buffer = Buffer::empty(area);
+                    widget.render(area, &mut buffer);
+                    assert_eq!(buffer[(0, 0)].symbol(), "E");
+                    for column in 0..7 {
+                        let ratatui::style::Color::Rgb(r, g, b) = buffer[(column, 0)].fg else {
+                            panic!("expected a true-color header");
+                        };
+                        assert!(
+                            r >= g && g > b,
+                            "Elpising must retain its orange-yellow palette"
+                        );
+                    }
+                }
+            },
+        );
+    }
 
     #[test]
     fn fmt_elapsed_compact_formats_seconds_minutes_hours() {

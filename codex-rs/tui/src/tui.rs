@@ -74,6 +74,7 @@ pub type Terminal = CustomTerminal<CrosstermBackend<Stdout>>;
 pub(crate) struct InitializedTerminal {
     pub(crate) terminal: Terminal,
     pub(crate) enhanced_keys_supported: bool,
+    pub(crate) synchronized_output_supported: bool,
     pub(crate) stderr_guard: terminal_stderr::TerminalStderrGuard,
 }
 
@@ -404,6 +405,7 @@ pub(crate) fn init() -> Result<InitializedTerminal> {
                     cursor_position = probe.cursor_position.is_some(),
                     default_colors = probe.default_colors.is_some(),
                     keyboard_enhancement_supported = ?probe.keyboard_enhancement_supported,
+                    synchronized_output_supported = ?probe.synchronized_output_supported,
                     "terminal startup probes completed"
                 );
                 probe
@@ -417,6 +419,7 @@ pub(crate) fn init() -> Result<InitializedTerminal> {
                     cursor_position: None,
                     default_colors: None,
                     keyboard_enhancement_supported: None,
+                    synchronized_output_supported: None,
                 }
             }
         }
@@ -438,6 +441,11 @@ pub(crate) fn init() -> Result<InitializedTerminal> {
     let enhanced_keys_supported = startup_probe
         .keyboard_enhancement_supported
         .unwrap_or(/*default*/ false);
+    #[cfg(unix)]
+    let synchronized_output_supported =
+        startup_probe.synchronized_output_supported.unwrap_or(false);
+    #[cfg(not(unix))]
+    let synchronized_output_supported = true;
 
     #[cfg(not(unix))]
     let mut backend = CrosstermBackend::new(stdout());
@@ -457,6 +465,7 @@ pub(crate) fn init() -> Result<InitializedTerminal> {
     Ok(InitializedTerminal {
         terminal: tui,
         enhanced_keys_supported,
+        synchronized_output_supported,
         stderr_guard,
     })
 }
@@ -537,6 +546,7 @@ pub struct Tui {
     // True when terminal/tab is focused; updated internally from crossterm events
     terminal_focused: Arc<AtomicBool>,
     enhanced_keys_supported: bool,
+    synchronized_output_supported: bool,
     notification_backend: Option<DesktopNotificationBackend>,
     notification_condition: NotificationCondition,
     // Raw terminal-wrapped history needs a non-scroll-region insertion path in Zellij.
@@ -564,10 +574,20 @@ where
     terminal.clear_after_position(clear_position)
 }
 
+fn with_synchronized_update(supported: bool, draw: impl FnOnce() -> Result<()>) -> Result<()> {
+    if supported {
+        stdout().sync_update(|_| draw())?
+    } else {
+        // Unsupported DEC mode changes can cancel native selections in VTE terminals.
+        draw()
+    }
+}
+
 impl Tui {
     pub(crate) fn new(
         terminal: Terminal,
         enhanced_keys_supported: bool,
+        synchronized_output_supported: bool,
         stderr_guard: terminal_stderr::TerminalStderrGuard,
     ) -> Self {
         let (draw_tx, _) = broadcast::channel(1);
@@ -590,6 +610,7 @@ impl Tui {
             alt_screen_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
             enhanced_keys_supported,
+            synchronized_output_supported,
             notification_backend: Some(detect_backend(NotificationMethod::default())),
             notification_condition: NotificationCondition::default(),
             is_zellij,
@@ -890,7 +911,7 @@ impl Tui {
 
         ensure_virtual_terminal_processing()?;
 
-        stdout().sync_update(|_| {
+        with_synchronized_update(self.synchronized_output_supported, || {
             #[cfg(unix)]
             if let Some(prepared) = prepared_resume.take() {
                 prepared.apply(&mut self.terminal)?;
@@ -944,7 +965,7 @@ impl Tui {
             terminal.draw(|frame| {
                 draw_fn(frame);
             })
-        })?
+        })
     }
 
     /// Draw a frame using the resize-reflow viewport and history insertion rules.
@@ -966,7 +987,7 @@ impl Tui {
 
         ensure_virtual_terminal_processing()?;
 
-        stdout().sync_update(|_| {
+        with_synchronized_update(self.synchronized_output_supported, || {
             #[cfg(unix)]
             if let Some(prepared) = prepared_resume.take() {
                 prepared.apply(&mut self.terminal)?;
@@ -1002,7 +1023,7 @@ impl Tui {
             terminal.draw(|frame| {
                 draw_fn(frame);
             })
-        })?
+        })
     }
 
     fn pending_viewport_area(&mut self) -> Result<Option<Rect>> {

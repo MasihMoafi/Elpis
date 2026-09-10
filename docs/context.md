@@ -36,7 +36,8 @@ strategy; that value does not establish automatic invocation.
 runs before a user turn when remaining usable context is at or below N percent.
 N may be any finite positive number below 70, including decimals. Settings live
 in `compaction.json` in the runtime home; absence preserves the native policy.
-Masih's local threshold is 25. This does not enable Smart Prune or automatic memory.
+The local runtime threshold was changed from 25 to 30 at Masih's request.
+This does not enable Smart Prune or automatic memory.
 
 `/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
 does not run Ace first. Separately, automatic native compaction uses the donor model-window

@@ -624,8 +624,11 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
             column += width.max(1); // treat zero-width symbols as width 1
         }
 
-        if last_nonblank_column + 1 < row.len() {
-            let (x, y) = a.pos_of(row_start + last_nonblank_column + 1);
+        let tail_start = row_start + last_nonblank_column + 1;
+        if tail_start < row_end
+            && next_buffer[tail_start..row_end] != previous_buffer[tail_start..row_end]
+        {
+            let (x, y) = a.pos_of(tail_start);
             updates.push(DrawCommand::ClearToEnd { x, y, bg });
         }
 
@@ -893,6 +896,25 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn identical_frames_do_not_erase_terminal_selections() {
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 80, 2));
+        buffer.set_string(0, 0, "Keep this selected transcript", Style::default());
+        assert!(diff_buffers(&buffer, &buffer).is_empty());
+    }
+
+    #[test]
+    fn animating_a_label_does_not_clear_other_rows() {
+        let mut previous = Buffer::empty(Rect::new(0, 0, 80, 2));
+        previous.set_string(0, 0, "Keep this selected transcript", Style::default());
+        previous.set_string(0, 1, "Elpising", Style::default());
+        let mut next = previous.clone();
+        next[(0, 1)].set_fg(Color::Yellow);
+        let commands = diff_buffers(&previous, &next);
+        assert_eq!(commands.len(), 1);
+        assert!(matches!(commands[0], DrawCommand::Put { x: 0, y: 1, .. }));
     }
 
     #[test]
