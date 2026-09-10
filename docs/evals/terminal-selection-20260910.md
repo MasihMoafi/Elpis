@@ -144,3 +144,21 @@ Local evidence: `.tmp/final-candidate/tui-slash-queue-full.log`,
 `slash-queue-native/result.json` in the same directory. Generated `.snap.new`
 files are unaccepted diagnostic evidence. The previous full verification process
 stopped during compilation without a result file and must be rerun.
+
+## Regression follow-up, 2026-09-11
+
+Commit `66cffdd1` recognizes both runtime spellings of archived-session guidance
+and presents `elpis unarchive`. The positive cases cover resume/fork and both
+spellings; the negative case preserves an unrelated startup error. Both tests pass.
+
+Six visual snapshots were individually reviewed and updated for the removed
+spinner, ledger shortcuts, and explicitly unmeasured context. Status visibility
+tests now allocate the component's requested height. The manual-memory composer
+test drains only the initial skill-list operation before asserting that blocked
+input cannot submit a turn. These checks pass in commit `becb0734`.
+
+The complete TUI suite reports **2,970 passed, 171 failed, 5 ignored** in
+`.tmp/final-candidate/tui-status-memory-full.log`. The full-surface check caught a
+formatting issue, corrected in `12660d48`, and restarted under
+`.tmp/final-candidate/full-surface-after-format.log`. No full-surface pass or new
+installation/release is claimed.
