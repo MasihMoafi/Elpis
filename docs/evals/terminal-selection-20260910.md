@@ -3,7 +3,58 @@
 The release goal is still open. Passing focused checks does not establish that
 the terminal glitch is fixed or that the full candidate is ready to publish.
 
-## Changes checked
+## Later queue, startup, and IDE checks
+
+The next optimized candidate is
+`a026a83a3321752a6ecbbbadd10e7a7265f84f449afc4ce9b0f65bb806073e28`.
+It is built but not installed. Its changes are committed in `7b25ef10`
+(reachable queue shortcut), `b95b9abd` (startup delay), and `612b6c49`
+(context-test expectations).
+
+- Ctrl+Q is the default explicit queue shortcut; Tab remains ledger-only.
+  A real VTE test failed before the binding change, passed with a profile override,
+  and then passed with the rebuilt default. Two messages remained unsent during
+  the active response, and Up returned both to the composer for editing.
+- Startup no longer waits for a 2.3-second cosmetic minimum. The loading animation
+  still runs while initialization is pending. The rebuilt candidate reached ready
+  in 229 ms with animations enabled in the controlled test. The earlier animated
+  candidate took 2,473 ms; three reduced-motion controls took 131–196 ms. These are
+  local fixture measurements, not a claim about every account or project.
+- 100 focused Rust checks passed: queue/Tab (6), startup (5), keymap (64), and
+  context-usage (25), with two manual visual tests ignored. The new ready-work
+  test ensures completed initialization does not wait for the entrance animation.
+- The candidate passed a real VS Code integrated-terminal test using native keys
+  and mouse events: Tab hide/show during a response, panel shrink/expand, draft
+  preservation, two queued messages recalled with Up, and three exact drag-copy
+  trials. The installed binary also passed three selection trials in that
+  terminal. These results do not erase the VTE failures recorded below.
+- All 44 editor unit tests passed against the installed 0.1.19 runtime. The runtime
+  extracted from its VSIX matches the installed runtime and passed the shipping
+  smoke test in cached Ubuntu 24.04: unprivileged fresh home, read-only root,
+  no network, no account, successful initialization and configuration read.
+
+The first full verification sequence passed the workspace check and 38 dashboard
+tests, then stopped on two context checks. One expected the old Tab help text;
+the other was a stale uppercase `ELPIS` assertion in a shared test helper, not a
+production context-measurement failure. Both expectations were corrected.
+The full sequence is being rerun in `full-surface-after-queue.log`.
+
+The complete updated TUI binary still reports **2,938 passed, 202 failed,
+5 ignored**. Those failures remain to be audited. No broad snapshot acceptance
+or claim of full correctness has been made.
+
+Additional local evidence: `queue-native.log`, `queue-default-fixed.log`,
+`selection-no-motion.log`, `queue-startup-build.log`,
+`queue-startup-test-build.log`, `queue-startup-focused.log`,
+`tui-full-after-queue.log`, `vscode-terminal-queue.log`,
+`vscode-terminal-verified-result.json`, `vscode-terminal-verified.png`,
+`editor-unit-final.log`, and `ide-clean-container.log`. The first IDE terminal
+attempt injected text before startup was complete; later attempts used the
+recorded ready event and native key events. A screen-reader-mode trial had
+different Tab focus behavior; the passing combined test used normal keyboard
+mode and the DOM terminal renderer.
+
+## Earlier probe and redraw checks
 
 - `Elpising…` uses the animated orange-yellow palette; its separate leading
   spinner stays removed. The Elpis name keeps its original static color.
