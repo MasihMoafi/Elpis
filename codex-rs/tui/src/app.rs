@@ -749,13 +749,15 @@ fn session_start_error(
 fn archived_session_guidance(err: &color_eyre::eyre::Report) -> Option<String> {
     let err = err.to_string();
     let message = &err[err.find("session ")?..];
-    if !message.contains(" is archived. Run `elpis unarchive ") {
+    if !message.contains(" is archived. Run `elpis unarchive ")
+        && !message.contains(" is archived. Run `codex unarchive ")
+    {
         return None;
     }
     let message = message
         .split_once(" (code ")
         .map_or(message, |(message, _)| message);
-    Some(message.to_string())
+    Some(message.replace("`codex unarchive ", "`elpis unarchive "))
 }
 
 fn active_turn_interrupt_race(error: &TypedRequestError) -> Option<String> {

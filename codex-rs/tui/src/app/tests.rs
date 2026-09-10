@@ -5255,19 +5255,42 @@ fn session_start_error_surfaces_archived_guidance_without_rollout_path() {
         thread_id,
     };
     let expected = format!(
-        "session {thread_id} is archived. Run `codex unarchive {thread_id}` to unarchive it first."
+        "session {thread_id} is archived. Run `elpis unarchive {thread_id}` to unarchive it first."
     );
 
     for action in ["resume", "fork"] {
-        let err = color_eyre::eyre::eyre!(
-            "thread/{action} failed during TUI bootstrap: thread/{action} failed: {expected} (code -32600)"
-        );
+        for program in ["elpis", "codex"] {
+            let guidance = expected.replace("`elpis unarchive ", &format!("`{program} unarchive "));
+            let err = color_eyre::eyre::eyre!(
+                "thread/{action} failed during TUI bootstrap: thread/{action} failed: {guidance} (code -32600)"
+            );
 
-        assert_eq!(
-            session_start_error(action, &target_session, err).to_string(),
-            expected
-        );
+            assert_eq!(
+                session_start_error(action, &target_session, err).to_string(),
+                expected
+            );
+        }
     }
+}
+
+#[test]
+fn session_start_error_preserves_unrelated_failure_details() {
+    let target_session = SessionTarget {
+        path: None,
+        thread_id: ThreadId::new(),
+    };
+    let err = session_start_error(
+        "resume",
+        &target_session,
+        color_eyre::eyre::eyre!("session metadata could not be read"),
+    );
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "Failed to resume session from {}: session metadata could not be read",
+            target_session.display_label()
+        )
+    );
 }
 
 #[test]
