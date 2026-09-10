@@ -218,6 +218,7 @@ async fn harness(enabled: bool) -> Result<TestCodexHarness> {
 async fn saved_pruner_settings_reach_only_optimizer_and_its_audit() -> Result<()> {
     skip_if_host_windows!(Ok(()));
     let marker = "Preserve the PRUNER_ONLY_MARKER_42 fact.";
+    let default_policy = "including facts not asked about in active_request";
     for custom in [true, false] {
         let harness = harness_for_model(true, CACHE_TEST_MODEL).await?;
         let settings = if custom {
@@ -252,8 +253,11 @@ async fn saved_pruner_settings_reach_only_optimizer_and_its_audit() -> Result<()
             }
         );
         assert_eq!(requests[1].body_contains_text(marker), custom);
+        assert_eq!(requests[1].body_contains_text(default_policy), !custom);
         assert!(!requests[0].body_contains_text(marker));
         assert!(!requests[2].body_contains_text(marker));
+        assert!(!requests[0].body_contains_text(default_policy));
+        assert!(!requests[2].body_contains_text(default_policy));
         let audit = only_attempt_record(&harness)?;
         assert_eq!(
             audit["instructions"]
@@ -262,6 +266,12 @@ async fn saved_pruner_settings_reach_only_optimizer_and_its_audit() -> Result<()
             custom
         );
         assert_eq!(audit["model"], requests[1].body_json()["model"]);
+        assert_eq!(
+            audit["instructions"]
+                .as_str()
+                .is_some_and(|text| text.contains(default_policy)),
+            !custom
+        );
     }
     Ok(())
 }
@@ -388,7 +398,7 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].body_json()["model"], CACHE_TEST_MODEL);
     assert_eq!(requests[1].body_json()["model"], SMART_PRUNE_MODEL);
-    assert_eq!(requests[1].body_json()["reasoning"]["effort"], "max");
+    assert_eq!(requests[1].body_json()["reasoning"]["effort"], "low");
     assert_eq!(requests[2].body_json()["model"], CACHE_TEST_MODEL);
     assert_eq!(
         requests[0].body_json()["reasoning"],
@@ -512,7 +522,7 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
     let attempt = only_attempt_record(&harness)?;
     assert_eq!(attempt["status"], "admitted");
     assert_eq!(attempt["model"], SMART_PRUNE_MODEL);
-    assert_eq!(attempt["reasoning_effort"], "max");
+    assert_eq!(attempt["reasoning_effort"], "low");
     assert_eq!(attempt["candidate_outputs"], 1);
     assert_eq!(attempt["admitted_outputs"], 1);
     assert_eq!(attempt["saved_tokens"], admission_manifest["saved_tokens"]);
@@ -645,7 +655,7 @@ async fn smart_prune_malformed_reply_fails_open() -> Result<()> {
     let attempt = only_attempt_record(&harness)?;
     assert_eq!(attempt["status"], "malformed_response");
     assert_eq!(attempt["model"], SMART_PRUNE_MODEL);
-    assert_eq!(attempt["reasoning_effort"], "max");
+    assert_eq!(attempt["reasoning_effort"], "low");
     assert_eq!(attempt["candidate_outputs"], 1);
     assert_eq!(attempt["admitted_outputs"], 0);
     assert_eq!(attempt["raw_response"], "not valid JSON");

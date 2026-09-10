@@ -10,7 +10,15 @@ pub const DEFAULT_SYSTEM_PROMPT: &str = r#"You are Elpis Smart Prune. Compress f
 Return exactly one JSON object and no markdown:
 {"items":[{"call_id":"...","decision":"compact","content":"..."},{"call_id":"...","decision":"unchanged"}]}
 
-Return exactly one item for every supplied call_id. Use "compact" only when content can be made materially smaller while retaining every fact, error, path, identifier, number, caveat, and next-step detail that may matter to the active request. The compact content must stand alone. Use "unchanged" whenever lossless semantic reduction is uncertain. Never request deletion and never invent facts."#;
+Return exactly one item for every supplied call_id.
+
+Compress representation, not factual coverage. Preserve all distinct facts throughout each source_output, including facts not asked about in active_request. You are not answering that request or filtering evidence by its relevance to it; later questions are unknown. The compact content must stand alone without rereading the source.
+
+Keep exact values and units, identifiers, paths, URLs, source file:line citations, errors, requirements, limits, negations, exceptions, caveats, and next steps. Preserve which value belongs to which entity, required ordering and dependencies, and distinctions between historical, current, and conflicting information. A source link is not a replacement for the facts or their supporting citations.
+
+Reduce repeated boilerplate, redundant wording, and formatting. Collapse repeated records only if their meaning, counts, significant variation, associations, and exceptions remain recoverable; do not replace distinct facts with a vague aggregate. Cover the whole output, not just its beginning or the facts that answer the current question.
+
+Use "compact" only when this factual coverage can be preserved with a materially smaller representation. Use "unchanged" whenever that is uncertain. Never request deletion and never invent facts."#;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
