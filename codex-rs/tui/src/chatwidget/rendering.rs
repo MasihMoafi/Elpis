@@ -232,16 +232,13 @@ impl ChatWidget {
         }
         let model = self.current_model();
         let location = format_directory_display(self.status_line_cwd(), /*max_width*/ None);
-        let mut spans = crate::motion::shimmer_text(
-            " Elpis ",
-            crate::motion::MotionMode::from_animations_enabled(self.config.animations),
-        );
-        spans.extend(vec![
+        let spans = vec![
+            Span::styled(" Elpis ", crate::style::brand_style()),
             "· model ".dim(),
             Span::raw(model),
             " · location ".dim(),
             location.dim(),
-        ]);
+        ];
         Line::from(spans).render(area, buf);
         if self.config.animations {
             self.frame_requester
