@@ -32,6 +32,12 @@ Automatic Ace pruning is **off by default**. `/settings` labels it `Automatic pr
 pruning is off. `/force-prune` records `pressure` in its audit to name the targeted selection
 strategy; that value does not establish automatic invocation.
 
+`/compact N` saves a pressure threshold for subsequent user turns. Native compaction
+runs before a user turn when remaining usable context is at or below N percent.
+N may be any finite positive number below 70, including decimals. Settings live
+in `compaction.json` in the runtime home; absence preserves the native policy.
+Masih's local threshold is 25. This does not enable Smart Prune or automatic memory.
+
 `/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
 does not run Ace first. Separately, automatic native compaction uses the donor model-window
 threshold and usable-window headroom. The Context Ledger's exact used-token number is

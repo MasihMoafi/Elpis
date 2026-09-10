@@ -47,6 +47,13 @@ The product succeeds only when these behaviors pass their acceptance checks and 
 
 ## Proof Standard
 
+The September 10 local build is installed for acceptance. Tab exclusively shows
+or hides the Context Ledger, including during active turns. Up in an empty
+composer recalls all queued follow-ups in order. Label colors animate without
+dissolving transcript text; the animation beside “Elpising” is removed. See
+[`evals/final-delivery-20260910.md`](evals/final-delivery-20260910.md) for the
+installed CLI/editor evidence, pressure compaction, recovery status, and checklist.
+
 A feature is real only when its user-visible acceptance check passes and the evidence is recorded. Documentation, hidden code, or a plausible architecture is not proof. `TASKS.md` is the current-state record against this standard.
 
 The defining evaluation is whether a fresh supported runtime can enter Elpis, receive the right current goal and relevant history, obey creator rules, perform visible work under the chosen permission mode, and resume later without irrelevant context.
