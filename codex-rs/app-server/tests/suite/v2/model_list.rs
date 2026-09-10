@@ -7,6 +7,7 @@ use app_test_support::TestAppServer;
 use app_test_support::to_response;
 use app_test_support::write_chatgpt_auth;
 use app_test_support::write_models_cache;
+use app_test_support::write_models_cache_with_models;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::Model;
@@ -163,7 +164,13 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
 #[tokio::test]
 async fn list_models_includes_hidden_models() -> Result<()> {
     let codex_home = TempDir::new()?;
-    write_models_cache(codex_home.path())?;
+    write_models_cache_with_models(
+        codex_home.path(),
+        vec![
+            remote_model_info("fixture-visible", "list")?,
+            remote_model_info("fixture-hidden", "hide")?,
+        ],
+    )?;
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
@@ -172,28 +179,43 @@ async fn list_models_includes_hidden_models() -> Result<()> {
 
     timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
-    let request_id = mcp
-        .send_list_models_request(ModelListParams {
-            limit: Some(100),
-            cursor: None,
-            include_hidden: Some(true),
-            model_provider: None,
-        })
-        .await?;
+    for include_hidden in [Some(true), Some(false), None] {
+        let request_id = mcp
+            .send_list_models_request(ModelListParams {
+                limit: Some(100),
+                cursor: None,
+                include_hidden,
+                model_provider: None,
+            })
+            .await?;
 
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
+        let response: JSONRPCResponse = timeout(
+            DEFAULT_TIMEOUT,
+            mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+        )
+        .await??;
 
-    let ModelListResponse {
-        data: items,
-        next_cursor,
-    } = to_response::<ModelListResponse>(response)?;
-
-    assert!(items.iter().any(|item| item.hidden));
-    assert!(next_cursor.is_none());
+        let ModelListResponse {
+            data: mut items,
+            next_cursor,
+        } = to_response::<ModelListResponse>(response)?;
+        items.sort_by(|a, b| a.model.cmp(&b.model));
+        let expected = if include_hidden == Some(true) {
+            vec![("fixture-hidden", true), ("fixture-visible", false)]
+        } else {
+            assert!(items.iter().all(|item| !item.hidden));
+            vec![("fixture-visible", false)]
+        };
+        assert_eq!(
+            items
+                .iter()
+                .filter(|item| item.model.starts_with("fixture-"))
+                .map(|item| (item.model.as_str(), item.hidden))
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(next_cursor.is_none());
+    }
     Ok(())
 }
 
