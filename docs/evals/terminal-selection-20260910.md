@@ -162,3 +162,22 @@ The complete TUI suite reports **2,970 passed, 171 failed, 5 ignored** in
 formatting issue, corrected in `12660d48`, and restarted under
 `.tmp/final-candidate/full-surface-after-format.log`. No full-surface pass or new
 installation/release is claimed.
+
+## UI fixture review, September 11
+
+Commit `4fd4c759` updates 25 snapshots where the main dialog content is unchanged
+and only the ledger differs. The complete set of replacement ledger text was
+reviewed: shortcut hints, unmeasured context, and the existing pruning status.
+The comparison is recorded in `.tmp/final-candidate/ledger-snapshot-review.json`
+and `ledger-snapshot-verification.json`; the latter confirms unchanged main content
+and no unreviewed replacement ledger text for all 25 snapshots.
+
+Three app snapshots were reviewed separately against the current header/ledger
+design. Their shared header renderer excludes the build-only debug badge from
+snapshot comparison. Completion tests now use the listed `/rename` command and
+retain their draft-preservation and suffix checks.
+
+The optimized test build passed in 209,514 ms, peak 73°C. The complete TUI run,
+including the restored pruning policy, reports **3,000 passed, 141 failed,
+5 ignored** in `.tmp/final-candidate/tui-ledger-fixtures-full.log`. This batch
+corrects stale fixtures; it does not prove the remaining terminal glitch resolved.
