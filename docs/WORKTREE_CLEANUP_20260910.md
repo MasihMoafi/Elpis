@@ -144,14 +144,21 @@ Confirmed in current source:
 - Project-specific IDE approval modes, explicit full-access confirmation, and
   applying the selected policy to the runtime are present in the VS Code source.
 
-Important remaining recovery work: the stronger fact-preservation instructions
-from `ace-fact-preservation` are absent from the current canonical default in
-`core/src/pruner_settings.rs`. The existing
+Commit `5597b870` restores the stronger fact-preservation instructions from
+`ace-fact-preservation` into the canonical default in `core/src/pruner_settings.rs`.
+Its SHA256 exactly matches the recorded evaluation policy:
+`ddd4d0909c81bb979c8346686524af8c15e9c8914a77e974964853f171719b61`. The existing
 [bounded evaluation](evals/rq3/BOUNDED_SYNTHETIC_EVALUATION.md) records a canary that
 lost two unasked requirements under the earlier policy and passed under the
-revised policy. That is development evidence, not a universal guarantee. Restore
-and verify the compatible instructions through the current settings path before
-claiming recovery complete. The archived V2-agent reload implementation is also
+revised policy. That is development evidence, not a universal guarantee. A new
+request-path regression failed on the old default and passes after restoration;
+all 20 Smart Prune integration tests pass. They cover default/custom routing,
+audit records, unchanged main-model settings, and preservation on failures.
+The debug test required `RUST_MIN_STACK=16777216`; the initial overflow and failing
+policy check are retained in `.tmp/final-candidate/recovered-policy-before*.log`.
+Passing evidence is `recovered-policy-final.log` in the same directory.
+
+This source fix has not yet been installed or released. The archived V2-agent reload implementation is also
 absent by its original entry-point names; its compatibility review remains open.
 
 Do not equate one worktree with all experiments having been integrated or accepted.
