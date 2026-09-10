@@ -38,9 +38,30 @@ old helper demonstrably timed out in the warm-background regression case.
 Changed Rust formatting, dashboard JavaScript syntax, and the diff excluding
 intentionally padded snapshot files pass their checks.
 
-The optimized executable build is in progress. Installation and smoke results
-will be recorded before pushing. No public release is requested. The separately
-installed IDE 0.1.18 fix and its evidence are in `ide-startup-20260910.md`.
+The optimized executable build completed in 48m 33s, sampled peak 73 C, with three
+short thermal pauses. The artifact passed the developer-path scan. `--version`
+and `--help` pass; a fresh-home PTY launch reached the UI and exited cleanly with
+hooks disabled and no provider prompt. The temporary-home helper-alias guard
+warned as expected. This is local launch evidence, not clean-machine validation.
+
+The executable is installed as `~/.local/bin/elpis` and reports `elpis 0.2.0`.
+Built and installed SHA256 match:
+`6994b88681a8ad1c385374226f6853ce57d7becd019bd80250771d2ce570cf5c`.
+The previous executable and extension are retained in
+`~/.local/share/elpis/release-recovery/latest-cli-20260910-MocvHE/`.
+Rollback on this workstation uses `scripts/install-elpis-binary.sh` with that
+directory's `elpis-before` file. Existing running processes retain their old binary.
+
+Source is integrated into main and pushed to `build/latest-cli-20260910`. Rust and
+editor subtree hashes match across local main, the candidate, and the pushed
+source. Post-integration startup and parser checks pass. Other user edits remain
+preserved. Main plus one active candidate worktree are retained.
+
+No public release was made. The separately installed IDE 0.1.18 fix and its
+evidence are in `ide-startup-20260910.md`. The context chart is estimated:
+`context-attribution-audit-20260910.md` records why the observed 18% is reproducible
+but not a validated pure-reasoning measurement. The category includes compaction;
+its accuracy is not established by the passing rendering tests.
 
 ## User checks
 
