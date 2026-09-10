@@ -695,7 +695,7 @@ async fn replayed_turn_complete_submits_restored_queued_follow_up() {
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -747,7 +747,7 @@ async fn replay_only_thread_keeps_restored_queue_visible() {
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -798,7 +798,7 @@ async fn replay_thread_snapshot_keeps_queue_when_running_state_only_comes_from_s
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -847,7 +847,7 @@ async fn replay_thread_snapshot_in_progress_turn_restores_running_queue_state() 
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -918,7 +918,7 @@ async fn replay_thread_snapshot_does_not_submit_queue_before_replay_catches_up()
     app.chat_widget
         .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        .handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
     let input_state = app
         .chat_widget
         .capture_thread_input_state()

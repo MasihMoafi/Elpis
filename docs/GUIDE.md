@@ -47,12 +47,17 @@ The product succeeds only when these behaviors pass their acceptance checks and 
 
 ## Proof Standard
 
-The September 10 local build is installed for acceptance. Tab exclusively shows
-or hides the Context Ledger, including during active turns. Up in an empty
-composer recalls all queued follow-ups in order. Label colors animate without
+The September 10 installed build is under acceptance; further corrections remain
+in progress. The current candidate's controls are: Tab exclusively shows
+or hides the Context Ledger, including during active turns. Ctrl+Q queues a
+follow-up without sending it during the current turn. Up in an empty composer
+recalls all queued follow-ups in order. Label colors animate without
 dissolving transcript text; the animation beside “Elpising” is removed. See
 [`evals/final-delivery-20260910.md`](evals/final-delivery-20260910.md) for the
 installed CLI/editor evidence, pressure compaction, recovery status, and checklist.
+The later queue-shortcut and terminal corrections are tracked separately in
+[`evals/terminal-selection-20260910.md`](evals/terminal-selection-20260910.md);
+they are not yet installed.
 
 A feature is real only when its user-visible acceptance check passes and the evidence is recorded. Documentation, hidden code, or a plausible architecture is not proof. `TASKS.md` is the current-state record against this standard.
 

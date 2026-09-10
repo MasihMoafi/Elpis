@@ -1498,9 +1498,32 @@ fn queued_message_edit_binding_mapping_covers_special_terminals_and_tmux() {
     );
 }
 
-/// Pressing Up to recall the most recent history entry and immediately queuing
-/// it while a task is running should always enqueue the same text, even when it
-/// is queued repeatedly.
+#[tokio::test]
+async fn control_q_queues_followups_and_up_recalls_all_for_editing() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane.set_task_running(true);
+    while op_rx.try_recv().is_ok() {}
+
+    for message in ["first queued message", "second queued message"] {
+        chat.bottom_pane
+            .set_composer_text(message.to_string(), Vec::new(), Vec::new());
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+        assert!(chat.bottom_pane.composer_text().is_empty());
+    }
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 2);
+    assert!(
+        op_rx.try_recv().is_err(),
+        "queuing must not send a user turn"
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    let draft = chat.bottom_pane.composer_text();
+    assert!(draft.starts_with("first queued message"));
+    assert!(draft.ends_with("second queued message"));
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+}
+
 #[tokio::test]
 async fn tab_only_toggles_ledger_while_a_task_is_running() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;

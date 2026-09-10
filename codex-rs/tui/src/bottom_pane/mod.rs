@@ -1316,13 +1316,6 @@ impl BottomPane {
         self.composer.is_empty()
     }
 
-    /// Whether the composer would treat its queue key (`Tab`) as "queue the draft"
-    /// right now. Callers that also want `Tab` for something else (the Context
-    /// Ledger toggle) should yield to the composer only when this is true.
-    pub(crate) fn should_queue_on_tab(&self) -> bool {
-        self.composer.should_queue_on_tab()
-    }
-
     #[cfg(test)]
     pub(crate) fn composer_is_vim_enabled(&self) -> bool {
         self.composer.is_vim_enabled()

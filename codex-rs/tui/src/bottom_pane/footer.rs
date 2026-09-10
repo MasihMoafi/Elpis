@@ -132,7 +132,7 @@ impl FooterKeyHints {
     pub(crate) fn default_bindings() -> Self {
         Self {
             toggle_shortcuts: Some(key_hint::plain(KeyCode::Char('?'))),
-            queue: Some(key_hint::plain(KeyCode::Tab)),
+            queue: Some(crate::keymap::DEFAULT_QUEUE_KEY),
             insert_newline: Some(key_hint::ctrl(KeyCode::Char('j'))),
             external_editor: Some(key_hint::ctrl(KeyCode::Char('g'))),
             edit_previous: Some(key_hint::plain(KeyCode::Esc)),
@@ -895,7 +895,7 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
     let mut commands = Line::from("");
     let mut shell_commands = Line::from("");
     let mut newline = Line::from("");
-    let mut queue_message_tab = Line::from("");
+    let mut queue_message = Line::from("");
     let mut file_paths = Line::from("");
     let mut paste_image = Line::from("");
     let mut external_editor = Line::from("");
@@ -913,7 +913,7 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
                 ShortcutId::Commands => commands = text,
                 ShortcutId::ShellCommands => shell_commands = text,
                 ShortcutId::InsertNewline => newline = text,
-                ShortcutId::QueueMessageTab => queue_message_tab = text,
+                ShortcutId::QueueMessage => queue_message = text,
                 ShortcutId::FilePaths => file_paths = text,
                 ShortcutId::PasteImage => paste_image = text,
                 ShortcutId::ExternalEditor => external_editor = text,
@@ -932,7 +932,7 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
         commands,
         shell_commands,
         newline,
-        queue_message_tab,
+        queue_message,
         file_paths,
         paste_image,
         external_editor,
@@ -1022,7 +1022,7 @@ enum ShortcutId {
     Commands,
     ShellCommands,
     InsertNewline,
-    QueueMessageTab,
+    QueueMessage,
     FilePaths,
     PasteImage,
     ExternalEditor,
@@ -1083,7 +1083,7 @@ impl ShortcutDescriptor {
     fn overlay_entry(&self, state: ShortcutsState) -> Option<Line<'static>> {
         let key = match self.id {
             ShortcutId::InsertNewline => state.key_hints.insert_newline,
-            ShortcutId::QueueMessageTab => state.key_hints.queue,
+            ShortcutId::QueueMessage => state.key_hints.queue,
             ShortcutId::ExternalEditor => state.key_hints.external_editor,
             ShortcutId::EditPrevious => state.key_hints.edit_previous,
             ShortcutId::ShowTranscript => state.key_hints.show_transcript,
@@ -1099,7 +1099,7 @@ impl ShortcutDescriptor {
         }?;
         let mut line = Line::from(vec![self.prefix.into(), key.into()]);
         match self.id {
-            ShortcutId::QueueMessageTab => {
+            ShortcutId::QueueMessage => {
                 if state.is_task_running || state.queue_submissions {
                     line.push_span(" to queue message");
                 } else {
@@ -1165,9 +1165,9 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
         label: " for newline",
     },
     ShortcutDescriptor {
-        id: ShortcutId::QueueMessageTab,
+        id: ShortcutId::QueueMessage,
         bindings: &[ShortcutBinding {
-            key: key_hint::plain(KeyCode::Tab),
+            key: crate::keymap::DEFAULT_QUEUE_KEY,
             condition: DisplayCondition::Always,
         }],
         prefix: "",

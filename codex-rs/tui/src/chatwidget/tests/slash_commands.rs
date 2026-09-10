@@ -83,17 +83,17 @@ fn submit_current_composer(chat: &mut ChatWidget) {
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 }
 
-fn queue_composer_text_with_tab(chat: &mut ChatWidget, text: &str) {
+fn queue_composer_text(chat: &mut ChatWidget, text: &str) {
     chat.bottom_pane
         .set_composer_text(text.to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
 }
 
 fn queue_goal_with_large_paste(chat: &mut ChatWidget, paste: String) {
     chat.bottom_pane
         .set_composer_text("/goal ".to_string(), Vec::new(), Vec::new());
     chat.handle_paste(paste);
-    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
 }
 
 fn recall_latest_after_clearing(chat: &mut ChatWidget) -> String {
@@ -445,7 +445,7 @@ async fn queued_slash_compact_dispatches_after_active_turn() {
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/compact");
+    queue_composer_text(&mut chat, "/compact");
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert_eq!(
@@ -505,7 +505,7 @@ async fn queued_slash_review_with_args_dispatches_after_active_turn() {
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/review check regressions");
+    queue_composer_text(&mut chat, "/review check regressions");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
@@ -526,7 +526,7 @@ async fn queued_slash_review_with_args_restores_for_edit() {
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/review check regressions");
+    queue_composer_text(&mut chat, "/review check regressions");
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
 
     assert_eq!(
@@ -541,7 +541,7 @@ async fn queued_bang_shell_dispatches_after_active_turn() {
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "!echo hi");
+    queue_composer_text(&mut chat, "!echo hi");
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert_eq!(
@@ -570,8 +570,8 @@ async fn queued_empty_bang_shell_reports_help_when_dequeued_and_drains_next_inpu
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "!");
-    queue_composer_text_with_tab(&mut chat, "hello after help");
+    queue_composer_text(&mut chat, "!");
+    queue_composer_text(&mut chat, "hello after help");
 
     assert!(drain_insert_history(&mut rx).is_empty());
 
@@ -607,8 +607,8 @@ async fn queued_bang_shell_waits_for_user_shell_completion_before_next_input() {
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "!echo hi");
-    queue_composer_text_with_tab(&mut chat, "hello after shell");
+    queue_composer_text(&mut chat, "!echo hi");
+    queue_composer_text(&mut chat, "hello after shell");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
@@ -649,8 +649,8 @@ async fn assert_cancelled_queued_menu_drains_next_input(
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, command);
-    queue_composer_text_with_tab(&mut chat, "hello after menu");
+    queue_composer_text(&mut chat, command);
+    queue_composer_text(&mut chat, "hello after menu");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
@@ -710,8 +710,8 @@ async fn queued_settings_selection_applies_before_next_input() {
     chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/model");
-    queue_composer_text_with_tab(&mut chat, "hello after selection");
+    queue_composer_text(&mut chat, "/model");
+    queue_composer_text(&mut chat, "hello after selection");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
@@ -766,8 +766,8 @@ async fn queued_bare_rename_drains_next_input_after_name_update() {
     chat.thread_id = Some(thread_id);
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/rename");
-    queue_composer_text_with_tab(&mut chat, "hello after rename");
+    queue_composer_text(&mut chat, "/rename");
+    queue_composer_text(&mut chat, "hello after rename");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
@@ -817,9 +817,9 @@ async fn queued_inline_rename_does_not_drain_again_before_turn_started() {
     chat.thread_id = Some(thread_id);
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/rename Queued rename");
-    queue_composer_text_with_tab(&mut chat, "first after rename");
-    queue_composer_text_with_tab(&mut chat, "second after rename");
+    queue_composer_text(&mut chat, "/rename Queued rename");
+    queue_composer_text(&mut chat, "first after rename");
+    queue_composer_text(&mut chat, "second after rename");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
@@ -909,7 +909,7 @@ async fn queued_unknown_slash_reports_error_when_dequeued() {
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/does-not-exist");
+    queue_composer_text(&mut chat, "/does-not-exist");
 
     assert!(drain_insert_history(&mut rx).is_empty());
 
@@ -2276,7 +2276,7 @@ async fn queued_menu_slash_keeps_agent_turn_complete_notification() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
-    queue_composer_text_with_tab(&mut chat, "/model");
+    queue_composer_text(&mut chat, "/model");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("Done"));
 
@@ -2738,8 +2738,8 @@ async fn queued_fast_slash_applies_before_next_queued_message() {
     chat.set_feature_enabled(Feature::FastMode, /*enabled*/ true);
     handle_turn_started(&mut chat, "turn-1");
 
-    queue_composer_text_with_tab(&mut chat, "/fast");
-    queue_composer_text_with_tab(&mut chat, "hello after fast");
+    queue_composer_text(&mut chat, "/fast");
+    queue_composer_text(&mut chat, "hello after fast");
 
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 

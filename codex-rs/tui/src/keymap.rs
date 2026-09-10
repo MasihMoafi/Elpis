@@ -20,6 +20,7 @@
 
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
+
 use codex_config::types::KeybindingsSpec;
 use codex_config::types::MAX_FUNCTION_KEY;
 use codex_config::types::TuiKeymap;
@@ -27,6 +28,8 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
 use serde::Serialize;
 use std::collections::HashMap;
+
+pub(crate) const DEFAULT_QUEUE_KEY: KeyBinding = key_hint::ctrl(KeyCode::Char('q'));
 
 /// Runtime keymap used by TUI input handlers.
 ///
@@ -931,7 +934,7 @@ impl RuntimeKeymap {
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
-                queue: default_bindings![plain(KeyCode::Tab)],
+                queue: vec![DEFAULT_QUEUE_KEY],
                 toggle_shortcuts: default_bindings![
                     plain(KeyCode::Char('?')),
                     shift(KeyCode::Char('?'))

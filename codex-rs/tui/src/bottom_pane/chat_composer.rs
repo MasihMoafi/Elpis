@@ -589,7 +589,7 @@ impl ChatComposer {
                     &default_keymap.editor.insert_newline,
                     use_shift_enter_hint,
                 ),
-                queue_key: Some(key_hint::plain(KeyCode::Tab)),
+                queue_key: Some(crate::keymap::DEFAULT_QUEUE_KEY),
                 toggle_shortcuts_key: Some(key_hint::plain(KeyCode::Char('?'))),
                 history_search_key: primary_binding(
                     &default_keymap.composer.history_search_previous,
@@ -626,7 +626,7 @@ impl ChatComposer {
             side_conversation_active: false,
             history_search: None,
             submit_keys: vec![key_hint::plain(KeyCode::Enter)],
-            queue_keys: vec![key_hint::plain(KeyCode::Tab)],
+            queue_keys: vec![crate::keymap::DEFAULT_QUEUE_KEY],
             toggle_shortcuts_keys: vec![
                 key_hint::plain(KeyCode::Char('?')),
                 key_hint::shift(KeyCode::Char('?')),
@@ -3230,7 +3230,7 @@ impl ChatComposer {
         } else {
             self.footer.mode = reset_mode_after_activity(self.footer.mode);
         }
-        if self.queue_keys.is_pressed(key_event) && self.should_queue_on_tab() {
+        if self.queue_keys.is_pressed(key_event) && self.should_queue_input() {
             return self.handle_submission(true);
         }
 
@@ -3286,11 +3286,8 @@ impl ChatComposer {
         self.handle_input_basic(key_event)
     }
 
-    /// Whether pressing the queue key (`Tab` by default) right now should queue the
-    /// draft as a follow-up instead of leaving `Tab` free for other bindings (for
-    /// example, the Context Ledger toggle). Only true when there is an active turn
-    /// to queue behind, or during the startup window before a session exists.
-    pub(crate) fn should_queue_on_tab(&self) -> bool {
+    /// Queue during an active turn or before the initial session is ready.
+    fn should_queue_input(&self) -> bool {
         self.is_task_running || self.queue_submissions
     }
 
@@ -9381,7 +9378,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_queues_slash_led_prompts_while_task_running_without_validation() {
+    fn control_q_queues_slash_led_prompts_while_task_running_without_validation() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9400,7 +9397,7 @@ mod tests {
             composer.draft.textarea.set_text_clearing_elements(input);
 
             let (result, _needs_redraw) =
-                composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+                composer.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
 
             match result {
                 InputResult::Queued {
@@ -9526,7 +9523,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_queues_leading_space_slash_as_plain_text_while_task_running() {
+    fn control_q_queues_leading_space_slash_as_plain_text_while_task_running() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9547,7 +9544,7 @@ mod tests {
             .set_text_clearing_elements(" /does-not-exist");
 
         let (result, _needs_redraw) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+            composer.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
 
         match result {
             InputResult::Queued { text, action, .. } => {
@@ -9559,7 +9556,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_queues_bang_shell_prompts_while_task_running_without_execution() {
+    fn control_q_queues_bang_shell_prompts_while_task_running_without_execution() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9578,7 +9575,7 @@ mod tests {
             composer.draft.textarea.set_text_clearing_elements(input);
 
             let (result, _needs_redraw) =
-                composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+                composer.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
 
             match result {
                 InputResult::Queued {
@@ -9805,7 +9802,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_submits_when_no_task_running() {
+    fn tab_preserves_draft_when_no_task_running() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9825,11 +9822,8 @@ mod tests {
         let (result, _needs_redraw) =
             composer.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 
-        assert!(matches!(
-            result,
-            InputResult::Submitted { ref text, .. } if text == "hi"
-        ));
-        assert!(composer.draft.textarea.is_empty());
+        assert!(matches!(result, InputResult::None));
+        assert_eq!(composer.draft.textarea.text(), "hi");
     }
 
     #[test]
