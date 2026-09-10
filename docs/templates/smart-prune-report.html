@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elpis — Your Smart Prune record</title>
+  <style>/* REPORT_STYLES */</style>
+</head>
+<body class="bg-base-200 text-base-content antialiased">
+  <main class="mx-auto max-w-6xl px-5 py-8 sm:px-10 sm:py-14">
+    <header class="mb-12 flex flex-wrap items-center justify-between gap-4 border-b border-base-300 pb-6">
+      <a href="#overview" class="text-2xl font-semibold tracking-tight">Elpis<span class="text-primary">.</span></a>
+      <div class="flex items-center gap-3 text-xs"><span class="badge badge-outline">Local evidence</span><span class="text-base-content/65">{{DATE}}</span></div>
+    </header>
+    <section id="overview" class="mb-10 grid gap-8 lg:grid-cols-3 lg:items-end">
+      <div class="lg:col-span-2">
+        <p class="mb-4 font-mono text-xs uppercase tracking-widest text-base-content/60">Your Smart Prune record</p>
+        <h1 class="text-4xl font-medium leading-tight tracking-tight sm:text-6xl">Less repetition.<br><span class="text-base-content/55">More room to think.</span></h1>
+      </div>
+      <p class="max-w-sm text-sm leading-6 text-base-content/70">A measured look at the tool output Elpis shortened, the optimizer work it took, and what the records can actually tell us.</p>
+    </section>
+    <section class="card card-border mb-5 bg-base-100 shadow-sm" aria-labelledby="saved-title">
+      <div class="card-body gap-6 p-6 sm:p-10">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="saved-title" class="text-sm font-medium">Estimated tokens removed from tool outputs</h2>
+          <span class="badge badge-soft badge-primary">Gross compression</span>
+        </div>
+        <div class="flex flex-wrap items-end gap-x-5 gap-y-2">
+          <p class="text-7xl font-medium leading-none tracking-tighter tabular-nums sm:text-9xl">{{SAVED_SHORT}}</p>
+          <p class="pb-2 font-mono text-sm text-base-content/65">{{SAVED_EXACT}} tokens</p>
+        </div>
+        <p class="max-w-2xl text-sm leading-6 text-base-content/70">Counted once when an original tool result was replaced with a shorter result. Later reuse of that shorter context is not added again.</p>
+        <div class="grid gap-5 border-t border-base-300 pt-6 sm:grid-cols-3">
+          <div><p class="mb-1 text-3xl font-medium tabular-nums">{{SESSIONS}}</p><p class="text-xs text-base-content/60">sessions with recorded optimizer attempts</p></div>
+          <div><p class="mb-1 text-3xl font-medium tabular-nums">{{ADMITTED}}</p><p class="text-xs text-base-content/60">successful pruning batches</p></div>
+          <div><p class="mb-1 text-3xl font-medium tabular-nums">{{OUTPUTS}}</p><p class="text-xs text-base-content/60">tool outputs shortened</p></div>
+        </div>
+      </div>
+    </section>
+    <section class="mb-8 grid gap-5 md:grid-cols-2">
+      <article class="card card-border bg-base-100"><div class="card-body p-6 sm:p-8">
+        <h2 class="card-title text-base">The work behind the savings</h2>
+        <p class="mt-3 text-4xl font-medium tracking-tight tabular-nums">{{OPTIMIZER_SHORT}} <span class="text-base font-normal text-base-content/55">optimizer tokens</span></p>
+        <p class="text-sm leading-6 text-base-content/70">Provider-reported input and output usage, separate from the main model. Usage was reported for {{REPORTS}} of {{ATTEMPTS}} attempts.</p>
+        <progress class="progress progress-primary mt-3 w-full" value="{{REPORTS_RAW}}" max="{{ATTEMPTS_RAW}}" aria-label="Optimizer usage reporting coverage"></progress>
+        <p class="text-xs text-base-content/60">{{MISSING}} attempts have no reported usage. Missing does not mean free.</p>
+      </div></article>
+      <article class="card card-border bg-base-100"><div class="card-body p-6 sm:p-8">
+        <h2 class="card-title text-base">Did it save money overall?</h2>
+        <p class="mt-3 text-3xl font-medium tracking-tight">Not established.</p>
+        <p class="text-sm leading-6 text-base-content/70">These logs measure compression and optimizer usage. They do not contain the matched unpruned runs needed to measure net savings.</p>
+        <p class="text-sm leading-6 text-base-content/70">Repeated context reuse, prompt caching, and model prices all matter. Subtracting the two totals above would not answer that question.</p>
+      </div></article>
+    </section>
+    <section class="card card-border mb-8 bg-base-100"><div class="card-body p-6 sm:p-8">
+      <div class="mb-5 flex flex-wrap items-end justify-between gap-3"><div><h2 class="card-title">A smaller footprint, day by day</h2><p class="mt-1 text-xs text-base-content/60">Estimated tokens removed · recorded UTC date</p></div><span class="badge badge-ghost">{{DAYS}} recorded days</span></div>
+      <div class="w-full overflow-x-auto">{{CHART}}</div>
+    </div></section>
+    <section class="mb-8 grid gap-8 lg:grid-cols-2">
+      <div>
+        <h2 class="mb-4 text-lg font-medium">Every outcome stays in the record.</h2>
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100"><table class="table table-sm"><caption class="sr-only">Optimizer attempt outcomes</caption><thead><tr><th scope="col">Outcome</th><th scope="col" class="text-right">Attempts</th></tr></thead><tbody>{{STATUS_ROWS}}</tbody></table></div>
+        <p class="mt-3 text-xs leading-5 text-base-content/65">Only successful admissions contribute to the savings headline. Failed, cancelled, and unchanged attempts remain visible here.</p>
+      </div>
+      <div>
+        <h2 class="mb-4 text-lg font-medium">How this was counted</h2>
+        <ol class="space-y-3 text-sm leading-6 text-base-content/75">
+          <li><span class="font-mono text-primary">01</span> Read {{AUDITS}} local audit files and {{ROLLOUTS}} rollouts, including available archived sessions.</li>
+          <li><span class="font-mono text-primary">02</span> Deduplicate by optimizer attempt ID. {{SNAPSHOTS}} repeated state snapshots do not inflate the total.</li>
+          <li><span class="font-mono text-primary">03</span> Prefer complete audit records; use rollout records to fill gaps. {{MALFORMED}} malformed records were skipped.</li>
+        </ol>
+        <p class="mt-5 text-xs leading-5 text-base-content/60">Scope: available Smart Prune records in the local Elpis and Codex homes, including recorded experiments. Deleted records and histories held elsewhere may be absent. This is not a billing statement or a quality evaluation.</p>
+      </div>
+    </section>
+    <footer class="flex flex-wrap justify-between gap-3 border-t border-base-300 pt-6 text-xs text-base-content/55"><p>Elpis · inspectable evidence, explicit limits.</p><p>Snapshot {{GENERATED_AT}}</p></footer>
+  </main>
+</body>
+</html>
