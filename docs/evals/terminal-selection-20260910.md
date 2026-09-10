@@ -122,5 +122,25 @@ Evidence is under `.tmp/final-candidate/`: `probe-build.log`,
 `full-surface-detached.log`. These are local evidence, not release artifacts.
 
 One worktree remains. No new release has been published. Remaining work includes
-the selection/typing issue, the queue shortcut, the full failure audit, final
+the selection/typing issue, the full failure audit, final
 CLI/IDE verification and installation, and the authorized release.
+
+## Queue follow-up, 2026-09-11
+
+Commit `53942103` fixes Ctrl+Q being swallowed while the slash-command popup is
+open. The previously failing queued `/compact` regression now passes. Native
+terminal evidence also passes: queue `/compact` and a second message during an
+active response, press Up, and both return to the composer. Tab only toggles the
+ledger; the fixture provider received exactly one request throughout the check.
+
+The optimized executable SHA256 is
+`443a3c9c035908a22568f334072eb96f7c56a72f2d32cf4ab6509e3f59eb1165`.
+Build: 40,319 ms, peak 71°C. This candidate has not been installed or released.
+Complete TUI suite: **2,959 passed, 181 failed, 5 ignored**. The failures still
+require review; this queue result does not resolve the VTE selection failure.
+
+Local evidence: `.tmp/final-candidate/tui-slash-queue-full.log`,
+`slash-queue-optimized-build.log`, `slash-queue-native.log`, and
+`slash-queue-native/result.json` in the same directory. Generated `.snap.new`
+files are unaccepted diagnostic evidence. The previous full verification process
+stopped during compilation without a result file and must be rerun.
