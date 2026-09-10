@@ -1,27 +1,43 @@
 # Worktree cleanup — 2026-09-10
 
-79 registrations reduced to **one: main**. The first pass removed 54 redundant
+The initial cleanup reduced 79 registrations to **one: main**. The first pass removed 54 redundant
 checkouts and four missing registrations. At Masih's request, the remaining 20
 secondary checkouts were then archived and removed. Temporary integration and
 recovery-test checkouts were also removed. All original branch references remain.
 Approximately 69 GB was recovered net of recovery archives (filesystem free space
-increased from 63 GB initially to 132 GB). The `.worktrees/` directory is empty.
+increased from 63 GB initially to 132 GB). At that point `.worktrees/` was empty.
 
 The last 20 trees were archived with their unfinished changes, not integrated into
 main. Each has a full source/evidence archive and a dedicated recovery branch.
 
-## Integrated
+## Follow-up: restore the current implementation
+
+Masih questioned the reduction to one checkout. Removing every secondary working
+copy made unfinished work harder to review and left the latest installed CLI's
+source outside main. The installed executable itself had not been removed.
+
+The coherent latest CLI source has now been recovered and integrated into main,
+along with the IDE fix for file-only/empty windows. Main and one active candidate
+worktree are retained. Other experiments remain in their preserved branches and
+archives; they have not all been integrated. Rebuilding has recreated compiler
+caches, so the original disk-space recovery figure is historical.
+
+See [CLI recovery and build evidence](evals/latest-cli-recovery-20260910.md) and
+[IDE startup evidence](evals/ide-startup-20260910.md). Manual acceptance is pending.
+
+## Initial integration
 
 The five published extension 0.1.17 commits were cherry-picked into local main as
 `a50450c8`, `b2849bd9`, `88534947`, `356506b9`, and `3ebe27a3`.
-The committed Rust runtime, extension, and extension-release workflow are exactly
-identical to `release/vscode-0.1.17`. Existing main-only website work remains.
+After that initial integration, the committed Rust runtime, extension, and
+extension-release workflow were identical to `release/vscode-0.1.17`.
+Existing main-only website work remains.
 
 The README conflict was resolved to preserve newer working-copy prose and retain
 nonconflicting release corrections. The original README is still in the named
 stash `worktree-cleanup-20260910-readme`. All 208 original dirty/untracked path
 statuses matched before and after integration and cleanup, before adding this
-report and updating TASKS.md. User edits remain uncommitted.
+report and updating TASKS.md. Those user edits were left uncommitted by the cleanup.
 
 ## Evidence and limits
 
