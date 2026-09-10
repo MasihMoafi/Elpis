@@ -1,0 +1,90 @@
+# Worktree cleanup — 2026-09-10
+
+79 registrations reduced to 21: main plus 20 retained worktrees. Removed 54
+redundant existing checkouts and pruned four registrations whose directories were
+already missing. The temporary integration checkout was also removed. All original
+branch references remain. Approximately 12 GB of disk space was recovered net of
+the recovery archives (filesystem free space increased from 63 GB to 75 GB).
+
+## Integrated
+
+The five published extension 0.1.17 commits were cherry-picked into local main as
+`a50450c8`, `b2849bd9`, `88534947`, `356506b9`, and `3ebe27a3`.
+The committed Rust runtime, extension, and extension-release workflow are exactly
+identical to `release/vscode-0.1.17`. Existing main-only website work remains.
+
+The README conflict was resolved to preserve newer working-copy prose and retain
+nonconflicting release corrections. The original README is still in the named
+stash `worktree-cleanup-20260910-readme`. All 208 original dirty/untracked path
+statuses matched before and after integration and cleanup, before adding this
+report and updating TASKS.md. User edits remain uncommitted.
+
+## Evidence and limits
+
+- All 40 prescribed extension checks passed with the existing packaged runtime.
+- All eight controlled provider cases passed: OpenAI, OpenRouter, Anthropic, and
+  Gemini, each with editor access enabled and disabled. These used local controlled
+  providers, not live paid model calls.
+- The first exploratory test glob included editor-host tests that cannot run in
+  plain Node. The prescribed test command initially lacked its packaged runtime;
+  supplying the existing release binary resolved all six missing-runtime failures.
+- The isolated integration tree exactly matched main before its removal.
+- `git diff --check` passed; no unresolved index entries remain; the final
+  worktree-prune dry run was empty.
+- Removed-tree archives were compared against their original files before deletion.
+  Cargo target directories and node_modules caches were excluded; other local
+  notes, ignored evidence, and packaged artifacts were preserved.
+- No Rust rebuild, installation, publication, push, or new user-visible acceptance
+  was performed. Checks of the existing release binary do not verify the unfinished
+  fixes listed below.
+
+## Retained worktrees
+
+These require separate source/evidence review. They are not asserted to be merged,
+accepted, or safe to discard merely because another release was published.
+
+| Worktree under `.worktrees/` | Reason retained |
+| --- | --- |
+| ace-fact-preservation | Uncommitted configuration and fact-preservation changes differ from main. |
+| ace-inactivity-180 | Uncommitted three-minute timeout/stream-completion fix is absent from the published runtime. |
+| ci-linux-v4 | Unmatched historical formatting and manual-memory test changes need disposition. |
+| daily-driver-readiness | Two independent agent-control/state commits, unfinished runtime edits, and audit notes. |
+| elpis-ide-default-model | Uncommitted extension, installer, and release-workflow changes. |
+| elpis-ide-detailed | Separate experimental implementation/specification and local artifacts. |
+| elpis-ide-provider-completion | Uncommitted intermediate editor/provider changes and evidence. |
+| elpis-ide-reference-controls | Release source is largely captured, but local reference audits, assets, documentation, and evidence still need consolidation. |
+| elpis-ide-smart-runtime | Runtime files match the release; provider documentation differs and local build/evaluation artifacts remain. |
+| manual-memory-resume-test | Uncommitted memory-recall regression changes. |
+| modern-UI | Extensive unfinished website/source and evaluation assets. |
+| paper-controlled-study-20260905 | Independent historical study and launch documents; do not revive old optimizer-policy choices automatically. |
+| parallel-runner-offline | Untracked evaluation harness, protocols, and results. |
+| portable-checkpoint | Explicitly deferred independent checkpoint evaluation prompt. |
+| release-v0.2.0-candidate | Preserved consolidated history plus uncommitted context controls, interaction tests, outcome-ledger edits, and evidence. |
+| release-v0.3.0-vscode | Unpublished alternative release configuration needs explicit disposition; do not replace the accepted release with it. |
+| release-v020-evidence-refresh | Independent release/evidence history and local task notes. |
+| site-live-seo-20260905 | Uncommitted website implementation and assets. |
+| site-seo-20260905 | Uncommitted SEO changes and test. |
+| terminal-bench-eval | Independent pilot harness/evaluation commits; pilot execution remains a separate task. |
+
+## Recovery
+
+The private local recovery directories are:
+
+- `.git/worktree-recovery-20260910/`
+- `.git/worktree-recovery-20260910-phase2/`
+
+Each contains the initial audit, selected paths, and `removed.json` with original
+HEAD/branch/path mappings. Per-tree directories contain metadata, a tracked patch,
+and, where needed, `local-files.tar.gz` plus its checksum. Integration provider
+evidence is in `integration-test-evidence.tar.gz` in the first directory.
+
+To recover a removed checkout, use `git worktree add <new-path> <retained-branch>`
+with the branch from `removed.json`, then extract its archive into that checkout.
+Use the recorded tracked patch for any tracked edits not represented by restored
+files. Detached source/missing-checkout tips received backup branch references.
+`backup/pre-worktree-cleanup-20260910` preserves pre-integration main; do not reset
+the dirty main checkout to it. The integration branch also remains available.
+
+Next: review the retained pruning fixes and context changes against an agreed
+acceptance harness before integrating new runtime behavior. Website and evaluation
+work requires its own consolidation; it was not silently folded into this cleanup.
