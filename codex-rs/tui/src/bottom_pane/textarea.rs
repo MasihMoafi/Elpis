@@ -3514,7 +3514,8 @@ mod tests {
 
         ratatui::widgets::WidgetRef::render_ref(&(&t), area, &mut buf);
 
-        assert_eq!(t.desired_height(area.width), 2);
+        assert_eq!(t.wrapped_lines(area.width).len(), 2);
+        assert_eq!(t.desired_height(area.width), 3);
         assert_eq!(t.cursor_pos(area), Some((1, 1)));
         assert_eq!(buf[(0, 1)].symbol(), "5");
     }
