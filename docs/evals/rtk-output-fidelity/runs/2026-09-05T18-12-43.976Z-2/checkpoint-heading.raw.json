@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "head",
+    "-12",
+    "ES.md"
+  ],
+  "status": 0,
+  "signal": null,
+  "error": "spawnSync head EPERM",
+  "stdout": "# Execution State\n\n## 2026-09-05 First RTK Fidelity Experiment\n\n- Intent: begin with no-model-cost, useful repository inspection; isolate RTK output\n  from subsequent Elpis summaries before attributing missing information.\n- Acceptance: matched raw/RTK captures, critical-fact checks with failing controls,\n  immutable evidence, and an actual fallback read only when a critical fact is absent.\n- Scope: `docs/evals/rtk-output-fidelity/`; no runtime changes or live model calls.\n- Verification and next action: run controls and three inspection cases, then report\n  observed omissions and limits before expanding to paid/live pruning tasks.\n\n",
+  "stderr": ""
+}

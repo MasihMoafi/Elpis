@@ -1,0 +1,15 @@
+{
+  "id": "complete-protocol",
+  "task": "Review the entire experiment protocol, including recovery and approval limits.",
+  "sourceSha256": "ca9beefdd3f21dd2c4bb2debee1f74d0beeda3c59835125e3f122cb409ef977d",
+  "rawSha256": "ca9beefdd3f21dd2c4bb2debee1f74d0beeda3c59835125e3f122cb409ef977d",
+  "rtkSha256": "ca9beefdd3f21dd2c4bb2debee1f74d0beeda3c59835125e3f122cb409ef977d",
+  "rawBytes": 22412,
+  "rtkBytes": 22412,
+  "byteIdentical": true,
+  "nonemptyRawLines": 296,
+  "missingExactLines": [],
+  "criticalChecks": 6,
+  "missingCritical": [],
+  "recoveryReads": 0
+}

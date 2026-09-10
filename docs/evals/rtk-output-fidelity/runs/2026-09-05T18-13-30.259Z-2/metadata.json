@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-09-05T18:13:30.259Z",
+  "root": "/home/masih/Desktop/p/Elpis",
+  "node": "v26.1.0",
+  "rtk": {
+    "argv": [
+      "rtk",
+      "--version"
+    ],
+    "status": 0,
+    "signal": null,
+    "error": "spawnSync rtk EPERM",
+    "stdout": "rtk 0.43.0\n",
+    "stderr": ""
+  },
+  "sourceCommit": {
+    "argv": [
+      "git",
+      "rev-parse",
+      "HEAD"
+    ],
+    "status": 0,
+    "signal": null,
+    "error": "spawnSync git EPERM",
+    "stdout": "89a072fa40de0f7c61aa3e062634c05f095ca7ce\n",
+    "stderr": ""
+  },
+  "harnessSha256": "f164803b103b5aaf36c92335cde114ae0814d6c2f487632c6ff65fff453ec5aa",
+  "controls": "intact accepted; deleted fact and empty output detected before captures",
+  "scope": "RTK child-output fidelity, not model behavior or downstream Elpis admission"
+}

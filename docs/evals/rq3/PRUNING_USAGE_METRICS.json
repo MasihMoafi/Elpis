@@ -1,0 +1,955 @@
+{
+  "calculatorSha256": "b4c05df64c0568b05bc5a2744604835edc2f8b10885dacfaac8bd0770e09940d",
+  "scope": "Native paired usage; development cohorts remain separate; no pooled inference",
+  "excludedFromDeploymentUsage": [
+    "RAW probes",
+    "ADMITTED probes",
+    "DAMAGED controls"
+  ],
+  "rates": {
+    "currency": "USD",
+    "provenance": "OpenAI GPT-5.6 Luna model page and ChatGPT Enterprise token-based rate card, checked 2026-09-08. Published-rate estimate, not verification of this account's invoice or subscription charges.",
+    "sources": [
+      "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+      "https://help.openai.com/en/articles/20001415-chatgpt-rate-card-enterprise-token-based-pricing"
+    ],
+    "scope": "Standard text-token rates per million. These native requests are below the 272K long-context pricing threshold. Cache-write price is unspecified; all evaluated cache-write counts are zero and the calculator rejects a nonzero count without a rate.",
+    "main": {
+      "input": 0.2,
+      "cached": 0.02,
+      "output": 1.2,
+      "write": null
+    },
+    "optimizer": {
+      "input": 0.2,
+      "cached": 0.02,
+      "output": 1.2,
+      "write": null
+    }
+  },
+  "cohorts": [
+    {
+      "archive": "docs/evals/final-data/FACT-PRESERVATION-CANARY-LUNA-20260908-01",
+      "reportSha256": "b73d1074e5bfa9353cbdb3d9a3a78f25ad06b9fa83dd3097659cf4fd8edc3295",
+      "stage": "development-regression",
+      "status": "passed",
+      "conversations": 10,
+      "binaryHash": "21cbb5e2cf325fb0e47a5c054a48fc337b74637074a7d28993c6f7b8950ef8b5",
+      "model": "gpt-5.6-luna",
+      "pairs": [
+        {
+          "caseId": "rollforward",
+          "off": {
+            "main": {
+              "input_tokens": 46379,
+              "cached_input_tokens": 27136,
+              "cache_write_tokens": 0,
+              "output_tokens": 392,
+              "reasoning_output_tokens": 110,
+              "total_tokens": 46771
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 46379,
+              "cached_input_tokens": 27136,
+              "cache_write_tokens": 0,
+              "output_tokens": 392,
+              "reasoning_output_tokens": 110,
+              "total_tokens": 46771
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32609,
+              "cached_input_tokens": 9984,
+              "cache_write_tokens": 0,
+              "output_tokens": 444,
+              "reasoning_output_tokens": 168,
+              "total_tokens": 33053
+            },
+            "optimizer": {
+              "input_tokens": 8381,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 3944,
+              "reasoning_output_tokens": 3605,
+              "total_tokens": 12325
+            },
+            "combined": {
+              "input_tokens": 40990,
+              "cached_input_tokens": 9984,
+              "cache_write_tokens": 0,
+              "output_tokens": 4388,
+              "reasoning_output_tokens": 3773,
+              "total_tokens": 45378
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": 1393,
+          "savedPercent": 2.9783412798529003,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.00486172,
+            "on": 0.01166648,
+            "saved": -0.00680476
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        },
+        {
+          "caseId": "restore_chain",
+          "off": {
+            "main": {
+              "input_tokens": 45683,
+              "cached_input_tokens": 36096,
+              "cache_write_tokens": 0,
+              "output_tokens": 391,
+              "reasoning_output_tokens": 110,
+              "total_tokens": 46074
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 45683,
+              "cached_input_tokens": 36096,
+              "cache_write_tokens": 0,
+              "output_tokens": 391,
+              "reasoning_output_tokens": 110,
+              "total_tokens": 46074
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32954,
+              "cached_input_tokens": 29952,
+              "cache_write_tokens": 0,
+              "output_tokens": 369,
+              "reasoning_output_tokens": 120,
+              "total_tokens": 33323
+            },
+            "optimizer": {
+              "input_tokens": 8004,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 7177,
+              "reasoning_output_tokens": 6648,
+              "total_tokens": 15181
+            },
+            "combined": {
+              "input_tokens": 40958,
+              "cached_input_tokens": 29952,
+              "cache_write_tokens": 0,
+              "output_tokens": 7546,
+              "reasoning_output_tokens": 6768,
+              "total_tokens": 48504
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": -2430,
+          "savedPercent": -5.274124234926423,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.00310852,
+            "on": 0.01185544,
+            "saved": -0.00874692
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        }
+      ],
+      "unpaired": [],
+      "totals": {
+        "off": {
+          "input_tokens": 92062,
+          "cached_input_tokens": 63232,
+          "cache_write_tokens": 0,
+          "output_tokens": 783,
+          "reasoning_output_tokens": 220,
+          "total_tokens": 92845
+        },
+        "on": {
+          "input_tokens": 81948,
+          "cached_input_tokens": 39936,
+          "cache_write_tokens": 0,
+          "output_tokens": 11934,
+          "reasoning_output_tokens": 10541,
+          "total_tokens": 93882
+        },
+        "onMain": {
+          "input_tokens": 65563,
+          "cached_input_tokens": 39936,
+          "cache_write_tokens": 0,
+          "output_tokens": 813,
+          "reasoning_output_tokens": 288,
+          "total_tokens": 66376
+        },
+        "onOptimizer": {
+          "input_tokens": 16385,
+          "cached_input_tokens": 0,
+          "cache_write_tokens": 0,
+          "output_tokens": 11121,
+          "reasoning_output_tokens": 10253,
+          "total_tokens": 27506
+        },
+        "savedTokens": -1037,
+        "savedPercent": -1.1169152889223974,
+        "cost": {
+          "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+          "off": 0.00797024,
+          "on": 0.02352192,
+          "saved": -0.01555168
+        }
+      }
+    },
+    {
+      "archive": "docs/evals/final-data/FACT-PRESERVATION-COVERAGE-LUNA-20260908-01",
+      "reportSha256": "768977453ec8b1c03ec934291cc895c2f5ed857922953e88e72d79fd66eb7ba7",
+      "stage": "held-out-synthetic-coverage",
+      "status": "stopped",
+      "conversations": 16,
+      "binaryHash": "21cbb5e2cf325fb0e47a5c054a48fc337b74637074a7d28993c6f7b8950ef8b5",
+      "model": "gpt-5.6-luna",
+      "pairs": [
+        {
+          "caseId": "lease_fencing",
+          "off": {
+            "main": {
+              "input_tokens": 46125,
+              "cached_input_tokens": 36096,
+              "cache_write_tokens": 0,
+              "output_tokens": 433,
+              "reasoning_output_tokens": 177,
+              "total_tokens": 46558
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 46125,
+              "cached_input_tokens": 36096,
+              "cache_write_tokens": 0,
+              "output_tokens": 433,
+              "reasoning_output_tokens": 177,
+              "total_tokens": 46558
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32652,
+              "cached_input_tokens": 18944,
+              "cache_write_tokens": 0,
+              "output_tokens": 391,
+              "reasoning_output_tokens": 104,
+              "total_tokens": 33043
+            },
+            "optimizer": {
+              "input_tokens": 8223,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 5689,
+              "reasoning_output_tokens": 5385,
+              "total_tokens": 13912
+            },
+            "combined": {
+              "input_tokens": 40875,
+              "cached_input_tokens": 18944,
+              "cache_write_tokens": 0,
+              "output_tokens": 6080,
+              "reasoning_output_tokens": 5489,
+              "total_tokens": 46955
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": -397,
+          "savedPercent": -0.8526998582413334,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.00324732,
+            "on": 0.012061080000000002,
+            "saved": -0.008813760000000002
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        },
+        {
+          "caseId": "schema_defaults",
+          "off": {
+            "main": {
+              "input_tokens": 46388,
+              "cached_input_tokens": 35072,
+              "cache_write_tokens": 0,
+              "output_tokens": 375,
+              "reasoning_output_tokens": 118,
+              "total_tokens": 46763
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 46388,
+              "cached_input_tokens": 35072,
+              "cache_write_tokens": 0,
+              "output_tokens": 375,
+              "reasoning_output_tokens": 118,
+              "total_tokens": 46763
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32510,
+              "cached_input_tokens": 28928,
+              "cache_write_tokens": 0,
+              "output_tokens": 356,
+              "reasoning_output_tokens": 101,
+              "total_tokens": 32866
+            },
+            "optimizer": {
+              "input_tokens": 8380,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 2550,
+              "reasoning_output_tokens": 2271,
+              "total_tokens": 10930
+            },
+            "combined": {
+              "input_tokens": 40890,
+              "cached_input_tokens": 28928,
+              "cache_write_tokens": 0,
+              "output_tokens": 2906,
+              "reasoning_output_tokens": 2372,
+              "total_tokens": 43796
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": 2967,
+          "savedPercent": 6.344759745952997,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.0034146400000000005,
+            "on": 0.00645816,
+            "saved": -0.0030435199999999996
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        },
+        {
+          "caseId": "archive_paths",
+          "off": {
+            "main": {
+              "input_tokens": 45824,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 347,
+              "reasoning_output_tokens": 91,
+              "total_tokens": 46171
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 45824,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 347,
+              "reasoning_output_tokens": 91,
+              "total_tokens": 46171
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32647,
+              "cached_input_tokens": 27904,
+              "cache_write_tokens": 0,
+              "output_tokens": 411,
+              "reasoning_output_tokens": 146,
+              "total_tokens": 33058
+            },
+            "optimizer": {
+              "input_tokens": 8109,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 4494,
+              "reasoning_output_tokens": 4203,
+              "total_tokens": 12603
+            },
+            "combined": {
+              "input_tokens": 40756,
+              "cached_input_tokens": 27904,
+              "cache_write_tokens": 0,
+              "output_tokens": 4905,
+              "reasoning_output_tokens": 4349,
+              "total_tokens": 45661
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": 510,
+          "savedPercent": 1.104589460917026,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.00488104,
+            "on": 0.00901448,
+            "saved": -0.00413344
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        }
+      ],
+      "unpaired": [
+        {
+          "caseId": "event_dedupe",
+          "missing": [
+            "OFF"
+          ]
+        }
+      ],
+      "totals": {
+        "off": {
+          "input_tokens": 138337,
+          "cached_input_tokens": 97280,
+          "cache_write_tokens": 0,
+          "output_tokens": 1155,
+          "reasoning_output_tokens": 386,
+          "total_tokens": 139492
+        },
+        "on": {
+          "input_tokens": 122521,
+          "cached_input_tokens": 75776,
+          "cache_write_tokens": 0,
+          "output_tokens": 13891,
+          "reasoning_output_tokens": 12210,
+          "total_tokens": 136412
+        },
+        "onMain": {
+          "input_tokens": 97809,
+          "cached_input_tokens": 75776,
+          "cache_write_tokens": 0,
+          "output_tokens": 1158,
+          "reasoning_output_tokens": 351,
+          "total_tokens": 98967
+        },
+        "onOptimizer": {
+          "input_tokens": 24712,
+          "cached_input_tokens": 0,
+          "cache_write_tokens": 0,
+          "output_tokens": 12733,
+          "reasoning_output_tokens": 11859,
+          "total_tokens": 37445
+        },
+        "savedTokens": 3080,
+        "savedPercent": 2.2080119289995124,
+        "cost": {
+          "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+          "off": 0.011543000000000001,
+          "on": 0.027533720000000005,
+          "saved": -0.01599072
+        }
+      }
+    },
+    {
+      "archive": "docs/evals/final-data/CITATION-ORACLE-REGRESSION-LUNA-20260908-01",
+      "reportSha256": "e1ac7c1afce8264f2af5db06f5a5c5d3e8f5137881caee052e2982194803f530",
+      "stage": "development-citation-regression",
+      "status": "passed",
+      "conversations": 5,
+      "binaryHash": "21cbb5e2cf325fb0e47a5c054a48fc337b74637074a7d28993c6f7b8950ef8b5",
+      "model": "gpt-5.6-luna",
+      "pairs": [
+        {
+          "caseId": "event_dedupe",
+          "off": {
+            "main": {
+              "input_tokens": 47620,
+              "cached_input_tokens": 18944,
+              "cache_write_tokens": 0,
+              "output_tokens": 400,
+              "reasoning_output_tokens": 122,
+              "total_tokens": 48020
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 47620,
+              "cached_input_tokens": 18944,
+              "cache_write_tokens": 0,
+              "output_tokens": 400,
+              "reasoning_output_tokens": 122,
+              "total_tokens": 48020
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32657,
+              "cached_input_tokens": 27904,
+              "cache_write_tokens": 0,
+              "output_tokens": 430,
+              "reasoning_output_tokens": 151,
+              "total_tokens": 33087
+            },
+            "optimizer": {
+              "input_tokens": 9011,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 2638,
+              "reasoning_output_tokens": 2319,
+              "total_tokens": 11649
+            },
+            "combined": {
+              "input_tokens": 41668,
+              "cached_input_tokens": 27904,
+              "cache_write_tokens": 0,
+              "output_tokens": 3068,
+              "reasoning_output_tokens": 2470,
+              "total_tokens": 44736
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": 3284,
+          "savedPercent": 6.838817159516868,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.00659408,
+            "on": 0.006992480000000001,
+            "saved": -0.00039840000000000014
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        }
+      ],
+      "unpaired": [],
+      "totals": {
+        "off": {
+          "input_tokens": 47620,
+          "cached_input_tokens": 18944,
+          "cache_write_tokens": 0,
+          "output_tokens": 400,
+          "reasoning_output_tokens": 122,
+          "total_tokens": 48020
+        },
+        "on": {
+          "input_tokens": 41668,
+          "cached_input_tokens": 27904,
+          "cache_write_tokens": 0,
+          "output_tokens": 3068,
+          "reasoning_output_tokens": 2470,
+          "total_tokens": 44736
+        },
+        "onMain": {
+          "input_tokens": 32657,
+          "cached_input_tokens": 27904,
+          "cache_write_tokens": 0,
+          "output_tokens": 430,
+          "reasoning_output_tokens": 151,
+          "total_tokens": 33087
+        },
+        "onOptimizer": {
+          "input_tokens": 9011,
+          "cached_input_tokens": 0,
+          "cache_write_tokens": 0,
+          "output_tokens": 2638,
+          "reasoning_output_tokens": 2319,
+          "total_tokens": 11649
+        },
+        "savedTokens": 3284,
+        "savedPercent": 6.838817159516868,
+        "cost": {
+          "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+          "off": 0.00659408,
+          "on": 0.006992480000000001,
+          "saved": -0.00039840000000000014
+        }
+      }
+    },
+    {
+      "archive": "docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01",
+      "reportSha256": "8b1e34f7293fa59c87078dd60bf0d5aef02adee1d47cdeca72b4100e1d65bfd2",
+      "stage": "held-out-synthetic-coverage-after-oracle-correction",
+      "status": "passed",
+      "conversations": 20,
+      "binaryHash": "21cbb5e2cf325fb0e47a5c054a48fc337b74637074a7d28993c6f7b8950ef8b5",
+      "model": "gpt-5.6-luna",
+      "pairs": [
+        {
+          "caseId": "replica_quorum",
+          "off": {
+            "main": {
+              "input_tokens": 45950,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 457,
+              "reasoning_output_tokens": 175,
+              "total_tokens": 46407
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 45950,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 457,
+              "reasoning_output_tokens": 175,
+              "total_tokens": 46407
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32783,
+              "cached_input_tokens": 9984,
+              "cache_write_tokens": 0,
+              "output_tokens": 577,
+              "reasoning_output_tokens": 295,
+              "total_tokens": 33360
+            },
+            "optimizer": {
+              "input_tokens": 8121,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 6085,
+              "reasoning_output_tokens": 5802,
+              "total_tokens": 14206
+            },
+            "combined": {
+              "input_tokens": 40904,
+              "cached_input_tokens": 9984,
+              "cache_write_tokens": 0,
+              "output_tokens": 6662,
+              "reasoning_output_tokens": 6097,
+              "total_tokens": 47566
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": -1159,
+          "savedPercent": -2.4974680543883467,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.005038239999999999,
+            "on": 0.014378080000000001,
+            "saved": -0.009339840000000002
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        },
+        {
+          "caseId": "export_order",
+          "off": {
+            "main": {
+              "input_tokens": 46029,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 346,
+              "reasoning_output_tokens": 89,
+              "total_tokens": 46375
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 46029,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 346,
+              "reasoning_output_tokens": 89,
+              "total_tokens": 46375
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32535,
+              "cached_input_tokens": 27904,
+              "cache_write_tokens": 0,
+              "output_tokens": 419,
+              "reasoning_output_tokens": 151,
+              "total_tokens": 32954
+            },
+            "optimizer": {
+              "input_tokens": 8248,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 3992,
+              "reasoning_output_tokens": 3706,
+              "total_tokens": 12240
+            },
+            "combined": {
+              "input_tokens": 40783,
+              "cached_input_tokens": 27904,
+              "cache_write_tokens": 0,
+              "output_tokens": 4411,
+              "reasoning_output_tokens": 3857,
+              "total_tokens": 45194
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": 1181,
+          "savedPercent": 2.5466307277628033,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.00492084,
+            "on": 0.00842708,
+            "saved": -0.00350624
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        },
+        {
+          "caseId": "quota_rollover",
+          "off": {
+            "main": {
+              "input_tokens": 45796,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 390,
+              "reasoning_output_tokens": 129,
+              "total_tokens": 46186
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 45796,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 390,
+              "reasoning_output_tokens": 129,
+              "total_tokens": 46186
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32608,
+              "cached_input_tokens": 28928,
+              "cache_write_tokens": 0,
+              "output_tokens": 391,
+              "reasoning_output_tokens": 127,
+              "total_tokens": 32999
+            },
+            "optimizer": {
+              "input_tokens": 8048,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 3692,
+              "reasoning_output_tokens": 3384,
+              "total_tokens": 11740
+            },
+            "combined": {
+              "input_tokens": 40656,
+              "cached_input_tokens": 28928,
+              "cache_write_tokens": 0,
+              "output_tokens": 4083,
+              "reasoning_output_tokens": 3511,
+              "total_tokens": 44739
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": 1447,
+          "savedPercent": 3.1329840211319446,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.00492704,
+            "on": 0.00782376,
+            "saved": -0.002896720000000001
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        },
+        {
+          "caseId": "key_rotation",
+          "off": {
+            "main": {
+              "input_tokens": 46845,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 421,
+              "reasoning_output_tokens": 144,
+              "total_tokens": 47266
+            },
+            "optimizer": {
+              "input_tokens": 0,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 0,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 0
+            },
+            "combined": {
+              "input_tokens": 46845,
+              "cached_input_tokens": 26112,
+              "cache_write_tokens": 0,
+              "output_tokens": 421,
+              "reasoning_output_tokens": 144,
+              "total_tokens": 47266
+            },
+            "optimizerAttempts": 0
+          },
+          "on": {
+            "main": {
+              "input_tokens": 32749,
+              "cached_input_tokens": 28928,
+              "cache_write_tokens": 0,
+              "output_tokens": 437,
+              "reasoning_output_tokens": 157,
+              "total_tokens": 33186
+            },
+            "optimizer": {
+              "input_tokens": 8662,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 8619,
+              "reasoning_output_tokens": 8239,
+              "total_tokens": 17281
+            },
+            "combined": {
+              "input_tokens": 41411,
+              "cached_input_tokens": 28928,
+              "cache_write_tokens": 0,
+              "output_tokens": 9056,
+              "reasoning_output_tokens": 8396,
+              "total_tokens": 50467
+            },
+            "optimizerAttempts": 1
+          },
+          "savedTokens": -3201,
+          "savedPercent": -6.772309905640418,
+          "cost": {
+            "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+            "off": 0.0051740399999999995,
+            "on": 0.013942359999999999,
+            "saved": -0.00876832
+          },
+          "nativeGates": {
+            "off": true,
+            "on": true
+          },
+          "prefix": "PASS_OBSERVED_CONTINUATION_LINKAGE"
+        }
+      ],
+      "unpaired": [],
+      "totals": {
+        "off": {
+          "input_tokens": 184620,
+          "cached_input_tokens": 104448,
+          "cache_write_tokens": 0,
+          "output_tokens": 1614,
+          "reasoning_output_tokens": 537,
+          "total_tokens": 186234
+        },
+        "on": {
+          "input_tokens": 163754,
+          "cached_input_tokens": 95744,
+          "cache_write_tokens": 0,
+          "output_tokens": 24212,
+          "reasoning_output_tokens": 21861,
+          "total_tokens": 187966
+        },
+        "onMain": {
+          "input_tokens": 130675,
+          "cached_input_tokens": 95744,
+          "cache_write_tokens": 0,
+          "output_tokens": 1824,
+          "reasoning_output_tokens": 730,
+          "total_tokens": 132499
+        },
+        "onOptimizer": {
+          "input_tokens": 33079,
+          "cached_input_tokens": 0,
+          "cache_write_tokens": 0,
+          "output_tokens": 22388,
+          "reasoning_output_tokens": 21131,
+          "total_tokens": 55467
+        },
+        "savedTokens": -1732,
+        "savedPercent": -0.9300127796213365,
+        "cost": {
+          "status": "RATE_BASED_ESTIMATE_NOT_INVOICE",
+          "off": 0.02006016,
+          "on": 0.044571280000000005,
+          "saved": -0.024511120000000004
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "currency": "USD",
+  "provenance": "OpenAI GPT-5.6 Luna model page and ChatGPT Enterprise token-based rate card, checked 2026-09-08. Published-rate estimate, not verification of this account's invoice or subscription charges.",
+  "sources": [
+    "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+    "https://help.openai.com/en/articles/20001415-chatgpt-rate-card-enterprise-token-based-pricing"
+  ],
+  "scope": "Standard text-token rates per million. These native requests are below the 272K long-context pricing threshold. Cache-write price is unspecified; all evaluated cache-write counts are zero and the calculator rejects a nonzero count without a rate.",
+  "main": { "input": 0.20, "cached": 0.02, "output": 1.20, "write": null },
+  "optimizer": { "input": 0.20, "cached": 0.02, "output": 1.20, "write": null }
+}

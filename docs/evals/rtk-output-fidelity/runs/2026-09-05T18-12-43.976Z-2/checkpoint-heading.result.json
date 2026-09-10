@@ -1,0 +1,21 @@
+{
+  "id": "checkpoint-heading",
+  "task": "Read the current execution-state heading and intent before editing it.",
+  "sourceSha256": "094e91975d59186dde83fea17749bb6ce445f3b348f9b10781c9966e8d139231",
+  "rawSha256": "503cb5011a64c8f4f470879ca5414059835f350ac75cd5adaa924e19029e40e0",
+  "rtkSha256": "f67f640b5d8833eadef3aaee9fcaef390deffde9d5658dab3748fc476bf34c4c",
+  "rawBytes": 641,
+  "rtkBytes": 239,
+  "byteIdentical": false,
+  "nonemptyRawLines": 9,
+  "missingExactLines": [
+    "- Acceptance: matched raw/RTK captures, critical-fact checks with failing controls,",
+    "immutable evidence, and an actual fallback read only when a critical fact is absent.",
+    "- Scope: `docs/evals/rtk-output-fidelity/`; no runtime changes or live model calls.",
+    "- Verification and next action: run controls and three inspection cases, then report",
+    "observed omissions and limits before expanding to paid/live pruning tasks."
+  ],
+  "criticalChecks": 2,
+  "missingCritical": [],
+  "recoveryReads": 0
+}

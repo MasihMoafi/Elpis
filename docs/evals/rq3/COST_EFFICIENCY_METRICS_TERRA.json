@@ -1,0 +1,967 @@
+{
+  "calculatorSha256": "bf5e5db26524e66acc2cefa2b646d114d542cc92d78f98ef0191d82f10146b75",
+  "usageCalculatorSha256": "b4c05df64c0568b05bc5a2744604835edc2f8b10885dacfaac8bd0770e09940d",
+  "scope": "Published-rate estimate per request; savings signed, negative means pruning cost more; no pooled inference across batches",
+  "rates": {
+    "currency": "USD",
+    "provenance": "Main model gpt-5.6-terra at OpenAI published rates fetched 2026-09-09 (https://developers.openai.com/api/docs/models/gpt-5.6-terra); optimizer gpt-5.6-luna at the rates in LUNA_PUBLISHED_RATES_2026-09-08.json. Per million tokens. Published-rate estimate, not invoice.",
+    "scope": "Batches whose plan sets model=gpt-5.6-terra and optimizerModel=gpt-5.6-luna",
+    "main": {
+      "input": 2,
+      "cached": 0.2,
+      "output": 12,
+      "write": null
+    },
+    "optimizer": {
+      "input": 0.2,
+      "cached": 0.02,
+      "output": 1.2,
+      "write": null
+    }
+  },
+  "batches": [
+    {
+      "batch": "/tmp/elpis-cost-e1-low-terra-20260908-01",
+      "stage": "cost-effort-ablation-low",
+      "status": "stopped",
+      "binaryHash": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "model": "gpt-5.6-terra",
+      "mainEffort": "medium",
+      "optimizerEffort": "low",
+      "pairs": [],
+      "excluded": [
+        {
+          "caseId": "lease_fencing",
+          "reason": "gate failed NATIVE: Native task did not use exactly the 2 prescribed calls"
+        }
+      ],
+      "summary": {
+        "pairs": 0,
+        "rows": [],
+        "wallMs": {
+          "off": 0,
+          "on": 0
+        },
+        "cost": {
+          "off": 0,
+          "on": 0,
+          "positive": 0,
+          "median": null,
+          "min": null,
+          "max": null,
+          "total": 0,
+          "signTest": {
+            "wins": 0,
+            "losses": 0,
+            "ties": 0,
+            "p": null
+          }
+        },
+        "tokens": {
+          "off": 0,
+          "on": 0,
+          "positive": 0,
+          "median": null,
+          "min": null,
+          "max": null,
+          "total": 0,
+          "signTest": {
+            "wins": 0,
+            "losses": 0,
+            "ties": 0,
+            "p": null
+          }
+        },
+        "mainTokens": {
+          "positive": 0,
+          "median": null,
+          "min": null,
+          "max": null,
+          "total": 0,
+          "signTest": {
+            "wins": 0,
+            "losses": 0,
+            "ties": 0,
+            "p": null
+          }
+        }
+      }
+    },
+    {
+      "batch": "/tmp/elpis-cost-e1-low-terra-b-20260908-01",
+      "stage": "cost-effort-ablation-low",
+      "status": "stopped",
+      "binaryHash": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "model": "gpt-5.6-terra",
+      "mainEffort": "medium",
+      "optimizerEffort": "low",
+      "pairs": [
+        {
+          "caseId": "lease_fencing",
+          "requests": {
+            "off": 3,
+            "on": 3
+          },
+          "series": {
+            "off": [
+              {
+                "k": 1,
+                "input": 11922,
+                "cached": 0,
+                "uncached": 11922,
+                "output": 107,
+                "reasoning": 0,
+                "cachedFraction": 0,
+                "cost": 0.025128,
+                "cumulativeCost": 0.025128
+              },
+              {
+                "k": 2,
+                "input": 19149,
+                "cached": 11008,
+                "uncached": 8141,
+                "output": 75,
+                "reasoning": 0,
+                "cachedFraction": 0.5748603060212022,
+                "cost": 0.019383599999999997,
+                "cumulativeCost": 0.0445116
+              },
+              {
+                "k": 3,
+                "input": 19253,
+                "cached": 18176,
+                "uncached": 1077,
+                "output": 114,
+                "reasoning": 0,
+                "cachedFraction": 0.944060665870254,
+                "cost": 0.007157200000000001,
+                "cumulativeCost": 0.0516688
+              }
+            ],
+            "on": [
+              {
+                "k": 1,
+                "input": 11922,
+                "cached": 9984,
+                "uncached": 1938,
+                "output": 102,
+                "reasoning": 0,
+                "cachedFraction": 0.8374433819828888,
+                "cost": 0.0070968,
+                "cumulativeCost": 0.0070968
+              },
+              {
+                "k": 2,
+                "input": 12890,
+                "cached": 11008,
+                "uncached": 1882,
+                "output": 75,
+                "reasoning": 0,
+                "cachedFraction": 0.8539953452288596,
+                "cost": 0.0068656,
+                "cumulativeCost": 0.0139624
+              },
+              {
+                "k": 3,
+                "input": 12994,
+                "cached": 12032,
+                "uncached": 962,
+                "output": 114,
+                "reasoning": 0,
+                "cachedFraction": 0.9259658303832539,
+                "cost": 0.005698399999999999,
+                "cumulativeCost": 0.0196608
+              }
+            ]
+          },
+          "optimizer": {
+            "cost": 0.0027624,
+            "attempts": 1,
+            "statuses": [
+              "admitted"
+            ],
+            "efforts": [
+              "low"
+            ],
+            "reasoningTokens": 129,
+            "latencyMs": 18568,
+            "usage": {
+              "input_tokens": 8238,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 929,
+              "reasoning_output_tokens": 129,
+              "total_tokens": 9167
+            }
+          },
+          "horizon": {
+            "T": 2,
+            "D": [
+              0.012517999999999998,
+              0.0014588000000000014
+            ],
+            "meanD": 0.0069884,
+            "breakEvenT": 0.3952836128441417,
+            "breakEvenReason": null
+          },
+          "cost": {
+            "off": 0.0516688,
+            "onMain": 0.0196608,
+            "optimizer": 0.0027624,
+            "on": 0.022423199999999997,
+            "saved": 0.029245600000000004,
+            "savedMain": 0.032008
+          },
+          "tokens": {
+            "off": 50620,
+            "onMain": 38097,
+            "optimizer": 9167,
+            "on": 47264,
+            "saved": 3356,
+            "savedMain": 12523
+          },
+          "peakInput": {
+            "off": 19253,
+            "on": 12994
+          },
+          "wallMs": {
+            "off": 17038,
+            "on": 35732,
+            "delta": 18694
+          },
+          "exactProtocol": {
+            "off": true,
+            "on": true
+          },
+          "firstFileAdmitted": true,
+          "declinedOutputs": 0
+        },
+        {
+          "caseId": "schema_defaults",
+          "requests": {
+            "off": 4,
+            "on": 3
+          },
+          "series": {
+            "off": [
+              {
+                "k": 1,
+                "input": 11899,
+                "cached": 9984,
+                "uncached": 1915,
+                "output": 105,
+                "reasoning": 0,
+                "cachedFraction": 0.8390621060593327,
+                "cost": 0.0070868,
+                "cumulativeCost": 0.0070868
+              },
+              {
+                "k": 2,
+                "input": 12031,
+                "cached": 11008,
+                "uncached": 1023,
+                "output": 136,
+                "reasoning": 58,
+                "cachedFraction": 0.9149696617072562,
+                "cost": 0.0058796000000000005,
+                "cumulativeCost": 0.0129664
+              },
+              {
+                "k": 3,
+                "input": 19434,
+                "cached": 11008,
+                "uncached": 8426,
+                "output": 86,
+                "reasoning": 11,
+                "cachedFraction": 0.5664299680971493,
+                "cost": 0.0200856,
+                "cumulativeCost": 0.033052
+              },
+              {
+                "k": 4,
+                "input": 19549,
+                "cached": 19200,
+                "uncached": 349,
+                "output": 81,
+                "reasoning": 0,
+                "cachedFraction": 0.9821474244206865,
+                "cost": 0.00551,
+                "cumulativeCost": 0.038562
+              }
+            ],
+            "on": [
+              {
+                "k": 1,
+                "input": 11899,
+                "cached": 9984,
+                "uncached": 1915,
+                "output": 124,
+                "reasoning": 17,
+                "cachedFraction": 0.8390621060593327,
+                "cost": 0.0073148,
+                "cumulativeCost": 0.0073148
+              },
+              {
+                "k": 2,
+                "input": 12389,
+                "cached": 11008,
+                "uncached": 1381,
+                "output": 85,
+                "reasoning": 10,
+                "cachedFraction": 0.8885301477116797,
+                "cost": 0.0059836,
+                "cumulativeCost": 0.0132984
+              },
+              {
+                "k": 3,
+                "input": 12503,
+                "cached": 12032,
+                "uncached": 471,
+                "output": 81,
+                "reasoning": 0,
+                "cachedFraction": 0.9623290410301527,
+                "cost": 0.004320399999999999,
+                "cumulativeCost": 0.0176188
+              }
+            ]
+          },
+          "optimizer": {
+            "cost": 0.0024722,
+            "attempts": 1,
+            "statuses": [
+              "admitted"
+            ],
+            "efforts": [
+              "low"
+            ],
+            "reasoningTokens": 370,
+            "latencyMs": 13764,
+            "usage": {
+              "input_tokens": 8371,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 665,
+              "reasoning_output_tokens": 370,
+              "total_tokens": 9036
+            }
+          },
+          "horizon": {
+            "T": 2,
+            "D": [
+              -0.00010399999999999993,
+              0.0157652
+            ],
+            "meanD": 0.0078306,
+            "breakEvenT": 0.3157101626950681,
+            "breakEvenReason": null
+          },
+          "cost": {
+            "off": 0.038562,
+            "onMain": 0.0176188,
+            "optimizer": 0.0024722,
+            "on": 0.020091,
+            "saved": 0.018470999999999998,
+            "savedMain": 0.0209432
+          },
+          "tokens": {
+            "off": 63321,
+            "onMain": 37081,
+            "optimizer": 9036,
+            "on": 46117,
+            "saved": 17204,
+            "savedMain": 26240
+          },
+          "peakInput": {
+            "off": 19549,
+            "on": 12503
+          },
+          "wallMs": {
+            "off": 18446,
+            "on": 29089,
+            "delta": 10643
+          },
+          "exactProtocol": {
+            "off": false,
+            "on": true
+          },
+          "firstFileAdmitted": true,
+          "declinedOutputs": 0
+        },
+        {
+          "caseId": "archive_paths",
+          "requests": {
+            "off": 3,
+            "on": 3
+          },
+          "series": {
+            "off": [
+              {
+                "k": 1,
+                "input": 11898,
+                "cached": 0,
+                "uncached": 11898,
+                "output": 103,
+                "reasoning": 0,
+                "cachedFraction": 0,
+                "cost": 0.025032,
+                "cumulativeCost": 0.025032
+              },
+              {
+                "k": 2,
+                "input": 19033,
+                "cached": 0,
+                "uncached": 19033,
+                "output": 73,
+                "reasoning": 0,
+                "cachedFraction": 0,
+                "cost": 0.038942,
+                "cumulativeCost": 0.063974
+              },
+              {
+                "k": 3,
+                "input": 19135,
+                "cached": 18176,
+                "uncached": 959,
+                "output": 82,
+                "reasoning": 0,
+                "cachedFraction": 0.9498824144238307,
+                "cost": 0.006537200000000001,
+                "cumulativeCost": 0.07051120000000001
+              }
+            ],
+            "on": [
+              {
+                "k": 1,
+                "input": 11898,
+                "cached": 0,
+                "uncached": 11898,
+                "output": 127,
+                "reasoning": 28,
+                "cachedFraction": 0,
+                "cost": 0.02532,
+                "cumulativeCost": 0.02532
+              },
+              {
+                "k": 2,
+                "input": 14701,
+                "cached": 2816,
+                "uncached": 11885,
+                "output": 85,
+                "reasoning": 10,
+                "cachedFraction": 0.19155159512958303,
+                "cost": 0.0253532,
+                "cumulativeCost": 0.0506732
+              },
+              {
+                "k": 3,
+                "input": 14815,
+                "cached": 11008,
+                "uncached": 3807,
+                "output": 123,
+                "reasoning": 39,
+                "cachedFraction": 0.7430307121160985,
+                "cost": 0.0112916,
+                "cumulativeCost": 0.0619648
+              }
+            ]
+          },
+          "optimizer": {
+            "cost": 0.0048936000000000006,
+            "attempts": 1,
+            "statuses": [
+              "admitted"
+            ],
+            "efforts": [
+              "low"
+            ],
+            "reasoningTokens": 121,
+            "latencyMs": 50567,
+            "usage": {
+              "input_tokens": 8106,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 2727,
+              "reasoning_output_tokens": 121,
+              "total_tokens": 10833
+            }
+          },
+          "horizon": {
+            "T": 2,
+            "D": [
+              0.013588799999999998,
+              -0.0047544
+            ],
+            "meanD": 0.0044172,
+            "breakEvenT": 1.1078511274110299,
+            "breakEvenReason": null
+          },
+          "cost": {
+            "off": 0.0705112,
+            "onMain": 0.0619648,
+            "optimizer": 0.0048936000000000006,
+            "on": 0.0668584,
+            "saved": 0.0036527999999999977,
+            "savedMain": 0.008546399999999996
+          },
+          "tokens": {
+            "off": 50324,
+            "onMain": 41749,
+            "optimizer": 10833,
+            "on": 52582,
+            "saved": -2258,
+            "savedMain": 8575
+          },
+          "peakInput": {
+            "off": 19135,
+            "on": 14815
+          },
+          "wallMs": {
+            "off": 16794,
+            "on": 67224,
+            "delta": 50430
+          },
+          "exactProtocol": {
+            "off": true,
+            "on": true
+          },
+          "firstFileAdmitted": true,
+          "declinedOutputs": 0
+        },
+        {
+          "caseId": "event_dedupe",
+          "requests": {
+            "off": 4,
+            "on": 3
+          },
+          "series": {
+            "off": [
+              {
+                "k": 1,
+                "input": 11931,
+                "cached": 0,
+                "uncached": 11931,
+                "output": 102,
+                "reasoning": 0,
+                "cachedFraction": 0,
+                "cost": 0.025086,
+                "cumulativeCost": 0.025086
+              },
+              {
+                "k": 2,
+                "input": 12085,
+                "cached": 11008,
+                "uncached": 1077,
+                "output": 128,
+                "reasoning": 48,
+                "cachedFraction": 0.9108812577575507,
+                "cost": 0.0058916,
+                "cumulativeCost": 0.0309776
+              },
+              {
+                "k": 3,
+                "input": 20088,
+                "cached": 9984,
+                "uncached": 10104,
+                "output": 75,
+                "reasoning": 0,
+                "cachedFraction": 0.4970131421744325,
+                "cost": 0.023104799999999998,
+                "cumulativeCost": 0.0540824
+              },
+              {
+                "k": 4,
+                "input": 20192,
+                "cached": 11008,
+                "uncached": 9184,
+                "output": 96,
+                "reasoning": 0,
+                "cachedFraction": 0.5451664025356577,
+                "cost": 0.021721599999999997,
+                "cumulativeCost": 0.075804
+              }
+            ],
+            "on": [
+              {
+                "k": 1,
+                "input": 11931,
+                "cached": 9984,
+                "uncached": 1947,
+                "output": 128,
+                "reasoning": 26,
+                "cachedFraction": 0.8368116670857431,
+                "cost": 0.0074268,
+                "cumulativeCost": 0.0074268
+              },
+              {
+                "k": 2,
+                "input": 12378,
+                "cached": 11008,
+                "uncached": 1370,
+                "output": 86,
+                "reasoning": 9,
+                "cachedFraction": 0.8893197608660527,
+                "cost": 0.005973600000000001,
+                "cumulativeCost": 0.0134004
+              },
+              {
+                "k": 3,
+                "input": 12493,
+                "cached": 12032,
+                "uncached": 461,
+                "output": 151,
+                "reasoning": 53,
+                "cachedFraction": 0.9630993356279517,
+                "cost": 0.0051404,
+                "cumulativeCost": 0.0185408
+              }
+            ]
+          },
+          "optimizer": {
+            "cost": 0.0022124000000000002,
+            "attempts": 1,
+            "statuses": [
+              "admitted"
+            ],
+            "efforts": [
+              "low"
+            ],
+            "reasoningTokens": 97,
+            "latencyMs": 7907,
+            "usage": {
+              "input_tokens": 9004,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 343,
+              "reasoning_output_tokens": 97,
+              "total_tokens": 9347
+            }
+          },
+          "horizon": {
+            "T": 2,
+            "D": [
+              -0.00008200000000000048,
+              0.0179644
+            ],
+            "meanD": 0.0089412,
+            "breakEvenT": 0.24743882252941443,
+            "breakEvenReason": null
+          },
+          "cost": {
+            "off": 0.075804,
+            "onMain": 0.0185408,
+            "optimizer": 0.0022124000000000002,
+            "on": 0.0207532,
+            "saved": 0.0550508,
+            "savedMain": 0.0572632
+          },
+          "tokens": {
+            "off": 64697,
+            "onMain": 37167,
+            "optimizer": 9347,
+            "on": 46514,
+            "saved": 18183,
+            "savedMain": 27530
+          },
+          "peakInput": {
+            "off": 20192,
+            "on": 12493
+          },
+          "wallMs": {
+            "off": 19794,
+            "on": 24433,
+            "delta": 4639
+          },
+          "exactProtocol": {
+            "off": false,
+            "on": true
+          },
+          "firstFileAdmitted": true,
+          "declinedOutputs": 0
+        },
+        {
+          "caseId": "replica_quorum",
+          "requests": {
+            "off": 3,
+            "on": 3
+          },
+          "series": {
+            "off": [
+              {
+                "k": 1,
+                "input": 11924,
+                "cached": 0,
+                "uncached": 11924,
+                "output": 118,
+                "reasoning": 17,
+                "cachedFraction": 0,
+                "cost": 0.025264,
+                "cumulativeCost": 0.025264
+              },
+              {
+                "k": 2,
+                "input": 19082,
+                "cached": 11008,
+                "uncached": 8074,
+                "output": 76,
+                "reasoning": 0,
+                "cachedFraction": 0.576878733885337,
+                "cost": 0.0192616,
+                "cumulativeCost": 0.0445256
+              },
+              {
+                "k": 3,
+                "input": 19187,
+                "cached": 18176,
+                "uncached": 1011,
+                "output": 165,
+                "reasoning": 57,
+                "cachedFraction": 0.9473080731745452,
+                "cost": 0.007637200000000001,
+                "cumulativeCost": 0.0521628
+              }
+            ],
+            "on": [
+              {
+                "k": 1,
+                "input": 11924,
+                "cached": 2816,
+                "uncached": 9108,
+                "output": 137,
+                "reasoning": 16,
+                "cachedFraction": 0.23616236162361623,
+                "cost": 0.0204232,
+                "cumulativeCost": 0.0204232
+              },
+              {
+                "k": 2,
+                "input": 12351,
+                "cached": 11008,
+                "uncached": 1343,
+                "output": 114,
+                "reasoning": 36,
+                "cachedFraction": 0.8912638652740669,
+                "cost": 0.0062556,
+                "cumulativeCost": 0.0266788
+              },
+              {
+                "k": 3,
+                "input": 12494,
+                "cached": 12032,
+                "uncached": 462,
+                "output": 106,
+                "reasoning": 0,
+                "cachedFraction": 0.9630222506803265,
+                "cost": 0.0046023999999999995,
+                "cumulativeCost": 0.031281199999999995
+              }
+            ]
+          },
+          "optimizer": {
+            "cost": 0.00216,
+            "attempts": 1,
+            "statuses": [
+              "admitted"
+            ],
+            "efforts": [
+              "low"
+            ],
+            "reasoningTokens": 216,
+            "latencyMs": 9794,
+            "usage": {
+              "input_tokens": 8154,
+              "cached_input_tokens": 0,
+              "cache_write_tokens": 0,
+              "output_tokens": 441,
+              "reasoning_output_tokens": 216,
+              "total_tokens": 8595
+            }
+          },
+          "horizon": {
+            "T": 2,
+            "D": [
+              0.013006,
+              0.0030348000000000016
+            ],
+            "meanD": 0.0080204,
+            "breakEvenT": 0.26931325120941596,
+            "breakEvenReason": null
+          },
+          "cost": {
+            "off": 0.0521628,
+            "onMain": 0.0312812,
+            "optimizer": 0.00216,
+            "on": 0.033441200000000004,
+            "saved": 0.018721599999999998,
+            "savedMain": 0.0208816
+          },
+          "tokens": {
+            "off": 50552,
+            "onMain": 37126,
+            "optimizer": 8595,
+            "on": 45721,
+            "saved": 4831,
+            "savedMain": 13426
+          },
+          "peakInput": {
+            "off": 19187,
+            "on": 12494
+          },
+          "wallMs": {
+            "off": 18306,
+            "on": 27466,
+            "delta": 9160
+          },
+          "exactProtocol": {
+            "off": true,
+            "on": true
+          },
+          "firstFileAdmitted": true,
+          "declinedOutputs": 0
+        }
+      ],
+      "excluded": [],
+      "summary": {
+        "pairs": 5,
+        "rows": [
+          {
+            "caseId": "lease_fencing",
+            "requests": {
+              "off": 3,
+              "on": 3
+            },
+            "savedCost": 0.029245600000000004,
+            "savedTokens": 3356,
+            "savedMainTokens": 12523,
+            "optimizerCost": 0.0027624,
+            "meanD": 0.0069884,
+            "breakEvenT": 0.3952836128441417,
+            "wallMs": {
+              "off": 17038,
+              "on": 35732,
+              "delta": 18694
+            }
+          },
+          {
+            "caseId": "schema_defaults",
+            "requests": {
+              "off": 4,
+              "on": 3
+            },
+            "savedCost": 0.018470999999999998,
+            "savedTokens": 17204,
+            "savedMainTokens": 26240,
+            "optimizerCost": 0.0024722,
+            "meanD": 0.0078306,
+            "breakEvenT": 0.3157101626950681,
+            "wallMs": {
+              "off": 18446,
+              "on": 29089,
+              "delta": 10643
+            }
+          },
+          {
+            "caseId": "archive_paths",
+            "requests": {
+              "off": 3,
+              "on": 3
+            },
+            "savedCost": 0.0036527999999999977,
+            "savedTokens": -2258,
+            "savedMainTokens": 8575,
+            "optimizerCost": 0.0048936000000000006,
+            "meanD": 0.0044172,
+            "breakEvenT": 1.1078511274110299,
+            "wallMs": {
+              "off": 16794,
+              "on": 67224,
+              "delta": 50430
+            }
+          },
+          {
+            "caseId": "event_dedupe",
+            "requests": {
+              "off": 4,
+              "on": 3
+            },
+            "savedCost": 0.0550508,
+            "savedTokens": 18183,
+            "savedMainTokens": 27530,
+            "optimizerCost": 0.0022124000000000002,
+            "meanD": 0.0089412,
+            "breakEvenT": 0.24743882252941443,
+            "wallMs": {
+              "off": 19794,
+              "on": 24433,
+              "delta": 4639
+            }
+          },
+          {
+            "caseId": "replica_quorum",
+            "requests": {
+              "off": 3,
+              "on": 3
+            },
+            "savedCost": 0.018721599999999998,
+            "savedTokens": 4831,
+            "savedMainTokens": 13426,
+            "optimizerCost": 0.00216,
+            "meanD": 0.0080204,
+            "breakEvenT": 0.26931325120941596,
+            "wallMs": {
+              "off": 18306,
+              "on": 27466,
+              "delta": 9160
+            }
+          }
+        ],
+        "wallMs": {
+          "off": 90378,
+          "on": 183944
+        },
+        "cost": {
+          "off": 0.2887088,
+          "on": 0.16356700000000002,
+          "positive": 5,
+          "median": 0.018721599999999998,
+          "min": 0.0036527999999999977,
+          "max": 0.0550508,
+          "total": 0.1251418,
+          "signTest": {
+            "wins": 5,
+            "losses": 0,
+            "ties": 0,
+            "p": 0.0625
+          }
+        },
+        "tokens": {
+          "off": 279514,
+          "on": 238198,
+          "positive": 4,
+          "median": 4831,
+          "min": -2258,
+          "max": 18183,
+          "total": 41316,
+          "signTest": {
+            "wins": 4,
+            "losses": 1,
+            "ties": 0,
+            "p": 0.375
+          }
+        },
+        "mainTokens": {
+          "positive": 5,
+          "median": 13426,
+          "min": 8575,
+          "max": 27530,
+          "total": 88294,
+          "signTest": {
+            "wins": 5,
+            "losses": 0,
+            "ties": 0,
+            "p": 0.0625
+          }
+        }
+      }
+    }
+  ]
+}

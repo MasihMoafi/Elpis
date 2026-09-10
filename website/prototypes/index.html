@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en" data-theme="elpis-prototype">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Three terminal-native Elpis TUI interaction prototypes." />
+    <title>Elpis TUI code prototypes</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content">
+    <header class="navbar min-h-16 border-b border-base-300 bg-base-100 px-4 lg:px-6" aria-label="Prototype controls">
+      <div class="flex min-w-48 flex-col items-start gap-0">
+        <strong class="font-mono text-sm tracking-[0.16em] text-warning">ELPIS TUI STUDY</strong>
+        <span class="text-xs text-base-content/50" data-prototype-axis>Live turn · minimal structural change</span>
+      </div>
+      <div class="mx-auto overflow-x-auto px-4">
+        <div role="tablist" class="tabs tabs-border tabs-sm whitespace-nowrap" aria-label="Choose a prototype">
+          <button role="tab" class="tab tab-active" aria-selected="true" data-view="cockpit">1 Goal cockpit</button>
+          <button role="tab" class="tab" aria-selected="false" data-view="continuity">2 Continuity spine</button>
+          <button role="tab" class="tab" aria-selected="false" data-view="workbench">3 Ledger workbench</button>
+        </div>
+      </div>
+      <div class="hidden min-w-48 justify-end text-right font-mono text-xs text-base-content/45 xl:flex">
+        <span><kbd class="kbd kbd-xs">1</kbd>–<kbd class="kbd kbd-xs">3</kbd> switch view</span>
+      </div>
+    </header>
+
+    <main class="prototype-stage" aria-live="polite">
+      <p class="sr-only" id="prototype-announcement">Goal cockpit prototype selected.</p>
+
+      <section class="card card-border tui-shell" data-prototype="cockpit" aria-labelledby="cockpit-title">
+        <header class="tui-header">
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="tui-mark" aria-hidden="true">◆</span>
+            <strong id="cockpit-title">ELPIS</strong>
+            <span class="truncate text-base-content/50">~/Desktop/p/Elpis</span>
+          </div>
+          <div class="flex items-center gap-3 text-base-content/55">
+            <span>gpt-5.6</span><span>·</span><span>local</span>
+          </div>
+        </header>
+
+        <div class="goal-band">
+          <span>CURRENT GOAL</span>
+          <strong>Verify context accounting before changing display</strong>
+          <small>active</small>
+        </div>
+
+        <div class="cockpit-grid">
+          <section class="transcript-pane" aria-label="Active turn">
+            <ul class="list transcript-list">
+              <li class="list-row transcript-row">
+                <span class="tui-mark">›</span>
+                <div>
+                  <strong class="row-label">USER</strong>
+                  <p>Familiarize yourself with the project: find the intent, verify docs against code, then map the relevant source.</p>
+                </div>
+              </li>
+              <li class="list-row transcript-row muted-row">
+                <span class="tui-mark">◆</span>
+                <div><strong class="row-label">ELPIS</strong><p>Reading product truth before touching code.</p></div>
+              </li>
+              <li class="list-row transcript-row">
+                <span class="tui-mark">└</span>
+                <div class="mockup-code tool-stack">
+                  <pre data-prefix="›"><code>read docs/GUIDE.md docs/context.md docs/sessions.md</code></pre>
+                  <pre data-prefix="✓" class="text-success"><code>product and context contracts loaded</code></pre>
+                  <pre data-prefix="›"><code>rg -n "context|session|ledger" docs codex-rs</code></pre>
+                  <pre data-prefix="◆" class="evidence-line"><code>[ACE · same result · 486 tokens]</code></pre>
+                </div>
+              </li>
+              <li class="list-row transcript-row">
+                <span class="tui-mark">◆</span>
+                <div>
+                  <strong class="row-label">ELPIS</strong>
+                  <p>Docs and runtime agree on deliberate admission. Exact resume remains provider-native; portable continuity uses admitted checkpoints.</p>
+                </div>
+              </li>
+            </ul>
+
+            <label class="composer-label" for="cockpit-composer">FOLLOW-UP</label>
+            <textarea id="cockpit-composer" class="textarea textarea-ghost tui-composer" rows="2" placeholder="Ask a follow-up"></textarea>
+          </section>
+
+          <aside class="ledger-pane" aria-label="Context Ledger">
+            <div class="ledger-heading">
+              <strong>CONTEXT LEDGER</strong>
+              <span data-context-total>Total ≈6.0k admitted</span>
+            </div>
+            <p class="ledger-help">Changes apply to the next request. Inspect before toggling.</p>
+
+            <div class="setting-row">
+              <div><strong>Automatic pruning</strong><small>Experimental · next conversation</small></div>
+              <span class="state-off">Off</span>
+            </div>
+
+            <div class="ledger-group">
+              <div class="ledger-group-title memory-title"><span>■</span><strong>MANUAL MEMORY</strong><small>0 admitted</small></div>
+              <button class="btn btn-ghost admission-row" type="button" aria-pressed="false" data-admission-toggle data-tokens="0.0">
+                <span>[ ]</span><u>MEMORY.md</u><small>user-managed</small><b class="admission-state">EXCLUDED</b>
+              </button>
+            </div>
+
+            <div class="ledger-group">
+              <div class="ledger-group-title instruction-title"><span>■</span><strong>INSTRUCTIONS</strong><small>≈5.4k admitted</small></div>
+              <button class="btn btn-ghost admission-row" type="button" aria-pressed="true" data-admission-toggle data-tokens="1.9">
+                <span>[x]</span><u>Project AGENTS.md</u><small>≈1.9k</small><b class="admission-state">INCLUDED</b>
+              </button>
+              <button class="btn btn-ghost admission-row" type="button" aria-pressed="true" data-admission-toggle data-tokens="1.5">
+                <span>[x]</span><u>dev/AGENTS.md</u><small>≈1.5k</small><b class="admission-state">INCLUDED</b>
+              </button>
+              <button class="btn btn-ghost admission-row" type="button" aria-pressed="true" data-admission-toggle data-tokens="2.0">
+                <span>[x]</span><u>dev rules</u><small>≈2.0k</small><b class="admission-state">INCLUDED</b>
+              </button>
+            </div>
+
+            <div class="ledger-group">
+              <div class="ledger-group-title evidence-title"><span>■</span><strong>TOOL EVIDENCE</strong><small>≈642 admitted</small></div>
+              <button class="btn btn-ghost admission-row" type="button" aria-pressed="true" data-admission-toggle data-tokens="0.642">
+                <span>[x]</span><u>ES.md</u><small>≈642</small><b class="admission-state">INCLUDED</b>
+              </button>
+            </div>
+          </aside>
+        </div>
+
+        <footer class="tui-footer">
+          <span><kbd class="kbd kbd-xs">Tab</kbd> focus Ledger · <kbd class="kbd kbd-xs">Alt C</kbd> toggle Ledger</span>
+          <span>87% context left</span>
+        </footer>
+      </section>
+
+      <section class="card card-border tui-shell" data-prototype="continuity" aria-labelledby="continuity-title" hidden>
+        <header class="tui-header">
+          <div class="flex min-w-0 items-center gap-3"><span class="tui-mark">◆</span><strong id="continuity-title">ELPIS</strong><span class="text-base-content/50">session continuity</span></div>
+          <div class="text-base-content/55">gpt-5.6 · local</div>
+        </header>
+
+        <div class="goal-band">
+          <span>CURRENT GOAL</span>
+          <strong>Verify context accounting before changing display</strong>
+          <small>thread active</small>
+        </div>
+
+        <div class="continuity-grid">
+          <section class="continuity-pane" aria-label="Session continuity events">
+            <div class="section-line"><strong>CONTINUITY SPINE</strong><span>oldest → newest</span></div>
+            <ul class="timeline timeline-vertical timeline-compact continuity-timeline">
+              <li>
+                <div class="timeline-start">01</div><div class="timeline-middle timeline-dot confirmed">●</div>
+                <button class="btn btn-ghost timeline-end continuity-event" type="button" aria-pressed="false" data-continuity-event data-event="goal" data-title="Goal established" data-summary="The active goal is explicit and remains the primary task anchor." data-source="GOAL.md · task lifetime">
+                  <strong>GOAL ESTABLISHED</strong><span>Verify context accounting before changing display</span>
+                </button><hr />
+              </li>
+              <li>
+                <hr /><div class="timeline-start">02</div><div class="timeline-middle timeline-dot confirmed">●</div>
+                <button class="btn btn-ghost timeline-end continuity-event" type="button" aria-pressed="false" data-continuity-event data-event="context" data-title="Context admitted" data-summary="Project instructions and the latest evidence checkpoint are admitted deliberately. Manual memory remains excluded." data-source="Context Ledger · next request">
+                  <strong>CONTEXT ADMITTED</strong><span>Project rules included · MEMORY.md excluded</span>
+                </button><hr />
+              </li>
+              <li>
+                <hr /><div class="timeline-start">03</div><div class="timeline-middle timeline-dot active">●</div>
+                <button class="btn btn-ghost timeline-end continuity-event selected" type="button" aria-pressed="true" data-continuity-event data-event="runtime" data-title="Runtime handoff" data-summary="Elpis keeps its portable goal and admitted checkpoint. Native exact resume stays with the originating provider thread." data-source="GOAL.md + ES.md · provider-neutral">
+                  <strong>RUNTIME HANDOFF</strong><span>portable checkpoint retained</span>
+                </button><hr />
+              </li>
+              <li>
+                <hr /><div class="timeline-start">04</div><div class="timeline-middle timeline-dot pending">●</div>
+                <button class="btn btn-ghost timeline-end continuity-event" type="button" aria-pressed="false" data-continuity-event data-event="evidence" data-title="Evidence attached" data-summary="The completed command and its compact result remain inspectable through the provider transcript and ES.md." data-source="provider transcript + ES.md">
+                  <strong>EVIDENCE ATTACHED</strong><span>command exit 0 · result pointer retained</span>
+                </button><hr />
+              </li>
+              <li>
+                <hr /><div class="timeline-start">05</div><div class="timeline-middle timeline-dot quiet">○</div>
+                <button class="btn btn-ghost timeline-end continuity-event" type="button" aria-pressed="false" data-continuity-event data-event="next" data-title="Next action" data-summary="Resume from the same goal, then verify the display path before changing context accounting." data-source="ES.md · exact evidence linked">
+                  <strong>NEXT ACTION</strong><span>verify one display path</span>
+                </button>
+              </li>
+            </ul>
+          </section>
+
+          <aside class="continuity-detail" aria-label="Selected continuity event">
+            <div class="section-line"><strong data-continuity-title>RUNTIME HANDOFF</strong><span>selected</span></div>
+            <p data-continuity-summary>Elpis keeps its portable goal and admitted checkpoint. Native exact resume stays with the originating provider thread.</p>
+            <dl class="detail-list">
+              <div><dt>PORTABLE STATE</dt><dd data-continuity-source>GOAL.md + ES.md · provider-neutral</dd></div>
+              <div><dt>EXACT RESUME</dt><dd>provider-native exact resume</dd></div>
+              <div><dt>THREAD</dt><dd>original transcript remains evidence</dd></div>
+              <div><dt>AUTOMATIC PRUNING</dt><dd>Experimental · Off</dd></div>
+            </dl>
+            <p class="truth-note">Change the runtime. Keep the working agreement—not an invented cross-provider transcript.</p>
+          </aside>
+        </div>
+
+        <div class="continuity-composer">
+          <textarea class="textarea textarea-ghost tui-composer" rows="2" placeholder="Ask a follow-up"></textarea>
+        </div>
+        <footer class="tui-footer"><span><kbd class="kbd kbd-xs">↑</kbd><kbd class="kbd kbd-xs">↓</kbd> select event · <kbd class="kbd kbd-xs">Enter</kbd> inspect</span><span>portable ≠ native transcript</span></footer>
+      </section>
+
+      <section class="card card-border tui-shell" data-prototype="workbench" aria-labelledby="workbench-title" hidden>
+        <header class="tui-header">
+          <div class="flex min-w-0 items-center gap-3"><span class="tui-mark">◆</span><strong id="workbench-title">ELPIS</strong><span class="text-base-content/50">operator workbench</span></div>
+          <div class="text-base-content/55">gpt-5.6 · local</div>
+        </header>
+
+        <div class="goal-band">
+          <span>CURRENT GOAL</span>
+          <strong>Verify context accounting before changing display</strong>
+          <small>inspectable</small>
+        </div>
+
+        <div class="workbench-grid">
+          <nav class="workbench-rail" aria-label="Workbench modes">
+            <ul class="menu menu-sm">
+              <li><button type="button" data-workbench-mode="goal">GOAL</button></li>
+              <li><button type="button" class="menu-active" data-workbench-mode="context">CONTEXT</button></li>
+              <li><button type="button" data-workbench-mode="control">CONTROL</button></li>
+              <li><button type="button" data-workbench-mode="evidence">EVIDENCE</button></li>
+            </ul>
+            <div class="rail-state"><span>Automatic pruning</span><strong>Experimental · Off</strong></div>
+          </nav>
+
+          <div class="workbench-main">
+            <section class="workbench-panel" data-workbench-panel="goal" hidden>
+              <div class="section-line"><strong>ACTIVE GOAL</strong><span>task lifetime</span></div>
+              <div class="focus-copy">
+                <p>Verify context accounting before changing display.</p>
+                <dl class="detail-list"><div><dt>SOURCE</dt><dd>GOAL.md</dd></div><div><dt>STATUS</dt><dd>active</dd></div><div><dt>NEXT ACTION</dt><dd>inspect context_ledger.rs display path</dd></div></dl>
+              </div>
+            </section>
+
+            <section class="workbench-panel" data-workbench-panel="context">
+              <div class="section-line"><strong>CONTEXT LEDGER</strong><span>changes apply next request</span></div>
+              <div class="context-workspace">
+                <div class="overflow-x-auto">
+                  <table class="table table-sm context-table">
+                    <thead><tr><th>Source</th><th>Kind</th><th>State</th><th>Tokens</th><th>Provenance</th></tr></thead>
+                    <tbody>
+                      <tr tabindex="0" role="button" class="source-selected" data-source-row data-source="Project AGENTS.md" data-kind="instruction" data-state="INCLUDED" data-tokens="≈1.9k" data-provenance="project root" data-why="Project operating instructions admitted for the next request.">
+                        <td>Project AGENTS.md</td><td>instruction</td><td class="source-state included">INCLUDED</td><td>≈1.9k</td><td>project root</td>
+                      </tr>
+                      <tr tabindex="0" role="button" data-source-row data-source="MEMORY.md" data-kind="Manual memory" data-state="EXCLUDED" data-tokens="0" data-provenance="user-managed local file" data-why="Manual memory exists as an explicit Ledger row and is not admitted.">
+                        <td>MEMORY.md</td><td>Manual memory</td><td class="source-state excluded">EXCLUDED</td><td>0</td><td>user-managed</td>
+                      </tr>
+                      <tr tabindex="0" role="button" data-source-row data-source="ES.md" data-kind="tool evidence" data-state="INCLUDED" data-tokens="≈642" data-provenance="completed turn" data-why="Compact latest result and exact evidence pointers retained for continuity.">
+                        <td>ES.md</td><td>tool evidence</td><td class="source-state included">INCLUDED</td><td>≈642</td><td>completed turn</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <aside class="source-inspector" aria-label="Selected source details">
+                  <strong data-source-name>Project AGENTS.md</strong>
+                  <p data-source-why>Project operating instructions admitted for the next request.</p>
+                  <dl class="detail-list compact-details">
+                    <div><dt>KIND</dt><dd data-source-kind>instruction</dd></div>
+                    <div><dt>STATE</dt><dd data-source-state>INCLUDED</dd></div>
+                    <div><dt>TOKENS</dt><dd data-source-tokens>≈1.9k</dd></div>
+                    <div><dt>PROVENANCE</dt><dd data-source-provenance>project root</dd></div>
+                  </dl>
+                  <div class="join source-actions">
+                    <button class="btn btn-sm join-item" type="button" data-source-action="include">Include</button>
+                    <button class="btn btn-sm btn-ghost join-item" type="button" data-source-action="exclude">Exclude</button>
+                  </div>
+                </aside>
+              </div>
+            </section>
+
+            <section class="workbench-panel" data-workbench-panel="control" hidden>
+              <div class="section-line"><strong>PERMISSION CONTROL</strong><span>current: Default</span></div>
+              <ul class="list control-list">
+                <li class="list-row"><strong>Read Only</strong><span>Read workspace files; edits and internet require approval.</span></li>
+                <li class="list-row selected-control"><strong>Default</strong><span>Read and edit inside the workspace; internet and outside paths require approval.</span></li>
+                <li class="list-row"><strong>Full Access</strong><span>Filesystem and internet restrictions are off.</span></li>
+              </ul>
+            </section>
+
+            <section class="workbench-panel" data-workbench-panel="evidence" hidden>
+              <div class="section-line"><strong>EXACT EVIDENCE</strong><span>provider transcript on disk</span></div>
+              <ul class="list evidence-list">
+                <li class="list-row"><strong>COMMAND</strong><span>rg -n "context|session|ledger" docs codex-rs</span><b>exit 0</b></li>
+                <li class="list-row"><strong>RESULT</strong><span>[ACE · same result · 486 tokens]</span><b>retained</b></li>
+                <li class="list-row"><strong>CHECKPOINT</strong><span>ES.md</span><b>≈642</b></li>
+              </ul>
+            </section>
+
+            <div class="workbench-command">
+              <textarea class="textarea textarea-ghost tui-composer" rows="2" placeholder="Inspect selected source or ask a follow-up"></textarea>
+              <div class="command-actions"><span><kbd class="kbd kbd-xs">i</kbd> inspect</span><span><kbd class="kbd kbd-xs">+</kbd> include</span><span><kbd class="kbd kbd-xs">−</kbd> exclude</span></div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="tui-footer"><span><kbd class="kbd kbd-xs">↑</kbd><kbd class="kbd kbd-xs">↓</kbd> move · <kbd class="kbd kbd-xs">Space</kbd> toggle · <kbd class="kbd kbd-xs">w</kbd> why</span><span>provider-native exact resume</span></footer>
+      </section>
+    </main>
+  </body>
+</html>

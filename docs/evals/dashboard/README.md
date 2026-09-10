@@ -1,5 +1,11 @@
 # Experiment dashboard
 
+**Historical Run 1 comparison, reviewed September 9, 2026.** This dashboard uses
+the superseded pruning configuration. It is separate from the current product's
+live dashboard and from the [newer cost study](../rq3/COST_EFFICIENCY_RESULTS.md).
+See the [public-content audit](../public-content-audit-20260909.md) for build and
+test provenance. The current cost charts come from `scripts/refresh-public-evidence.py`.
+
 The measuring instruments. `dashboard.html` is generated — never edit it by hand, edit the
 inputs and re-run `build.py`.
 
@@ -13,8 +19,9 @@ python3 collect.py <path-to-rollout.jsonl> --split --system <codex|elpis>   # wr
 python3 build.py                                                            # redraws dashboard.html
 ```
 
-Naming is what wires a run into the page: `exp<N>-codex` and `exp<N>-elpis`. `build.py` looks
-those names up; nothing else needs touching.
+The collector names runs `exp<N>-codex` and `exp<N>-elpis`. The current `build.py`
+explicitly loads `exp1-codex` and `exp1-elpis`; adding a file does not automatically
+include a new cohort. Update the selected inputs and evidence labels deliberately.
 
 ## Files
 
@@ -22,7 +29,7 @@ those names up; nothing else needs touching.
 | --- | --- |
 | `collect.py` | Transcript → `runs/<id>.json` |
 | `charts.py` | Pure-SVG primitives — no CDN, so the page opens offline |
-| `build.py` | Redraws the page from whatever is in `runs/` |
+| `build.py` | Redraws the historical comparison from the two selected Run 1 files |
 
 ## Two accounting rules that change the headline if you get them wrong
 

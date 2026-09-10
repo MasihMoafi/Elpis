@@ -49,7 +49,11 @@ def plain(a, b, f="{:,.0f}"):
 S = []
 
 S.append(f"""<header>
-<p class="eyebrow">Experiment 1 · message 1 · gpt-5.6-luna both arms</p>
+<p class="eyebrow">Historical Experiment 1 · message 1 · gpt-5.6-luna both arms</p>
+<p class="sub"><strong>Historical context comparison, superseded pruning configuration.</strong>
+This dashboard does not show the September 2026 cost study or the current UI build.
+See <a href="../rq3/COST_EFFICIENCY_RESULTS.md">the newer cost results</a> and
+<a href="../public-content-audit-20260909.md">the evidence audit</a>.</p>
 <h1>“{PROMPT}”</h1>
 <p class="sub">One prompt, two systems, identical clean checkouts of the same repository and the same
 258,400-token window. Both arms ran on <code>gpt-5.6-luna</code>. Every number here is read out of the

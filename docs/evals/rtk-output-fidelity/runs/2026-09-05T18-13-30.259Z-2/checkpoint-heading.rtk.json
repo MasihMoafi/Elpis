@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "rtk",
+    "read",
+    "ES.md",
+    "--max-lines",
+    "12"
+  ],
+  "status": 0,
+  "signal": null,
+  "error": "spawnSync rtk EPERM",
+  "stdout": "# Execution State\n\n## 2026-09-05 First RTK Fidelity Experiment\n\n- Intent: begin with no-model-cost, useful repository inspection; isolate RTK output\n  from subsequent Elpis summaries before attributing missing information.\n[120 more lines]",
+  "stderr": ""
+}

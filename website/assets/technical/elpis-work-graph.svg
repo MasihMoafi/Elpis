@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+<rect x="0" y="0" width="1200" height="900" fill="#0d1117" rx="12" />
+  <title id="title">Elpis deterministic work graph, refined</title>
+  <desc id="desc">A refined work graph showing a coordinator validating and persisting a DAG, a dependency-ready scheduler feeding the task graph, and an evidence gate accepting worker reports before releasing dependents.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e1621"/><stop offset="1" stop-color="#101b28"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.22"/></filter>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M 1 1 L 11 6 L 1 11 z" fill="#718096"/></marker>
+    <marker id="greenArrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M 1 1 L 11 6 L 1 11 z" fill="#7bd6a3"/></marker>
+    <marker id="cyanArrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M 1 1 L 11 6 L 1 11 z" fill="#39c6d8"/></marker>
+  </defs>
+  <rect width="1200" height="900" fill="url(#bg)"/>
+  <text x="100" y="52" fill="#8ea2b8" font-family="Inter,ui-sans-serif,system-ui,sans-serif" font-size="13" font-weight="700" letter-spacing="2.2">DETERMINISTIC WORK GRAPHS</text>
+  <text x="100" y="88" fill="#f4f7fb" font-family="Inter,ui-sans-serif,system-ui,sans-serif" font-size="29" font-weight="700">Bounded work, released by evidence</text>
+  <text x="100" y="116" fill="#9aaabd" font-family="Inter,ui-sans-serif,system-ui,sans-serif" font-size="16">The coordinator owns the graph; workers receive only ready tasks and declared authority.</text>
+
+  <g stroke="#718096" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <line x1="310" y1="240" x2="350" y2="240"/>
+    <line x1="560" y1="240" x2="600" y2="240"/>
+    <line x1="810" y1="240" x2="850" y2="240"/>
+  </g>
+  <path d="M705 300 L705 350 L300 350 L300 400" fill="none" stroke="#39c6d8" stroke-width="2" marker-end="url(#cyanArrow)"/>
+  <line x1="975" y1="300" x2="975" y2="400" stroke="#7bd6a3" stroke-width="2" marker-end="url(#greenArrow)"/>
+  <line x1="500" y1="510" x2="540" y2="510" stroke="#7bd6a3" stroke-width="2" marker-end="url(#greenArrow)"/>
+
+  <g filter="url(#shadow)" font-family="Inter,ui-sans-serif,system-ui,sans-serif">
+    <rect x="100" y="180" width="210" height="120" rx="16" fill="#17212b" stroke="#718096" stroke-width="1.5"/>
+    <text x="128" y="216" fill="#9aaabd" font-size="13" font-weight="700" letter-spacing="1">INPUT</text>
+    <text x="128" y="248" fill="#f4f7fb" font-size="18" font-weight="700">Coordinator</text>
+    <text x="128" y="274" fill="#a7b5c5" font-size="14">Submits complete DAG</text>
+
+    <rect x="350" y="180" width="210" height="120" rx="16" fill="#15343d" stroke="#39c6d8" stroke-width="2"/>
+    <text x="378" y="216" fill="#b5e8ed" font-size="13" font-weight="700" letter-spacing="1">1</text>
+    <text x="378" y="248" fill="#f4f7fb" font-size="18" font-weight="700">Validate graph</text>
+    <text x="378" y="274" fill="#b5e8ed" font-size="14">Cycles, scopes, roles</text>
+
+    <rect x="600" y="180" width="210" height="120" rx="16" fill="#15343d" stroke="#39c6d8" stroke-width="2"/>
+    <text x="628" y="216" fill="#b5e8ed" font-size="13" font-weight="700" letter-spacing="1">2</text>
+    <text x="628" y="248" fill="#f4f7fb" font-size="18" font-weight="700">Persist graph</text>
+    <text x="628" y="274" fill="#b5e8ed" font-size="14">Tasks, dependencies</text>
+
+    <rect x="850" y="180" width="250" height="120" rx="16" fill="#15343d" stroke="#39c6d8" stroke-width="2"/>
+    <text x="878" y="216" fill="#b5e8ed" font-size="13" font-weight="700" letter-spacing="1">3</text>
+    <text x="878" y="248" fill="#f4f7fb" font-size="18" font-weight="700">Ready scan + dispatch</text>
+    <text x="878" y="274" fill="#b5e8ed" font-size="14">Ordered, bounded release</text>
+
+    <rect x="100" y="400" width="400" height="220" rx="16" fill="#17212b" stroke="#718096" stroke-width="1.5"/>
+    <text x="128" y="434" fill="#8ea2b8" font-size="13" font-weight="700" letter-spacing="1">PERSISTED TASK GRAPH</text>
+    <text x="128" y="464" fill="#f4f7fb" font-size="18" font-weight="700">Dependency-ready work only</text>
+    <rect x="128" y="488" width="160" height="52" rx="12" fill="#15343d" stroke="#39c6d8" stroke-width="1.5"/>
+    <text x="208" y="520" fill="#f4f7fb" font-size="15" font-weight="700" text-anchor="middle">foundation</text>
+    <line x1="288" y1="514" x2="332" y2="514" stroke="#718096" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="332" y="488" width="140" height="52" rx="12" fill="#17212b" stroke="#718096" stroke-width="1.5"/>
+    <text x="402" y="513" fill="#f4f7fb" font-size="12" font-weight="700" text-anchor="middle">verify-</text>
+    <text x="402" y="529" fill="#f4f7fb" font-size="12" font-weight="700" text-anchor="middle">foundation</text>
+    <text x="128" y="574" fill="#a7b5c5" font-size="13">Verifier unlocks after the prerequisite succeeds.</text>
+    <text x="128" y="594" fill="#718096" font-size="12">Blocked descendants remain un-dispatched.</text>
+
+    <rect x="540" y="400" width="560" height="220" rx="16" fill="#20382d" stroke="#7bd6a3" stroke-width="2"/>
+    <text x="568" y="434" fill="#9de0b6" font-size="13" font-weight="700" letter-spacing="1">4 · WORKER REPORT + EVIDENCE GATE</text>
+    <text x="568" y="464" fill="#f4f7fb" font-size="18" font-weight="700">Accept report before releasing dependents</text>
+    <text x="568" y="500" fill="#c2ebcd" font-size="14">Worker stays inside declared scope and environment</text>
+    <text x="568" y="524" fill="#c2ebcd" font-size="14">Changed files match the measured workspace state</text>
+    <text x="568" y="548" fill="#c2ebcd" font-size="14">Checks, evidence, risks, and open questions recorded</text>
+    <line x1="568" y1="568" x2="1072" y2="568" stroke="#2a523e" stroke-width="1"/>
+    <text x="568" y="594" fill="#9de0b6" font-size="13" font-weight="700">Accepted → release dependents   ·   Failed → block descendants</text>
+
+    <rect x="100" y="660" width="1000" height="90" rx="16" fill="#17212b" stroke="#718096" stroke-width="1.5"/>
+    <text x="128" y="694" fill="#8ea2b8" font-size="13" font-weight="700" letter-spacing="1">WORKER GUARDRAILS</text>
+    <text x="128" y="726" fill="#f4f7fb" font-size="15" font-weight="700">Write scopes</text>
+    <text x="268" y="726" fill="#718096" font-size="16">·</text>
+    <text x="308" y="726" fill="#f4f7fb" font-size="15" font-weight="700">Environment boundaries</text>
+    <text x="553" y="726" fill="#718096" font-size="16">·</text>
+    <text x="593" y="726" fill="#f4f7fb" font-size="15" font-weight="700">Concurrency limit</text>
+    <text x="773" y="726" fill="#718096" font-size="16">·</text>
+    <text x="813" y="726" fill="#f4f7fb" font-size="15" font-weight="700">Measured attribution</text>
+  </g>
+</svg>

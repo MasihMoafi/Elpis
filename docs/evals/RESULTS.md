@@ -1,6 +1,6 @@
 # Evaluation status
 
-Last revised 2026-08-12. Every figure here comes from a recorded run. Where a question is
+Last revised 2026-09-09. Every figure here comes from a recorded run. Where a question is
 open it says so, and nothing on this page is stated more strongly than the evidence carries.
 
 Raw records: [`final-rq1-rq4-data`](https://github.com/MasihMoafi/Elpis) ·
@@ -12,7 +12,7 @@ derived analysis with per-metric provenance and cross-checks:
 | RQ1 | Context efficiency | **Answered** |
 | RQ2 | Information retention | **Established for the tested post-prune targets** |
 | RQ3 | Task performance | Not established |
-| RQ4 | Overhead and cache | Cost and latency penalty established; current magnitude open |
+| RQ4 | Overhead and cache | **Measured for the current design** (9 Sep 2026): cost depends on optimizer effort and horizon; see below |
 | RQ5 | Auditability | **Answered** |
 
 ---
@@ -68,23 +68,65 @@ The available runs do not support a comparative correctness or task-performance 
 No per-arm score from an incomplete, unreplicated benchmark is reported here. In
 particular, there is no evidence that pruning improves task completion or output quality.
 
-## RQ4 — Overhead and cache · penalty established; current magnitude open
+## RQ4 — Overhead and cache · measured for the current design
 
-Pruning is not free. It runs a second model call per pass, and rewriting history
-invalidates the provider's cached prefix, since [cache hits require an exact prefix
-match](https://developers.openai.com/api/docs/guides/prompt-caching). Both costs are real
-and measured.
+Pruning is not free: it runs a second model call per admission, and its cost only
+pays back over the requests that follow, because each later request re-sends the
+admitted summary instead of the raw output. On 8 and 9 September 2026 we measured
+this directly on the current fresh-output design (`gpt-5.6-luna`, published rates
+$0.20 / $0.02 cached / $1.20 per million tokens; one frozen build; arms differ only
+by the pruning flag). Full tables, provenance, and every deviation:
+[`rq3/COST_EFFICIENCY_RESULTS.md`](rq3/COST_EFFICIENCY_RESULTS.md); protocol:
+[`rq3/COST_EFFICIENCY_PROTOCOL.md`](rq3/COST_EFFICIENCY_PROTOCOL.md).
 
-The measurements available describe a high-frequency configuration (42 passes in one run)
-that the implementation has since replaced with a low-frequency one built specifically to
-reduce prefix invalidation. **The current design has not been measured under the same
-protocol**, so publishing the old numbers as the cost of the current system would be
-misleading.
+**Optimizer effort decides the overhead, not what survives.** Same binary, same
+eight fixtures, one batch per effort; every completed batch retained 6/6 planted
+facts and citations on all eight closed-book probes:
 
-We therefore report no cost figure for the current design. The direction of the trade-off
-is established: pruning adds model cost and wall-clock latency and can reduce cache reuse.
-Without a demonstrated task-performance benefit, context reduction alone does not justify
-that overhead. This remains the most important open question about the approach.
+| Optimizer effort | Reasoning tokens per admission | Latency per admission | Cost vs OFF at 3 requests | Total tokens vs OFF |
+|---|---:|---:|---:|---:|
+| Max (the 8 Sep setting) | 2,914–6,214 | 60–119 s | +163% | −1.1% |
+| Low | 78–516 | 10–19 s | +54% | −10.5% (8/8 cases) |
+| None | 0 | 6–8 s | +25% | −11.4% (8/8 cases) |
+
+**Horizon decides the sign.** Over eight fixtures each (Low effort unless stated):
+
+| Requests after the output | Cost vs OFF (cases cheaper) | Total tokens vs OFF | Peak request input |
+|---|---:|---:|---:|
+| 2 (the 8 Sep design) | +54% (0/8) | −10.5% (8/8) | −40% |
+| 10 | −3% (4/8) | −31% (8/8) | −40% |
+| 34 | **−9.8% (7/8)** | **−33.5% (8/8)** | −35% |
+| 34, optimizer at None | **−20.9% (8/8)** | **−33.6% (8/8)** | −35% |
+| 2, main model Terra (10× Luna price), optimizer Luna Low | **−43.3% (5/5)** | −14.8% | −40% |
+| Eight-file session, 17 later requests (3 valid orderings) | **−7.5% (3/3)** | **−63% (3/3)** | 15k vs 70k tokens |
+
+With a pricier main model the fixed optimizer cost is dwarfed by the per-request
+saving: measured with Terra in front of the Luna optimizer, pruning is cheaper in
+every case at the shortest horizon. Break-even, extrapolated per pair from the
+optimizer's cost and the measured per-request saving, is 3–4 later requests when the provider cache is cold and 10–28
+when it is warm, because cached input costs one tenth of uncached input. Token
+savings do not depend on the cache and held in every case at every horizon.
+Wall-clock rose 16% at the 34-request horizon (optimizer calls of 10–19 s each).
+
+**Against native compaction (three eight-file orderings, Low).** A third arm forced the
+provider's own compaction at 40k tokens. Pruning kept the smallest context (peak 15k–28k
+versus 33k–40k compacted and 70k unmanaged) and never reset the cache; compaction reset the
+cached prefix to the 9k system prompt at every event, also retained the planted facts, and
+reports zero usage for its own call, so in visible counters it is the cheapest arm (−30%
+versus no pruning; pruning −3%). Priced as an API compaction of the full context, the two
+land within about 6% of each other. Compaction's summaries are encrypted and cannot be
+audited; pruning's admissions can. Details in `rq3/COST_EFFICIENCY_RESULTS.md`, E5.
+
+**Effort caveat.** In the eight-file session, one None-effort summary rewrote citation
+labels (`evidence.txt:3` for `replica_quorum.log:3`) with every fact and line number
+intact, failing the exact-citation oracle; Low and Max never did in 53 admissions. Low
+is therefore the recommended default; None is the cost-optimal setting with that caveat.
+
+**What this does not show.** All fixtures are synthetic single-fact documents on one
+model and one account; dollar figures are published-rate estimates, not invoices;
+the provider cache is observed, not controlled. In multi-file sessions the optimizer
+declined to compress 4 of 29 outputs, each a wasted call; one ON conversation stalled
+without a receipt and is kept as a failure. No real-repository task is measured.
 
 ## RQ5 — Auditability · answered
 
@@ -125,11 +167,12 @@ future change to what pruning may rewrite will be checked against them first.
 
 ## What is not established
 
-No evidence shows that selective pruning improves coding quality, task success, or cost per
-successful task over native compaction. The measured facts are narrower: it reduces active
-context, retained all six tested targets in post-prune context, and leaves an inspectable
-audit trail. It also adds model cost and latency. Treat that as a trade-off, not a
-performance improvement.
+No evidence shows that selective pruning improves coding quality or task success over
+native compaction. The measured facts are narrower: it reduces active context and total
+tokens, retained the planted facts in every closed-book probe, leaves an inspectable audit
+trail, and at Low or None optimizer effort costs less than no pruning once a session runs
+past roughly ten requests after a large output (RQ4). It adds latency per admission.
+Treat that as a measured trade-off on synthetic fixtures, not a performance improvement.
 
 ## What we suspect, and why
 

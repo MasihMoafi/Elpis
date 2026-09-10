@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build": "python3 ../scripts/build-public-content.py && npm run build:css",
+    "build:css": "tailwindcss -i ./source.css -o ./styles.css --minify",
     "test": "node --test tests/site.test.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "daisyui": "^5.7.28",
+    "tailwindcss": "^4.3.3"
   }
 }

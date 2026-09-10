@@ -1,442 +1,322 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="elpis">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="Elpis keeps your coding-agent goal, admitted context, permissions, and evidence legible when you change AI runtimes."
-    />
-    <meta name="theme-color" content="#12100f" />
+    <meta name="description" content="Elpis keeps your coding-agent goal, admitted context, permissions, and evidence legible when you change AI runtimes." />
+    <meta name="theme-color" content="#0b0e0c" />
     <title>Elpis — Change the runtime. Keep the thread.</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2312100f%22/><path d=%22M15 17h34v8H23v7h20v8H23v7h26v8H15z%22 fill=%22%23f4a524%22/></svg>" />
-    <link rel="stylesheet" href="./styles.css?v=3" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2210%22 fill=%22%230b0e0c%22/><path d=%22M15 17h34v8H23v7h20v8H23v7h26v8H15z%22 fill=%22%23e4a047%22/></svg>" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
     <script src="./app.js" defer></script>
   </head>
   <body id="top">
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-base-content focus:px-4 focus:py-2 focus:text-base-100" href="#main">Skip to content</a>
 
-    <header class="site-header" data-header>
-      <a class="wordmark" href="#top" aria-label="Elpis home">Elpis<span>.</span></a>
-      <nav aria-label="Primary navigation">
-        <a href="#continuity">Continuity</a>
-        <a href="#ledger">Context</a>
-        <a href="#pruning">Pruning</a>
-        <a href="#work-graphs">Work Graphs</a>
-        <a href="#specs">Specifications</a>
-        <a href="#install">Install</a>
+    <header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 px-5 backdrop-blur-xl lg:px-12">
+      <div class="navbar-start">
+        <a class="text-xl font-black tracking-tight" href="#top" aria-label="Elpis home">Elpis<span class="text-warning">.</span></a>
+      </div>
+      <nav class="navbar-center hidden gap-7 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation">
+        <a class="hover:text-base-content" href="#demo">Live turn</a>
+        <a class="hover:text-base-content" href="#context">/context</a>
+        <a class="hover:text-base-content" href="#pruning">ACE</a>
+        <a class="hover:text-base-content" href="#continuity">Continuity</a>
+        <a class="hover:text-base-content" href="#current-interface">Interface</a>
+        <a class="hover:text-base-content" href="#current-evidence">Evidence</a>
+        <a class="hover:text-base-content" href="#install">Install</a>
       </nav>
-      <a class="header-cta" href="https://github.com/MasihMoafi/Elpis">View source <span aria-hidden="true">↗</span></a>
-      <button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>
-        <span></span><span></span>
-      </button>
+      <div class="navbar-end">
+        <a class="btn btn-ghost btn-sm" href="https://github.com/MasihMoafi/Elpis">View source <span aria-hidden="true">↗</span></a>
+      </div>
     </header>
 
     <main id="main">
-      <section class="hero" aria-labelledby="hero-title">
-        <div class="ambient ambient-one" aria-hidden="true"></div>
-        <div class="ambient ambient-two" aria-hidden="true"></div>
+      <section class="hero hero-grid min-h-[calc(100svh-65px)] overflow-hidden border-b border-base-300">
         <svg class="hero-flow" viewBox="0 0 1440 820" preserveAspectRatio="none" aria-hidden="true">
-          <path class="flow-route flow-route-one" d="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" />
-          <path class="flow-route flow-route-two" d="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
-          <path class="flow-route flow-route-three" d="M260 -40 C260 170 520 210 720 210 S1000 90 1260 210 S1450 390 1510 390" />
-          <circle class="flow-node" cx="560" cy="530" r="4" />
-          <circle class="flow-node" cx="720" cy="210" r="4" />
-          <circle class="flow-node flow-node-output" cx="1260" cy="408" r="5" />
-          <circle class="flow-pulse" r="4">
-            <animateMotion dur="8s" repeatCount="indefinite" path="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" />
-          </circle>
-          <circle class="flow-pulse flow-pulse-delayed" r="3">
-            <animateMotion dur="11s" begin="-5s" repeatCount="indefinite" path="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
-          </circle>
+          <path d="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" />
+          <path d="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
+          <circle r="4"><animateMotion dur="8s" repeatCount="indefinite" path="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" /></circle>
         </svg>
-        <div class="hero-copy">
-          <div class="hero-brand-logo" aria-label="Elpis Pixel Animated Logo">
-            <pre class="hero-banner" data-theme-banner></pre>
-          </div>
-          <p class="eyebrow"><span class="status-dot"></span> Early access</p>
-          <h1 id="hero-title">Change the runtime.<br /><em>Keep the thread.</em></h1>
-          <p class="hero-lede">
-            Elpis keeps the goal, admitted context, permissions, and evidence visible while the AI runtime changes underneath.
-          </p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="#install">Install the preview <span aria-hidden="true">↓</span></a>
-            <a class="button button-secondary" href="#continuity">See what survives</a>
-          </div>
-          <div class="hero-proof" aria-label="Elpis product properties">
-            <span>Local, inspectable state</span>
-            <span>Deterministic context pruning</span>
-            <span>Bring your runtime</span>
-            <span>Evidence attached</span>
-          </div>
-        </div>
-
-        <div class="continuity-console" data-console aria-label="Interactive continuity demonstration">
-          <div class="console-topbar">
-            <div>
-              <span class="console-kicker">Session 04</span>
-              <strong>Provider handoff</strong>
+        <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-28 lg:px-12">
+          <div class="max-w-4xl">
+            <p class="mb-7 font-mono text-xs font-bold uppercase tracking-[0.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Linux-first early access</p>
+            <h1 id="hero-title" class="max-w-5xl text-6xl font-semibold leading-[0.9] tracking-[-0.065em] sm:text-7xl lg:text-9xl">Change the runtime.<br /><em class="font-normal text-base-content/55">Keep the thread.</em></h1>
+            <p class="mt-9 max-w-2xl text-lg leading-8 text-base-content/68 sm:text-xl">Elpis is a continuity layer around terminal coding agents. It keeps the goal, admitted context, control, and evidence visible while the inference runtime changes underneath.</p>
+            <div class="mt-10 flex flex-wrap gap-3">
+              <a class="btn btn-primary" href="#demo">Watch one turn <span aria-hidden="true">↓</span></a>
+              <a class="btn" href="#install">Install the preview</a>
+              <a class="btn btn-ghost" href="#current-interface">See the current interface</a>
             </div>
-            <div class="runtime-switcher" role="group" aria-label="Select runtime">
-              <button class="runtime-button is-active" type="button" data-runtime="Local model" data-runtime-description="Local endpoint · on-device inference">Local</button>
-              <button class="runtime-button" type="button" data-runtime="OpenAI" data-runtime-description="OpenAI API · hosted inference">OpenAI</button>
-              <button class="runtime-button" type="button" data-runtime="Anthropic" data-runtime-description="Anthropic API · hosted inference">Anthropic</button>
-            </div>
-          </div>
-
-          <div class="console-runtime">
-            <div class="runtime-orbit" aria-hidden="true"><span></span></div>
-            <div>
-              <span class="label">Active runtime</span>
-              <strong data-runtime-label>Local model</strong>
-              <span class="runtime-detail" data-runtime-detail-output>Local endpoint · on-device inference</span>
-            </div>
-            <span class="handoff-state" data-handoff-state>connected</span>
-          </div>
-
-          <div class="ledger-stack">
-            <article class="ledger-row" data-ledger-row>
-              <span class="ledger-index">01</span>
-              <div><span class="label">Goal</span><strong>Stabilize the release candidate</strong></div>
-              <span class="retained">retained</span>
-            </article>
-            <article class="ledger-row" data-ledger-row>
-              <span class="ledger-index">02</span>
-              <div><span class="label">Context</span><strong>3 instructions admitted</strong></div>
-              <span class="retained">retained</span>
-            </article>
-            <article class="ledger-row" data-ledger-row>
-              <span class="ledger-index">03</span>
-              <div><span class="label">Control</span><strong>Workspace writes only</strong></div>
-              <span class="retained">retained</span>
-            </article>
-            <article class="ledger-row" data-ledger-row>
-              <span class="ledger-index">04</span>
-              <div><span class="label">Evidence</span><strong>2 checks attached</strong></div>
-              <span class="retained">retained</span>
-            </article>
-          </div>
-          <p class="console-note"><span></span> Provider changed. Goal, context, control, and evidence stayed with Elpis.</p>
-        </div>
-      </section>
-
-      <section class="runtime-marquee" tabindex="0" aria-label="Runtime compatibility. Animation pauses while hovered or focused.">
-        <p>One continuity layer across</p>
-        <div class="marquee-window">
-          <div class="marquee-track">
-            <span>Hosted providers</span><i></i><span>Local models</span><i></i><span>OpenAI-compatible APIs</span><i></i><span>Native runtimes</span><i></i>
-            <span aria-hidden="true">Hosted providers</span><i aria-hidden="true"></i><span aria-hidden="true">Local models</span><i aria-hidden="true"></i><span aria-hidden="true">OpenAI-compatible APIs</span><i aria-hidden="true"></i><span aria-hidden="true">Native runtimes</span><i aria-hidden="true"></i>
-          </div>
-        </div>
-      </section>
-
-      <section class="section continuity-section" id="continuity" aria-label="Elpis continuity">
-        <div class="continuity-grid">
-          <article class="feature-card feature-goal">
-            <span class="card-number">01</span>
-            <div class="feature-icon" aria-hidden="true">⌁</div>
-            <h3>Context admission</h3>
-            <p>Prune stale tool outputs and dead-end traces. Select which project rules, user-maintained memory, GOAL.md, and ES.md enter the next request.</p>
-            <div class="goal-meter"><span></span><span></span><span></span><span></span></div>
-          </article>
-          <article class="feature-card feature-context">
-            <span class="card-number">02</span>
-            <div class="feature-icon" aria-hidden="true">⊞</div>
-            <h3>Context observability</h3>
-            <p>Inspect admitted sources, per-source size estimates, and model-window usage in the Context Ledger.</p>
-            <div class="context-chips"><span>AGENTS.md</span><span>GOAL.md</span><span>ES.md</span></div>
-          </article>
-          <article class="feature-card feature-evidence">
-            <span class="card-number">03</span>
-            <div class="feature-icon" aria-hidden="true">✓</div>
-            <h3>Auditable checkpoints</h3>
-            <p>Keep changed files, commands, verification results, and exact transcript evidence attached to the work.</p>
-            <div class="evidence-line"><span>checkpoint</span><b>evidence linked</b></div>
-          </article>
-        </div>
-      </section>
-
-      <section class="section ledger-section" id="ledger" aria-labelledby="ledger-title">
-        <div class="ledger-copy">
-          <p class="eyebrow">Context observability</p>
-          <h2 id="ledger-title">Inspect the active context.</h2>
-          <p>
-            The Context Ledger shows each admitted source, its size estimate, and how much of the model window is in use before the next request.
-          </p>
-          <ul class="plain-list">
-            <li><span>01</span> See each context source and whether it is admitted</li>
-            <li><span>02</span> Compare per-source estimates with total model-window use</li>
-            <li><span>03</span> Change admission before the next request</li>
-          </ul>
-        </div>
-
-        <div class="ledger-tui-preview" aria-label="Context Ledger TUI Terminal Preview">
-          <div class="ledger-tui-header">
-            <span class="ledger-tui-dot"></span>
-            <span>admission.toml · Context Ledger (Tab)</span>
-            <span class="ledger-tui-tag">METERED TUI</span>
-          </div>
-          <div class="ledger-tui-body">
-            <div class="ledger-tui-row is-admitted">
-              <span class="ledger-tui-check">[✓]</span>
-              <span class="ledger-tui-file">GOAL.md</span>
-              <span class="ledger-tui-desc">Current task target &amp; acceptance</span>
-              <span class="ledger-tui-tokens">105 tk</span>
-              <span class="ledger-tui-pct">0.1%</span>
-            </div>
-            <div class="ledger-tui-row is-admitted">
-              <span class="ledger-tui-check">[✓]</span>
-              <span class="ledger-tui-file">MEMORY.md</span>
-              <span class="ledger-tui-desc">User-maintained project memory</span>
-              <span class="ledger-tui-tokens">310 tk</span>
-              <span class="ledger-tui-pct">0.2%</span>
-            </div>
-            <div class="ledger-tui-row is-admitted">
-              <span class="ledger-tui-check">[✓]</span>
-              <span class="ledger-tui-file">AGENTS.md</span>
-              <span class="ledger-tui-desc">Workspace operating conventions</span>
-              <span class="ledger-tui-tokens">820 tk</span>
-              <span class="ledger-tui-pct">0.4%</span>
-            </div>
-            <div class="ledger-tui-row is-excluded">
-              <span class="ledger-tui-check">[ ]</span>
-              <span class="ledger-tui-file">repo-tree.txt</span>
-              <span class="ledger-tui-desc">Full file hierarchy (unselected)</span>
-              <span class="ledger-tui-tokens">2,400 tk</span>
-              <span class="ledger-tui-pct muted">off</span>
-            </div>
-            <div class="ledger-tui-row is-admitted is-pruned">
-              <span class="ledger-tui-check">[✓]</span>
-              <span class="ledger-tui-file">/prune findings</span>
-              <span class="ledger-tui-desc">Ace-distilled search evidence</span>
-              <span class="ledger-tui-tokens">248 tk</span>
-              <span class="ledger-tui-pct highlight">0.1%</span>
-            </div>
-          </div>
-          <div class="ledger-tui-footer">
-            <div class="ledger-tui-meter">
-              <div class="ledger-tui-meter-bar" style="width: 0.8%;"></div>
-            </div>
-            <div class="ledger-tui-status">
-              <span>Admitted: <strong>1,483</strong> / 200,000 tk (0.7%)</span>
-              <span class="ledger-tui-headroom">Free headroom: 99.3%</span>
+            <div class="mt-14 flex max-w-3xl flex-wrap gap-x-7 gap-y-3 border-t border-base-300 pt-5 font-mono text-xs text-base-content/55">
+              <span>Local, inspectable state</span><span>User-chosen context</span><span>Provider-native exact resume</span><span>Evidence attached</span>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="section pruning-section" id="pruning" aria-labelledby="pruning-title">
+      <section class="mx-auto grid max-w-7xl gap-8 px-6 py-24 lg:grid-cols-[1.15fr_.85fr] lg:items-end lg:px-12" id="demo" aria-labelledby="demo-title">
+        <div>
+          <p class="section-kicker">Illustrated admission walkthrough</p>
+          <h2 id="demo-title" class="section-title">See context change<br /><em>before the model does.</em></h2>
+        </div>
+        <p class="section-copy">Scroll to launch Elpis, send a realistic project-orientation prompt, and watch a completed tool result cross the ACE admission boundary. Smart Prune is experimental and user-enabled in this illustrated run.</p>
+      </section>
+
+      <section class="ace-demo" data-ace-demo aria-label="Scroll-driven Elpis terminal demonstration">
+        <div class="ace-demo-stage">
+          <div class="card card-border ace-frame">
+            <div class="ace-terminal phase-shell" data-ace-terminal>
+              <section class="ace-shell">
+                <div><span class="ace-shell-path">masih@atlas</span> <span>~/Desktop/p/Elpis</span></div>
+                <div class="ace-shell-prompt">❯ <span data-shell-command></span><span class="ace-shell-enter" data-shell-enter></span><span class="ace-cursor">█</span></div>
+              </section>
+
+              <section class="ace-boot">
+                <div>
+                  <pre class="ace-logo" data-ace-logo>██████╗ ██╗     ██████╗ ██╗███████╗
+██╔════╝ ██║     ██╔══██╗██║██╔════╝
+█████╗   ██║     ██████╔╝██║███████╗
+██╔══╝   ██║     ██╔═══╝ ██║╚════██║
+███████╗ ███████╗██║     ██║███████║
+╚══════╝ ╚══════╝╚═╝     ╚═╝╚══════╝</pre>
+                  <p>portable context for terminal coding agents</p>
+                  <div class="ace-boot-log" data-boot-log></div>
+                </div>
+              </section>
+
+              <section class="ace-app">
+                <header class="ace-app-head"><span class="ace-diamond">◆</span><strong>ELPIS</strong><span>~/Desktop/p/Elpis</span><span class="ace-spacer"></span><span>gpt-5.6</span><span>·</span><span>local</span></header>
+                <div class="ace-workspace">
+                  <section class="ace-chat">
+                    <div class="ace-transcript">
+                      <div class="ace-row ace-sent ace-user"><div class="ace-mark">›</div><div class="ace-message" data-sent-prompt></div></div>
+                      <div class="ace-row ace-thinking"><div class="ace-mark">◆</div><div class="ace-message"><span>●</span> Reading product truth before touching code.</div></div>
+                      <div class="ace-row ace-tools">
+                        <div class="ace-mark">└</div>
+                        <div class="ace-tool-box">
+                          <div class="ace-tool-call"><div class="ace-tool-head"><span>›</span><span>read docs/GUIDE.md docs/USER_REQUESTS.md TASKS.md</span><b>✓</b></div></div>
+                          <div class="ace-tool-call">
+                            <div class="ace-tool-head"><span>›</span><span>rg -n "context|session|prun|ledger" docs codex-rs</span><b>18,432 tok</b></div>
+                            <div class="ace-tool-output" data-tool-output>
+                              <i class="ace-scan-cell"></i><span class="ace-scan-label">◆ ACE · pre-admission</span>
+                              <div class="ace-raw-line"><span>docs/context.md:18</span> Context sources are admitted in deterministic order…</div>
+                              <div class="ace-raw-line"><span>docs/context.md:41</span> The Context Ledger accounts for every admitted source…</div>
+                              <div class="ace-raw-line"><span>docs/context.md:72</span> Provider history remains authoritative for exact resume…</div>
+                              <div class="ace-raw-line"><span>docs/sessions.md:24</span> A lean continuation records goal, result, evidence…</div>
+                              <div class="ace-raw-line"><span>context_ledger.rs:48</span> Context Ledger opens beside the chat…</div>
+                              <div class="ace-compact-result"><strong>[ACE · same result · 486 tokens]</strong><br />Deterministic admission; Ledger owns portable sources; exact resume remains provider-native.<br /><span>Evidence: context.md:18,41,72 · sessions.md:24 · context_ledger.rs:48</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="ace-row ace-answer"><div class="ace-mark">◆</div><div class="ace-message">I’m oriented. Docs and runtime agree on deterministic admission and provider-native exact resume. I found one display path to verify before changing context accounting.</div></div>
+                    </div>
+                  </section>
+
+                  <aside class="ace-ledger" aria-label="Context Ledger">
+                    <div class="ace-ledger-headline"><strong>CONTEXT LEDGER</strong><span data-ledger-total>Total ≈5.6k tokens admitted</span></div>
+                    <div class="ace-ledger-controls">p Smart Prune · Up/Down move · Space/Enter toggle ·<br />i all · w why · Esc exit</div>
+                    <div class="ace-ledger-section">
+                      <div class="ace-smart-head"><strong>SMART PRUNE</strong><span>[━━●] ON</span></div>
+                      <div class="ace-smart-copy">Before first main-model send · sent history stays stable<br /><span>p toggle · /smart-prune on|off</span></div>
+                    </div>
+                    <div class="ace-ledger-section">
+                      <div class="ace-window-head"><strong>CONTEXT WINDOW</strong><span data-window-figure>≈33.3k of 258.4k used (13%)</span></div>
+                      <div class="ace-context-meter" data-context-meter><i></i></div>
+                      <div class="ace-context-summary"><b>■</b><span>Conversation + built-in context</span><span data-conversation-count>≈27.7k tokens</span></div>
+                    </div>
+                    <div class="ace-ledger-section">
+                      <div class="ace-category-head ace-memory"><b>■</b><strong>DURABLE MEMORY</strong><span>≈0 tokens admitted</span></div>
+                      <div class="ace-ledger-item"><i></i><span>[ ]</span><u>MEMORY.md</u><span>≈0 est. tokens</span><b>EXCLUDED</b></div>
+                    </div>
+                    <div class="ace-ledger-section">
+                      <div class="ace-category-head ace-instructions"><b>■</b><strong>INSTRUCTIONS</strong><span>≈5.4k tokens admitted</span></div>
+                      <div class="ace-ledger-item"><i>›</i><span>[x]</span><u>Project AGENTS.md</u><span>≈1.9k</span><b>INCLUDED</b></div>
+                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/AGENTS.md</u><span>≈1.5k</span><b>INCLUDED</b></div>
+                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/CODING_GUIDELINES.md</u><span>≈976</span><b>INCLUDED</b></div>
+                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/SKILL.md</u><span>≈437</span><b>INCLUDED</b></div>
+                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/TERMINAL_AND_GIT_RULES.md</u><span>≈618</span><b>INCLUDED</b></div>
+                    </div>
+                    <div class="ace-ledger-section ace-tool-evidence">
+                      <div class="ace-category-head ace-evidence"><b>■</b><strong>TOOL EVIDENCE</strong><span data-evidence-total>≈156 tokens admitted</span></div>
+                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>ES.md</u><span data-evidence-row>≈156</span><b>INCLUDED</b></div>
+                    </div>
+                  </aside>
+                </div>
+                <div class="ace-composer-row">
+                  <div class="ace-composer-pane"><div class="ace-composer"><div><span data-composer-text></span><span class="ace-cursor" data-composer-cursor>█</span></div><small><span>Enter send · Shift+Enter newline</span><b>↵</b></small></div></div>
+                  <div class="ace-ledger-foot">↑↓ select · Space toggle · w why included</div>
+                </div>
+                <footer class="ace-footer"><span>Esc interrupt · Tab focus Ledger · /context full view</span><span class="ace-spacer"></span><span data-footer-context>87% context left</span></footer>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="site-section border-b border-base-300" id="context" aria-labelledby="context-title">
         <div class="section-heading">
-          <div>
-            <p class="eyebrow">Context engineering</p>
-            <h2 id="pruning-title">Compress the noise.<br /><em>Keep the evidence.</em></h2>
-          </div>
-          <p>
-            Terminal outputs and file searches shouldn't penalize every future turn. Elpis filters and distills tool output while preserving raw audit logs on disk, reducing peak context by 47–65%.
-          </p>
+          <div><p class="section-kicker">/context</p><h2 id="context-title" class="section-title">See what occupies<br /><em>the window.</em></h2></div>
+          <p class="section-copy">The measured headline and its categories describe the same request snapshot. The original visual showed 9%; 33.3k of 258.4k is 13%.</p>
         </div>
+        <div class="card card-border overflow-hidden bg-neutral text-neutral-content context-dashboard" data-context-visual>
+          <header class="context-command">
+            <span><b>›</b> /context</span>
+            <small>Illustrative request snapshot · measured total</small>
+          </header>
 
-        <div class="pruning-pipeline-grid">
-          <article class="pipeline-card">
-            <span class="pipeline-step">Layer 01</span>
-            <h3>RTK Shell Compaction</h3>
-            <p>Compacts shell command output before it reaches the model, stripping ANSI noise and trimming redundant grep and compiler output.</p>
-            <span class="pipeline-timing">Before model ingestion</span>
-          </article>
-          <article class="pipeline-card">
-            <span class="pipeline-step">Layer 02</span>
-            <h3>Deterministic Safety Cap</h3>
-            <p>Strict ceiling bounds exceptionally large tool results, preventing single accidental command outputs from blowing the budget.</p>
-            <span class="pipeline-timing">Hard budget guardrail</span>
-          </article>
-          <article class="pipeline-card pipeline-card--highlight">
-            <span class="pipeline-step">Layer 03</span>
-            <h3>Ace Distillation (/prune)</h3>
-            <p>Rewrites eligible tool evidence into dense, structured findings with audit pointers, triggered at 30% pressure or on demand.</p>
-            <span class="pipeline-timing">47–65% peak context reclaimed</span>
-          </article>
+          <div class="stats context-stats" aria-label="Current context summary">
+            <div class="stat"><div class="stat-title">Current request</div><div class="stat-value">33.3k</div><div class="stat-desc">measured tokens in context</div></div>
+            <div class="stat"><div class="stat-title">Context window</div><div class="stat-value">258.4k</div><div class="stat-desc">model limit</div></div>
+            <div class="stat"><div class="stat-title">Remaining</div><div class="stat-value">225.1k</div><div class="stat-desc">87% of the window</div></div>
+            <div class="stat"><div class="stat-title">Checkpoints</div><div class="stat-value">04</div><div class="stat-desc">available for backtrack</div></div>
+          </div>
+
+          <div class="context-primary-grid">
+            <section class="context-panel context-capacity" aria-labelledby="context-capacity-title">
+              <div class="context-panel-heading"><div><span>01 · measured</span><h3 id="context-capacity-title">Window occupancy</h3></div><small>current request</small></div>
+              <div class="context-capacity-body">
+                <div class="radial-progress context-capacity-ring text-warning" style="--value:13; --size:10.5rem; --thickness:.65rem" role="progressbar" aria-valuenow="13">
+                  <strong>13%</strong><span>used</span>
+                </div>
+                <dl class="context-capacity-figures">
+                  <div><dt>Used</dt><dd>33.3k</dd></div>
+                  <div><dt>Free</dt><dd>225.1k</dd></div>
+                  <div><dt>Limit</dt><dd>258.4k</dd></div>
+                </dl>
+              </div>
+              <div class="context-window-track" role="img" aria-label="33.3 thousand of 258.4 thousand tokens used"><i></i><span>0</span><b>33.3k</b><span>258.4k</span></div>
+            </section>
+
+            <section class="context-panel context-composition" aria-labelledby="context-composition-title">
+              <div class="context-panel-heading"><div><span>02 · estimated</span><h3 id="context-composition-title">What occupies the request</h3></div><small>attribution of 33.3k used</small></div>
+              <div class="context-attribution-stack" role="img" aria-label="Estimated attribution: 8.4 percent user messages, 75.4 percent agent responses, 0 percent tool calls, 5.7 percent system prompt, and 10.5 percent development rules">
+                <i class="context-color-user" style="--share:8.4%"></i><i class="context-color-agent" style="--share:75.4%"></i><i class="context-color-system" style="--share:5.7%"></i><i class="context-color-rules" style="--share:10.5%"></i>
+              </div>
+              <div class="context-composition-legend">
+                <div><i class="context-color-user"></i><span>User messages</span><strong>2.8k</strong><small>8.4%</small></div>
+                <div><i class="context-color-agent"></i><span>Agent responses</span><strong>25.1k</strong><small>75.4%</small></div>
+                <div><i class="context-color-tools"></i><span>Tool calls</span><strong>0</strong><small>0%</small></div>
+                <div><i class="context-color-system"></i><span>System prompt</span><strong>1.9k</strong><small>5.7%</small></div>
+                <div><i class="context-color-rules"></i><span>Development rules</span><strong>3.5k</strong><small>10.5%</small></div>
+              </div>
+              <p class="context-truth-note">Category values are estimated attribution anchored to the measured request total.</p>
+            </section>
+          </div>
+
+          <div class="context-secondary-grid">
+            <section class="context-panel" aria-labelledby="context-bars-title">
+              <div class="context-panel-heading"><div><span>03 · distribution</span><h3 id="context-bars-title">Attributed usage</h3></div><small>share of used context</small></div>
+              <div class="context-category-bars">
+                <div class="context-bar-row"><span>User</span><div><i class="context-color-user" style="--share:8.4%"></i></div><b>2.8k</b></div>
+                <div class="context-bar-row"><span>Agent</span><div><i class="context-color-agent" style="--share:75.4%"></i></div><b>25.1k</b></div>
+                <div class="context-bar-row"><span>Tools</span><div><i class="context-color-tools" style="--share:0%"></i></div><b>0</b></div>
+                <div class="context-bar-row"><span>System</span><div><i class="context-color-system" style="--share:5.7%"></i></div><b>1.9k</b></div>
+                <div class="context-bar-row"><span>Dev rules</span><div><i class="context-color-rules" style="--share:10.5%"></i></div><b>3.5k</b></div>
+              </div>
+            </section>
+
+            <section class="context-panel" aria-labelledby="context-sources-title">
+              <div class="context-panel-heading"><div><span>04 · ledger</span><h3 id="context-sources-title">Admitted sources</h3></div><small>≈ estimated tokens</small></div>
+              <div class="overflow-x-auto">
+                <table class="table table-sm context-source-table">
+                  <thead><tr><th>Source</th><th>Group</th><th>Estimate</th><th>Status</th></tr></thead>
+                  <tbody>
+                    <tr><td>Project AGENTS.md</td><td>Instructions</td><td>≈1.9k</td><td><span>admitted</span></td></tr>
+                    <tr><td>dev/AGENTS.md</td><td>Instructions</td><td>≈1.5k</td><td><span>admitted</span></td></tr>
+                    <tr><td>dev/CODING_GUIDELINES.md</td><td>Instructions</td><td>≈976</td><td><span>admitted</span></td></tr>
+                    <tr><td>dev/TERMINAL_AND_GIT_RULES.md</td><td>Instructions</td><td>≈618</td><td><span>admitted</span></td></tr>
+                    <tr><td>dev/SKILL.md</td><td>Instructions</td><td>≈437</td><td><span>admitted</span></td></tr>
+                    <tr><td>ES.md</td><td>Session continuity</td><td>≈156</td><td><span>admitted</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <footer class="context-checkpoints">
+            <div><strong>Backtrack map</strong><span>Esc Esc jumps to a prior message and forks from it.</span></div>
+            <ol class="context-checkpoint-line" aria-label="Four available backtrack points">
+              <li><i></i><span>01</span></li><li><i></i><span>02</span></li><li><i></i><span>03</span></li><li class="is-current"><i></i><span>04</span></li>
+            </ol>
+          </footer>
         </div>
-
-        <div class="pruning-diff-container" aria-label="Before and after context pruning comparison">
-          <div class="diff-box diff-box--before">
-            <div class="diff-header">
-              <span class="diff-badge diff-badge--danger">Before · Raw grep output</span>
-              <span class="diff-meta">18,930 chars · ~4,720 tokens carried</span>
-            </div>
-            <pre class="diff-code"><code>tui/src/external_agent_config_migration.rs:800:   item_type: …ItemType::AgentsMd,
-tui/src/external_agent_config_migration_flow.rs:75: …ItemType::AgentsMd
-tui/src/theme_picker.rs:283:  fn theme_picker_subtitle(home: …) -> String
-tui/src/theme_picker.rs:392:     subtitle: Some(theme_picker_subtitle(
-tui/src/theme_picker.rs:605:     let subtitle = theme_picker_subtitle(…, Some(200));
-tui/src/theme_picker.rs:617:     let subtitle = theme_picker_subtitle(…, Some(140));
-tui/src/app_event.rs:152:        OpenAgentPicker,
-… roughly 230 more lines of repetitive grep dump …</code></pre>
-          </div>
-
-          <div class="diff-arrow" aria-hidden="true">
-            <span>/prune</span>
-            <i>→</i>
-          </div>
-
-          <div class="diff-box diff-box--after">
-            <div class="diff-header">
-              <span class="diff-badge diff-badge--success">After · Ace structured finding</span>
-              <span class="diff-meta">248 chars · 62 tokens (98.7% reduction)</span>
-            </div>
-            <pre class="diff-code"><code>[Ace pruned 231 lines of ripgrep output (18,930 chars → 248 chars).
-Findings:
-- Found ItemType::AgentsMd in external_agent_config_migration.rs:800
-- Found theme_picker_subtitle definitions in theme_picker.rs:283,392,605,617
-- Full raw output preserved in rollout evidence: rollout://sess-01j8/tool-14.log]</code></pre>
-          </div>
-        </div>
-        <p class="diff-footnote">
-          <span>✔</span> User instructions, model reasoning, and assistant conversation are <strong>100% untouched</strong>. Only disposable tool dumps are distilled.
-        </p>
       </section>
 
-      <section class="section handoff-section" aria-labelledby="handoff-title">
-        <div class="handoff-heading">
-          <p class="eyebrow">Session continuity</p>
-          <h2 id="handoff-title">Exact resume or<br />lean continuation.</h2>
-        </div>
-        <div class="handoff-flow">
-          <article><span>01</span><h3>Exact resume</h3><p>Continue the provider's native thread with its full history.</p></article>
-          <div class="flow-link" aria-hidden="true"><i></i></div>
-          <article><span>02</span><h3>Goal checkpoint</h3><p>GOAL.md carries the current objective and status.</p></article>
-          <div class="flow-link" aria-hidden="true"><i></i></div>
-          <article><span>03</span><h3>Execution checkpoint</h3><p>ES.md records the latest result, changed files, commands, and exact evidence.</p></article>
-          <div class="flow-link" aria-hidden="true"><i></i></div>
-          <article><span>04</span><h3>Lean continuation</h3><p>Start a fresh provider-neutral thread from the admitted checkpoints and rules.</p></article>
-        </div>
-      </section>
-
-      <section class="section workgraphs-section" id="work-graphs" aria-labelledby="workgraphs-title">
+      <section class="site-section border-b border-base-300" id="pruning" aria-labelledby="pruning-title">
         <div class="section-heading">
-          <div>
-            <p class="eyebrow">Deterministic multi-agent coordination</p>
-            <h2 id="workgraphs-title">Directed work graphs.<br /><em>Zero race conditions.</em></h2>
+          <div><p class="section-kicker">ACE · controlled context</p><h2 id="pruning-title" class="section-title">Compress the noise.<br /><em>Keep the evidence.</em></h2></div>
+          <p class="section-copy">When experimental Smart Prune is explicitly enabled, ACE can rewrite completed tool output before its first main-model admission. The tool-call envelope stays intact and already-sent history does not change.</p>
+        </div>
+        <figure class="card card-border overflow-hidden bg-base-200">
+          <div class="lifecycle-viewport" tabindex="0" role="region" aria-label="ACE lifecycle diagram; scroll horizontally on narrow screens">
+            <img class="lifecycle-diagram" src="assets/diagram_ace_lifecycle.svg?v=2" alt="ACE pruning and context monitoring lifecycle sequence diagram" loading="lazy" />
           </div>
-          <p>
-            When tasks run across subagents, they must not overwrite each other's files, spin in cyclic dependency loops, or declare victory without evidence. Elpis enforces deterministic DAG boundaries.
-          </p>
-        </div>
-
-        <div class="workgraphs-grid">
-          <article class="workgraph-card">
-            <div class="workgraph-step-num">01</div>
-            <h3>Kahn's Topological Validation</h3>
-            <p>Every coordinated workflow is parsed into a Directed Acyclic Graph. Cycles, bad dependencies, and invalid roles are rejected before any worker agent is created.</p>
-            <span class="workgraph-tag">Pre-execution validation</span>
-          </article>
-          <article class="workgraph-card">
-            <div class="workgraph-step-num">02</div>
-            <h3>Write-Boundary Isolation</h3>
-            <p>Subagents receive declared write path prefixes. When tasks touch overlapping directories, Elpis automatically serializes execution to prevent destructive git conflicts.</p>
-            <span class="workgraph-tag">Write-collision prevention</span>
-          </article>
-          <article class="workgraph-card">
-            <div class="workgraph-step-num">03</div>
-            <h3>Evidence Verification Gate</h3>
-            <p>Downstream tasks remain locked until the assigned worker proves completion against explicit acceptance criteria with passing tests and verified git diffs.</p>
-            <span class="workgraph-tag">Audited task release</span>
-          </article>
-        </div>
+          <div class="card-body"><figcaption class="font-mono text-xs text-base-content/55">A retired automatic threshold-triggered configuration from historical evaluation runs, not current default behavior. Current Smart Prune optimizes a fresh tool result once, before its first admission, and never revisits already-sent history the way this sequence shows.</figcaption></div>
+        </figure>
       </section>
 
-      <section class="section specs-section" id="specs" aria-labelledby="specs-title">
+
+      <section class="site-section border-b border-base-300" id="continuity" aria-labelledby="continuity-title">
         <div class="section-heading">
-          <div>
-            <p class="eyebrow">Technical architecture</p>
-            <h2 id="specs-title">Engineered in Rust.<br /><em>Zero runtime overhead.</em></h2>
-          </div>
-          <p>
-            Elpis runs as a native terminal layer built on the Codex-rs foundation. It manages context admission, token budgets, execution sandboxes, and cryptographic checkpoint evidence with sub-millisecond responsiveness.
-          </p>
+          <div><p class="section-kicker">Continuity contract</p><h2 id="continuity-title" class="section-title">The runtime infers.<br /><em>Elpis carries the work.</em></h2></div>
+          <p class="section-copy">A lean checkpoint is not a provider’s native conversation history. Elpis keeps the durable working agreement inspectable while exact resume remains provider-native.</p>
         </div>
-
-        <div class="specs-grid">
-          <article class="spec-card">
-            <span class="spec-tag">Core runtime</span>
-            <h3>Compiled Rust Kernel</h3>
-            <p>Sub-millisecond input loop built with Ratatui and Crossterm. Memory footprint stays under 14MB resident with zero telemetry or background tracking daemons.</p>
-            <ul class="spec-list">
-              <li><span>Binary</span> Pure local execution (macOS, Linux)</li>
-              <li><span>TUI</span> 24-bit TrueColor buffer with zero flicker</li>
-              <li><span>Privacy</span> Zero analytics, no third-party telemetry</li>
-            </ul>
-          </article>
-
-          <article class="spec-card">
-            <span class="spec-tag">Admission engine</span>
-            <h3>Deterministic Pruning &amp; Metering</h3>
-            <p>Prunes stale intermediate outputs and meters exact model-window usage before dispatching requests. Admitted rules, user-maintained memory (AGENTS.md), and checkpoints remain auditable.</p>
-            <ul class="spec-list">
-              <li><span>Pruning</span> Discards stale tool traces while retaining conclusions</li>
-              <li><span>Budgeting</span> Real-time token consumption estimates</li>
-              <li><span>Drift</span> Prevents loss of scope during long-running sessions</li>
-            </ul>
-          </article>
-
-          <article class="spec-card">
-            <span class="spec-tag">Runtime neutrality</span>
-            <h3>Swappable Provider Backends</h3>
-            <p>Handoff execution across hosted models and local inference without discarding working constraints or recreating tool permissions.</p>
-            <ul class="spec-list">
-              <li><span>Hosted</span> OpenAI API, Anthropic Claude native endpoints</li>
-              <li><span>Local</span> Ollama, vLLM, and OpenAI-compatible runners</li>
-              <li><span>Continuity</span> Shared task thread survives model failure or swap</li>
-            </ul>
-          </article>
-
-          <article class="spec-card">
-            <span class="spec-tag">State persistence</span>
-            <h3>Verifiable Checkpointing</h3>
-            <p>Clean continuation via structured GOAL.md and ES.md artifacts. Workspace file modifications, command outputs, and evidence remain attached.</p>
-            <ul class="spec-list">
-              <li><span>Continuity</span> Dual-mode: exact resume or lean continuation</li>
-              <li><span>Ledger</span> File touch logs and execution command audits</li>
-              <li><span>Portability</span> Plain markdown state readable by human or agent</li>
-            </ul>
-          </article>
-        </div>
-
-        <div class="cli-terminal" aria-label="Terminal CLI example">
-          <div class="terminal-bar">
-            <span></span><span></span><span></span>
-            <p>elpis session continuity demo</p>
-          </div>
-          <div class="terminal-screen">
-            <div class="cli-line"><span class="cli-prompt">user@workstation:~/repo $</span> <span class="cli-cmd">elpis resume --checkpoint ES.md --runtime anthropic</span></div>
-            <div class="cli-output">
-              <span class="cli-ok">✔</span> Admitted context: 1 goal, 3 project rules, 2 evidence attachments<br />
-              <span class="cli-ok">✔</span> Model window: 8,420 / 200,000 tokens (4.2% occupancy)<br />
-              <span class="cli-ok">✔</span> Workspace boundary: write-safe isolation active<br />
-              <span class="cli-status">⚡ [ELPIS] Thread continuity intact. Ready for next prompt.</span>
-            </div>
-          </div>
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">01</span><h3 class="card-title">Goal</h3><p class="text-base-content/65">Current objective and status.</p></div></article>
+          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">02</span><h3 class="card-title">Context</h3><p class="text-base-content/65">Explicitly admitted project rules and user-maintained memory.</p></div></article>
+          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">03</span><h3 class="card-title">Control</h3><p class="text-base-content/65">Visible tool and workspace boundaries.</p></div></article>
+          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">04</span><h3 class="card-title">Evidence</h3><p class="text-base-content/65">Files, commands, checks, and transcript evidence.</p></div></article>
         </div>
       </section>
 
-      <section class="section install-section" id="install" aria-labelledby="install-title">
-        <div class="install-copy">
-          <p class="eyebrow">Early access</p>
-          <h2 id="install-title">Put continuity<br />in the loop.</h2>
-          <p>Install the current early-access candidate, then launch Elpis from your terminal. Inspect the source before you run the script.</p>
-          <a class="text-link" href="https://github.com/MasihMoafi/Elpis">Read installation and source <span aria-hidden="true">↗</span></a>
+      <section class="site-section border-b border-base-300" id="current-interface" aria-labelledby="current-interface-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">September 9 · Development preview</p><h2 id="current-interface-title" class="section-title">See the current<br /><em>Elpis interface.</em></h2></div>
+          <p class="section-copy">The native dark interface, amber ledger, startup dissolve, and coalescing responses. UI commit <code>40838f83</code> is newer than the September 5 v0.2.0 release. These captures use illustrative session data.</p>
         </div>
-        <div class="terminal" data-terminal>
-          <div class="terminal-bar"><span></span><span></span><span></span><p>shell</p></div>
-          <div class="terminal-body">
-            <span class="prompt">$</span>
-            <code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code>
-            <button type="button" class="copy-button" data-copy-button aria-describedby="copy-status">Copy</button>
-            <span class="visually-hidden" id="copy-status" data-copy-status role="status" aria-live="polite"></span>
+        <figure class="current-media"><img src="./assets/technical/elpis-ui-20260909.png" alt="Current Elpis native interface with contrasting amber ledger rows and Quiet Rail composer" loading="lazy" /><figcaption>Native Rust widget capture · September 9, 2026. This is separate from the concept illustration above.</figcaption></figure>
+        <div class="section-heading dashboard-heading"><div><p class="section-kicker">Local observability</p><h3 class="section-title">Four views.<br /><em>One session.</em></h3></div><p class="section-copy">Current dashboard assets with the checked-in illustrative fixture. These counters are demonstration data, not research results. Preview settings are disabled; an authorized live dashboard can edit pruner settings.</p></div>
+        <div class="dashboard-showcase">
+          <div class="dashboard-switcher" role="group" aria-label="Dashboard view">
+            <button type="button" aria-pressed="true" aria-controls="dashboard-activity" data-dashboard-view="activity">Activity</button>
+            <button type="button" aria-pressed="false" aria-controls="dashboard-context" data-dashboard-view="context">Context</button>
+            <button type="button" aria-pressed="false" aria-controls="dashboard-tokens" data-dashboard-view="tokens">Tokens</button>
+            <button type="button" aria-pressed="false" aria-controls="dashboard-prune" data-dashboard-view="prune">Smart Prune</button>
           </div>
-          <p class="terminal-note">Current candidate: v0.1.2 · early access · review before running</p>
+          <figure id="dashboard-activity" data-dashboard-panel="activity"><a href="./assets/technical/dashboard-activity-20260909.png"><img src="./assets/technical/dashboard-activity-20260909.png" alt="Dashboard Activity: current turn and history" loading="lazy" /></a><figcaption>Activity · turn progress and history</figcaption></figure>
+          <figure id="dashboard-context" data-dashboard-panel="context" hidden><a href="./assets/technical/dashboard-context-20260909.png"><img src="./assets/technical/dashboard-context-20260909.png" alt="Dashboard Context: window composition and admitted sources" loading="lazy" /></a><figcaption>Context · composition and admitted sources</figcaption></figure>
+          <figure id="dashboard-tokens" data-dashboard-panel="tokens" hidden><a href="./assets/technical/dashboard-tokens-20260909.png"><img src="./assets/technical/dashboard-tokens-20260909.png" alt="Dashboard Tokens: recorded usage breakdown" loading="lazy" /></a><figcaption>Tokens · recorded usage breakdown</figcaption></figure>
+          <figure id="dashboard-prune" data-dashboard-panel="prune" hidden><a href="./assets/technical/dashboard-smart-prune-20260909.png"><img src="./assets/technical/dashboard-smart-prune-20260909.png" alt="Dashboard Smart Prune: settings, admission accounting, and incomplete usage evidence" loading="lazy" /></a><figcaption>Smart Prune · settings, accounting, and failure evidence</figcaption></figure>
         </div>
       </section>
 
+      <section class="site-section border-b border-base-300" id="current-evidence" aria-labelledby="current-evidence-title">
+        <div class="section-heading"><div><p class="section-kicker">Research in progress</p><h2 id="current-evidence-title" class="section-title">Still being<br /><em>evaluated.</em></h2></div><p class="section-copy">Smart Prune is experimental. Early synthetic studies explore its costs and tradeoffs; they do not establish reliable savings or improved coding quality in real projects.</p></div>
+        <p class="evidence-note">The research notes include measured results, failed probes, limitations, and the distinction between reported tests and independently repeated checks.</p>
+        <a class="btn btn-soft" href="./technical.html#evaluation-status">Read the research notes</a>
+      </section>
+
+      <section class="site-section grid gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center" id="install" aria-labelledby="install-title">
+        <div>
+          <p class="section-kicker">Early access</p>
+          <h2 id="install-title" class="section-title">Put continuity<br />in the loop.</h2>
+          <p class="section-copy mt-7">Install the Linux-first preview, then launch Elpis from your terminal. Inspect the source before running the script.</p>
+          <a class="btn btn-ghost mt-5" href="https://github.com/MasihMoafi/Elpis">Read installation and source <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="mockup-code install-terminal relative bg-neutral text-neutral-content">
+          <pre data-prefix="$"><code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code></pre>
+          <button type="button" class="btn btn-sm absolute top-4 right-4" data-copy-button aria-describedby="copy-status">Copy</button>
+          <span class="sr-only" id="copy-status" data-copy-status role="status" aria-live="polite"></span>
+          <pre data-prefix=""><code class="text-neutral-content/45">Current candidate · early access · review before running</code></pre>
+        </div>
+      </section>
     </main>
+
+    <footer class="footer sm:footer-horizontal border-t border-base-300 bg-base-200 px-6 py-10 text-base-content/55 lg:px-12">
+      <aside><strong class="text-base-content">Elpis.</strong><p>Change the runtime. Keep the thread.</p></aside>
+      <nav><h2 class="footer-title">Project</h2><a href="https://github.com/MasihMoafi/Elpis">Source</a><a href="#top">Back to top</a></nav>
+    </footer>
   </body>
 </html>

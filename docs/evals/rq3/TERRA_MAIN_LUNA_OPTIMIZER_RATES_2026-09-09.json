@@ -1,0 +1,7 @@
+{
+  "currency": "USD",
+  "provenance": "Main model gpt-5.6-terra at OpenAI published rates fetched 2026-09-09 (https://developers.openai.com/api/docs/models/gpt-5.6-terra); optimizer gpt-5.6-luna at the rates in LUNA_PUBLISHED_RATES_2026-09-08.json. Per million tokens. Published-rate estimate, not invoice.",
+  "scope": "Batches whose plan sets model=gpt-5.6-terra and optimizerModel=gpt-5.6-luna",
+  "main": { "input": 2.0, "cached": 0.2, "output": 12.0, "write": null },
+  "optimizer": { "input": 0.2, "cached": 0.02, "output": 1.2, "write": null }
+}

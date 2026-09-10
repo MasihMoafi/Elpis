@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en" data-theme="elpis">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="The complete Elpis technical write-up: context engineering, continuity, memory, providers, deterministic work graphs, pruning, and evaluation evidence.">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#0b0e0c">
+  <title>Elpis Technical Guide — Architecture, Context, and Evidence</title>
+  <link rel="canonical" href="https://elpis.masihmoafi.com/technical">
+  <meta property="og:title" content="Elpis Technical Guide — Architecture, Context, and Evidence">
+  <meta property="og:description" content="Read how the Elpis open-source agent harness handles context, continuity, providers, work graphs, and auditable evidence.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://elpis.masihmoafi.com/technical">
+  <meta property="og:image" content="https://elpis.masihmoafi.com/assets/technical/elpis-ui-20260909.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Elpis Technical Guide — Architecture, Context, and Evidence">
+  <meta name="twitter:description" content="Read how the Elpis open-source agent harness handles context, continuity, providers, work graphs, and auditable evidence.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2210%22 fill=%22%230b0e0c%22/><path d=%22M15 17h34v8H23v7h20v8H23v7h26v8H15z%22 fill=%22%23e4a047%22/></svg>">
+  <link rel="stylesheet" href="./styles.css?v=7">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Elpis Technical Guide","description":"Architecture, context engineering, continuity, providers, deterministic work graphs, pruning, and evaluation evidence for Elpis.","author":{"@type":"Person","name":"Masih Moafi"},"mainEntityOfPage":"https://elpis.masihmoafi.com/technical"}</script>
+</head>
+<body id="top">
+<a class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-base-content focus:px-4 focus:py-2 focus:text-base-100" href="#main">Skip to content</a>
+<header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 px-5 backdrop-blur-xl lg:px-12">
+  <div class="navbar-start"><a class="text-xl font-black" href="./index.html" aria-label="Elpis home">Elpis<span class="text-warning">.</span></a></div>
+  <nav class="navbar-center hidden gap-6 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation"><a href="./index.html#demo">Demo</a><a href="./index.html#context">Context</a><a href="./technical.html#live-session-dashboard">Dashboard</a><a href="./index.html#work-graph">Work graph</a><a href="./technical.html" aria-current="page">Technical</a><a href="./index.html#install">Install</a></nav>
+  <div class="navbar-end"><a class="btn btn-ghost btn-sm" href="https://github.com/MasihMoafi/Elpis">View source ↗</a></div>
+</header>
+<main id="main">
+  <section class="hero hero-grid technical-hero">
+    <svg class="hero-flow" viewBox="0 0 1440 610" preserveAspectRatio="none" aria-hidden="true"><path d="M-80 490C220 490 260 370 560 370S890 170 1520 170"/><path d="M-60 560C280 560 350 460 650 460S980 330 1500 330"/><circle r="4"><animateMotion dur="8s" repeatCount="indefinite" path="M-80 490C220 490 260 370 560 370S890 170 1520 170"/></circle></svg>
+    <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-24 lg:px-12"><div class="max-w-4xl"><p class="mb-6 font-mono text-xs font-bold uppercase tracking-[.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Technical</p><h1 class="text-6xl font-semibold leading-[.9] tracking-[-.06em] sm:text-7xl lg:text-8xl">How Elpis<br><em class="font-normal text-base-content/50">works.</em></h1><p class="mt-8 max-w-2xl text-lg leading-8 text-base-content/68">The full project write-up—context engineering, continuity, memory, providers, work graphs, and the evidence behind them.</p><div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-primary" href="#never-lose-a-thread-again">Start reading ↓</a><a class="btn btn-soft hero-secondary" href="./index.html">Back to overview</a></div></div></div>
+  </section>
+  <div class="site-section technical-layout">
+$if(toc)$
+    <aside class="card card-border technical-toc" aria-label="Technical guide contents"><strong>On this page</strong>$toc$</aside>
+$endif$
+    <article class="technical-prose">
+$body$
+    </article>
+  </div>
+</main>
+<footer class="footer sm:footer-horizontal border-t border-base-300 bg-base-200 px-6 py-10 text-base-content/68 lg:px-12"><aside><strong class="text-base-content">Elpis.</strong><p>The open-source home for coding agents.</p></aside><nav><h2 class="footer-title text-base-content">Project</h2><a href="./index.html">Overview</a><a href="https://github.com/MasihMoafi/Elpis">Source</a><a href="#top">Back to top</a></nav></footer>
+</body>
+</html>

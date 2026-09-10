@@ -1,0 +1,126 @@
+# Execution State
+
+## 2026-09-05 First RTK Fidelity Experiment
+
+- Intent: begin with no-model-cost, useful repository inspection; isolate RTK output
+  from subsequent Elpis summaries before attributing missing information.
+- Acceptance: matched raw/RTK captures, critical-fact checks with failing controls,
+  immutable evidence, and an actual fallback read only when a critical fact is absent.
+- Scope: `docs/evals/rtk-output-fidelity/`; no runtime changes or live model calls.
+- Verification and next action: run controls and three inspection cases, then report
+  observed omissions and limits before expanding to paid/live pruning tasks.
+
+## 2026-09-05 Pruning Experiment Design
+
+- Intent: specify a parallel, interruption-safe pruning pilot for Masih's review,
+  not implement or run it.
+- Draft: `docs/evals/rq3/PRUNING_ABLATION_DRAFT.md`; proposed tasks/scoring,
+  three paired pilot tasks, two-lane scheduling, state isolation, durable recovery,
+  budget/retry limits, cache confounding, and offline failure-injection checks.
+- Verification: calculated paired-test sample sizes locally with SciPy; reviewed
+  official Kaggle and statistical documentation. No paid inference or uploads.
+- Changed: draft spec, research-design note in `TASKS.md`, this checkpoint section.
+- Next: Masih reviews the design; executable fixtures and main-study budget remain
+  unapproved. Existing website work below is preserved.
+
+## 2026-09-02 — Public website
+
+Intent: create and deploy a polished, standalone Elpis website without changing the Rust application or the user's in-progress documentation edits.
+
+Acceptance:
+
+- Explain provider-neutral continuity in plain language.
+- Show goal, admitted context, control, and evidence as the durable layer.
+- Label manual memory, pruning, work graphs, and historical evaluations truthfully.
+- Provide a Linux-first early-access install path and source link.
+- Use a distinct responsive visual system and accessible interactions.
+- Verify content checks, desktop/mobile layout, interactions, and production deployment.
+
+Out of scope:
+
+- Claiming daily-driver acceptance or production readiness.
+- Changing Elpis runtime behavior.
+- Publishing or pushing repository commits.
+- Editing `docs/USER_REQUESTS.md` or `docs/WORK_GRAPHS.md`.
+
+Status: deployed and verified at https://elpis.masihmoafi.com on Vercel deployment `dpl_AJabaoHnQKe8s3TDAyVhgM44jEzJ`. Five content/structure checks pass. The runtime handoff, sticky navigation, mobile menu, 375px layout, and lazy-loaded image assets were exercised against both local and production builds with no current-page console errors or horizontal overflow. Vercel SSO protection was disabled for this isolated website project after the first public check correctly exposed the login gate.
+
+## 2026-09-03 — Product-language and interaction correction
+
+Intent: correct the public site against the implemented Elpis model and the latest visual feedback without changing the Rust application or the user's in-progress documentation edits.
+
+Acceptance:
+
+- Keep provider labels and console geometry stable during the handoff animation.
+- Pause the runtime marquee on hover and keyboard focus.
+- Describe context admission, Context Ledger observability, auditability, exact resume, and lean continuation literally.
+- Present `GOAL.md` and `ES.md` as lean-continuation checkpoints without claiming they replace provider-native exact resume.
+- Move the install section upward and add an Elpis-specific animated context-flow layer with a reduced-motion fallback.
+- Verify focused tests, desktop and mobile layout, interactions, and the public custom domain.
+
+Status: deployed and verified at https://elpis.masihmoafi.com on Vercel deployment `dpl_AjpgWs9EWUyHo7AsAD5S9W3f7AfJ`. All 11 focused site checks pass. Chromium verification covered 1440px and 390px layouts, provider changes, stable console and switcher dimensions, hover/focus marquee pausing, visible SVG motion, reduced-motion handling, and horizontal overflow. The public custom domain returned HTTP 200 with the corrected copy and no page or console errors.
+
+## 2026-09-04 — ACE visual correction
+
+Intent: replace the unrealistic static website mock with a scroll-driven Elpis terminal simulation grounded in the real chat composer, Context Ledger, and `/context` UI, while exploring a restrained Ratatui-achievable redesign before integrating it into the public site.
+
+Acceptance:
+
+- Preserve the recognizable Elpis chat, tool-call, composer, and Ledger structure.
+- Show ACE intercepting tool output before model admission without changing the tool-call envelope.
+- Let page scroll drive prompt entry, tool streaming, evidence compression, and model continuation.
+- Use a restrained terminal palette and motion; no fake video controls, rainbow styling, or separate explanatory dashboard.
+- Review the isolated visual prototype with Masih before replacing the website scene.
+
+Status: implementation complete and locally verified, awaiting Masih's visual acceptance. The standalone site now uses daisyUI 5 with Tailwind CSS 4; the scroll sequence, populated Ledger, corrected `/context`, lifecycle SVG, desktop/mobile layout, and reduced-motion path are integrated. Website tests pass 9/9, Chromium reports no page/console errors or body overflow, and the portfolio production build validates 21 routes. Nothing was committed or deployed. Exact evidence and remaining acceptance are recorded in `SESSION_HANDOFF.md`.
+
+## 2026-09-04 — Product Design image template
+
+Intent: create a personal Product Design image template named `Elpis TUI` from the current completed-turn TUI reference without changing the Elpis application or website.
+
+Acceptance:
+
+- Retain the selected 1600×1000 PNG unchanged as both canonical reference and preview.
+- Register the template as an image with the `product-design` gallery kind.
+- Verify the generated manifest, skill metadata, retained assets, and absence of staging leftovers.
+
+Status: complete. Template Creator generated `/home/masih/.codex/skills/artifact-template-elpis-tui` as an image template in the Product Design gallery. Its retained reference and preview are byte-identical to `.visual-review/final-demo-done.png`; the required manifest and agent metadata are present, the PNGs validate at 1600×1000, and no staging or backup files remain.
+
+## 2026-09-04 — Elpis TUI design directions
+
+Intent: use the saved Elpis TUI template to generate three distinct desktop-terminal directions that preserve the product's truth boundaries and visual character while exploring clearer hierarchy and interaction models.
+
+Acceptance:
+
+- Produce exactly three independent desktop concepts targeting the retained reference's 1600×1000 frame.
+- Keep the active goal primary and make admitted context, control, and evidence inspectable.
+- Preserve the charcoal, ember/rose, and verdigris language without inventing product capabilities.
+- Stop for Masih's visual selection before any implementation work.
+
+Status: superseded and discarded after visual review. The image directions did not establish a credible Ratatui-feasible improvement from the real TUI and are not implementation candidates.
+
+## 2026-09-04 — Elpis TUI code prototypes
+
+Intent: replace the discarded generated-image directions with runnable daisyUI prototypes that stay inside Ratatui-achievable geometry and preserve the real Elpis product boundaries.
+
+Acceptance:
+
+- Compare three directions against explicit axes: live-turn orientation, session handoff, and context control.
+- Keep the real chat, goal, Context Ledger, continuity, permission, evidence, and composer concepts recognizable.
+- Make view switching, Ledger admission, continuity inspection, and workbench controls interactive.
+- Use a restrained terminal palette with no generated images, gradients, shadows, or invented cross-provider transcript behavior.
+- Verify the compiled output at the original 1600×1000 desktop target before presenting it for selection.
+
+Status: implementation and local browser verification complete. The isolated comparison app lives under `website/prototypes/`; all four focused checks pass. At 1600×1000, each direction rendered without page or active-shell horizontal overflow, browser logs contained no warnings or errors, and the interactive controls were exercised. Nothing was committed, deployed, or integrated into the Rust TUI; selection remains with Masih.
+
+## 2026-09-05 — Website context and rectangle spacing
+
+Follow-up intent: repair the reported terminal/Ledger clipping, without changing copy, colors, or the scroll sequence. Acceptance: frame and both panes fit at 987px and 1280px with no horizontal overflow; commands, raw output and Ledger rows wrap inside their pane; mobile stacks panes; forward/reverse scrolling preserves the existing animation. The published 1160px fixed-width layout fails this check (922px available). Work is scoped to website CSS and its regression check, not the Rust application.
+
+Follow-up evidence: the new regression test failed against the old fixed-width CSS, then all 10 website checks and the CSS build passed. In-app inspection measured zero horizontal overflow in frame, terminal, chat, Ledger, output, composer and footer at 987px, 1280px and 390px. At 987px, forward scrolling moved tools to ACE and reverse returned to tools at the same scroll position. The live domain serves stylesheet v7 and byte-identical reviewed HTML/CSS on deployment dpl_3LD4gomYsFp8eYcBoKwqhryJXMmD (website-nd8vmapey-masihmoafis-projects.vercel.app). Live 987px inspection confirms wrapped output and zero horizontal overflow. Vertical pane scrolling is retained. No Rust, copy, color, candidate, or GitHub changes. Masih's acceptance remains open. The preceding deployment website-81j4dp2fd-masihmoafis-projects.vercel.app remains available for rollback by restoring the custom-domain alias.
+
+Intent: make the website context visual visible without a reveal trigger, add the requested chart views, and give all text-bearing rectangles breathing room.
+
+Acceptance: inspect all ten SVG labels for at least 24px horizontal clearance; check cards, context panels, terminal panels, and installation command padding in the in-app browser; retain readable diagram labels at narrow widths; build and run the focused website checks. No Rust or deployment changes.
+
+Status: local build and website test suite pass; git diff --check is clean. In-app browser inspection covered the default desktop viewport, the reported 950px width, and 390px mobile. All ten SVG boxes have at least 24px horizontal text clearance at intrinsic scale; notes have at least 16px vertical clearance. Cards have 24-32px padding; mobile stats stack; the install command wraps within its panel and Copy retains its label, font size, and dimensions. The terminal frame ends inside the viewport, and scrolling forward/back returns to the same phase and position. Diagram URL versioning prevents the old cached boxes from persisting. No deployment or Rust changes. Masih's visual acceptance remains open.

@@ -22,6 +22,12 @@
 - Workers must not close, narrow, or rewrite `docs/USER_REQUESTS.md`; only Masih's explicit acceptance changes that ledger.
 - Do not delegate to Jules. The coordinator selects and manages workers and worktrees.
 
+## Web UI
+
+- Before creating or editing any HTML or JSX, read and use `.agents/skills/daisyui/SKILL.md` and every reference it requires for the selected components, colors, configuration, or installation.
+- Use daisyUI components and semantic theme colors first, Tailwind utilities second, and custom CSS only when neither can express the required design.
+- This rule applies to every HTML or JSX edit in this project unless Masih explicitly overrides it.
+
 ## Definition of Done
 
 - **Masih is the sole arbiter of truth.** CI, compilation, tests, and agent claims are evidence, not functional acceptance.

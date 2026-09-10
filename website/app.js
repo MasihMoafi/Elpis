@@ -1,30 +1,5 @@
-const runtimeButtons = [...document.querySelectorAll("[data-runtime]")];
-const runtimeLabel = document.querySelector("[data-runtime-label]");
-const runtimeDetail = document.querySelector("[data-runtime-detail-output]");
-const handoffState = document.querySelector("[data-handoff-state]");
-const ledgerRows = [...document.querySelectorAll("[data-ledger-row]")];
-
-runtimeButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    if (button.classList.contains("is-active")) return;
-
-    runtimeButtons.forEach((item) => item.classList.toggle("is-active", item === button));
-    handoffState.textContent = "handoff…";
-    handoffState.classList.add("is-switching");
-    ledgerRows.forEach((row, index) => {
-      row.style.setProperty("--delay", `${index * 55}ms`);
-      row.classList.remove("is-retained");
-    });
-
-    window.setTimeout(() => {
-      runtimeLabel.textContent = button.dataset.runtime;
-      runtimeDetail.textContent = button.dataset.runtimeDescription;
-      handoffState.textContent = "connected";
-      handoffState.classList.remove("is-switching");
-      ledgerRows.forEach((row) => row.classList.add("is-retained"));
-    }, 420);
-  });
-});
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const header = document.querySelector("header.navbar");
 
 const copyButton = document.querySelector("[data-copy-button]");
 const command = document.querySelector("[data-command]");
@@ -45,141 +20,123 @@ copyButton?.addEventListener("click", async () => {
   }
 });
 
-const menuButton = document.querySelector("[data-menu-button]");
-const header = document.querySelector("[data-header]");
+const aceDemo = document.querySelector("[data-ace-demo]");
+const aceTerminal = document.querySelector("[data-ace-terminal]");
 
-menuButton?.addEventListener("click", () => {
-  const open = header.classList.toggle("menu-open");
-  menuButton.setAttribute("aria-expanded", String(open));
-  menuButton.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
-});
+if (aceDemo && aceTerminal) {
+  const shellCommand = aceDemo.querySelector("[data-shell-command]");
+  const shellEnter = aceDemo.querySelector("[data-shell-enter]");
+  const logo = aceDemo.querySelector("[data-ace-logo]");
+  const bootLog = aceDemo.querySelector("[data-boot-log]");
+  const composerText = aceDemo.querySelector("[data-composer-text]");
+  const composerCursor = aceDemo.querySelector("[data-composer-cursor]");
+  const sentPrompt = aceDemo.querySelector("[data-sent-prompt]");
+  const toolOutput = aceDemo.querySelector("[data-tool-output]");
+  const ledgerTotal = aceDemo.querySelector("[data-ledger-total]");
+  const windowFigure = aceDemo.querySelector("[data-window-figure]");
+  const contextMeter = aceDemo.querySelector("[data-context-meter]");
+  const conversationCount = aceDemo.querySelector("[data-conversation-count]");
+  const footerContext = aceDemo.querySelector("[data-footer-context]");
+  const evidenceTotal = aceDemo.querySelector("[data-evidence-total]");
+  const evidenceRow = aceDemo.querySelector("[data-evidence-row]");
+  const logoText = logo.textContent;
+  const prompt = "Familiarize yourself with the project in this order: find the intent; verify docs against code; read the updated docs; map the code structure.";
+  const clamp = (number, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, number));
+  const mix = (from, to, progress) => Math.round(from + (to - from) * progress);
 
-header?.querySelectorAll("nav a").forEach((link) => {
-  link.addEventListener("click", () => {
-    header.classList.remove("menu-open");
-    menuButton?.setAttribute("aria-expanded", "false");
-  });
-});
-
-/* -------------------------------------------------------------
- * Hero Brand Visual Engine (Smooth TrueColor Solar Flare Wave)
- * ----------------------------------------------------------- */
-const SOLAR_PALETTE = {
-  top: [255, 235, 50],   // Canary Sun Yellow
-  mid: [255, 145, 0],    // Warm Golden Amber
-  bot: [230, 45, 0],     // Deep Tangerine
-  flare: [255, 245, 100],
-};
-
-const LOGO_LINES = [
-  "████████████   ██            ███████████     ████    ████████████ ",
-  "████████████   ██            ████████████    ████    ████████████ ",
-  "██             ██            ██        ███   ████    ██           ",
-  "██             ██            ██        ███   ████    ██           ",
-  "██████████     ██            ████████████    ████    ████████████ ",
-  "██             ██            ███████████     ████              ██ ",
-  "██             ██            ██              ████              ██ ",
-  "████████████   ███████████   ██              ████    ████████████ ",
-  "████████████   ███████████   ██              ████    ████████████ ",
-];
-
-const bannerEl = document.querySelector("[data-theme-banner]");
-
-if (bannerEl) {
-  const animStartTime = performance.now();
-  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const spanGrid = [];
-  bannerEl.textContent = "";
-
-  LOGO_LINES.forEach((line) => {
-    const rowSpans = [];
-    const lineEl = document.createElement("div");
-    lineEl.className = "hero-banner-line";
-
-    for (let x = 0; x < line.length; x++) {
-      const char = line[x];
-      const span = document.createElement("span");
-      span.textContent = char;
-      if (char !== " ") {
-        span.className = "theme-char";
-        span.style.color = "rgb(255, 145, 0)";
+  function paintAceLogo(sweep) {
+    let column = 0;
+    logo.innerHTML = [...logoText].map((character) => {
+      if (character === "\n") {
+        column = 0;
+        return "\n";
       }
-      lineEl.appendChild(span);
-      rowSpans.push(span);
-    }
-    bannerEl.appendChild(lineEl);
-    spanGrid.push(rowSpans);
-  });
-
-  function interpolateColor(yNorm, heatOffset = 0) {
-    const t = Math.max(0, Math.min(1, 1 - yNorm + heatOffset));
-    let c1, c2, subT;
-    if (t > 0.5) {
-      subT = (t - 0.5) * 2;
-      c1 = SOLAR_PALETTE.mid;
-      c2 = SOLAR_PALETTE.top;
-    } else {
-      subT = t * 2;
-      c1 = SOLAR_PALETTE.bot;
-      c2 = SOLAR_PALETTE.mid;
-    }
-    const r = Math.round(c1[0] + (c2[0] - c1[0]) * subT);
-    const g = Math.round(c1[1] + (c2[1] - c1[1]) * subT);
-    const b = Math.round(c1[2] + (c2[2] - c1[2]) * subT);
-    return `rgb(${r}, ${g}, ${b})`;
+      const distance = Math.abs(column++ - sweep);
+      if (character === " ") return " ";
+      if (distance < 4) return `<span class="hot">${character}</span>`;
+      if (distance < 11) return `<span class="warm">${character}</span>`;
+      return character;
+    }).join("");
   }
 
-  function renderFrame(now) {
-    if (!bannerEl) return;
-    try {
-      const currentTime = typeof now === "number" ? now : performance.now();
-      const elapsed = Math.max(0, (currentTime - animStartTime) / 1000);
-      const height = LOGO_LINES.length;
-      const width = LOGO_LINES[0].length;
+  function renderAceDemo(progress) {
+    const position = clamp(progress);
+    let phase = "shell";
+    if (position >= 0.12) phase = "boot";
+    if (position >= 0.27) phase = "ready";
+    if (position >= 0.43) phase = "working";
+    if (position >= 0.54) phase = "tools";
+    if (position >= 0.70) phase = "ace";
+    if (position >= 0.89) phase = "done";
+    aceTerminal.className = `ace-terminal phase-${phase}`;
 
-      // Repeating radiant sweep cycle (sweeps across for 1.2s every 4.0s)
-      const CYCLE_DURATION = 4.0;
-      const cycleTime = elapsed % CYCLE_DURATION;
-      const isSweeping = cycleTime < 1.2;
-      const sweepX = isSweeping ? (cycleTime / 1.2) * (width + 10) - 4 : -999;
-      // Calm, comfortable breathing wave speed
-      const phase = elapsed * 2.0;
+    shellCommand.textContent = "elpis".slice(0, Math.floor(clamp(position / 0.095) * 5));
+    shellEnter.textContent = position >= 0.10 && position < 0.12 ? " ↵" : "";
 
-      for (let y = 0; y < height; y++) {
-        const yNorm = y / (height - 1);
-        const row = spanGrid[y];
+    const bootProgress = clamp((position - 0.12) / 0.15);
+    paintAceLogo(mix(-8, 48, bootProgress));
+    const loaded = Math.floor(bootProgress * 12);
+    const logs = [
+      '<span class="ok">✓</span> workspace found',
+      '<span class="ok">✓</span> continuity sources indexed',
+      '<span class="ok">✓</span> Context Ledger open by default',
+    ];
+    bootLog.innerHTML = `${logs.slice(0, Math.ceil(bootProgress * 3)).map((line) => `<div>${line}</div>`).join("")}<div>[${"█".repeat(loaded)}${"░".repeat(12 - loaded)}]</div>`;
 
-        for (let x = 0; x < width; x++) {
-          if (LOGO_LINES[y][x] === " ") continue;
-          const span = row[x];
+    const typed = clamp((position - 0.27) / 0.14);
+    composerText.textContent = phase === "ready"
+      ? prompt.slice(0, Math.floor(prompt.length * typed))
+      : phase === "done" ? "Ask a follow-up" : "";
+    composerCursor.style.display = phase === "ready" ? "inline" : "none";
+    sentPrompt.textContent = ["working", "tools", "ace", "done"].includes(phase) ? prompt : "";
 
-          if (isSweeping) {
-            const dist = Math.abs(x - sweepX);
-            if (dist < 3.5) {
-              const fl = SOLAR_PALETTE.flare;
-              span.style.color = `rgb(${fl[0]}, ${fl[1]}, ${fl[2]})`;
-              span.style.textShadow = `0 0 12px rgba(${fl[0]}, ${fl[1]}, ${fl[2]}, 0.8)`;
-              continue;
-            }
-          }
+    toolOutput.className = "ace-tool-output";
+    if (phase === "tools") toolOutput.classList.add("open");
+    if (phase === "ace") toolOutput.classList.add("open", "scanning");
+    if (phase === "done") toolOutput.classList.add("compacted");
+    toolOutput.style.setProperty("--scan", clamp((position - 0.70) / 0.19).toFixed(3));
 
-          const ripple = prefersReducedMotion ? 0 : 0.22 * Math.sin(x * 0.22 - phase + y * 0.32);
-          span.style.color = interpolateColor(yNorm, ripple);
-          span.style.textShadow = "none";
-        }
-      }
-    } catch (err) {
-      console.error("Frame render error:", err);
-    }
-
-    if (!prefersReducedMotion) {
-      requestAnimationFrame(renderFrame);
-    }
+    const finished = phase === "done";
+    ledgerTotal.textContent = finished ? "Total ≈6.0k tokens admitted" : "Total ≈5.6k tokens admitted";
+    windowFigure.textContent = finished
+      ? "≈33.8k of 258.4k used (13%)"
+      : "≈33.3k of 258.4k used (13%)";
+    conversationCount.textContent = "≈27.7k tokens";
+    contextMeter.style.setProperty("--used", finished ? "13.08%" : "12.89%");
+    footerContext.textContent = "87% context left";
+    evidenceTotal.textContent = finished ? "≈642 tokens admitted" : "≈156 tokens admitted";
+    evidenceRow.textContent = finished ? "≈642" : "≈156";
   }
 
-  renderFrame(performance.now());
-  if (!prefersReducedMotion) {
-    requestAnimationFrame(renderFrame);
+  let scrollFrame;
+  function renderAceDemoFromScroll() {
+    scrollFrame = undefined;
+    const topOffset = header?.offsetHeight || 0;
+    const rectangle = aceDemo.getBoundingClientRect();
+    const travel = aceDemo.offsetHeight - (window.innerHeight - topOffset);
+    renderAceDemo(clamp((topOffset - rectangle.top) / Math.max(1, travel)));
+  }
+
+  function requestAceDemoFrame() {
+    if (scrollFrame === undefined) scrollFrame = requestAnimationFrame(renderAceDemoFromScroll);
+  }
+
+  if (reducedMotion.matches) {
+    renderAceDemo(1);
+  } else {
+    addEventListener("scroll", requestAceDemoFrame, { passive: true });
+    addEventListener("resize", requestAceDemoFrame);
+    renderAceDemoFromScroll();
   }
 }
 
+document.querySelectorAll("[data-dashboard-view]").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll("[data-dashboard-view]").forEach((item) => {
+      item.setAttribute("aria-pressed", String(item === button));
+    });
+    document.querySelectorAll("[data-dashboard-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.dashboardPanel !== button.dataset.dashboardView;
+    });
+  });
+});

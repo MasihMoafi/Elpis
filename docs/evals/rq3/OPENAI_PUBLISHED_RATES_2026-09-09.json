@@ -1,0 +1,11 @@
+{
+  "currency": "USD",
+  "provenance": "OpenAI model pages fetched 2026-09-09: https://developers.openai.com/api/docs/models/gpt-5.6-terra , /gpt-5.6-sol , /gpt-6-astra ; Luna rates from LUNA_PUBLISHED_RATES_2026-09-08.json. Per million tokens. Sol lists promotional pricing valid through 2026-11-21; Sol and Astra double input and cached rates and multiply output by 1.5 for requests over 272K input tokens (never reached here).",
+  "scope": "Projection inputs only; no conversation in this study ran on Terra, Sol, or Astra.",
+  "models": {
+    "gpt-5.6-luna": { "input": 0.2, "cached": 0.02, "output": 1.2, "write": null },
+    "gpt-5.6-terra": { "input": 2.0, "cached": 0.2, "output": 12.0, "write": null },
+    "gpt-5.6-sol": { "input": 4.0, "cached": 0.4, "output": 20.0, "write": null },
+    "gpt-6-astra": { "input": 10.0, "cached": 1.0, "output": 50.0, "write": null }
+  }
+}

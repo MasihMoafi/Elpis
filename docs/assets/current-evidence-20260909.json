@@ -1,0 +1,199 @@
+{
+  "as_of": "2026-09-09",
+  "source": "docs/evals/rq3/COST_EFFICIENCY_METRICS.json",
+  "source_sha256": "d9bee2f8d0d1080d28bfc336a7bcd10867b0ddf67964e828f99e79b807cca2fd",
+  "calculator_sha256": "bf5e5db26524e66acc2cefa2b646d114d542cc92d78f98ef0191d82f10146b75",
+  "verified_batches": 20,
+  "verified_pairs": 64,
+  "scope": "Synthetic fixtures; frozen experiment binary, not the current UI build. Descriptive totals; no pooled inference across batches.",
+  "cost_basis": "Recorded 2026-09-08 rates: $0.20 input, $0.02 cached input, $1.20 output per million. Estimate, not invoice. Main + optimizer included.",
+  "effort_at_three_requests": [
+    {
+      "label": "Max",
+      "batches": [
+        "elpis-cost-e1-max-b-20260908-01"
+      ],
+      "pairs": 8,
+      "requests_per_arm": [
+        3
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.029970919999999998,
+        "on_including_optimizer": 0.07867608,
+        "change_percent": 162.50805781070449,
+        "cheaper_or_fewer_pairs": 0
+      },
+      "tokens": {
+        "off": 373816,
+        "on_including_optimizer": 369580,
+        "change_percent": -1.1331778201040033,
+        "cheaper_or_fewer_pairs": 6
+      }
+    },
+    {
+      "label": "Medium",
+      "batches": [
+        "elpis-cost-e1-medium-c-20260908-01"
+      ],
+      "pairs": 5,
+      "requests_per_arm": [
+        3
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.016322,
+        "on_including_optimizer": 0.0230736,
+        "change_percent": 41.36502879549076,
+        "cheaper_or_fewer_pairs": 0
+      },
+      "tokens": {
+        "off": 233997,
+        "on_including_optimizer": 211569,
+        "change_percent": -9.584738265875203,
+        "cheaper_or_fewer_pairs": 5
+      }
+    },
+    {
+      "label": "Low",
+      "batches": [
+        "elpis-cost-e1-low-20260908-01"
+      ],
+      "pairs": 8,
+      "requests_per_arm": [
+        3
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.030762760000000004,
+        "on_including_optimizer": 0.04752452,
+        "change_percent": 54.48717865367085,
+        "cheaper_or_fewer_pairs": 0
+      },
+      "tokens": {
+        "off": 373593,
+        "on_including_optimizer": 334286,
+        "change_percent": -10.521342744644569,
+        "cheaper_or_fewer_pairs": 8
+      }
+    },
+    {
+      "label": "None",
+      "batches": [
+        "elpis-cost-e1-none-b-20260908-01"
+      ],
+      "pairs": 8,
+      "requests_per_arm": [
+        3
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.027579560000000003,
+        "on_including_optimizer": 0.03443176,
+        "change_percent": 24.845211453699754,
+        "cheaper_or_fewer_pairs": 1
+      },
+      "tokens": {
+        "off": 373840,
+        "on_including_optimizer": 331178,
+        "change_percent": -11.411833939653327,
+        "cheaper_or_fewer_pairs": 8
+      }
+    }
+  ],
+  "horizon": [
+    {
+      "label": "Low \u00b7 3 requests",
+      "batches": [
+        "elpis-cost-e1-low-20260908-01"
+      ],
+      "pairs": 8,
+      "requests_per_arm": [
+        3
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.030762760000000004,
+        "on_including_optimizer": 0.04752452,
+        "change_percent": 54.48717865367085,
+        "cheaper_or_fewer_pairs": 0
+      },
+      "tokens": {
+        "off": 373593,
+        "on_including_optimizer": 334286,
+        "change_percent": -10.521342744644569,
+        "cheaper_or_fewer_pairs": 8
+      }
+    },
+    {
+      "label": "Low \u00b7 11 requests",
+      "batches": [
+        "elpis-cost-e2-8b-low-20260908-01"
+      ],
+      "pairs": 8,
+      "requests_per_arm": [
+        11
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.07191884,
+        "on_including_optimizer": 0.0697484,
+        "change_percent": -3.017901846025317,
+        "cheaper_or_fewer_pairs": 4
+      },
+      "tokens": {
+        "off": 1566794,
+        "on_including_optimizer": 1085606,
+        "change_percent": -30.711631522714534,
+        "cheaper_or_fewer_pairs": 8
+      }
+    },
+    {
+      "label": "Low \u00b7 35 requests",
+      "batches": [
+        "elpis-cost-e2-32b-low-20260908-01",
+        "elpis-cost-e2-32c-low-20260908-01"
+      ],
+      "pairs": 8,
+      "requests_per_arm": [
+        35
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.19599884,
+        "on_including_optimizer": 0.17683852,
+        "change_percent": -9.775731325756832,
+        "cheaper_or_fewer_pairs": 7
+      },
+      "tokens": {
+        "off": 5440982,
+        "on_including_optimizer": 3620321,
+        "change_percent": -33.46199270646365,
+        "cheaper_or_fewer_pairs": 8
+      }
+    },
+    {
+      "label": "None \u00b7 35 requests",
+      "batches": [
+        "elpis-cost-e2-32-none-20260908-01"
+      ],
+      "pairs": 8,
+      "requests_per_arm": [
+        35
+      ],
+      "binary_sha256": "d58e8c9b8861cc386265fdc799c3b556d8106b8f4a5983fb524ecc676f5b2c8f",
+      "cost": {
+        "off": 0.20350688,
+        "on_including_optimizer": 0.16094372,
+        "change_percent": -20.91485064288735,
+        "cheaper_or_fewer_pairs": 8
+      },
+      "tokens": {
+        "off": 5424678,
+        "on_including_optimizer": 3604614,
+        "change_percent": -33.55155826760593,
+        "cheaper_or_fewer_pairs": 8
+      }
+    }
+  ]
+}
