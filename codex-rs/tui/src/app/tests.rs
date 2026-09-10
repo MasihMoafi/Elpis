@@ -3956,6 +3956,20 @@ async fn active_non_primary_shutdown_target_still_switches_for_other_pending_exi
     Ok(())
 }
 
+fn clear_ui_header_snapshot(app: &App) -> String {
+    app.clear_ui_header_lines_with_version(/*width*/ 80, "<VERSION>")
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace("   DEBUG BUILD ", "")
+}
+
 async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
     let mut app = make_test_app().await;
     app.config.cwd = test_path_buf("/tmp/project").abs();
@@ -4049,17 +4063,7 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
     ];
     app.has_emitted_history_lines = true;
 
-    let rendered = app
-        .clear_ui_header_lines_with_version(/*width*/ 80, "<VERSION>")
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = clear_ui_header_snapshot(&app);
 
     assert!(
         !rendered.contains("startup tip that used to replay"),
@@ -4112,17 +4116,7 @@ async fn clear_ui_header_shows_fast_status_for_fast_capable_models() {
     set_chatgpt_auth(&mut app.chat_widget);
     set_fast_mode_test_catalog(&mut app.chat_widget);
 
-    let rendered = app
-        .clear_ui_header_lines_with_version(/*width*/ 80, "<VERSION>")
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = clear_ui_header_snapshot(&app);
 
     assert_app_snapshot!("clear_ui_header_fast_status_fast_capable_models", rendered);
 }

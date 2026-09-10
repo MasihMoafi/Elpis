@@ -3,24 +3,24 @@ source: tui/src/chatwidget/tests/permissions.rs
 expression: "render_bottom_popup(&chat, 80)"
 ---
  Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
-│ Update Model Permissions                     ││admitted
-│                                              ││i = select/deselect all ·
-  1. Ask for approval        Codex can read    ││backspace = remove added file
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
+│ Update Model Permissions                     ││measured · ≈0 source estimates
+│                                              ││Tab hide/show · Ctrl+click open
+  1. Ask for approval        Codex can read    ││file
                              and edit files in ││
-                             the current       ││CONTEXT WINDOW  ≈0 of 258.4k
-                             workspace, and    ││used (0%)
-                             run commands.     ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-                             Approval is       ││■ Conversation (messages) ≈0
-                             required to       ││tokens
-                             access the        ││
-                             internet or edit  ││No portable context is
-                             other files.      ││available.
-     Full Access (disabled)  Codex can edit    │
-                             files outside     │
-                             this workspace    │
-                             and access the    │
-                             internet without  │
+                             the current       ││SMART PRUNE          [···] SYNC
+                             workspace, and    ││Reading current thread state
+                             run commands.     ││Syncing… · /smart-prune on|off
+                             Approval is       ││sets an explicit state
+                             required to       ││
+                             access the        ││CONTEXT WINDOW  usage
+                             internet or edit  ││unavailable
+                             other files.      ││Context measurement unavailable
+     Full Access (disabled)  Codex can edit    ││until the first request
+                             files outside     ││snapshot
+                             this workspace    ││
+                             and access the    ││No portable context is
+                             internet without  ││available.
                              asking for        │
                              approval.         │
                              Exercise caution  │

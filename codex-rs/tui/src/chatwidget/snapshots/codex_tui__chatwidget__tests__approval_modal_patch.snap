@@ -4,16 +4,21 @@ expression: contents
 ---
 
  Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
-│ Would you like to make the following edits?  ││admitted
-│                                              ││i = select/deselect all ·
-│ Reason: The model wants to apply changes     ││backspace = remove added file
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
+│ Would you like to make the following edits?  ││measured · ≈0 source estimates
+│                                              ││Tab hide/show · Ctrl+click open
+│ Reason: The model wants to apply changes     ││file
 │                                              ││
-› 1. Yes, proceed (y)                          ││CONTEXT WINDOW  ≈0 of 258.4k
-  2. Yes, and don't ask again for these files  ││used (0%)
-     (a)                                       ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-  3. No, and tell Codex what to do differently ││■ Conversation (messages) ≈0
-     (esc)                                     ││tokens
-└──────────────────────────────────────────────┘│
-  Press enter to confirm or esc to cancel       │No portable context is
+› 1. Yes, proceed (y)                          ││SMART PRUNE          [···] SYNC
+  2. Yes, and don't ask again for these files  ││Reading current thread state
+     (a)                                       ││Syncing… · /smart-prune on|off
+  3. No, and tell Codex what to do differently ││sets an explicit state
+     (esc)                                     ││
+└──────────────────────────────────────────────┘│CONTEXT WINDOW  usage
+  Press enter to confirm or esc to cancel       │unavailable
+                                                │Context measurement unavailable
+                                                │until the first request
+                                                │snapshot
+                                                │
+                                                │No portable context is
                                                 │available.

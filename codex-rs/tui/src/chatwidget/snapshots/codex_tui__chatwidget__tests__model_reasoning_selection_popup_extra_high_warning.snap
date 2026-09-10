@@ -3,24 +3,24 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
  Elpis · model gpt-5.2 · location /tmp/project
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
-│ Select Reasoning Level for gpt-5.2           ││admitted
-│                                              ││Tab focus · Alt+C focus/hide ·
-  1. Low                   Balances speed with ││Ctrl+click open file
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
+│ Select Reasoning Level for gpt-5.2           ││measured · ≈0 source estimates
+│                                              ││Tab hide/show · Ctrl+click open
+  1. Low                   Balances speed with ││file
                            some reasoning;     ││
-                           useful for          ││CONTEXT WINDOW  ≈0 of 258.4k
-                           straightforward     ││used (0%)
-                           queries and short   ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-                           explanations        ││■ Conversation (messages) ≈0
-  2. Medium (default)      Provides a solid    ││tokens
-                           balance of          ││
-                           reasoning depth and ││No portable context is
-                           latency for         ││available.
-                           general-purpose     │
-                           tasks               │
-  3. High                  Maximizes reasoning │
-                           depth for complex   │
-                           or ambiguous        │
+                           useful for          ││SMART PRUNE          [···] SYNC
+                           straightforward     ││Reading current thread state
+                           queries and short   ││Syncing… · /smart-prune on|off
+                           explanations        ││sets an explicit state
+  2. Medium (default)      Provides a solid    ││
+                           balance of          ││CONTEXT WINDOW  usage
+                           reasoning depth and ││unavailable
+                           latency for         ││Context measurement unavailable
+                           general-purpose     ││until the first request
+                           tasks               ││snapshot
+  3. High                  Maximizes reasoning ││
+                           depth for complex   ││No portable context is
+                           or ambiguous        ││available.
                            problems            │
 › 4. Extra high (current)  Extra high          │
                            reasoning for       │

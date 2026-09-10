@@ -3,24 +3,24 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
  Elpis · model test-visible-model · location /tm
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
-│ Choose a mind                                ││admitted
-│ Provider: OpenAI                             ││i = select/deselect all ·
-│ Route: direct provider connection            ││backspace = remove added file
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
+│ Choose a mind                                ││measured · ≈0 source estimates
+│ Provider: OpenAI                             ││Tab hide/show · Ctrl+click open
+│ Route: direct provider connection            ││file
 │ Protocol: responses                          ││
-│ Credential: OpenAI/ChatGPT credential store  ││CONTEXT WINDOW  ≈0 of 258.4k
-│ Model: test-visible-model                    ││used (0%)
-│ Provider, protocol, route, and credential so ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-│                                              ││■ Conversation (messages) ≈0
-     OPENAI                                    ││tokens
-     Auto                  Requires this       ││
-                           provider to offer   ││No portable context is
-                           GPT-5.6 Luna,       ││available.
-                           Terra, and Sol.     │
-› 1. All models (current)  Browse this         │
-                           provider's full     │
-                           catalog (current:   │
-                           test-visible-model) │
+│ Credential: OpenAI/ChatGPT credential store  ││SMART PRUNE          [···] SYNC
+│ Model: test-visible-model                    ││Reading current thread state
+│ Provider, protocol, route, and credential so ││Syncing… · /smart-prune on|off
+│                                              ││sets an explicit state
+     OPENAI                                    ││
+     Auto                  Requires this       ││CONTEXT WINDOW  usage
+                           provider to offer   ││unavailable
+                           GPT-5.6 Luna,       ││Context measurement unavailable
+                           Terra, and Sol.     ││until the first request
+› 1. All models (current)  Browse this         ││snapshot
+                           provider's full     ││
+                           catalog (current:   ││No portable context is
+                           test-visible-model) ││available.
      OPENROUTER                                │
   2. openrouter/free       OpenRouter routes   │
                            each request to a   │

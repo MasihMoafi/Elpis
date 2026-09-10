@@ -3,24 +3,24 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
  Elpis · model gpt-5.2 · location /tmp/project
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
-│ Choose a mind                                ││admitted
-│ Provider: OpenAI                             ││i = select/deselect all ·
-│ Route: direct provider connection            ││backspace = remove added file
+┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
+│ Choose a mind                                ││measured · ≈0 source estimates
+│ Provider: OpenAI                             ││Tab hide/show · Ctrl+click open
+│ Route: direct provider connection            ││file
 │ Protocol: responses                          ││
-│ Credential: OpenAI/ChatGPT credential store  ││CONTEXT WINDOW  ≈0 of 258.4k
-│ Model: gpt-5.2                               ││used (0%)
-│ Provider, protocol, route, and credential so ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-│                                              ││■ Conversation (messages) ≈0
-     OPENAI                                    ││tokens
-  1. Auto                  Elpis automatically ││
-                           chooses the right   ││No portable context is
-                           model for the task  ││available.
-› 2. All models (current)  Browse this         │
-                           provider's full     │
-                           catalog (current:   │
-                           gpt-5.2)            │
-     OPENROUTER                                │
+│ Credential: OpenAI/ChatGPT credential store  ││SMART PRUNE          [···] SYNC
+│ Model: gpt-5.2                               ││Reading current thread state
+│ Provider, protocol, route, and credential so ││Syncing… · /smart-prune on|off
+│                                              ││sets an explicit state
+     OPENAI                                    ││
+  1. Auto                  Elpis automatically ││CONTEXT WINDOW  usage
+                           chooses the right   ││unavailable
+                           model for the task  ││Context measurement unavailable
+› 2. All models (current)  Browse this         ││until the first request
+                           provider's full     ││snapshot
+                           catalog (current:   ││
+                           gpt-5.2)            ││No portable context is
+     OPENROUTER                                ││available.
   3. openrouter/free       OpenRouter routes   │
                            each request to a   │
                            free open-source    │

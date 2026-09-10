@@ -615,18 +615,18 @@ mod tests {
 
     #[test]
     fn slash_completion_preserves_existing_draft_tail_for_inline_arg_commands() {
-        let draft = "view the diff";
-        let expected_text = "/review view the diff";
+        let draft = "name the release";
+        let expected_text = "/rename name the release";
 
-        let mut composer = composer_with_draft_tail("/re", draft);
+        let mut composer = composer_with_draft_tail("/ren", draft);
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
         assert_eq!(composer.draft.textarea.text(), expected_text);
         assert_eq!(composer.draft.textarea.cursor(), expected_text.len());
 
-        let mut composer = composer_with_draft_tail("/re", draft);
+        let mut composer = composer_with_draft_tail("/ren", draft);
         assert_eq!(
             press(&mut composer, KeyCode::Enter),
-            InputResult::CommandWithArgs(SlashCommand::Review, draft.to_string(), Vec::new())
+            InputResult::CommandWithArgs(SlashCommand::Rename, draft.to_string(), Vec::new())
         );
         assert_eq!(composer.draft.textarea.text(), expected_text);
     }
@@ -645,14 +645,14 @@ mod tests {
 
     #[test]
     fn slash_completion_does_not_turn_command_suffix_into_args() {
-        let mut composer = composer_with_text_at_cursor("/review", "/re".len());
+        let mut composer = composer_with_text_at_cursor("/rename", "/ren".len());
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
-        assert_eq!(composer.draft.textarea.text(), "/review ");
+        assert_eq!(composer.draft.textarea.text(), "/rename ");
 
-        let mut composer = composer_with_text_at_cursor("/review", "/re".len());
+        let mut composer = composer_with_text_at_cursor("/rename", "/ren".len());
         assert_eq!(
             press(&mut composer, KeyCode::Enter),
-            InputResult::Command(SlashCommand::Review)
+            InputResult::Command(SlashCommand::Rename)
         );
         assert!(composer.draft.textarea.is_empty());
     }

@@ -2,9 +2,7 @@
 source: tui/src/app/tests.rs
 expression: rendered
 ---
-╭─────────────────────────────────────────────╮
-│ >_ Elpis (v<VERSION>)   DEBUG BUILD         │
-│                                             │
-│ model:     gpt-test high   /model to change │
-│ directory: /tmp/project                     │
-╰─────────────────────────────────────────────╯
+◆ Elpis (v<VERSION>)
+│ 
+│ model:     gpt-test high   /model to change
+│ directory: /tmp/project
