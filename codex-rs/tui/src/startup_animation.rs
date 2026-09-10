@@ -81,18 +81,6 @@ impl StartupAnimation {
     where
         F: Future<Output = T>,
     {
-        // A single bounded entrance overlaps initialization. Later startup phases
-        // share this clock and cannot replay it or add another delay.
-        let minimum = if self.animations_enabled {
-            HOLD + DISSOLVE
-        } else {
-            Duration::ZERO
-        };
-        let remaining = minimum.saturating_sub(self.started.elapsed());
-        let work = async {
-            let (value, ()) = tokio::join!(work, tokio::time::sleep(remaining));
-            value
-        };
         tokio::pin!(work);
         let mut input = tui.event_stream();
         let mut ticks = tokio::time::interval(TICK);
@@ -122,6 +110,21 @@ impl StartupAnimation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn completed_work_does_not_wait_for_the_entrance_animation() {
+        let mut tui = crate::tui::test_support::make_test_tui().expect("test terminal");
+        let mut animation = StartupAnimation::new(true);
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            animation.wait_for(&mut tui, "loading", std::future::ready(42)),
+        )
+        .await
+        .expect("ready work must not wait for a cosmetic minimum")
+        .expect("startup wait");
+        assert!(matches!(result, StartupWait::Completed(42)));
+    }
+
     #[test]
     #[ignore = "manual actual-widget motion capture; set ELPIS_VISUAL_DIR"]
     fn export_selected_startup_review() {
