@@ -4896,7 +4896,8 @@ mod tests {
             /*disable_paste_burst*/ false,
         );
 
-        let area = Rect::new(0, 0, 40, 6);
+        let width = 80;
+        let area = Rect::new(0, 0, width, composer.desired_height(width));
         let mut buf = Buffer::empty(area);
         composer.render(area, &mut buf);
 
@@ -4932,7 +4933,7 @@ mod tests {
 
         let spacing_row = row_to_string(hint_row_idx - 1);
         assert_eq!(
-            spacing_row.trim(),
+            spacing_row.trim_matches([' ', '│']),
             "",
             "expected blank spacing row above hints but saw: {spacing_row:?}",
         );

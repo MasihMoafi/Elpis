@@ -218,3 +218,49 @@ The final complete run reports **3,050 passed, 91 failed, 5 ignored** in
 `.tmp/final-candidate/tui-fixture-final.log` (21.34 s). No newly failing tests were
 introduced relative to the preceding 122-failure run. Release and installation
 remain pending the outstanding functional work and acceptance.
+
+## Context wording and current executable, September 11
+
+The shared context category now says `Reasoning + compaction` and explains that
+these are retained-history estimates, not the effort setting. The new rendering
+check failed before the correction; positive cases pass at narrow and wide widths,
+and the negative case omits the category. All 22 active context-report checks pass (one ignored),
+and the rendered Ledger agrees with the shared label and colors.
+
+Related tests now inspect popup content separately from the surrounding header
+and Ledger when checking notice lifecycle; their full-screen snapshots still use
+the full widget. The permission-cycle check observes its queued policy event,
+and the footer-spacing check uses sufficient width and recognizes the empty rail.
+The final full TUI run reports **3,059 passed, 83 failed, 5 ignored**, with no new
+failures relative to the preceding committed baseline. Logs:
+`.tmp/final-candidate/context-label-before.log`, `context-label-after.log`,
+`context-ledger-label-final.log`, and `tui-context-final.log`.
+
+The optimized CLI build passed in 247,122 ms, peak 72°C. Its SHA256 is
+`c85e05208afa5f5a8eacbf5428da3a5a790e710b50fac8f194fe304df5ec62e6`;
+the companion app-server SHA256 is
+`39cf21d98901fe299f8c10e255762c126f305c3744225b36d96c8540228a812c`.
+The new CLI passed the actual VS Code integrated-terminal check: resize and Tab,
+two queued inputs restored for editing, and three exact native drag-copy trials
+during a response, with only one provider request. This uses the existing
+installed IDE extension to host the terminal; it is not a new IDE package test.
+Evidence: `.tmp/final-candidate/context-ui-native-terminal.log`,
+`context-ui-native-terminal-result.json`, and `context-ui-native-terminal.png`.
+The screenshot was inspected: both restored inputs and the selection are visible,
+and there is no visible red caret artifact in this captured frame. This does not
+settle intermittent VTE selection. Neither new binary has been installed or released.
+
+The IDE ledger's own mapping also now labels this field `Reasoning + compaction
+(estimated)`. Its DOM-rendering check failed before the text change and passes
+afterward, including the missing-attribution control. All 44 editor unit checks
+pass with the new local app-server selected as the test runtime. Evidence:
+`.tmp/final-candidate/ide-ledger-label-before.log`, `ide-ledger-label-after.log`,
+and `editor-unit-context-final.log`. The native-terminal screenshot above does
+not serve as visual acceptance of this separate IDE ledger text change.
+
+The refreshed local pruning audit records **1,884,230 estimated tokens removed**,
+**8,147,106 optimizer tokens**, 1,026 attempts across 20 sessions, and 36 missing
+usage reports. It covers 637 available rollouts and reports no malformed records.
+This is gross one-time compression, not proven net savings. Data is retained in
+`.tmp/final-candidate/smart-prune-usage-refresh.json`; the earlier HTML has not yet
+been regenerated with this timestamped data.

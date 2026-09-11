@@ -25,6 +25,7 @@ use crate::history_cell::HistoryCell;
 pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(111, 181, 253);
 pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(3, 155, 44);
 pub(super) const REASONING_COLOR: Color = Color::Rgb(245, 239, 202);
+const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
 pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(162, 129, 11);
 pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(252, 178, 79);
 pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
@@ -165,7 +166,7 @@ pub(super) fn run_built_context_categories(
             color: AGENT_RESPONSES_COLOR,
         },
         CategoryUsage {
-            label: "Reasoning",
+            label: REASONING_CATEGORY_LABEL,
             tokens: attribution.reasoning,
             color: REASONING_COLOR,
         },
@@ -1111,6 +1112,17 @@ fn build_category_bar_chart(
             .not_dim()
             .into()
     });
+    if categories
+        .iter()
+        .any(|category| category.label == REASONING_CATEGORY_LABEL)
+    {
+        let note = if narrow {
+            "   Estimates, not the effort setting."
+        } else {
+            "   Includes retained history estimates, not the effort setting."
+        };
+        lines.push(note.not_dim().into());
+    }
     lines
 }
 
@@ -1384,6 +1396,33 @@ mod tests {
 
         assert_eq!(counts.iter().sum::<usize>(), 10);
         assert!(counts.into_iter().all(|count| count >= 1));
+    }
+
+    #[test]
+    fn context_report_qualifies_reasoning_and_compaction_estimates() {
+        let attribution = codex_app_server_protocol::ThreadContextAttribution {
+            reasoning: 600,
+            estimated_total: 600,
+            ..Default::default()
+        };
+        let categories = run_built_context_categories(&attribution);
+        for width in [40, 100] {
+            let text = plain_text(build_category_bar_chart(&categories, 600, 10_000, width));
+            assert!(text.contains("Reasoning + compaction"), "{text}");
+            assert!(text.contains("not the effort setting"), "{text}");
+            assert!(text.contains("600/10k"), "{text}");
+        }
+
+        let without_reasoning = codex_app_server_protocol::ThreadContextAttribution {
+            tool_results: 600,
+            estimated_total: 600,
+            ..Default::default()
+        };
+        let categories = run_built_context_categories(&without_reasoning);
+        let text = plain_text(build_category_bar_chart(&categories, 600, 10_000, 100));
+        assert!(text.contains("Tool results"), "{text}");
+        assert!(!text.contains("Reasoning + compaction"), "{text}");
+        assert!(!text.contains("effort setting"), "{text}");
     }
 
     #[test]

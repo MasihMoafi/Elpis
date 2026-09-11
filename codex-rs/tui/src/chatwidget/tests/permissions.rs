@@ -1213,7 +1213,7 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
 
 #[tokio::test]
 async fn test_cycle_approval_preset() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
     // Guardian is disabled by default in these tests, but let's test cycling.
     // It should jump to the next valid preset.
@@ -1228,10 +1228,15 @@ async fn test_cycle_approval_preset() {
     // Simulate Shift+Tab
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
 
-    // Expect approval policy to have changed.
-    let current_approval = chat.config_ref().permissions.approval_policy.value();
+    let current_approval = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::UpdateAskForApprovalPolicy(policy) => Some(policy),
+            _ => None,
+        })
+        .expect("Shift+Tab should request an approval policy update");
     assert_ne!(
-        initial_approval, current_approval,
+        codex_app_server_protocol::AskForApproval::from(initial_approval),
+        current_approval,
         "Shift+Tab should cycle permission preset"
     );
     assert!(

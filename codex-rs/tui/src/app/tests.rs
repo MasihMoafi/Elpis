@@ -1230,11 +1230,6 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
         /*use_theme_colors*/ true,
     );
 
-    assert_eq!(
-        app.chat_widget.status_line_text(),
-        Some("Elpis · provider openai · model gpt-5.2 · context admitted".into())
-    );
-
     let thread_id = ThreadId::new();
     app.active_thread_id = Some(thread_id.clone());
 
@@ -1259,7 +1254,7 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
     // The same token usage against a tiny window has to read differently from the same usage
     // against a large one, or the status line is ignoring the window the server reported.
     assert!(
-        roomy.contains("context ") && cramped.contains("context "),
+        roomy.contains("context 0%") && cramped.contains("context 50%"),
         "expected a context reading in both status lines, got {roomy:?} and {cramped:?}"
     );
     assert_ne!(

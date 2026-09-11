@@ -21,9 +21,19 @@ not agreement with provider-measured category counts.
 
 Consequently, the 18% label must not be represented as a verified pure-reasoning
 measurement. It includes retained history and compaction estimates. The UI's
-estimated-attribution note is material. Separating compaction and validating or
-more clearly qualifying opaque estimates remains an open accuracy/UX issue;
+estimated-attribution note is material. Separating compaction and validating
+opaque estimates remain open accuracy issues;
 no counter was changed merely to make this percentage look smaller.
+
+September 11 correction: the shared category label is now **Reasoning + compaction**.
+The context chart explains that it includes retained-history estimates rather than
+the effort setting. A new rendering check failed against the old label, then
+passed for both narrow and wide layouts; its negative case omits the category and
+explanation when reasoning/compaction estimates are absent. The measured total and
+proportional allocation are unchanged. All 22 active context-report checks pass
+(one is ignored). Evidence: `.tmp/final-candidate/context-label-before.log` and
+`context-label-after.log`. This clarifies the UI; it does not validate opaque-token
+estimates against provider-measured category counts.
 
 The same session also recorded 35 Smart Prune requests with about 67.5 minutes
 of cumulative optimizer latency; the latest inspected attempt used gpt-5.6-luna

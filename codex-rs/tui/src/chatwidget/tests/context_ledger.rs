@@ -331,7 +331,7 @@ async fn active_ledger_uses_one_full_window_category_bar() -> anyhow::Result<()>
     for (marker, label) in [
         ("●", "User messages"),
         ("◆", "Agent messages"),
-        ("▲", "Reasoning"),
+        ("▲", "Reasoning + compaction"),
         ("■", "Tool calls"),
         ("⬟", "Tool results"),
         ("✦", "System instructions"),
@@ -349,7 +349,7 @@ async fn active_ledger_uses_one_full_window_category_bar() -> anyhow::Result<()>
     for label in [
         "User messages",
         "Agent messages",
-        "Reasoning",
+        "Reasoning + compaction",
         "Tool calls",
         "Tool results",
         "System instructions",
@@ -386,7 +386,7 @@ async fn context_command_and_ledger_share_the_same_run_built_breakdown() {
     for (label, tokens) in [
         ("User messages", "100"),
         ("Agent messages", "200"),
-        ("Reasoning", "300"),
+        ("Reasoning + compaction", "300"),
         ("Tool calls", "400"),
         ("Tool results", "500"),
         ("System instructions", "700"),
@@ -683,7 +683,7 @@ async fn rendered_ledger_matches_context_category_colors_and_labels() -> anyhow:
     let expected = [
         ("●", "User messages"),
         ("◆", "Agent messages"),
-        ("▲", "Reasoning"),
+        ("▲", "Reasoning + compaction"),
         ("■", "Tool calls"),
         ("⬟", "Tool results"),
         ("✦", "System instructions"),

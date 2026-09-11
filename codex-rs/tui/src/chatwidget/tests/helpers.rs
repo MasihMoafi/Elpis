@@ -1224,10 +1224,10 @@ pub(super) async fn assert_shift_left_edits_most_recent_queued_message_for_termi
 }
 
 pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
-    let height = chat.desired_height(width);
+    let height = chat.bottom_pane.desired_height(width);
     let area = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(area);
-    chat.render(area, &mut buf);
+    chat.bottom_pane.render(area, &mut buf);
     for y in 0..area.height {
         let mut row = String::new();
         for x in 0..area.width {
@@ -1238,7 +1238,7 @@ pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
                 row.push_str(s);
             }
         }
-        if !row.trim().is_empty() {
+        if row.chars().any(char::is_alphanumeric) {
             return row;
         }
     }
@@ -1246,10 +1246,18 @@ pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
 }
 
 pub(crate) fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
-    let height = chat.desired_height(width);
+    render_popup(chat, width)
+}
+
+pub(crate) fn render_bottom_popup_content(chat: &ChatWidget, width: u16) -> String {
+    render_popup(&chat.bottom_pane, width)
+}
+
+fn render_popup(widget: &impl Renderable, width: u16) -> String {
+    let height = widget.desired_height(width);
     let area = Rect::new(0, 0, width, height);
     let mut buf = Buffer::empty(area);
-    chat.render(area, &mut buf);
+    widget.render(area, &mut buf);
 
     let mut lines: Vec<String> = (0..area.height)
         .map(|row| {
