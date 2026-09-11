@@ -24,13 +24,13 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
     Read diff_render.rs
 
  Elpis · model gpt-5.6-sol · location /tmp/proje
-▂▄▆ Investigating rendering code (0s • esc to i…│CONTEXT LEDGER  context not
+Investigating rendering code (0s • esc to inter…│CONTEXT LEDGER  context not
 │                                               │measured · ≈0 source estimates
-› Summarize recent commits                      │Tab focus · Alt+C focus/hide ·
-│                                               │Ctrl+click open file
+› Summarize recent commits                      │Tab hide/show · Ctrl+click open
+│                                               │file
 │                                               │
 │                                               │SMART PRUNE          [···] SYNC
-  tab to queue message                          │Reading current thread state
+  ctrl + q to queue message                     │Reading current thread state
                                                 │Syncing… · /smart-prune on|off
                                                 │sets an explicit state
                                                 │
