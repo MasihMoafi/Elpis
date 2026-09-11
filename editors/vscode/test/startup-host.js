@@ -57,6 +57,14 @@ async function run() {
     }
     assert.equal(provider.requests.length, 2);
     assert.ifError(provider.error);
+    const windowDOM = await WebviewDOM.connect(process.env.ELPIS_EDITOR_TEST_CDP, 'body', 'page');
+    assert(windowDOM, 'expected the VS Code window for visual evidence');
+    try {
+      const { data: screenshot } = await windowDOM.send('Page.captureScreenshot', { format: 'png' });
+      await fs.writeFile(path.join(data, 'startup.png'), Buffer.from(screenshot, 'base64'));
+    } finally {
+      windowDOM.close();
+    }
     result.passed = true;
     result.responses = provider.requests.length;
   } catch (error) {

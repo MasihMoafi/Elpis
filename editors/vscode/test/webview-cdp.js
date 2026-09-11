@@ -2,9 +2,9 @@
 // VS Code's custom-scheme webview target is not exposed as a Playwright Frame
 // in the tested Electron version. Attach to that real target over CDP instead.
 class WebviewDOM {
-  static async connect(port, selector='#prompt') {
+  static async connect(port, selector='#prompt', targetType='iframe') {
     const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-    for (const target of targets.filter(t => t.type === 'iframe' && t.url.includes('extensionId=elpis-local.elpis-editor'))) {
+    for (const target of targets.filter(t => t.type === targetType && (targetType === 'page' ? t.url.startsWith('vscode-file:') : t.url.includes('extensionId=elpis-local.elpis-editor')))) {
     const dom = new WebviewDOM();
     dom.rootSelector=selector;
     dom.pending = new Map(); dom.contexts = new Set(); dom.nextId = 1;
@@ -34,7 +34,12 @@ class WebviewDOM {
   }
   async evaluate(expression) {
     for (const contextId of this.contexts) {
-      const result = await this.send('Runtime.evaluate', { contextId, returnByValue: true, expression: `(()=>{function find(d){if(d.querySelector(${JSON.stringify(this.rootSelector || '#prompt')}))return d;for(const f of d.querySelectorAll('iframe')){try{const found=f.contentDocument&&find(f.contentDocument);if(found)return found;}catch{}}}const d=find(document);if(!d)return null;return (${expression});})()` });
+      const result = await this.send('Runtime.evaluate', { contextId, returnByValue: true, expression: `(()=>{function find(d){if(d.querySelector(${JSON.stringify(this.rootSelector || '#prompt')}))return d;for(const f of d.querySelectorAll('iframe')){try{const found=f.contentDocument&&find(f.contentDocument);if(found)return found;}catch{}}}const d=find(document);if(!d)return null;return (${expression});})()` }).catch(error => {
+        if (error.message !== 'Cannot find context with specified id') throw error;
+        this.contexts.delete(contextId);
+        return null;
+      });
+      if (!result) continue;
       if (!result.exceptionDetails && result.result.value !== null && result.result.value !== undefined) return result.result.value;
     }
     return null;
