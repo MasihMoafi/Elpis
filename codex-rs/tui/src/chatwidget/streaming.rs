@@ -334,7 +334,13 @@ impl ChatWidget {
     /// duplicate "in progress" affordances. Restoration is gated separately so we only re-show
     /// the row after commentary completion once stream queues are idle.
     pub(super) fn run_commit_tick_with_scope(&mut self, scope: CommitTickScope) {
-        let minimum_age = std::time::Duration::ZERO;
+        // Every queued line gets its own reveal interval, including young lines
+        // behind an older batch. An oldest-line gate can release them too early.
+        let minimum_age = if self.config.animations {
+            crate::elpis_motion::REVEAL_COMMIT_AGE
+        } else {
+            std::time::Duration::ZERO
+        };
         if let Some(controller) = self.stream_controller.as_mut() {
             controller.set_minimum_commit_age(minimum_age);
         }
@@ -446,7 +452,11 @@ impl ChatWidget {
 
     pub(super) fn sync_active_stream_tail(&mut self) {
         if let Some(controller) = self.stream_controller.as_ref() {
-            let tail_lines = controller.current_tail_lines();
+            let tail_lines = if self.config.animations {
+                controller.current_reveal_lines()
+            } else {
+                controller.current_tail_lines()
+            };
             if tail_lines.is_empty() {
                 self.clear_active_stream_tail();
                 return;
@@ -456,14 +466,22 @@ impl ChatWidget {
             self.transcript.active_cell =
                 Some(Box::new(history_cell::StreamingAgentTailCell::new(
                     tail_lines,
-                    controller.tail_starts_stream(),
+                    if self.config.animations {
+                        controller.reveal_starts_stream()
+                    } else {
+                        controller.tail_starts_stream()
+                    },
                 )));
             self.bump_active_cell_revision();
             return;
         }
 
         if let Some(controller) = self.plan_stream_controller.as_ref() {
-            let tail_lines = controller.current_tail_display_lines();
+            let tail_lines = if self.config.animations {
+                controller.current_reveal_display_lines()
+            } else {
+                controller.current_tail_display_lines()
+            };
             if tail_lines.is_empty() {
                 self.clear_active_stream_tail();
                 return;
@@ -472,7 +490,11 @@ impl ChatWidget {
             self.bottom_pane.hide_status_indicator();
             self.transcript.active_cell = Some(Box::new(history_cell::StreamingPlanTailCell::new(
                 tail_lines,
-                !controller.tail_starts_stream(),
+                !(if self.config.animations {
+                    controller.reveal_starts_stream()
+                } else {
+                    controller.tail_starts_stream()
+                }),
             )));
             self.bump_active_cell_revision();
             return;

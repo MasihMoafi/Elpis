@@ -5,9 +5,9 @@ expression: "render_picker(params, 120)"
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hotkeys                                                                                                              │
 │ All configurable shortcuts.                                                                                          │
-│ 109 actions, 0 customized, 3 unbound.                                                                                │
+│ 109 actions, 0 customized, 4 unbound.                                                                                │
 │                                                                                                                      │
-│ [All]  Common  Customized (0)  Unbound (3)  App  Composer  Editor  Vim  Navigation  Approval  Debug                  │
+│ [All]  Common  Customized (0)  Unbound (4)  App  Composer  Editor  Vim  Navigation  Approval  Debug                  │
 │                                                                                                                      │
 │ Type to search shortcuts                                                                                             │
 › Global         Open Transcript            ctrl-t                                                                     │

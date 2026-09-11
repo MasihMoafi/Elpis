@@ -151,6 +151,14 @@ pub(super) fn test_model_catalog(_config: &Config) -> Arc<ModelCatalog> {
 }
 
 // --- Helpers for tests that need direct construction and event draining ---
+impl ChatWidget {
+    // Exercise submission/queue lifecycle independently of the Enter binding.
+    pub(crate) fn submit_composer_for_test(&mut self, queue: bool) {
+        let input = self.bottom_pane.submission_for_test(queue);
+        self.handle_composer_input_result(input, false);
+    }
+}
+
 pub(super) async fn make_chatwidget_manual(
     model_override: Option<&str>,
 ) -> (

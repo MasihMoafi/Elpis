@@ -46,7 +46,7 @@ async fn transcript_and_ledger_stay_readable_with_animations_enabled() {
     chat.config.animations = false;
     let mut plain = ratatui::buffer::Buffer::empty(area);
     Renderable::render(&chat, area, &mut plain);
-    assert_eq!(
+    assert_ne!(
         animated
             .content
             .iter()
@@ -57,7 +57,7 @@ async fn transcript_and_ledger_stay_readable_with_animations_enabled() {
             .iter()
             .map(|cell| cell.symbol())
             .collect::<Vec<_>>(),
-        "text must not dissolve or change while a user selects it"
+        "streaming text must reveal when animations are enabled"
     );
     let mut repeat = ratatui::buffer::Buffer::empty(area);
     Renderable::render(&chat, area, &mut repeat);
@@ -150,7 +150,7 @@ async fn export_selected_motion_review() {
 }
 
 #[tokio::test]
-async fn transcript_commits_each_line_once_without_animation_delay() {
+async fn transcript_commits_each_line_once_after_optional_reveal() {
     for animated in [true, false] {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
         chat.config.animations = animated;
@@ -165,6 +165,11 @@ async fn transcript_commits_each_line_once_without_animation_delay() {
         chat.sync_active_stream_tail();
         while rx.try_recv().is_ok() {}
         chat.on_commit_tick();
+        if animated {
+            assert_eq!(chat.stream_controller.as_ref().unwrap().queued_lines(), 1);
+            tokio::time::sleep(crate::elpis_motion::REVEAL_COMMIT_AGE).await;
+            chat.on_commit_tick();
+        }
         assert_eq!(chat.stream_controller.as_ref().unwrap().queued_lines(), 0);
         assert!(!chat.active_cell_is_stream_tail());
         let inserted = std::iter::from_fn(|| rx.try_recv().ok())

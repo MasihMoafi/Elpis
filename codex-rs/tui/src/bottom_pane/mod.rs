@@ -837,6 +837,11 @@ impl BottomPane {
     }
 
     #[cfg(test)]
+    pub(crate) fn submission_for_test(&mut self, queue: bool) -> InputResult {
+        self.composer.submission_for_test(queue)
+    }
+
+    #[cfg(test)]
     pub(crate) fn composer_cursor(&self) -> usize {
         self.composer.cursor()
     }

@@ -1,12 +1,15 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! A live task status row rendered above the composer while the agent is busy.
 //!
-//! The row owns spinner timing, the optional interrupt hint, and short inline
+//! The row owns elapsed timing, the optional interrupt hint, and short inline
 //! context (for example, the unified-exec background-process summary). Keeping
 //! these pieces on one line avoids vertical layout churn in the bottom pane.
 
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::time::Duration;
 use std::time::Instant;
+use tachyonfx::Shader;
 use unicode_width::UnicodeWidthStr;
 
 use crossterm::event::KeyCode;
@@ -55,6 +58,8 @@ pub(crate) struct StatusIndicatorWidget {
     app_event_tx: AppEventSender,
     frame_requester: FrameRequester,
     animations_enabled: bool,
+    text_effect: RefCell<Option<tachyonfx::Effect>>,
+    effect_last_frame: Cell<Instant>,
 }
 
 // Format elapsed seconds into a compact human-friendly form used by the status line.
@@ -94,6 +99,8 @@ impl StatusIndicatorWidget {
             app_event_tx,
             frame_requester,
             animations_enabled,
+            text_effect: RefCell::new(None),
+            effect_last_frame: Cell::new(Instant::now()),
         }
     }
 
@@ -284,6 +291,25 @@ impl Renderable for StatusIndicatorWidget {
         }
 
         Paragraph::new(Text::from(lines)).render_ref(area, buf);
+        let previous = self.effect_last_frame.replace(now);
+        if self.animations_enabled && !self.is_paused {
+            let effect_area = Rect::new(
+                area.x,
+                area.y,
+                (UnicodeWidthStr::width(self.header.as_str()) as u16).min(area.width),
+                1,
+            );
+            self.text_effect
+                .borrow_mut()
+                .get_or_insert_with(crate::elpis_motion::elpising_effect)
+                .process(
+                    now.saturating_duration_since(previous)
+                        .min(Duration::from_millis(100))
+                        .into(),
+                    buf,
+                    effect_area,
+                );
+        }
     }
 }
 

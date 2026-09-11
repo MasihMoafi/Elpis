@@ -1311,18 +1311,20 @@ async fn up_recalls_queued_message_without_leaving_it_for_autosend() {
 
 #[tokio::test]
 async fn up_recalls_all_queued_messages_in_order() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.turn_lifecycle.agent_turn_running = true;
     chat.bottom_pane.set_task_running(true);
-    for text in ["first queued", "second queued"] {
-        chat.input_queue
-            .queued_user_messages
-            .push_back(UserMessage::from(text.to_string()).into());
+    for text in ["first queued", "second queued", "third queued"] {
+        chat.bottom_pane
+            .set_composer_text(text.into(), Vec::new(), Vec::new());
+        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     }
-    chat.refresh_pending_input_preview();
+    assert_eq!(chat.queued_user_message_texts().len(), 3);
+    assert!(op_rx.try_recv().is_err());
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
     assert_eq!(
         chat.bottom_pane.composer_text(),
-        "first queued\nsecond queued"
+        "first queued\nsecond queued\nthird queued"
     );
     assert!(chat.queued_user_message_texts().is_empty());
 }
@@ -1502,7 +1504,7 @@ fn queued_message_edit_binding_mapping_covers_special_terminals_and_tmux() {
 }
 
 #[tokio::test]
-async fn control_q_queues_followups_and_up_recalls_all_for_editing() {
+async fn enter_queues_followups_and_up_recalls_all_for_editing() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.bottom_pane.set_task_running(true);
@@ -1511,7 +1513,7 @@ async fn control_q_queues_followups_and_up_recalls_all_for_editing() {
     for message in ["first queued message", "second queued message"] {
         chat.bottom_pane
             .set_composer_text(message.to_string(), Vec::new(), Vec::new());
-        chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(chat.bottom_pane.composer_text().is_empty());
     }
     assert_eq!(chat.input_queue.queued_user_messages.len(), 2);

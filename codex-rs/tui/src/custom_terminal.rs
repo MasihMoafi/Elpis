@@ -157,6 +157,7 @@ where
     current: usize,
     /// Whether the cursor is currently hidden
     pub hidden_cursor: bool,
+    cursor_style: Option<u8>,
     /// Area of the viewport
     pub viewport_area: Rect,
     /// Last known size of the terminal. Used to detect if the internal buffers have to be resized.
@@ -234,6 +235,7 @@ where
             buffers: [Buffer::empty(Rect::ZERO), Buffer::empty(Rect::ZERO)],
             current: 0,
             hidden_cursor: false,
+            cursor_style: None,
             viewport_area: Rect::new(
                 /*x*/ 0,
                 cursor_pos.y,
@@ -420,11 +422,6 @@ where
         let cursor_position = frame.cursor_position;
         let cursor_style = frame.cursor_style;
 
-        // Some terminals expose each cursor move while applying a frame diff.
-        // Hide the caret until both the frame and its final cursor position are set.
-        if !self.hidden_cursor {
-            self.hide_cursor()?;
-        }
         self.flush()?;
 
         match cursor_position {
@@ -445,21 +442,29 @@ where
 
     /// Hides the cursor.
     pub fn hide_cursor(&mut self) -> io::Result<()> {
-        self.backend.hide_cursor()?;
+        if !self.hidden_cursor {
+            self.backend.hide_cursor()?;
+        }
         self.hidden_cursor = true;
         Ok(())
     }
 
     /// Shows the cursor.
     pub fn show_cursor(&mut self) -> io::Result<()> {
-        self.backend.show_cursor()?;
+        if self.hidden_cursor {
+            self.backend.show_cursor()?;
+        }
         self.hidden_cursor = false;
         Ok(())
     }
 
     /// Sets the visible terminal cursor style.
     pub fn set_cursor_style(&mut self, style: SetCursorStyle) -> io::Result<()> {
-        queue!(self.backend, style)
+        if self.cursor_style != Some(style as u8) {
+            queue!(self.backend, style)?;
+            self.cursor_style = Some(style as u8);
+        }
+        Ok(())
     }
 
     /// Restores the user-configured terminal cursor style.
@@ -838,11 +843,11 @@ mod tests {
         }
 
         fn hide_cursor(&mut self) -> io::Result<()> {
-            Ok(())
+            queue!(self, crossterm::cursor::Hide)
         }
 
         fn show_cursor(&mut self) -> io::Result<()> {
-            Ok(())
+            queue!(self, crossterm::cursor::Show)
         }
 
         fn get_cursor_position(&mut self) -> io::Result<Position> {
@@ -1005,5 +1010,29 @@ mod tests {
             actual.contains(&expected),
             "expected terminal output to contain cursor style reset {expected:?}, got {actual:?}"
         );
+    }
+
+    #[test]
+    fn repeated_frames_do_not_toggle_cursor_or_reset_its_style() {
+        let mut terminal = Terminal::with_options(CaptureBackend::new(2, 1)).unwrap();
+        terminal.set_viewport_area(Rect::new(0, 0, 2, 1));
+        for _ in 0..3 {
+            terminal
+                .try_draw(|frame| {
+                    frame.set_cursor_style(SetCursorStyle::SteadyBar);
+                    frame.set_cursor_position((0, 0));
+                    io::Result::Ok(())
+                })
+                .unwrap();
+        }
+        let output = terminal.backend().output();
+        assert!(!output.contains("\u{1b}[?25l"));
+        assert!(!output.contains("\u{1b}[?25h"));
+        assert_eq!(output.matches("\u{1b}[6 q").count(), 1);
+        terminal.hide_cursor().unwrap();
+        terminal.show_cursor().unwrap();
+        let output = terminal.backend().output();
+        assert_eq!(output.matches("\u{1b}[?25l").count(), 1);
+        assert_eq!(output.matches("\u{1b}[?25h").count(), 1);
     }
 }

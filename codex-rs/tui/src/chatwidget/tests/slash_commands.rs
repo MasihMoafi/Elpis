@@ -86,14 +86,14 @@ fn submit_current_composer(chat: &mut ChatWidget) {
 fn queue_composer_text(chat: &mut ChatWidget, text: &str) {
     chat.bottom_pane
         .set_composer_text(text.to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+    chat.submit_composer_for_test(true);
 }
 
 fn queue_goal_with_large_paste(chat: &mut ChatWidget, paste: String) {
     chat.bottom_pane
         .set_composer_text("/goal ".to_string(), Vec::new(), Vec::new());
     chat.handle_paste(paste);
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+    chat.submit_composer_for_test(true);
 }
 
 fn recall_latest_after_clearing(chat: &mut ChatWidget) -> String {
@@ -1460,7 +1460,7 @@ async fn interrupted_merged_message_history_encodes_mentions_once() {
         }],
     );
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => {

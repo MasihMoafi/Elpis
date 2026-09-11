@@ -80,8 +80,7 @@ fn next_user_turn_event(
 
 fn submit_prompt(app: &mut App, prompt: &str) {
     app.chat_widget.apply_external_edit(prompt.to_string());
-    app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.chat_widget.submit_composer_for_test(false);
 }
 
 fn drain_active_thread_events(app: &mut App) {

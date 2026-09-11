@@ -29,7 +29,7 @@ fn submit_current_composer(chat: &mut ChatWidget) {
 fn queue_composer_text(chat: &mut ChatWidget, text: &str) {
     chat.bottom_pane
         .set_composer_text(text.to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+    chat.submit_composer_for_test(true);
 }
 
 fn next_goal_objective(

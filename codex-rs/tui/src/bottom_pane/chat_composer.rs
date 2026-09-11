@@ -630,7 +630,7 @@ impl ChatComposer {
             side_conversation_active: false,
             history_search: None,
             submit_keys: vec![key_hint::plain(KeyCode::Enter)],
-            queue_keys: vec![crate::keymap::DEFAULT_QUEUE_KEY],
+            queue_keys: Vec::new(),
             toggle_shortcuts_keys: vec![
                 key_hint::plain(KeyCode::Char('?')),
                 key_hint::shift(KeyCode::Char('?')),
@@ -795,7 +795,7 @@ impl ChatComposer {
             &keymap.editor.insert_newline,
             self.footer.use_shift_enter_hint,
         );
-        self.footer.queue_key = primary_binding(&keymap.composer.queue);
+        self.footer.queue_key = primary_binding(&keymap.composer.submit);
         self.footer.toggle_shortcuts_key = primary_binding(&keymap.composer.toggle_shortcuts);
         self.footer.history_search_key = primary_binding(&keymap.composer.history_search_previous);
         self.footer.reasoning_down_key = primary_binding(&keymap.chat.decrease_reasoning_effort);
@@ -2872,6 +2872,11 @@ impl ChatComposer {
         result
     }
 
+    #[cfg(test)]
+    pub(super) fn submission_for_test(&mut self, queue: bool) -> InputResult {
+        self.handle_submission(queue).0
+    }
+
     fn reset_vim_mode_after_successful_dispatch(&mut self, result: &InputResult) {
         if matches!(
             result,
@@ -3239,7 +3244,11 @@ impl ChatComposer {
         }
 
         if self.submit_keys.is_pressed(key_event) {
-            return self.handle_submission(self.queue_submissions);
+            let queue = self.should_queue_input()
+                && !self
+                    .slash_input()
+                    .should_parse_on_dequeue(self.draft.textarea.text());
+            return self.handle_submission(queue);
         }
 
         if let KeyEvent {
@@ -9330,7 +9339,7 @@ mod tests {
     }
 
     #[test]
-    fn enter_queues_when_queue_submissions_is_enabled() {
+    fn enter_queues_while_task_running() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9344,11 +9353,19 @@ mod tests {
             "Ask Codex to do anything".to_string(),
             /*disable_paste_burst*/ false,
         );
-        composer.set_queue_submissions(/*queue_submissions*/ true);
+        composer.set_task_running(true);
         composer
             .draft
             .textarea
             .set_text_clearing_elements("queued before session");
+
+        assert!(matches!(
+            composer
+                .handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL))
+                .0,
+            InputResult::None
+        ));
+        assert_eq!(composer.draft.textarea.text(), "queued before session");
 
         let (result, _needs_redraw) =
             composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -9362,10 +9379,21 @@ mod tests {
                 pending_pastes: Vec::new(),
             }
         );
+        composer.set_task_running(false);
+        composer
+            .draft
+            .textarea
+            .set_text_clearing_elements("send while idle");
+        assert!(matches!(
+            composer
+                .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+                .0,
+            InputResult::Submitted { .. }
+        ));
     }
 
     #[test]
-    fn control_q_queues_slash_led_prompts_while_task_running_without_validation() {
+    fn remapped_queue_handles_slash_led_prompts_while_task_running_without_validation() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9380,6 +9408,7 @@ mod tests {
                 "Ask Codex to do anything".to_string(),
                 /*disable_paste_burst*/ false,
             );
+            composer.queue_keys = vec![key_hint::ctrl(KeyCode::Char('q'))];
             composer.set_task_running(/*running*/ true);
             composer.draft.textarea.set_text_clearing_elements(input);
 
@@ -9510,7 +9539,7 @@ mod tests {
     }
 
     #[test]
-    fn control_q_queues_leading_space_slash_as_plain_text_while_task_running() {
+    fn remapped_queue_handles_leading_space_slash_as_plain_text_while_task_running() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9524,6 +9553,7 @@ mod tests {
             "Ask Codex to do anything".to_string(),
             /*disable_paste_burst*/ false,
         );
+        composer.queue_keys = vec![key_hint::ctrl(KeyCode::Char('q'))];
         composer.set_task_running(/*running*/ true);
         composer
             .draft
@@ -9543,7 +9573,7 @@ mod tests {
     }
 
     #[test]
-    fn control_q_queues_bang_shell_prompts_while_task_running_without_execution() {
+    fn remapped_queue_handles_bang_shell_prompts_while_task_running_without_execution() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9558,6 +9588,7 @@ mod tests {
                 "Ask Codex to do anything".to_string(),
                 /*disable_paste_burst*/ false,
             );
+            composer.queue_keys = vec![key_hint::ctrl(KeyCode::Char('q'))];
             composer.set_task_running(/*running*/ true);
             composer.draft.textarea.set_text_clearing_elements(input);
 

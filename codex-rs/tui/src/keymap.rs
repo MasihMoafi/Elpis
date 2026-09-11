@@ -29,7 +29,7 @@ use crossterm::event::KeyModifiers;
 use serde::Serialize;
 use std::collections::HashMap;
 
-pub(crate) const DEFAULT_QUEUE_KEY: KeyBinding = key_hint::ctrl(KeyCode::Char('q'));
+pub(crate) const DEFAULT_QUEUE_KEY: KeyBinding = key_hint::plain(KeyCode::Enter);
 
 /// Runtime keymap used by TUI input handlers.
 ///
@@ -934,7 +934,7 @@ impl RuntimeKeymap {
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
-                queue: vec![DEFAULT_QUEUE_KEY],
+                queue: Vec::new(),
                 toggle_shortcuts: default_bindings![
                     plain(KeyCode::Char('?')),
                     shift(KeyCode::Char('?'))

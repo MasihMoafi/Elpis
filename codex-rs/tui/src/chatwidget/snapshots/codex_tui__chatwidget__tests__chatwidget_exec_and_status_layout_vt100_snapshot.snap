@@ -30,7 +30,7 @@ Investigating rendering code (0s • esc to inter…│CONTEXT LEDGER  context n
 │                                               │file
 │                                               │
 │                                               │SMART PRUNE          [···] SYNC
-  ctrl + q to queue message                     │Reading current thread state
+  enter to queue message                        │Reading current thread state
                                                 │Syncing… · /smart-prune on|off
                                                 │sets an explicit state
                                                 │

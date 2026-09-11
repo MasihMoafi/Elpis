@@ -444,14 +444,14 @@ async fn steer_enter_queues_while_plan_stream_is_active() {
 }
 
 #[tokio::test]
-async fn steer_enter_uses_pending_steers_while_turn_is_running_without_streaming() {
+async fn direct_submission_uses_pending_steers_while_turn_is_running_without_streaming() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.on_task_started();
 
     chat.bottom_pane
         .set_composer_text("queued while running".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     assert!(chat.input_queue.queued_user_messages.is_empty());
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
@@ -479,7 +479,7 @@ async fn steer_enter_uses_pending_steers_while_turn_is_running_without_streaming
 }
 
 #[tokio::test]
-async fn steer_enter_uses_pending_steers_while_final_answer_stream_is_active() {
+async fn direct_submission_uses_pending_steers_while_final_answer_stream_is_active() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.on_task_started();
@@ -492,7 +492,7 @@ async fn steer_enter_uses_pending_steers_while_final_answer_stream_is_active() {
         Vec::new(),
         Vec::new(),
     );
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     assert!(chat.input_queue.queued_user_messages.is_empty());
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
@@ -531,7 +531,7 @@ async fn failed_pending_steer_submit_does_not_add_pending_preview() {
         Vec::new(),
         Vec::new(),
     );
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     assert!(chat.input_queue.pending_steers.is_empty());
     assert!(chat.input_queue.queued_user_messages.is_empty());
@@ -667,7 +667,7 @@ async fn item_completed_pops_pending_steer_with_local_image_and_text_elements() 
 }
 
 #[tokio::test]
-async fn steer_enter_during_final_stream_preserves_follow_up_prompts_in_order() {
+async fn direct_submission_during_final_stream_preserves_follow_up_prompts_in_order() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.on_task_started();
@@ -677,10 +677,10 @@ async fn steer_enter_during_final_stream_preserves_follow_up_prompts_in_order() 
 
     chat.bottom_pane
         .set_composer_text("first follow-up".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
     chat.bottom_pane
         .set_composer_text("second follow-up".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     assert!(chat.input_queue.queued_user_messages.is_empty());
     assert_eq!(chat.input_queue.pending_steers.len(), 2);
@@ -767,7 +767,7 @@ async fn manual_interrupt_restores_pending_steers_to_composer() {
         Vec::new(),
         Vec::new(),
     );
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
     match next_submit_op(&mut op_rx) {
@@ -805,7 +805,7 @@ async fn esc_interrupt_sends_all_pending_steers_immediately_and_keeps_existing_d
 
     chat.bottom_pane
         .set_composer_text("first pending steer".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => assert_eq!(
             items,
@@ -819,7 +819,7 @@ async fn esc_interrupt_sends_all_pending_steers_immediately_and_keeps_existing_d
 
     chat.bottom_pane
         .set_composer_text("second pending steer".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => assert_eq!(
@@ -884,7 +884,7 @@ async fn esc_with_pending_steers_overrides_agent_command_interrupt_behavior() {
 
     chat.bottom_pane
         .set_composer_text("pending steer".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { .. } => {}
         other => panic!("expected Op::UserTurn, got {other:?}"),
@@ -919,7 +919,7 @@ async fn manual_interrupt_restores_pending_steer_mention_bindings_to_composer() 
         Vec::new(),
         mention_bindings.clone(),
     );
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     match next_submit_op(&mut op_rx) {
         Op::UserTurn { items, .. } => assert_eq!(
@@ -954,7 +954,7 @@ async fn manual_interrupt_restores_pending_steers_before_queued_messages() {
 
     chat.bottom_pane
         .set_composer_text("pending steer".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
     chat.input_queue
         .queued_user_messages
         .push_back(UserMessage::from("queued draft".to_string()).into());
@@ -1408,7 +1408,7 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
 }
 
 #[tokio::test]
-async fn enter_submits_steer_while_review_is_running() {
+async fn direct_submission_steer_while_review_is_running() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     handle_turn_started(&mut chat, "turn-1");
@@ -1421,7 +1421,7 @@ async fn enter_submits_steer_while_review_is_running() {
         Vec::new(),
         Vec::new(),
     );
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.submit_composer_for_test(false);
 
     assert!(chat.input_queue.queued_user_messages.is_empty());
     assert_eq!(chat.input_queue.pending_steers.len(), 1);
