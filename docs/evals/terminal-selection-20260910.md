@@ -301,3 +301,17 @@ but CLI output was paused for selection. Evidence is under `.tmp/final-candidate
 This supports an output-related terminal interaction shared with the donor CLI.
 It does not establish a fix, or show that all reported typing artifacts have the
 same cause. The native selection issue remains open.
+
+## Minimal output control, 2026-09-11
+
+A Node emitter printed the same stationary selection sentinel and label inside
+the existing GTK/VTE harness, with no Elpis process or provider requests. In one
+trial per condition, repainting the label every 125 ms failed native selection;
+updating only its indexed palette color through OSC 4 also failed. The otherwise
+identical static control copied the exact sentinel. Evidence:
+`.tmp/final-candidate/repaint-isolated-1/result.json`,
+`palette-isolated-1/result.json`, and `static-isolated-1/result.json`.
+
+This rejects palette-only animation as a demonstrated workaround in this harness.
+It does not establish reliability rates or resolve the user's typing artifact.
+The emitter and wrappers are scratch controls, not shipped implementation changes.
