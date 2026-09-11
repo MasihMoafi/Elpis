@@ -1056,11 +1056,13 @@ async fn bang_shell_enter_while_task_running_submits_run_user_shell_command() {
         Ok(Op::RunUserShellCommand { command }) => assert_eq!(command, "echo hi"),
         other => panic!("expected RunUserShellCommand op, got {other:?}"),
     }
+    let events = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|event| !matches!(event, AppEvent::RefreshContextDashboard))
+        .collect::<Vec<_>>();
     assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::AppendMessageHistoryEntry { text, .. }) if text == "!echo hi"
+        events.as_slice(),
+        [AppEvent::AppendMessageHistoryEntry { text, .. }] if text == "!echo hi"
     );
-    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[tokio::test]

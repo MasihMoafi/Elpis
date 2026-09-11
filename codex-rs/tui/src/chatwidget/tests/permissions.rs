@@ -229,6 +229,7 @@ async fn profile_permissions_selection_emits_active_custom_profile() {
 #[tokio::test]
 async fn profile_permissions_selection_emits_auto_review_mode_event() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_feature_enabled(Feature::GuardianApproval, /*enabled*/ true);
     #[cfg(target_os = "windows")]
     {
         chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
@@ -248,15 +249,18 @@ async fn profile_permissions_selection_emits_auto_review_mode_event() {
 
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert_eq!(events.len(), 1);
-    assert!(matches!(
-        &events[0],
-        AppEvent::SelectPermissionProfile(PermissionProfileSelection {
-            profile_id,
-            approval_policy: Some(AskForApproval::OnRequest),
-            approvals_reviewer: Some(ApprovalsReviewer::AutoReview),
-            display_label,
-        }) if profile_id == ":workspace" && display_label == "Approve for me"
-    ));
+    assert!(
+        matches!(
+            &events[0],
+            AppEvent::SelectPermissionProfile(PermissionProfileSelection {
+                profile_id,
+                approval_policy: Some(AskForApproval::OnRequest),
+                approvals_reviewer: Some(ApprovalsReviewer::AutoReview),
+                display_label,
+            }) if profile_id == ":workspace" && display_label == "Approve for me"
+        ),
+        "{events:?}"
+    );
 }
 
 #[tokio::test]
