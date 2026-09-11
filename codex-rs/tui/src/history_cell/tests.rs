@@ -649,6 +649,11 @@ async fn session_info_availability_nux_tooltip_snapshot() {
     );
 
     let rendered = render_transcript(&cell).join("\n");
+    assert_eq!(
+        rendered.contains(" DEBUG BUILD "),
+        crate::startup_timing::is_debug_build()
+    );
+    let rendered = rendered.replace("   DEBUG BUILD ", "");
     insta::assert_snapshot!(rendered);
 }
 
@@ -1625,6 +1630,11 @@ fn session_header_indicates_yolo_mode() {
     .with_yolo_mode(/*yolo_mode*/ true);
 
     let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
+    assert_eq!(
+        rendered.contains(" DEBUG BUILD "),
+        crate::startup_timing::is_debug_build()
+    );
+    let rendered = rendered.replace("   DEBUG BUILD ", "");
     insta::assert_snapshot!(rendered);
 }
 
