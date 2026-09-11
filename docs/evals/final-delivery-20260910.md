@@ -1,5 +1,10 @@
 # Local delivery — September 10, 2026
 
+This records the earlier installed build. Subsequent corrections and current
+verification are tracked in [the terminal and release investigation](terminal-selection-20260910.md).
+The current pressure threshold is 30; the historical value below was 25. The newer
+source candidate has not yet been installed or published as the final release.
+
 Installed for Masih's acceptance. One checkout remains: `/home/masih/Desktop/p/Elpis`
 on `main`. No public release or additional research campaign was performed.
 
