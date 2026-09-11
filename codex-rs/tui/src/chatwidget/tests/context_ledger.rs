@@ -1695,6 +1695,35 @@ async fn full_widget_render_keeps_context_ledger_visible() -> anyhow::Result<()>
 }
 
 #[tokio::test]
+async fn modal_dialog_uses_full_width_and_restores_ledger_preference() {
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let normal_width = chat.context_ledger_width(100);
+    assert!(normal_width > 0);
+
+    chat.open_plan_reasoning_scope_prompt(
+        "gpt-5.4".to_string(),
+        Some(ReasoningEffortConfig::Medium),
+    );
+    let popup = render_bottom_popup(&chat, 100);
+    assert!(popup.contains("built-in Plan default (medium)"), "{popup}");
+    assert_eq!(chat.context_ledger_width(100), 0);
+    assert!(!popup.contains("CONTEXT LEDGER"), "{popup}");
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(chat.context_ledger_width(100), normal_width);
+
+    chat.open_plan_reasoning_scope_prompt(
+        "gpt-5.4".to_string(),
+        Some(ReasoningEffortConfig::Medium),
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert!(chat.bottom_pane.has_active_view());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(chat.context_ledger_width(100), 0);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(chat.context_ledger_width(100), normal_width);
+}
+
+#[tokio::test]
 async fn ledger_renders_smart_prune_switch_in_both_states() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 

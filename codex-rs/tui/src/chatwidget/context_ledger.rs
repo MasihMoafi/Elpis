@@ -151,7 +151,10 @@ impl ChatWidget {
     /// the ledger takes a proportional slice instead of a fixed 52 columns so the
     /// composer keeps room.
     pub(super) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
-        if !self.context_ledger.visible || terminal_width < LEDGER_MIN_TERMINAL_WIDTH {
+        if !self.context_ledger.visible
+            || self.bottom_pane.has_active_view()
+            || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
+        {
             return 0;
         }
         LEDGER_WIDTH.min(terminal_width * 2 / 5)
