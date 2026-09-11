@@ -22,7 +22,7 @@ fn context() -> DashboardContext {
     DashboardContext {
         model: "gpt-safe".to_string(),
         used_tokens: Some(120),
-        window_tokens: 1_000,
+        window_tokens: Some(1_000),
         used_percent: Some(12),
         attributed_tokens: Some(120),
         categories: Some(vec![DashboardCategory {

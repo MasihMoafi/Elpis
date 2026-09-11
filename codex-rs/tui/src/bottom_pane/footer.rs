@@ -1014,7 +1014,7 @@ pub(crate) fn context_window_line(percent: Option<i64>, used_tokens: Option<i64>
         return Line::from(vec![Span::from(format!("{used_fmt} used")).dim()]);
     }
 
-    Line::from(vec![Span::from("100% context left").dim()])
+    Line::from(vec![Span::from("context unknown").dim()])
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1283,6 +1283,22 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::Backend;
     use ratatui::backend::TestBackend;
+
+    #[test]
+    fn context_footer_does_not_invent_unreported_usage() {
+        assert_eq!(
+            context_window_line(None, None).to_string(),
+            "context unknown"
+        );
+        assert_eq!(
+            context_window_line(Some(50), Some(106_000)).to_string(),
+            "50% context left"
+        );
+        let measured = context_window_line(None, Some(106_000)).to_string();
+        assert!(measured.contains("106"), "{measured}");
+        assert!(measured.ends_with(" used"), "{measured}");
+        assert!(!measured.contains('%'), "{measured}");
+    }
 
     fn snapshot_footer(name: &str, props: FooterProps) {
         snapshot_footer_with_mode_indicator(

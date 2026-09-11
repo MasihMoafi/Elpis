@@ -88,7 +88,7 @@ impl CategoryUsage {
 struct ContextUsageSnapshot {
     model: String,
     used_tokens: Option<u64>,
-    window_tokens: u64,
+    window_tokens: Option<u64>,
     used_percent: Option<i64>,
     has_request_snapshot: bool,
     attributed_tokens: Option<u64>,
@@ -127,7 +127,7 @@ struct ContextUsageHistoryCell {
     has_request_snapshot: bool,
     categories: Vec<CategoryUsage>,
     used: u64,
-    window: u64,
+    window: Option<u64>,
     after_chart: Vec<Line<'static>>,
 }
 
@@ -135,12 +135,18 @@ impl ContextUsageHistoryCell {
     fn rendered_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines = self.before_chart.clone();
         if self.has_request_snapshot {
-            lines.extend(build_category_bar_chart(
-                &self.categories,
-                self.used,
-                self.window,
-                width,
-            ));
+            if let Some(window) = self.window {
+                lines.extend(build_category_bar_chart(
+                    &self.categories,
+                    self.used,
+                    window,
+                    width,
+                ));
+            } else {
+                lines.push(
+                    format!(" {} tokens used · capacity unknown", fmt_tokens(self.used)).into(),
+                );
+            }
         } else {
             lines.push(" Context measurement unavailable.".not_dim().into());
         }
@@ -494,8 +500,7 @@ impl ChatWidget {
         let has_request_snapshot = self.token_info.is_some();
         let window = self
             .status_line_context_window_size()
-            .unwrap_or(258_400)
-            .max(1) as u64;
+            .map(|window| window as u64);
         let used_tokens = self
             .token_info
             .as_ref()
@@ -510,7 +515,9 @@ impl ChatWidget {
             })
             .unwrap_or_default();
         let attributed_tokens = self.context_attribution.as_ref().and(used_tokens);
-        let used_percent = used_tokens.map(|used| context_used_percent(used, window));
+        let used_percent = used_tokens
+            .zip(window)
+            .map(|(used, window)| context_used_percent(used, window));
         let (native_compaction_count, latest_native_compaction) =
             crate::branding::compaction_evidence();
 
@@ -679,7 +686,16 @@ impl ChatWidget {
                 crate::style::brand_style(),
             )
             .into(),
-            format!(" {model} · one full-window scale").bold().into(),
+            format!(
+                " {model} · {}",
+                if window.is_some() {
+                    "one full-window scale"
+                } else {
+                    "capacity unknown"
+                }
+            )
+            .bold()
+            .into(),
             if snapshot.attributed_tokens.is_some() {
                 " Measured total · estimated category attribution from the latest built request"
                     .not_dim()
@@ -813,32 +829,35 @@ fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Li
     let narrow = width < 80;
     let mut lines = Vec::new();
 
-    match (snapshot.used_tokens, snapshot.used_percent) {
-        (Some(used), Some(_)) => {
-            let used_percent = fmt_percent(used, snapshot.window_tokens);
-            let free_percent = fmt_percent(
-                snapshot.window_tokens.saturating_sub(used),
-                snapshot.window_tokens,
-            );
+    match (snapshot.used_tokens, snapshot.window_tokens) {
+        (Some(used), Some(window)) => {
+            let used_percent = fmt_percent(used, window);
+            let free_percent = fmt_percent(window.saturating_sub(used), window);
             lines.push(Line::from(vec![
                 Span::from(" "),
                 snapshot.model.clone().bold(),
                 " · ".not_dim(),
-                format!(
-                    "{} / {} tokens",
-                    fmt_tokens(used),
-                    fmt_tokens(snapshot.window_tokens)
-                )
-                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow))
-                .bold(),
+                format!("{} / {} tokens", fmt_tokens(used), fmt_tokens(window))
+                    .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow))
+                    .bold(),
                 format!(" · {used_percent} used · {free_percent} free").not_dim(),
             ]));
             lines.extend(build_category_bar_chart(
                 &snapshot.categories,
                 used,
-                snapshot.window_tokens,
+                window,
                 width,
             ));
+        }
+        (Some(used), None) => {
+            lines.push(
+                format!(
+                    " {} · {} tokens used · capacity unknown",
+                    snapshot.model,
+                    fmt_tokens(used)
+                )
+                .into(),
+            );
         }
         _ => {
             lines.push(Line::from(vec![
@@ -1363,7 +1382,7 @@ mod tests {
         let snapshot = ContextUsageSnapshot {
             model: "gpt-test".to_string(),
             used_tokens: Some(210_000),
-            window_tokens: 200_000,
+            window_tokens: Some(200_000),
             used_percent: Some(105),
             has_request_snapshot: true,
             attributed_tokens: Some(210_000),
@@ -1396,6 +1415,57 @@ mod tests {
 
         assert_eq!(counts.iter().sum::<usize>(), 10);
         assert!(counts.into_iter().all(|count| count >= 1));
+    }
+
+    #[tokio::test]
+    async fn context_capacity_requires_a_reported_or_configured_window() {
+        let (mut chat, _sender, _events, _ops) =
+            crate::chatwidget::tests::make_chatwidget_manual_with_sender().await;
+        let totals = ContextUsageTranscriptTotals::default();
+        let usage = crate::token_usage::TokenUsage {
+            total_tokens: 106_000,
+            ..Default::default()
+        };
+        for model in ["unknown-model", "custom-gemini", "custom-claude"] {
+            chat.config.model = Some(model.to_string());
+            for (reported, configured, expected) in [
+                (None, None, None),
+                (Some(200_000), None, Some(200_000)),
+                (None, Some(300_000), Some(300_000)),
+                (Some(200_000), Some(300_000), Some(200_000)),
+                (Some(0), None, None),
+                (None, Some(0), None),
+                (None, Some(-1), None),
+                (Some(-1), Some(300_000), Some(300_000)),
+            ] {
+                chat.config.model_context_window = configured;
+                chat.set_token_info(Some(crate::token_usage::TokenUsageInfo {
+                    total_token_usage: usage.clone(),
+                    last_token_usage: usage.clone(),
+                    model_context_window: reported,
+                }));
+                let snapshot = chat.context_usage_snapshot(&totals);
+                assert_eq!(
+                    serde_json::to_value(snapshot.window_tokens).unwrap(),
+                    serde_json::json!(expected),
+                    "model={model}, reported={reported:?}, configured={configured:?}",
+                );
+                if expected.is_none() {
+                    assert_eq!(chat.bottom_pane.context_window_percent(), None);
+                    assert_eq!(chat.bottom_pane.context_window_used_tokens(), Some(106_000));
+                    chat.add_context_usage_output(totals);
+                    let text = plain_text(chat.active_cell_transcript_lines(100).unwrap());
+                    assert!(text.contains("capacity unknown"), "{text}");
+                    assert!(!text.contains("of context window"), "{text}");
+                    let area = ratatui::layout::Rect::new(0, 0, 100, 100);
+                    let mut buffer = ratatui::buffer::Buffer::empty(area);
+                    chat.render_context_ledger(area, &mut buffer);
+                    let ledger: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                    assert!(ledger.contains("capacity unknown"), "{ledger}");
+                    assert!(!ledger.contains("of 258.4k"), "{ledger}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -1466,7 +1536,7 @@ mod tests {
         let snapshot = ContextUsageSnapshot {
             model: "gpt-test".to_string(),
             used_tokens: None,
-            window_tokens: 200_000,
+            window_tokens: Some(200_000),
             used_percent: None,
             has_request_snapshot: false,
             attributed_tokens: None,
@@ -1829,7 +1899,7 @@ mod tests {
         let snapshot = ContextUsageSnapshot {
             model: "gpt-test".to_string(),
             used_tokens: Some(42_000),
-            window_tokens: 200_000,
+            window_tokens: Some(200_000),
             used_percent: Some(21),
             has_request_snapshot: true,
             attributed_tokens: Some(12_000),
@@ -1940,7 +2010,7 @@ Accounting only · no quality, cost, or causal claims.
         let snapshot = ContextUsageSnapshot {
             model: "gpt-test".to_string(),
             used_tokens: Some(42_000),
-            window_tokens: 200_000,
+            window_tokens: Some(200_000),
             used_percent: Some(21),
             has_request_snapshot: true,
             attributed_tokens: Some(12_000),
@@ -1985,7 +2055,7 @@ Accounting only · no quality, cost, or causal claims.
         let snapshot = ContextUsageSnapshot {
             model: "gpt-test".to_string(),
             used_tokens: Some(42_000),
-            window_tokens: 200_000,
+            window_tokens: Some(200_000),
             used_percent: Some(21),
             has_request_snapshot: true,
             attributed_tokens: Some(12_000),
@@ -2024,7 +2094,7 @@ Accounting only · no quality, cost, or causal claims.
         let snapshot = ContextUsageSnapshot {
             model: "gpt-test".to_string(),
             used_tokens: None,
-            window_tokens: 200_000,
+            window_tokens: Some(200_000),
             used_percent: None,
             has_request_snapshot: false,
             attributed_tokens: None,

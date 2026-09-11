@@ -357,8 +357,7 @@ impl ChatWidget {
         let muted = Style::default().fg(Color::Rgb(133, 134, 128));
         let context_window = self
             .status_line_context_window_size()
-            .unwrap_or(258_400)
-            .max(1) as u64;
+            .map(|window| window as u64);
         // Use the same measured request-context value as `/context` and the status
         // line.  Portable source estimates are attribution only; they must not
         // inflate the headline or percentage beyond what is actually in context.
@@ -380,7 +379,6 @@ impl ChatWidget {
             .as_ref()
             .filter(|_| has_request_snapshot)
             .map(|_| used_tokens);
-        let used_percent = context_used_percent(used_tokens, context_window);
         let mut attribution_segments = categories
             .iter()
             .map(|category| {
@@ -628,40 +626,46 @@ impl ChatWidget {
             Span::styled("CONTEXT WINDOW", brand.bold()),
             Span::raw("  "),
             Span::styled(
-                if has_request_snapshot {
+                if let (true, Some(window)) = (has_request_snapshot, context_window) {
                     format!(
-                        "≈{} of {} used ({used_percent}%)",
+                        "≈{} of {} used ({}%)",
                         format_tokens(used_tokens),
-                        format_tokens(context_window),
+                        format_tokens(window),
+                        context_used_percent(used_tokens, window),
                     )
+                } else if has_request_snapshot {
+                    format!("≈{} used · capacity unknown", format_tokens(used_tokens))
                 } else {
                     "usage unavailable".to_string()
                 },
                 muted,
             ),
         ]));
-        if has_request_snapshot {
-            lines.push(usage_bar_line(
-                content_width,
-                context_window,
-                &attribution_segments,
-            ));
+        if let (true, Some(window)) = (has_request_snapshot, context_window) {
+            lines.push(usage_bar_line(content_width, window, &attribution_segments));
         }
         if attributed_tokens.is_some() {
             lines.push(Line::from(Span::styled(
-                "MEASURED TOTAL · ESTIMATED CATEGORY SHARES",
+                if context_window.is_some() {
+                    "MEASURED TOTAL · ESTIMATED CATEGORY SHARES"
+                } else {
+                    "MEASURED TOTAL · ESTIMATED CATEGORY TOKENS"
+                },
                 brand.bold(),
             )));
             lines.push(Line::from(Span::styled(
-                "Estimated segments reconcile to measured active context; all shares use the full window",
+                if context_window.is_some() { "Estimated segments reconcile to measured active context; all shares use the full window" } else { "Estimated categories reconcile to measured active context; capacity unknown" },
                 muted,
             )));
             for category in &categories {
-                let right = format!(
-                    "≈{} · {}",
-                    format_tokens(category.tokens),
-                    format_share(category.tokens, context_window),
-                );
+                let right = match context_window {
+                    Some(window) => format!(
+                        "≈{} · {}",
+                        format_tokens(category.tokens),
+                        format_share(category.tokens, window)
+                    ),
+                    None => format!("≈{}", format_tokens(category.tokens)),
+                };
                 let pad = content_width
                     .saturating_sub(2 + 2 + category.label.chars().count() + right.chars().count())
                     .max(1);

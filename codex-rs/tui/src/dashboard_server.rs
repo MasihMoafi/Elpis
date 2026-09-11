@@ -61,7 +61,7 @@ pub(crate) struct DashboardEnvelope {
 pub(crate) struct DashboardContext {
     pub(crate) model: String,
     pub(crate) used_tokens: Option<u64>,
-    pub(crate) window_tokens: u64,
+    pub(crate) window_tokens: Option<u64>,
     pub(crate) used_percent: Option<i64>,
     pub(crate) attributed_tokens: Option<u64>,
     pub(crate) categories: Option<Vec<DashboardCategory>>,

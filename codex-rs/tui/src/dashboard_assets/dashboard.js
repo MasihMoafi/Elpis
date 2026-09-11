@@ -288,7 +288,7 @@ function renderComposition(categories, usedTokens, windowTokens) {
   const track = byId('ctx-composition');
   track.replaceChildren();
   if (!isFiniteNumber(usedTokens) || !isFiniteNumber(windowTokens) || windowTokens <= 0) {
-    track.appendChild(makeNode('span', 'composition-empty', 'No composition reported'));
+    track.appendChild(makeNode('span', 'composition-empty', isFiniteNumber(usedTokens) ? 'Capacity unknown' : 'No composition reported'));
     return;
   }
   const safeCategories = Array.isArray(categories) ? categories : [];
@@ -318,15 +318,16 @@ function renderComposition(categories, usedTokens, windowTokens) {
 function renderContext(context) {
   const safeContext = isObject(context) ? context : {};
   const usedPercent = formatPercent(safeContext.used_tokens, safeContext.window_tokens);
+  const hasCapacity = isFiniteNumber(safeContext.window_tokens) && safeContext.window_tokens > 0;
   setText('ctx-used', compactNumber(safeContext.used_tokens));
   setText('ctx-window', compactNumber(safeContext.window_tokens));
   setText('ctx-saved', compactNumber(safeContext.saved_tokens));
   setText('ctx-checkpoints', formatNumber(safeContext.backtrack_points));
-  setText('ctx-used-percent', usedPercent === null ? 'Usage unavailable' : usedPercent + ' used');
+  setText('ctx-used-percent', usedPercent === null ? (isFiniteNumber(safeContext.used_tokens) ? 'Capacity unknown' : 'Usage unavailable') : usedPercent + ' used');
 
   const categories = Array.isArray(safeContext.categories) ? safeContext.categories : null;
   setText('ctx-category-count', categories === null ? 'Unavailable' : formatNumber(categories.length));
-  setText('ctx-composition-total', isFiniteNumber(safeContext.used_tokens) && isFiniteNumber(safeContext.window_tokens) ? compactNumber(safeContext.used_tokens) + ' / ' + compactNumber(safeContext.window_tokens) : 'Unavailable');
+  setText('ctx-composition-total', isFiniteNumber(safeContext.used_tokens) ? compactNumber(safeContext.used_tokens) + (hasCapacity ? ' / ' + compactNumber(safeContext.window_tokens) : ' used · capacity unknown') : 'Unavailable');
   renderComposition(categories, safeContext.used_tokens, safeContext.window_tokens);
   const list = byId('ctx-bar');
   list.replaceChildren();
@@ -345,7 +346,7 @@ function renderContext(context) {
       row.append(identity, makeNode('span', 'category-percent', percent || '—'), makeNode('strong', '', compactNumber(category && category.tokens)));
       list.appendChild(row);
     });
-    setText('ctx-legend', 'Estimated category shares of the full context window; rows reconcile to the measured active total.');
+    setText('ctx-legend', hasCapacity ? 'Estimated category shares of the full context window; rows reconcile to the measured active total.' : 'Estimated category tokens reconcile to the measured active total; capacity unknown.');
   }
 
   const sources = Array.isArray(safeContext.sources) ? safeContext.sources : null;

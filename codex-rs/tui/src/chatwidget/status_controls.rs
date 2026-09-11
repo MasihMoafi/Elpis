@@ -363,27 +363,18 @@ impl ChatWidget {
     }
 
     pub(super) fn status_line_context_window_size(&self) -> Option<i64> {
-        if let Some(window) = self
-            .token_info
+        self.token_info
             .as_ref()
             .and_then(|info| info.model_context_window)
-            .or(self.config.model_context_window)
-        {
-            return Some(window);
-        }
-
-        let model = self.config.model.as_deref().unwrap_or("gpt-5.6-sol");
-        if model.contains("gemini") {
-            Some(1_000_000)
-        } else if model.contains("claude") {
-            Some(200_000)
-        } else {
-            Some(258_400)
-        }
+            .filter(|window| *window > 0)
+            .or(self
+                .config
+                .model_context_window
+                .filter(|window| *window > 0))
     }
 
     pub(super) fn status_line_context_remaining_percent(&self) -> Option<i64> {
-        let context_window = self.status_line_context_window_size().unwrap_or(258_400);
+        let context_window = self.status_line_context_window_size()?;
         let default_usage = TokenUsage::default();
         let usage = self
             .token_info
@@ -394,13 +385,13 @@ impl ChatWidget {
     }
 
     pub(super) fn status_line_context_used_percent(&self) -> Option<i64> {
-        let remaining = self.status_line_context_remaining_percent().unwrap_or(100);
+        let remaining = self.status_line_context_remaining_percent()?;
         Some((100 - remaining).clamp(0, 100))
     }
 
     pub(super) fn status_line_context_used_display(&self) -> String {
         let Some(context_window) = self.status_line_context_window_size() else {
-            return "0%".to_string();
+            return "unknown".to_string();
         };
         let default_usage = TokenUsage::default();
         let usage = self

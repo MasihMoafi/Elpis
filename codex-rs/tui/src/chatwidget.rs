@@ -1118,8 +1118,11 @@ impl ChatWidget {
     /// "N% context left" is never stale.
     pub(crate) fn refresh_context_window_display(&mut self) {
         let percent = self.status_line_context_remaining_percent();
-        self.bottom_pane
-            .set_context_window(percent, /*used_tokens*/ None);
+        let tokens = self
+            .token_info
+            .as_ref()
+            .map(|info| info.last_token_usage.tokens_in_context_window());
+        self.bottom_pane.set_context_window(percent, tokens);
     }
 
     fn restore_pre_review_token_info(&mut self) {

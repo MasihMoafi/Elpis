@@ -9,7 +9,7 @@ expression: normalized_backend_snapshot(terminal.backend())
 "│                                               │Tab hide/show · Ctrl+click open"
 "│                                               │file                           "
 "│                                               │                               "
-"        100% context left · Tab Context Ledger  │SMART PRUNE          [···] SYNC"
+"          context unknown · Tab Context Ledger  │SMART PRUNE          [···] SYNC"
 "                                                │Reading current thread state   "
 "                                                │Syncing… · /smart-prune on|off "
 "                                                │sets an explicit state         "

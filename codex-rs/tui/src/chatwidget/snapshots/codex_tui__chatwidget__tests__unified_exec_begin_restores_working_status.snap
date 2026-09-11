@@ -11,7 +11,7 @@ expression: normalized_backend_snapshot(terminal.backend())
 "│                                               │                               "
 "│                                               │SMART PRUNE          [···] SYNC"
 "│                                               │Reading current thread state   "
-"        100% context left · Tab Context Ledger  │Syncing… · /smart-prune on|off "
+"          context unknown · Tab Context Ledger  │Syncing… · /smart-prune on|off "
 "                                                │sets an explicit state         "
 "                                                │                               "
 "                                                │CONTEXT WINDOW  usage          "

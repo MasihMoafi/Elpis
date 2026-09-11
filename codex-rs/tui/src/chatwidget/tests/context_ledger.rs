@@ -473,7 +473,7 @@ async fn context_model_label_tracks_selection_before_first_request() {
     );
 
     assert!(
-        rendered.contains("gpt-6-astra · one full-window scale"),
+        rendered.contains("gpt-6-astra · capacity unknown"),
         "{rendered}"
     );
     assert!(!rendered.contains("gpt-5.4-mini"), "{rendered}");
@@ -497,7 +497,7 @@ async fn context_model_label_without_switch_keeps_selection_and_unknown_usage() 
     );
 
     assert!(
-        rendered.contains("gpt-5.4-mini · one full-window scale"),
+        rendered.contains("gpt-5.4-mini · capacity unknown"),
         "{rendered}"
     );
     assert!(!rendered.contains("gpt-6-astra"), "{rendered}");
