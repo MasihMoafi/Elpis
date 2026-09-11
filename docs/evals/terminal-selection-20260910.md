@@ -3,6 +3,23 @@
 The release goal is still open. Passing focused checks does not establish that
 the terminal glitch is fixed or that the full candidate is ready to publish.
 
+## Full TUI regression check, 2026-09-11
+
+At `de5a23e5`, the optimized TUI library suite passed: 3,145 passed, zero
+failed, five ignored, in 18.20 seconds. Evidence:
+`.tmp/final-candidate/tui-final-snapshot-review.log`. Snapshot updates were
+reviewed against the corrected queue shortcut, spinner removal, full-width
+dialogs, and unknown context capacity. Tests now keep footer tips deterministic,
+use the production terminal renderer for the update prompt, explicitly select
+plugin feature states, and retain visible approval warnings in history fixtures.
+The debug badge is asserted separately from profile-independent header snapshots;
+this run exercised the optimized profile, not a separate debug execution.
+
+The broader verification run is tracked in
+`.tmp/final-candidate/full-surface-post-tui.log`. It was started after this result
+and is not yet evidence of success. This does not resolve native selection or
+constitute an installed CLI/IDE release check or Masih's acceptance.
+
 ## Later queue, startup, and IDE checks
 
 The next optimized candidate is
