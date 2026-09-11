@@ -24,4 +24,4 @@ Decrease Reasoning Effort | alt-,, shift-down | Chat decrease_reasoning_effort D
 Increase Reasoning Effort | alt-., shift-up | Chat increase_reasoning_effort Increase Reasoning Effort Increase reasoning effort. alt-., shift-up Default
 Edit Queued Message | alt-up, shift-left | Chat edit_queued_message Edit Queued Message Edit the most recently queued message. alt-up, shift-left Default
 Submit | enter | Composer submit Submit Submit the current composer draft. enter Default
-Queue | tab | Composer queue Queue Queue the draft while a task is running. tab Default
+Queue | ctrl-q | Composer queue Queue Queue the draft while a task is running. ctrl-q Default
