@@ -1739,7 +1739,8 @@ impl BottomPane {
                 /*flex*/ 1,
                 RenderableItem::Borrowed(&self.pending_input_preview),
             );
-            if !has_inline_previews && !self.unified_exec_footer.is_empty() {
+            if self.status.is_none() && !has_inline_previews && !self.unified_exec_footer.is_empty()
+            {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
             }
             let mut flex2 = FlexRenderable::new();
@@ -2500,6 +2501,16 @@ mod tests {
         let area = Rect::new(0, 0, width, after);
         let rendered = render_snapshot(&pane, area);
         assert!(rendered.contains("background terminal running · /ps to view"));
+        pane.hide_status_indicator();
+        let area = Rect::new(0, 0, width, pane.desired_height(width));
+        let standalone = render_snapshot(&pane, area);
+        assert_eq!(
+            standalone
+                .matches("background terminal running · /ps to view")
+                .count(),
+            1
+        );
+        assert!(!standalone.contains("Elpising"));
     }
 
     #[test]

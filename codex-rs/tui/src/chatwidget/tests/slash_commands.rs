@@ -957,7 +957,11 @@ async fn slash_init_does_not_depend_on_loaded_instruction_sources() {
 
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert!(drain_insert_history(&mut rx).is_empty());
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/init");
+    assert_eq!(
+        recall_latest_after_clearing(&mut chat),
+        include_str!("../../../prompt_for_init_command.md")
+    );
+    assert!(chat.input_queue.queued_user_messages.is_empty());
 }
 
 #[tokio::test]
