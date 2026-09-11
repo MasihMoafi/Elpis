@@ -3,22 +3,14 @@ source: tui/src/chatwidget/tests/exec_flow.rs
 expression: contents
 ---
 
- Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Would you like to make the following edits?  ││measured · ≈0 source estimates
-│                                              ││Tab hide/show · Ctrl+click open
-│ Reason: The model wants to apply changes     ││file
-│                                              ││
-› 1. Yes, proceed (y)                          ││SMART PRUNE          [···] SYNC
-  2. Yes, and don't ask again for these files  ││Reading current thread state
-     (a)                                       ││Syncing… · /smart-prune on|off
-  3. No, and tell Codex what to do differently ││sets an explicit state
-     (esc)                                     ││
-└──────────────────────────────────────────────┘│CONTEXT WINDOW  usage
-  Press enter to confirm or esc to cancel       │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Would you like to make the following edits?                                  │
+│                                                                              │
+│ Reason: The model wants to apply changes                                     │
+│                                                                              │
+› 1. Yes, proceed (y)                                                          │
+  2. Yes, and don't ask again for these files (a)                              │
+  3. No, and tell Codex what to do differently (esc)                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to cancel

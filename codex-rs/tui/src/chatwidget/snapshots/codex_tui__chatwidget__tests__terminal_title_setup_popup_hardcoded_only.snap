@@ -3,20 +3,20 @@ source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: terminal_title_popup_snapshot(&mut chat)
 ---
  Elpis · model gpt-5.6-sol · location /tmp/project
-                                                            │CONTEXT LEDGER  context not measured ·
-  Configure Terminal Title                                  │≈0 source estimates
-  Select which items to display in the terminal title.      │Tab hide/show · Ctrl+click open file
-                                                            │
-  Type to search                                            │SMART PRUNE                  [···] SYNC
-  >                                                         │Reading current thread state
-› [x] thread-title   Current thread title, or thread iden…  │Syncing… · /smart-prune on|off sets an
-  [x] git-branch     Current Git branch (omitted when una…  │explicit state
-  [x] task-progress  Latest task progress from update_pla…  │
-  [ ] app-name       Codex app name                         │CONTEXT WINDOW  usage unavailable
-  [ ] project-name   Project name (falls back to current …  │Context measurement unavailable until
-  [ ] current-dir    Current working directory              │the first request snapshot
-  [ ] activity       Spinner while working, action-requir…  │
-  [ ] run-state      Compact session run-state text (Read…  │No portable context is available.
+
+  Configure Terminal Title
+  Select which items to display in the terminal title.
+
+  Type to search
+  >
+› [x] thread-title   Current thread title, or thread identifier when unnamed
+  [x] git-branch     Current Git branch (omitted when unavailable)
+  [x] task-progress  Latest task progress from update_plan (omitted until available)
+  [ ] app-name       Codex app name
+  [ ] project-name   Project name (falls back to current directory name)
+  [ ] current-dir    Current working directory
+  [ ] activity       Spinner while working, action-required message while blocked.
+  [ ] run-state      Compact session run-state text (Ready, Working, Thinking)
 
   thread title | feat/awesome-feature | Tasks 0/0
-  Press space to toggle; ←/→ to move; enter to confirm and c
+  Press space to toggle; ←/→ to move; enter to confirm and close; esc to close

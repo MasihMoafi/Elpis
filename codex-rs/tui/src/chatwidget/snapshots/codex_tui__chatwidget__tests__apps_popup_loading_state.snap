@@ -2,22 +2,11 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: before
 ---
- Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Apps                                         ││measured · ≈0 source estimates
-│ Loading installed and available apps...      ││Tab hide/show · Ctrl+click open
-│                                              ││file
-›    Loading apps...  This updates when the    ││
-                      full list is ready.      ││SMART PRUNE          [···] SYNC
-└──────────────────────────────────────────────┘│Reading current thread state
-  Press enter to confirm or esc to go back      │Syncing… · /smart-prune on|off
-                                                │sets an explicit state
-                                                │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Apps                                                                         │
+│ Loading installed and available apps...                                      │
+│                                                                              │
+›    Loading apps...  This updates when the full list is ready.                │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back

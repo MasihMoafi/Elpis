@@ -2,22 +2,12 @@
 source: tui/src/app/tests.rs
 expression: "render_bottom_popup(&app.chat_widget, 80)"
 ---
- Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Replace goal?                                ││measured · ≈0 source estimates
-│ New objective: New goal                      ││Tab hide/show · Ctrl+click open
-│                                              ││file
-› 1. Replace current goal  Set the new         ││
-                           objective and start ││SMART PRUNE          [···] SYNC
-                           it now              ││Reading current thread state
-  2. Cancel                Keep the current    ││Syncing… · /smart-prune on|off
-                           goal                ││sets an explicit state
-└──────────────────────────────────────────────┘│
-  Press enter to confirm or esc to go back      │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Replace goal?                                                                │
+│ New objective: New goal                                                      │
+│                                                                              │
+› 1. Replace current goal  Set the new objective and start it now              │
+  2. Cancel                Keep the current goal                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back

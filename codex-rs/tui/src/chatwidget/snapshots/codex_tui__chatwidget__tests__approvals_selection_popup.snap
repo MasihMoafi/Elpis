@@ -2,22 +2,15 @@
 source: tui/src/chatwidget/tests/permissions.rs
 expression: popup
 ---
- Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Update Model Permissions                     ││measured · ≈0 source estimates
-│                                              ││Tab hide/show · Ctrl+click open
-› 1. Ask for approval  Codex can read and edit ││file
-                       files in the current    ││
-                       workspace, and run      ││SMART PRUNE          [···] SYNC
-                       commands. Approval is   ││Reading current thread state
-                       required to access the  ││Syncing… · /smart-prune on|off
-                       internet or edit other  ││sets an explicit state
-                       files.                  ││
-  2. Full Access       Codex can edit files    ││CONTEXT WINDOW  usage
-                       outside this workspace  ││unavailable
-                       and access the internet ││Context measurement unavailable
-                       without asking for      ││until the first request
-                       approval. Exercise      ││snapshot
-                       caution when using.     ││
-└──────────────────────────────────────────────┘│No portable context is
-  Press enter to confirm or esc to go back      │available.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Update Model Permissions                                                     │
+│                                                                              │
+› 1. Ask for approval  Codex can read and edit files in the current workspace, │
+                       and run commands. Approval is required to access the    │
+                       internet or edit other files.                           │
+  2. Full Access       Codex can edit files outside this workspace and access  │
+                       the internet without asking for approval. Exercise      │
+                       caution when using.                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back

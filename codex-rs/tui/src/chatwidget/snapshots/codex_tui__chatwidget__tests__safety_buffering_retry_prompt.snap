@@ -2,22 +2,15 @@
 source: tui/src/chatwidget/tests/app_server.rs
 expression: popup
 ---
- Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Our systems are thinking a bit more about    ││measured · ≈0 source estimates
-│ this request before responding.              ││Tab hide/show · Ctrl+click open
-│ Hang tight or retry with a faster model for  ││file
-│ a quicker response, though it may be less    ││
-│ capable of handling complex requests.        ││SMART PRUNE          [···] SYNC
-│                                              ││Reading current thread state
-› 1. Retry with a faster model                 ││Syncing… · /smart-prune on|off
-  2. Dismiss and keep waiting                  ││sets an explicit state
-  3. Learn more                                ││
-└──────────────────────────────────────────────┘│CONTEXT WINDOW  usage
-  No action is required. Codex will keep        │unavailable
-  waiting, and this menu will close when the    │Context measurement unavailable
-  response is ready.                            │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Our systems are thinking a bit more about this request before responding.    │
+│ Hang tight or retry with a faster model for a quicker response, though it    │
+│ may be less capable of handling complex requests.                            │
+│                                                                              │
+› 1. Retry with a faster model                                                 │
+  2. Dismiss and keep waiting                                                  │
+  3. Learn more                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+  No action is required. Codex will keep waiting, and this menu will close when
+  the response is ready.

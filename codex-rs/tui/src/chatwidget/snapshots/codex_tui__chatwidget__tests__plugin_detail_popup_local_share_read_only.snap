@@ -3,21 +3,19 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: strip_osc8_for_snapshot(&popup)
 ---
  Elpis · model gpt-5.6-sol · location /tmp/project
-┌──────────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  context not measured · ≈0
-│ Plugins                                                              ││source estimates
-│ Docs · Can be installed · Local                                      ││Tab hide/show · Ctrl+click open file
-│ Data shared with this app is subject to the app's terms of service   ││
-│ and privacy policy. Learn more.                                      ││SMART PRUNE                          [···] SYNC
-│ Workspace docs.                                                      ││Reading current thread state
-│                                                                      ││Syncing… · /smart-prune on|off sets an explicit
-› 1. Back to plugins  Return to the plugin list.                       ││state
-  2. Install plugin   Install this plugin now.                         ││
-     Source           Local                                            ││CONTEXT WINDOW  usage unavailable
-     Auth             Auth on install                                  ││Context measurement unavailable until the first
-     Version          remote 7                                         ││request snapshot
-     Sharing          Private · creator Test User · https://           ││
-                      chatgpt.com/codex/plugins/share/docs             ││No portable context is available.
-     Skills           No plugin skills.                                │
-     Hooks            No plugin hooks.                                 │
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Plugins                                                                                                              │
+│ Docs · Can be installed · Local                                                                                      │
+│ Data shared with this app is subject to the app's terms of service and privacy policy. Learn more.                   │
+│ Workspace docs.                                                                                                      │
+│                                                                                                                      │
+› 1. Back to plugins  Return to the plugin list.                                                                       │
+  2. Install plugin   Install this plugin now.                                                                         │
+     Source           Local                                                                                            │
+     Auth             Auth on install                                                                                  │
+     Version          remote 7                                                                                         │
+     Sharing          Private · creator Test User · https://chatgpt.com/codex/plugins/share/docs                       │
+     Skills           No plugin skills.                                                                                │
+     Hooks            No plugin hooks.                                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
   Press esc to close.

@@ -2,29 +2,23 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
- Elpis · model test-visible-model · location /tm
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Choose a mind                                ││measured · ≈0 source estimates
-│ Provider: OpenAI                             ││Tab hide/show · Ctrl+click open
-│ Route: direct provider connection            ││file
-│ Protocol: responses                          ││
-│ Credential: OpenAI/ChatGPT credential store  ││SMART PRUNE          [···] SYNC
-│ Model: test-visible-model                    ││Reading current thread state
-│ Provider, protocol, route, and credential so ││Syncing… · /smart-prune on|off
-│                                              ││sets an explicit state
-     OPENAI                                    ││
-     Auto                  Requires this       ││CONTEXT WINDOW  usage
-                           provider to offer   ││unavailable
-                           GPT-5.6 Luna,       ││Context measurement unavailable
-                           Terra, and Sol.     ││until the first request
-› 1. All models (current)  Browse this         ││snapshot
-                           provider's full     ││
-                           catalog (current:   ││No portable context is
-                           test-visible-model) ││available.
-     OPENROUTER                                │
-  2. openrouter/free       OpenRouter routes   │
-                           each request to a   │
-                           free open-source    │
-                           model               │
-└──────────────────────────────────────────────┘
+ Elpis · model test-visible-model · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Choose a mind                                                                │
+│ Provider: OpenAI                                                             │
+│ Route: direct provider connection                                            │
+│ Protocol: responses                                                          │
+│ Credential: OpenAI/ChatGPT credential store                                  │
+│ Model: test-visible-model                                                    │
+│ Provider, protocol, route, and credential source remain visible while choosi │
+│                                                                              │
+     OPENAI                                                                    │
+     Auto                  Requires this provider to offer GPT-5.6 Luna,       │
+                           Terra, and Sol.                                     │
+› 1. All models (current)  Browse this provider's full catalog (current: test- │
+                           visible-model)                                      │
+     OPENROUTER                                                                │
+  2. openrouter/free       OpenRouter routes each request to a free open-      │
+                           source model                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

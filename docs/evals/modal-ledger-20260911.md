@@ -30,7 +30,12 @@ The full TUI run records **3,039 passed, 106 failed, five ignored**
 failures are absent (including two preceding test corrections), and 44 snapshot
 tests newly fail because dialogs now use the full width. There are no new
 non-snapshot failures. Snapshot review and the remaining release checks are open.
-This is local verification, not installation, release, or Masih's acceptance.
+The 44 newly failing dialog snapshots have now been reviewed for titles, warnings,
+choices and selected states. Their expected layouts were updated without changing
+unrelated snapshots. All 44 affected tests pass (`modal-snapshots-reviewed.log`).
+The subsequent full run records **3,083 passed, 62 failed, five ignored**
+(`tui-modal-snapshots-reviewed.log`). Remaining failures are still open. This is local
+verification, not installation, release, or Masih's acceptance.
 
 The unrelated native selection glitch remains open. The first Codex 0.153.4
 comparison did not send a provider request, so it provides no selection evidence.

@@ -3,21 +3,12 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
  Elpis · model gpt-5.4 · location /tmp/project
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Advanced Reasoning                           ││measured · ≈0 source estimates
-│ ⚠ Consumes usage limits faster               ││Tab hide/show · Ctrl+click open
-│                                              ││file
-  1. Max              For difficult problems   ││
-                      when quality matters     ││SMART PRUNE          [···] SYNC
-                      more than speed · higher ││Reading current thread state
-                      usage                    ││Syncing… · /smart-prune on|off
-› 2. Ultra (current)  For demanding work using ││sets an explicit state
-                      multiple agents ·        ││
-                      highest usage            ││CONTEXT WINDOW  usage
-└──────────────────────────────────────────────┘│unavailable
-  Press enter to confirm or esc to go back      │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Advanced Reasoning                                                           │
+│ ⚠ Consumes usage limits faster                                               │
+│                                                                              │
+  1. Max              For difficult problems when quality matters more than    │
+                      speed · higher usage                                     │
+› 2. Ultra (current)  For demanding work using multiple agents · highest usage │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back

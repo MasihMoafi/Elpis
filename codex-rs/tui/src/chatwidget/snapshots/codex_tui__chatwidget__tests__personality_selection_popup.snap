@@ -3,21 +3,11 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
  Elpis · model gpt-5.4 · location /tmp/project
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Select Personality                           ││measured · ≈0 source estimates
-│ Choose a communication style for Codex.      ││Tab hide/show · Ctrl+click open
-│                                              ││file
-  1. Friendly             Warm, collaborative, ││
-                          and helpful.         ││SMART PRUNE          [···] SYNC
-› 2. Pragmatic (current)  Concise, task-       ││Reading current thread state
-                          focused, and direct. ││Syncing… · /smart-prune on|off
-└──────────────────────────────────────────────┘│sets an explicit state
-  Press enter to confirm or esc to go back      │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Select Personality                                                           │
+│ Choose a communication style for Codex.                                      │
+│                                                                              │
+  1. Friendly             Warm, collaborative, and helpful.                    │
+› 2. Pragmatic (current)  Concise, task-focused, and direct.                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back

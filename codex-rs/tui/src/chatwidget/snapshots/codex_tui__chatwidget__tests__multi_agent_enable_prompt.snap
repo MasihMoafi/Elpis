@@ -2,22 +2,12 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
- Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Enable subagents?                            ││measured · ≈0 source estimates
-│ Subagents are currently disabled in your con ││Tab hide/show · Ctrl+click open
-│                                              ││file
-› 1. Yes, enable  Save the setting now. You    ││
-                  will need a new session to   ││SMART PRUNE          [···] SYNC
-                  use it.                      ││Reading current thread state
-  2. Not now      Keep subagents disabled.     ││Syncing… · /smart-prune on|off
-└──────────────────────────────────────────────┘│sets an explicit state
-  Press enter to confirm or esc to go back      │
-                                                │CONTEXT WINDOW  usage
-                                                │unavailable
-                                                │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Enable subagents?                                                            │
+│ Subagents are currently disabled in your config.                             │
+│                                                                              │
+› 1. Yes, enable  Save the setting now. You will need a new session to use it. │
+  2. Not now      Keep subagents disabled.                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back

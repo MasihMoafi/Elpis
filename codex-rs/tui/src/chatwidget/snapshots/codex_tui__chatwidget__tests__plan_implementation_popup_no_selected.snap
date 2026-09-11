@@ -3,21 +3,11 @@ source: tui/src/chatwidget/tests/plan_mode.rs
 expression: popup
 ---
  Elpis · model gpt-5 · location /tmp/project
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Implement this plan?                         ││measured · ≈0 source estimates
-│                                              ││Tab hide/show · Ctrl+click open
-  1. Yes, implement this plan   Switch to      ││file
-                                Default and    ││
-                                start coding.  ││SMART PRUNE          [···] SYNC
-› 2. Yes, clear context and im… Fresh thread   ││Reading current thread state
-                                with this      ││Syncing… · /smart-prune on|off
-                                plan.          ││sets an explicit state
-  3. No, stay in Plan mode      Continue       ││
-                                planning with  ││CONTEXT WINDOW  usage
-                                the model.     ││unavailable
-└──────────────────────────────────────────────┘│Context measurement unavailable
-  Press enter to confirm or esc to go back      │until the first request
-                                                │snapshot
-                                                │
-                                                │No portable context is
-                                                │available.
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Implement this plan?                                                         │
+│                                                                              │
+  1. Yes, implement this plan          Switch to Default and start coding.     │
+› 2. Yes, clear context and implement  Fresh thread with this plan.            │
+  3. No, stay in Plan mode             Continue planning with the model.       │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back

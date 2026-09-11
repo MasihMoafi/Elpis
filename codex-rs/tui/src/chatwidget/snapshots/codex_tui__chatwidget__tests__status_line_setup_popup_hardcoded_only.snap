@@ -3,20 +3,20 @@ source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: status_line_popup_snapshot(&mut chat)
 ---
  Elpis · model gpt-5.6-sol · location /tmp/project
-                                                            │CONTEXT LEDGER  context not measured ·
-  Configure Status Line                                     │≈0 source estimates
-  Select which items to display in the status line.         │Tab hide/show · Ctrl+click open file
-                                                            │
-  Type to search                                            │SMART PRUNE                  [···] SYNC
-  >                                                         │Reading current thread state
-› [x] Use theme colors      Apply colors from the active …  │Syncing… · /smart-prune on|off sets an
-  ───────────────────────                                   │explicit state
-  [x] project-name          Project name (omitted when un…  │
-  [x] git-branch            Current Git branch (omitted w…  │CONTEXT WINDOW  usage unavailable
-  [x] thread-title          Current thread title, or thre…  │Context measurement unavailable until
-  [ ] model                 Current model name              │the first request snapshot
-  [ ] model-with-reasoning  Current model name with reaso…  │
-  [ ] reasoning             Current reasoning level         │No portable context is available.
+
+  Configure Status Line
+  Select which items to display in the status line.
+
+  Type to search
+  >
+› [x] Use theme colors      Apply colors from the active /theme
+  ───────────────────────
+  [x] project-name          Project name (omitted when unavailable)
+  [x] git-branch            Current Git branch (omitted when unavailable)
+  [x] thread-title          Current thread title, or thread identifier when unnamed
+  [ ] model                 Current model name
+  [ ] model-with-reasoning  Current model name with reasoning level
+  [ ] reasoning             Current reasoning level
 
   my-project · feat/awesome-feature · thread title
-  Press space to toggle; ←/→ to move; enter to confirm and c
+  Press space to toggle; ←/→ to move; enter to confirm and close; esc to close

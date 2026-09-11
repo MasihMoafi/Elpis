@@ -2,22 +2,15 @@
 source: tui/src/chatwidget/tests/permissions.rs
 expression: popup
 ---
- Elpis · model gpt-5.6-sol · location /tmp/proje
-┌──────────────────────────────────────────────┐│CONTEXT LEDGER  context not
-│ Enable full access?                          ││measured · ≈0 source estimates
-│ When Codex runs with full access, it can     ││Tab hide/show · Ctrl+click open
-│ edit any file on your computer and run       ││file
-│ commands with network, without your          ││
-│ approval. Exercise caution when enabling     ││SMART PRUNE          [···] SYNC
-│ full access. This significantly increases    ││Reading current thread state
-│ the risk of data loss, leaks, or unexpected  ││Syncing… · /smart-prune on|off
-│ behavior.                                    ││sets an explicit state
-│                                              ││
-› 1. Yes, continue anyway  Apply full access   ││CONTEXT WINDOW  usage
-                           for this session    ││unavailable
-  2. Cancel                Go back without     ││Context measurement unavailable
-                           enabling full       ││until the first request
-                           access              ││snapshot
-└──────────────────────────────────────────────┘│
-  Press enter to confirm or esc to go back      │No portable context is
-                                                │available.
+ Elpis · model gpt-5.6-sol · location /tmp/project
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Enable full access?                                                          │
+│ When Codex runs with full access, it can edit any file on your computer and  │
+│ run commands with network, without your approval. Exercise caution when      │
+│ enabling full access. This significantly increases the risk of data loss,    │
+│ leaks, or unexpected behavior.                                               │
+│                                                                              │
+› 1. Yes, continue anyway  Apply full access for this session                  │
+  2. Cancel                Go back without enabling full access                │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Press enter to confirm or esc to go back
