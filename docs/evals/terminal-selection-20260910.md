@@ -21,6 +21,30 @@ exit code zero in 1,099,115 ms; the result is recorded in
 `full-surface-post-tui-result.json`. This does not resolve native selection or
 constitute an installed CLI/IDE release check or Masih's acceptance.
 
+## Installed candidate after full checks, 2026-09-11
+
+The optimized CLI was rebuilt and installed, SHA256
+`7a8dd64e0d763450af18a6446fd1ee41189be7883f8d84f2ff0e0e6e87d55729`.
+The official IDE packaging command produced a 43-file VSIX; its stripped runtime
+SHA256 is `f6ab4e7a838162058d824cbd4e6d71a32e5566074323477033bbad57e8b83ac9`.
+It passed the unprivileged, offline, read-only Ubuntu smoke check. Both the package
+and the installed extension passed six conversations across empty/file/folder
+windows. The CLI passed Tab/resize, two queued follow-ups recalled with Up, and
+three exact native drag-copy trials in the VS Code integrated terminal.
+
+Evidence under `.tmp/final-candidate/`: `post-full-optimized-build.log`,
+`ide-current-package.log`, `packaged-runtime-post-tui-clean.log`,
+`packaged-ide-post-tui-startup.log`, `installed-ide-post-tui-startup.log`, and
+`cli-post-tui-controls.log`. Installed hashes were checked. The CLI was opened
+on the desktop and `shown-installed.png` inspected. Existing VS Code windows
+need reloading to use the replacement extension.
+
+These remain local candidates with version labels 0.2.0 and 0.1.19, not a new
+public release. Rollback copies are under
+`~/.local/share/elpis/release-recovery/post-tui-20260911-Od3bhz/`.
+The VTE selection limitation remains open; no claim that all glitches are fixed
+or that Masih has accepted the candidate is supported.
+
 Current editor source also passed 44 unit checks and six real startup conversations
 across empty, single-file, and folder windows against runtime SHA256
 `39cf21d98901fe299f8c10e255762c126f305c3744225b36d96c8540228a812c`.
