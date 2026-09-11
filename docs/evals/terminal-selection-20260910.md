@@ -16,9 +16,21 @@ The debug badge is asserted separately from profile-independent header snapshots
 this run exercised the optimized profile, not a separate debug execution.
 
 The broader verification run is tracked in
-`.tmp/final-candidate/full-surface-post-tui.log`. It was started after this result
-and is not yet evidence of success. This does not resolve native selection or
+`.tmp/final-candidate/full-surface-post-tui.log`. It subsequently completed with
+exit code zero in 1,099,115 ms; the result is recorded in
+`full-surface-post-tui-result.json`. This does not resolve native selection or
 constitute an installed CLI/IDE release check or Masih's acceptance.
+
+Current editor source also passed 44 unit checks and six real startup conversations
+across empty, single-file, and folder windows against runtime SHA256
+`39cf21d98901fe299f8c10e255762c126f305c3744225b36d96c8540228a812c`.
+The source checkout required restoring cached npm dependencies and building its
+generated assets first. Initial missing-asset and test-driver failures were retained.
+The driver now tolerates destroyed execution contexts, with a failing-then-passing
+focused check and an unexpected-error control. Three startup screenshots were
+captured and inspected. Evidence: `.tmp/final-candidate/editor-post-tui-unit.log`,
+`editor-post-tui-startup-window.log`, and `webview-context-final.log`; screenshots
+are in `/tmp/elpis-ide-startup-CaWqVM/{empty,file,folder}/startup.png`.
 
 ## Later queue, startup, and IDE checks
 
