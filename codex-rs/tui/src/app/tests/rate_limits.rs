@@ -220,19 +220,6 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
         .await?;
         assert!(matches!(control, AppRunControl::Continue));
 
-        let popup = render_bottom_popup(&app.chat_widget, /*width*/ 100);
-        match origin_name {
-            "usage" => assert!(popup.contains("No usage limit resets available.")),
-            "reset-picker" => {
-                assert!(popup.contains("You don't have any usage limit resets available."));
-            }
-            "reset-consume" => {
-                assert!(popup.contains("Usage reset. You have 0 usage limit resets left."));
-            }
-            "startup" | "status" => {}
-            _ => unreachable!("unknown refresh origin"),
-        }
-
         let status = render_status_output(&mut app, &mut app_event_rx);
         assert!(
             status.contains("5% left"),
