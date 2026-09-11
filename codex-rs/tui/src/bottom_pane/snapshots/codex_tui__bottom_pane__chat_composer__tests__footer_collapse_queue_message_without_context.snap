@@ -10,4 +10,4 @@ expression: terminal.backend()
 "│                                       "
 "│                                       "
 "│                                       "
-"  tab to queue message                  "
+"  ctrl + q to queue message             "

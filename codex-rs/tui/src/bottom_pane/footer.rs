@@ -1794,11 +1794,12 @@ mod tests {
             Some(CollaborationModeIndicator::Plan),
         );
 
-        snapshot_footer_with_mode_indicator(
+        snapshot_footer_with_mode_indicator_and_context(
             "footer_mode_indicator_narrow_overlap_hides",
             /*width*/ 50,
             &props,
             Some(CollaborationModeIndicator::Plan),
+            context_window_line(Some(100), None),
         );
 
         let props = FooterProps {

@@ -5704,7 +5704,7 @@ mod tests {
         );
         snapshot_composer_state_with_width(
             "footer_collapse_plan_queue_short_without_context",
-            /*width*/ 30,
+            /*width*/ 34,
             /*enhanced_keys_supported*/ true,
             |composer| {
                 setup_collab_footer(
@@ -9040,8 +9040,7 @@ mod tests {
     }
 
     #[test]
-    fn slash_popup_btw_for_bt_logic() {
-        use super::super::command_popup::CommandItem;
+    fn slash_popup_does_not_suggest_hidden_btw() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
         let mut composer = ChatComposer::new(
@@ -9054,15 +9053,7 @@ mod tests {
         type_chars_humanlike(&mut composer, &['/', 'b', 't']);
 
         match &composer.popups.active {
-            ActivePopup::Command(popup) => match popup.selected_item() {
-                Some(CommandItem::Builtin(cmd)) => {
-                    assert_eq!(cmd.command(), "btw")
-                }
-                Some(CommandItem::ServiceTier(command)) => {
-                    panic!("expected btw command, got service tier {command:?}")
-                }
-                None => panic!("no selected command for '/bt'"),
-            },
+            ActivePopup::Command(popup) => assert!(popup.selected_item().is_none()),
             _ => panic!("slash popup not active after typing '/bt'"),
         }
     }
@@ -9094,8 +9085,7 @@ mod tests {
     }
 
     #[test]
-    fn slash_popup_side_for_si_logic() {
-        use super::super::command_popup::CommandItem;
+    fn slash_popup_does_not_suggest_hidden_side() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
         let mut composer = ChatComposer::new(
@@ -9108,15 +9098,7 @@ mod tests {
         type_chars_humanlike(&mut composer, &['/', 's', 'i']);
 
         match &composer.popups.active {
-            ActivePopup::Command(popup) => match popup.selected_item() {
-                Some(CommandItem::Builtin(cmd)) => {
-                    assert_eq!(cmd.command(), "side")
-                }
-                Some(CommandItem::ServiceTier(command)) => {
-                    panic!("expected side command, got service tier {command:?}")
-                }
-                None => panic!("no selected command for '/si'"),
-            },
+            ActivePopup::Command(popup) => assert!(popup.selected_item().is_none()),
             _ => panic!("slash popup not active after typing '/si'"),
         }
     }

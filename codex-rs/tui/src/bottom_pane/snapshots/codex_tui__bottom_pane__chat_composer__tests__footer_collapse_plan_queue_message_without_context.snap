@@ -10,4 +10,4 @@ expression: terminal.backend()
 "│                                       "
 "│                                       "
 "│                                       "
-"  tab to queue message · Plan mode      "
+"  ctrl + q to queue message · Plan mode "
