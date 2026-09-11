@@ -158,7 +158,13 @@ The debug test required `RUST_MIN_STACK=16777216`; the initial overflow and fail
 policy check are retained in `.tmp/final-candidate/recovered-policy-before*.log`.
 Passing evidence is `recovered-policy-final.log` in the same directory.
 
-This source fix has not yet been installed or released. The archived V2-agent reload implementation is also
-absent by its original entry-point names; its compatibility review remains open.
+This source fix has not yet been installed or released. Baseline V2-agent reload
+is present in `core/src/agent/control/spawn.rs`: the existing
+`ensure_v2_agent_loaded_reloads_registered_unloaded_agent` check passes, including
+communication after reloading a persisted child (`.tmp/final-candidate/v2-reload-current.log`).
+The archived `daily-driver-readiness` changes add persisted-edge validation,
+subtree-closure checks, and rollback around resume; those additions are not
+integrated, and their compatibility review remains open. Missing helper names
+alone must not be interpreted as proof that all agent reload behavior is absent.
 
 Do not equate one worktree with all experiments having been integrated or accepted.

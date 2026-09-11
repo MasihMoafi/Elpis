@@ -5,7 +5,7 @@ expression: sanitized
 /usage
 
 ╭────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.2)                                                         │
+│  >_ Elpis (v0.0.0)                                                         │
 │  Remote         : unix:///tmp/codex-home/app-server-control/app-server-    │
 │                   control.sock (v0.133.0)                                  │
 │  Model          : gpt-5.1-codex-max (reasoning medium, summaries auto)     │

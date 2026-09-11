@@ -198,3 +198,23 @@ reviewed ledger text are the only changes. The optimized test build passed in
 `.tmp/final-candidate/preview-isolation-build.log`, `preview-isolation-accepted.log`,
 `project-title-isolation.log`, and `tui-preview-isolation-full.log`. No new release
 or installation has occurred; terminal-selection limitations remain open.
+
+## Stable fixture review, September 11
+
+Another 14 snapshots have unchanged main-pane text; their only changes are the
+already reviewed ledger labels and wrapping. The exact paths and replacement
+ledger text are retained in `.tmp/final-candidate/remaining-ledger-only-review.json`.
+The session-picker stale-indicator test now swaps frame buffers between renders,
+as the real terminal draw path does. Its existing positive/negative indicator
+assertions failed before this correction and now pass.
+
+The shared `/usage` snapshot sanitizer substitutes a fixed fixture version.
+Eighteen snapshots differed only in the release version; all 45 status tests now
+pass (`.tmp/final-candidate/status-version-fixture-final.log`). The test build
+passed in 193,004 ms, peak 73°C with one thermal pause. These are fixture
+corrections, not evidence that the terminal-selection issue is resolved.
+
+The final complete run reports **3,050 passed, 91 failed, 5 ignored** in
+`.tmp/final-candidate/tui-fixture-final.log` (21.34 s). No newly failing tests were
+introduced relative to the preceding 122-failure run. Release and installation
+remain pending the outstanding functional work and acceptance.

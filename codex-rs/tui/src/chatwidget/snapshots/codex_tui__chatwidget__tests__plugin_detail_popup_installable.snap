@@ -3,20 +3,20 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: strip_osc8_for_snapshot(&popup)
 ---
  Elpis · model gpt-5.6-sol · location /tmp/project
-┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens
-│ Plugins                                                  ││admitted
-│ Figma · Can be installed · Local                         ││i = select/deselect all · backspace =
-│ Data shared with this app is subject to the app's terms  ││remove added file
-│ of service and privacy policy. Learn more.               ││
-│ Turn Figma files into implementation context.            ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
-│                                                          ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-› 1. Back to plugins  Return to the plugin list.           ││■ Conversation (messages)   ≈0 tokens
+┌──────────────────────────────────────────────────────────┐│CONTEXT LEDGER  context not measured ·
+│ Plugins                                                  ││≈0 source estimates
+│ Figma · Can be installed · Local                         ││Tab hide/show · Ctrl+click open file
+│ Data shared with this app is subject to the app's terms  ││
+│ of service and privacy policy. Learn more.               ││SMART PRUNE                  [···] SYNC
+│ Turn Figma files into implementation context.            ││Reading current thread state
+│                                                          ││Syncing… · /smart-prune on|off sets an
+› 1. Back to plugins  Return to the plugin list.           ││explicit state
   2. Install plugin   Install this plugin now.             ││
-     Source           Local                                ││No portable context is available.
-     Auth             Auth on install                      │
-     Skills           design-review, extract-copy          │
-     Hooks            PreToolUse (1), Stop (2)             │
-     Apps             Figma, Slack                         │
+     Source           Local                                ││CONTEXT WINDOW  usage unavailable
+     Auth             Auth on install                      ││Context measurement unavailable until
+     Skills           design-review, extract-copy          ││the first request snapshot
+     Hooks            PreToolUse (1), Stop (2)             ││
+     Apps             Figma, Slack                         ││No portable context is available.
      MCP Servers      figma-mcp, docs-mcp                  │
 └──────────────────────────────────────────────────────────┘
   Press esc to close.

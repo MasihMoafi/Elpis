@@ -5,7 +5,7 @@ expression: sanitized
 /usage
 
 ╭────────────────────────────────────────────────────────────────────────────╮
-│  >_ Elpis (v0.1.2)                                                         │
+│  >_ Elpis (v0.0.0)                                                         │
 │  Model          : gpt-5.1-codex (reasoning none, summaries auto)           │
 │  Directory      : /workspace/tests                                         │
 │  Permissions    : Custom (workspace with network access, Ask for approval) │

@@ -3,20 +3,20 @@ source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
  Elpis · model gpt-5.6-sol · location /tmp/project
-┌──────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  Total ≈0 tokens admitted
-│ Hooks                                                            ││i = select/deselect all · backspace =
-│ Lifecycle hooks from config and enabled plugins.                 ││remove added file
+┌──────────────────────────────────────────────────────────────────┐│CONTEXT LEDGER  context not measured · ≈0
+│ Hooks                                                            ││source estimates
+│ Lifecycle hooks from config and enabled plugins.                 ││Tab hide/show · Ctrl+click open file
 │                                                                  ││
-│ Issues                                                           ││CONTEXT WINDOW  ≈0 of 258.4k used (0%)
-│ ⚠ skipped invalid matcher for PreToolUse                         ││░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-│ ■ /tmp/hooks.json: failed to parse hooks config                  ││■ Conversation (messages)       ≈0 tokens
-│                                                                  ││
-│ Event                 Installed   Active      Description        ││No portable context is available.
-│ PreToolUse            0           0           Before a tool exec │
-│ PermissionRequest     0           0           When permission is │
-│ PostToolUse           0           0           After a tool execu │
-│ PreCompact            0           0           Before context com │
-│ PostCompact           0           0           After context comp │
+│ Issues                                                           ││SMART PRUNE                      [···] SYNC
+│ ⚠ skipped invalid matcher for PreToolUse                         ││Reading current thread state
+│ ■ /tmp/hooks.json: failed to parse hooks config                  ││Syncing… · /smart-prune on|off sets an
+│                                                                  ││explicit state
+│ Event                 Installed   Active      Description        ││
+│ PreToolUse            0           0           Before a tool exec ││CONTEXT WINDOW  usage unavailable
+│ PermissionRequest     0           0           When permission is ││Context measurement unavailable until the
+│ PostToolUse           0           0           After a tool execu ││first request snapshot
+│ PreCompact            0           0           Before context com ││
+│ PostCompact           0           0           After context comp ││No portable context is available.
 │ SessionStart          0           0           When a new session │
 │ UserPromptSubmit      0           0           When the user subm │
 │ SubagentStart         0           0           When a subagent is │
