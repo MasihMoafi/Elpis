@@ -262,5 +262,25 @@ The refreshed local pruning audit records **1,884,230 estimated tokens removed**
 **8,147,106 optimizer tokens**, 1,026 attempts across 20 sessions, and 36 missing
 usage reports. It covers 637 available rollouts and reports no malformed records.
 This is gross one-time compression, not proven net savings. Data is retained in
-`.tmp/final-candidate/smart-prune-usage-refresh.json`; the earlier HTML has not yet
-been regenerated with this timestamped data.
+`.tmp/final-candidate/smart-prune-usage-refresh.json`; the HTML was regenerated,
+viewed and committed in `b1860852` with this timestamped data.
+
+## Independent terminal control, 2026-09-11
+
+The installed official Codex CLI 0.153.4 was run in the same GTK/VTE harness with
+the local streamed sentinel. Its first attempt never submitted a turn and supplies
+no selection evidence. The settled-input trial disabled startup updates and plugins
+in its isolated profile and waited 1,500 ms before pressing Enter.
+
+In `donor-selection-settled-1`, VTE reported selection changing from true to false
+during the drag, and clipboard retrieval failed. In `donor-selection-frozen-1`,
+pausing the CLI processes before dragging allowed exact sentinel copying. These
+are one live-output trial and one frozen-output control, not a reliability estimate.
+Both recorded two local `/responses` requests; their purpose has not been audited,
+so the recorded request timing is not a valid performance comparison with Elpis.
+The frozen result's generic check label says “during stream”; the stream was open
+but CLI output was paused for selection. Evidence is under `.tmp/final-candidate/`.
+
+This supports an output-related terminal interaction shared with the donor CLI.
+It does not establish a fix, or show that all reported typing artifacts have the
+same cause. The native selection issue remains open.
