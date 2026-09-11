@@ -940,7 +940,7 @@ async fn live_app_server_warning_notification_renders_message() {
 }
 
 #[tokio::test]
-async fn live_auto_model_reroute_names_the_selected_model() {
+async fn live_auto_model_reroute_keeps_internal_choice_out_of_history() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.handle_server_notification(
@@ -955,12 +955,25 @@ async fn live_auto_model_reroute_names_the_selected_model() {
     );
 
     let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one Auto routing history cell");
-    let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Auto routed this turn to gpt-5.6-sol."),
-        "expected visible Auto routed choice, got {rendered}"
+        cells.is_empty(),
+        "Auto routing should not add a history cell"
     );
+
+    chat.handle_server_notification(
+        ServerNotification::ModelRerouted(codex_app_server_protocol::ModelReroutedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            from_model: "gpt-6-astra".to_string(),
+            to_model: "gpt-5.6-sol".to_string(),
+            reason: codex_app_server_protocol::ModelRerouteReason::HighRiskCyberActivity,
+        }),
+        /*replay_kind*/ None,
+    );
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "Other reroutes should remain visible");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(rendered.contains("gpt-5.6-sol"), "{rendered}");
 }
 
 #[tokio::test]

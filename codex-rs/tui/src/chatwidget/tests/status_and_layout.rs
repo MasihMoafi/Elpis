@@ -230,8 +230,9 @@ async fn context_report_separates_current_tool_context_from_prior_manual_savings
     chat.config.animations = false;
     chat.set_token_info(Some(make_token_info(17_259, 121_600)));
     chat.context_attribution = Some(codex_app_server_protocol::ThreadContextAttribution {
+        system_instructions: 17_259 - 704,
         tool_results: 704,
-        estimated_total: 704,
+        estimated_total: 17_259,
         ..Default::default()
     });
     assert!(chat.update_context_prune_savings(29_268, /*from_replay*/ true));
@@ -274,7 +275,9 @@ async fn context_report_separates_current_tool_context_from_prior_manual_savings
         "tool estimate rows must exclude historical savings: {tool_lines:?}"
     );
     assert!(
-        rendered.contains("~29.3k tokens removed earlier in this history"),
+        rendered.contains("~29.3k tokens removed earlier")
+            && rendered.contains("History Rewrite Audit")
+            && rendered.contains("cumulative thread history"),
         "context output: {rendered}"
     );
     assert!(
