@@ -571,7 +571,11 @@ impl ChatComposer {
                 mode: FooterMode::ComposerEmpty,
                 hint_override: None,
                 elpis_tip_visible: false,
-                elpis_tip_index: next_elpis_tip_index(),
+                elpis_tip_index: if cfg!(test) {
+                    0
+                } else {
+                    next_elpis_tip_index()
+                },
                 flash: None,
                 context_window_percent: None,
                 context_window_used_tokens: None,
