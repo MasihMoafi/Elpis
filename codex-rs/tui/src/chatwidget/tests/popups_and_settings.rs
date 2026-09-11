@@ -774,7 +774,7 @@ async fn plugin_detail_popup_distinguishes_admin_installed_from_enabled() {
             .lines()
             .find(|line| line.contains("Figma ·"))
             .expect("expected plugin detail header")
-            .trim(),
+            .trim_matches([' ', '│']),
         @"Figma · Enabled by Admin · ChatGPT Marketplace"
     );
 }
@@ -1223,15 +1223,19 @@ async fn plugins_popup_remote_section_fallback_states_when_remote_plugin_disable
     let remote_section_state = |popup: &str| -> String {
         let header = popup
             .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .nth(1)
+            .map(|line| line.trim_matches([' ', '│']))
+            .find(|line| {
+                !line.is_empty()
+                    && !line.starts_with("Elpis ·")
+                    && *line != "Plugins"
+                    && !line.starts_with(['┌', '└'])
+            })
             .expect("expected remote section header");
         let item = popup
             .lines()
             .find_map(|line| line.trim_start().strip_prefix('›'))
             .expect("expected selected remote section item")
-            .trim();
+            .trim_matches([' ', '│']);
         format!("{header}\n{item}")
     };
 
@@ -1270,6 +1274,7 @@ async fn plugins_popup_remote_section_fallback_states_when_remote_plugin_disable
 
     let (mut remote_chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     remote_chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
+    remote_chat.set_feature_enabled(Feature::RemotePlugin, /*enabled*/ true);
     remote_chat.add_plugins_output();
     let remote_cwd = remote_chat.config.cwd.clone();
     remote_chat.on_plugins_loaded(
