@@ -86,7 +86,7 @@ async fn marketplace_upgrade_loading_popup_snapshot() {
     let popup = render_bottom_popup(&chat, /*width*/ 100);
     let upgrade_lines = popup
         .lines()
-        .map(str::trim)
+        .map(|line| line.trim_matches([' ', '│']))
         .filter(|line| line.contains("Upgrading"))
         .collect::<Vec<_>>()
         .join(" | ");
@@ -273,7 +273,8 @@ async fn plugins_popup_truncates_long_descriptions_in_list_rows() {
     let verbose_row = popup
         .lines()
         .find(|line| line.contains("Verbose Plugin"))
-        .expect("expected verbose plugin row in popup");
+        .expect("expected verbose plugin row in popup")
+        .trim_end_matches([' ', '│']);
     insta::assert_snapshot!(
         verbose_row,
         @"  [-] Verbose Plugin  Available · OpenAI Curated · This description…"
@@ -1104,10 +1105,11 @@ async fn plugin_detail_popup_shows_admin_disabled_status_snapshot() {
     let status_row = popup
         .lines()
         .find(|line| line.contains("Disabled by admin"))
-        .expect("expected admin-disabled status row");
+        .expect("expected admin-disabled status row")
+        .trim_matches([' ', '│']);
     insta::assert_snapshot!(
         status_row,
-        @"  Admin Blocked · Disabled by admin · ChatGPT Marketplace"
+        @"Admin Blocked · Disabled by admin · ChatGPT Marketplace"
     );
     assert!(
         popup.contains("This plugin is disabled by your workspace admin.")

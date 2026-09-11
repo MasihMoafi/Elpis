@@ -95,6 +95,7 @@ async fn plugins_popup_uses_product_labels_for_remote_and_personal_tabs() {
             .lines()
             .find(|line| line.contains(plugin_name))
             .expect("expected plugin row")
+            .trim_end_matches([' ', '│'])
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ")

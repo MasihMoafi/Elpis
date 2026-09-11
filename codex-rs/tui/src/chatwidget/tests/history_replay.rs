@@ -1323,10 +1323,19 @@ async fn replayed_stream_error_does_not_set_retry_status_or_status_indicator() {
     );
 
     let cells = drain_insert_history(&mut rx);
-    assert!(
-        cells.is_empty(),
-        "expected no history cell for replayed StreamError event"
-    );
+    assert!(cells.len() <= 1, "expected at most the resume announcement");
+    for cell in cells {
+        let rendered = lines_to_single_string(&cell);
+        assert!(
+            rendered.contains("Continuity restored after resume."),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("Reconnecting... 2/5"), "{rendered}");
+        assert!(
+            !rendered.contains("Idle timeout waiting for SSE"),
+            "{rendered}"
+        );
+    }
     assert_eq!(chat.status_state.current_status.header, "Idle");
     assert!(chat.status_state.retry_status_header.is_none());
     assert!(chat.bottom_pane.status_widget().is_none());

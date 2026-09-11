@@ -1030,7 +1030,7 @@ mod tests {
             /*display_order*/ 0,
         );
         untrusted_hook.trust_status = HookTrustStatus::Untrusted;
-        let view = HooksBrowserView::new(
+        let mut view = HooksBrowserView::new(
             vec![untrusted_hook],
             Vec::new(),
             Vec::new(),
@@ -1043,13 +1043,18 @@ mod tests {
         );
         assert_eq!(
             view.event_table_lines()[1].spans[3].style.fg,
-            Some(Color::Cyan)
+            accent_style().fg
         );
         assert!(
             view.event_table_lines()[1].spans[3]
                 .style
                 .add_modifier
                 .contains(ratatui::style::Modifier::BOLD)
+        );
+        view.state.selected_idx = Some(1);
+        assert_eq!(
+            view.event_table_lines()[1].spans[3].style.fg,
+            Some(Color::Yellow)
         );
     }
 
