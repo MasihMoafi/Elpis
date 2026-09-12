@@ -12,6 +12,7 @@ const GOAL_FILE: &str = "GOAL.md";
 const SESSION_CHECKPOINT_FILE: &str = "ES.md";
 const MAX_RESULT_CHARS: usize = 4_000;
 const MAX_COMMAND_CHARS: usize = 240;
+const MAX_CHECKPOINT_CHARS: usize = 8_000;
 
 /// True for the statuses that mean the objective is over rather than paused.
 fn goal_is_finished(status: &str) -> bool {
@@ -221,27 +222,18 @@ pub(crate) async fn write_session_checkpoint(
         turn_status(&turn.status),
         turn.completed_at.or(turn.started_at).unwrap_or_default(),
     );
+    content.push_str("\n## Exact Evidence\n\n- Full turn remains in the provider transcript.\n");
     content.push_str("\n## Latest Result\n\n");
-    content.push_str(
+    let result_budget =
+        MAX_RESULT_CHARS.min(MAX_CHECKPOINT_CHARS.saturating_sub(content.chars().count() + 128));
+    content.push_str(&truncate_chars(
         latest_result
             .as_deref()
             .unwrap_or("No final agent result was recorded."),
-    );
-    content.push_str("\n\n## Changed Files\n\n");
-    let changed_files = if changed_files.is_empty() {
-        "- None recorded".to_string()
-    } else {
-        changed_files.join("\n")
-    };
-    content.push_str(&changed_files);
-    content.push_str("\n\n## Commands\n\n");
-    let commands = if commands.is_empty() {
-        "- None recorded".to_string()
-    } else {
-        commands.join("\n")
-    };
-    content.push_str(&commands);
-    content.push_str("\n\n## Exact Evidence\n\n- Full turn remains in the provider transcript.\n");
+        result_budget,
+    ));
+    append_recent_checkpoint_entries(&mut content, "Changed Files", &changed_files, 1_500);
+    append_recent_checkpoint_entries(&mut content, "Commands", &commands, MAX_CHECKPOINT_CHARS);
 
     let temporary_path = checkpoint_path.with_extension(format!("md.tmp-{thread_id}"));
     tokio::fs::write(&temporary_path, content)
@@ -256,6 +248,42 @@ pub(crate) async fn write_session_checkpoint(
         .await
         .with_context(|| format!("replace Elpis checkpoint {}", checkpoint_path.display()))?;
     Ok(Some(checkpoint_path))
+}
+
+fn append_recent_checkpoint_entries(
+    content: &mut String,
+    title: &str,
+    entries: &[String],
+    section_limit: usize,
+) {
+    let heading = format!("\n\n## {title}\n\n");
+    let available = MAX_CHECKPOINT_CHARS.saturating_sub(content.chars().count());
+    let budget = available.min(section_limit);
+    let omitted = "- Earlier or oversized entries omitted; see full turn.\n";
+    let mut used = heading.chars().count() + omitted.chars().count();
+    if used > budget {
+        return;
+    }
+    content.push_str(&heading);
+    if entries.is_empty() {
+        content.push_str("- None recorded");
+        return;
+    }
+    let mut selected = Vec::new();
+    for entry in entries.iter().rev() {
+        let size = entry.chars().count() + 1;
+        if used + size <= budget {
+            used += size;
+            selected.push(entry);
+        }
+    }
+    if selected.len() < entries.len() {
+        content.push_str(omitted);
+    }
+    for entry in selected.into_iter().rev() {
+        content.push_str(entry);
+        content.push('\n');
+    }
 }
 
 fn goal_path(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
@@ -456,6 +484,54 @@ mod tests {
         assert!(content.contains("`src/main.rs` (completed)"));
         assert!(!content.contains("large exact diff stays in transcript"));
         assert!(content.contains("Full turn remains in the provider transcript."));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn long_checkpoint_keeps_recent_files_and_evidence_within_admission_limit() -> Result<()>
+    {
+        let home = tempdir()?;
+        let turn = Turn {
+            id: "long-turn".into(),
+            items: vec![
+                ThreadItem::AgentMessage {
+                    id: "result".into(),
+                    text: "Next: verify IDE; preserve user changes. ".repeat(150),
+                    phase: None,
+                },
+                ThreadItem::FileChange {
+                    id: "changes".into(),
+                    changes: (0..100)
+                        .map(|i| FileUpdateChange {
+                            path: format!("src/{i}-{}.rs", "界".repeat(60)),
+                            kind: PatchChangeKind::Update { move_path: None },
+                            diff: String::new(),
+                        })
+                        .collect(),
+                    status: PatchApplyStatus::Completed,
+                },
+            ],
+            items_view: TurnItemsView::Full,
+            status: TurnStatus::Completed,
+            error: None,
+            started_at: Some(1),
+            completed_at: Some(2),
+            duration_ms: Some(1000),
+        };
+        let path = write_session_checkpoint(
+            Some(home.path()),
+            Path::new("/tmp/project"),
+            "thread",
+            &turn,
+        )
+        .await?
+        .context("checkpoint path")?;
+        let content = tokio::fs::read_to_string(path).await?;
+        assert!(content.chars().count() <= 8_000);
+        assert!(content.contains("Next: verify IDE; preserve user changes."));
+        assert!(content.contains("## Exact Evidence"));
+        assert!(content.contains("src/99-"));
+        assert!(content.contains("omitted"));
         Ok(())
     }
 

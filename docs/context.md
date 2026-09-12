@@ -147,9 +147,14 @@ thread to write it replaces the previous checkpoint. An interrupted turn with no
 result, file changes, or commands preserves the same thread's prior checkpoint,
 including its original turn and status metadata. Busy turns produce longer
 files than short replies. Results are capped at 4,000 characters and each command
-at 240 characters while writing; the admitted ES source is then capped at 8,000
-characters. A large on-disk file therefore does not mean the model receives all
-of it. Finishing or clearing an owning goal also clears its matching checkpoint.
+at 240 characters while writing; the admitted ES source is capped at 8,000
+characters. The checkpoint budgeting correction puts the evidence reference first,
+then the latest result, then recent file and command entries that fit. File entries
+have a 1,500-character section budget; commands use the remaining space. Omitted
+entries are explicitly noted. This deterministic selection is not semantic
+consolidation. Earlier installed writers can still leave larger files on disk;
+that does not mean the model receives all of them. Finishing or clearing an owning
+goal also clears its matching checkpoint.
 
 Ordinary tool output does not automatically expire after every turn. Native
 compaction and optional pruning change working history through their own paths.

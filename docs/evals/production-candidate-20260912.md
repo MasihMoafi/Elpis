@@ -1,7 +1,9 @@
 # Production candidate — September 12, 2026
 
-The candidate is not production-ready. Native GTK/VTE drag selection still fails
-during an active response. The reported long live-provider compaction delay has
+The candidate is not production-ready. The later
+[selection audit](selection-copy-20260912.md) supersedes the earlier active-response
+selection failures below: corrected VTE and xterm checks pass. User acceptance
+remains open. The reported long live-provider compaction delay has
 not been reproduced. Public release and published-artifact verification remain
 pending. This report supersedes the installed-artifact information in the earlier
 UI audit; it does not grant user acceptance.
@@ -148,3 +150,24 @@ foundation changes; transcript mouse selection is still incomplete and normal
 mouse capture remains off. This is a CLI queue fix, not the final CLI/IDE release.
 The installed binary also passed the same test in a light terminal
 (`up-all-installed-light/result.json`); its recalled-draft screenshot was inspected.
+
+## Checkpoint budgeting correction
+
+The installed writer observed at `391ec269` produced a 9,604-character checkpoint
+whose evidence pointer was outside the 8,000-character admission limit. The new
+writer puts the transcript reference before details, retains the latest result,
+and selects recent file/command entries within the budget, marking omissions.
+It makes no provider calls and does not enable durable-memory promotion.
+
+The long-turn Unicode regression failed against the previous writer (size over
+8,000), then passed after the fix. The full TUI suite passed 3,192 tests with five
+existing ignored tests in 14.64 seconds. A probe extracted from the actual entry
+selection helper also passed recent-command retention, Unicode budgeting,
+omission marking and near-full-buffer preservation. Raw local evidence:
+`.tmp/final-candidate/checkpoint-budget-baseline-test.log`,
+`checkpoint-budget-full-tests.log`, and `checkpoint-entry-probe.log`.
+The fixed test build passed in 240,139 ms, peak 70°C, two jobs.
+
+This is deterministic budget allocation, not semantic consolidation. Cross-thread
+last-writer behavior, intelligent preservation of constraints/unresolved facts,
+and measured task-quality benefit remain open.
