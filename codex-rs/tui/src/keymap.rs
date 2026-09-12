@@ -89,7 +89,7 @@ pub(crate) struct ChatKeymap {
     pub(crate) decrease_reasoning_effort: Vec<KeyBinding>,
     /// Increase the active reasoning effort.
     pub(crate) increase_reasoning_effort: Vec<KeyBinding>,
-    /// Edit the most recently queued message.
+    /// Recall all queued messages into the composer for editing.
     pub(crate) edit_queued_message: Vec<KeyBinding>,
 }
 
@@ -930,7 +930,7 @@ impl RuntimeKeymap {
                     alt(KeyCode::Char('.')),
                     shift(KeyCode::Up)
                 ],
-                edit_queued_message: default_bindings![alt(KeyCode::Up), shift(KeyCode::Left)],
+                edit_queued_message: default_bindings![plain(KeyCode::Up)],
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
@@ -2228,7 +2228,7 @@ mod tests {
         );
         assert_eq!(
             runtime.chat.edit_queued_message,
-            vec![key_hint::alt(KeyCode::Up), key_hint::shift(KeyCode::Left)]
+            vec![key_hint::plain(KeyCode::Up)]
         );
         assert_eq!(
             runtime.composer.history_search_previous,

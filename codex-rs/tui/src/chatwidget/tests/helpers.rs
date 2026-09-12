@@ -1194,12 +1194,11 @@ pub(super) fn get_available_model(chat: &ChatWidget, model: &str) -> ModelPreset
         .unwrap_or_else(|| panic!("{model} preset not found"))
 }
 
-pub(super) async fn assert_shift_left_edits_most_recent_queued_message_for_terminal(
-    terminal_info: TerminalInfo,
-) {
+pub(super) async fn assert_custom_queue_edit_binding_for_terminal(terminal_info: TerminalInfo) {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.queued_message_edit_hint_binding =
         Some(queued_message_edit_binding_for_terminal(terminal_info));
+    chat.chat_keymap.edit_queued_message = vec![crate::key_hint::shift(KeyCode::Left)];
     chat.bottom_pane
         .set_queued_message_edit_binding(chat.queued_message_edit_hint_binding);
 
@@ -1215,20 +1214,14 @@ pub(super) async fn assert_shift_left_edits_most_recent_queued_message_for_termi
         .push_back(UserMessage::from("second queued".to_string()).into());
     chat.refresh_pending_input_preview();
 
-    // Press Shift+Left to edit the most recent (last) queued message.
+    // Explicitly configured alternatives also recall the whole queue.
     chat.handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
 
-    // Composer should now contain the last queued message.
     assert_eq!(
         chat.bottom_pane.composer_text(),
-        "second queued".to_string()
+        "first queued\nsecond queued"
     );
-    // And the queue should now contain only the remaining (older) item.
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
-    assert_eq!(
-        chat.input_queue.queued_user_messages.front().unwrap().text,
-        "first queued"
-    );
+    assert!(chat.input_queue.queued_user_messages.is_empty());
 }
 
 pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {

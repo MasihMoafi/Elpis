@@ -24,7 +24,7 @@ pub(crate) struct PendingInputPreview {
     pub pending_steers: Vec<String>,
     pub rejected_steers: Vec<String>,
     pub queued_messages: Vec<String>,
-    /// Key combination rendered in the hint line.  Defaults to Alt+Up but may
+    /// Key combination rendered in the hint line. Defaults to Up but may
     /// be overridden for terminals where that chord is unavailable.
     edit_binding: Option<key_hint::KeyBinding>,
     /// Key combination rendered for immediately interrupting and sending steers.
@@ -39,7 +39,7 @@ impl PendingInputPreview {
             pending_steers: Vec::new(),
             rejected_steers: Vec::new(),
             queued_messages: Vec::new(),
-            edit_binding: Some(key_hint::alt(KeyCode::Up)),
+            edit_binding: Some(key_hint::plain(KeyCode::Up)),
             interrupt_binding: Some(key_hint::plain(KeyCode::Esc)),
         }
     }
@@ -151,17 +151,14 @@ impl PendingInputPreview {
             }
         }
 
-        if !self.queued_messages.is_empty()
-            && let Some(edit_binding) = self.edit_binding
-        {
+        if !self.queued_messages.is_empty() {
+            let edit_binding = self.edit_binding.unwrap_or(key_hint::plain(KeyCode::Up));
             lines.extend(adaptive_wrap_lines(
                 std::iter::once(
                     Line::from(vec![
                         "    ".into(),
-                        key_hint::plain(KeyCode::Up).into(),
-                        " edit all · enter send · ".into(),
                         edit_binding.into(),
-                        " last".into(),
+                        " edit all · enter send".into(),
                     ])
                     .dim(),
                 ),
@@ -306,8 +303,8 @@ mod tests {
         let width = 36;
         let height = queue.desired_height(width);
         assert_eq!(
-            height, 4,
-            "expected header, one message row, and two wrapped hint rows for URL-like token"
+            height, 3,
+            "expected header, one message row, and one hint row for URL-like token"
         );
 
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));

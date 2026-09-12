@@ -1357,24 +1357,49 @@ async fn up_recalls_all_queued_messages_in_order() {
 }
 
 #[tokio::test]
-async fn up_preserves_existing_draft_and_queued_message() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+async fn up_recalls_queue_and_preserves_existing_draft() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(120));
     chat.bottom_pane.set_task_running(true);
     chat.input_queue
         .queued_user_messages
         .push_back(UserMessage::from("still queued".to_string()).into());
+    chat.input_queue
+        .queued_user_messages
+        .push_back(UserMessage::from("second queued".to_string()).into());
     chat.bottom_pane.insert_str("unfinished draft\nsecond line");
     chat.refresh_pending_input_preview();
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    assert!(chat.context_ledger_has_focus());
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
     assert_eq!(
         chat.bottom_pane.composer_text(),
-        "unfinished draft\nsecond line"
+        "still queued\nsecond queued\nunfinished draft\nsecond line"
     );
-    assert_eq!(chat.queued_user_message_texts(), vec!["still queued"]);
+    assert!(chat.queued_user_message_texts().is_empty());
+    assert!(!chat.context_ledger_has_focus());
+    assert!(op_rx.try_recv().is_err());
 }
 
 #[tokio::test]
-async fn alt_up_edits_most_recent_queued_message() {
+async fn up_navigates_command_popup_without_draining_queue() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_task_running(true);
+    chat.input_queue
+        .queued_user_messages
+        .push_back(UserMessage::from("still queued".to_string()).into());
+    chat.bottom_pane
+        .set_composer_text("/com".into(), Vec::new(), Vec::new());
+    chat.bottom_pane.pre_draw_tick();
+    assert!(!chat.bottom_pane.no_modal_or_popup_active());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Up));
+    assert_eq!(chat.queued_user_message_texts(), vec!["still queued"]);
+    assert_eq!(chat.bottom_pane.composer_text(), "/com");
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn custom_queue_edit_binding_recalls_all_messages() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.chat_keymap.edit_queued_message = vec![crate::key_hint::alt(KeyCode::Up)];
     chat.queued_message_edit_hint_binding = Some(crate::key_hint::alt(KeyCode::Up));
@@ -1393,20 +1418,14 @@ async fn alt_up_edits_most_recent_queued_message() {
         .push_back(UserMessage::from("second queued".to_string()).into());
     chat.refresh_pending_input_preview();
 
-    // Press Alt+Up to edit the most recent (last) queued message.
+    // A configured alternative follows the same whole-queue behavior.
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
 
-    // Composer should now contain the last queued message.
     assert_eq!(
         chat.bottom_pane.composer_text(),
-        "second queued".to_string()
+        "first queued\nsecond queued"
     );
-    // And the queue should now contain only the remaining (older) item.
-    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
-    assert_eq!(
-        chat.input_queue.queued_user_messages.front().unwrap().text,
-        "first queued"
-    );
+    assert!(chat.input_queue.queued_user_messages.is_empty());
 }
 
 #[tokio::test]
@@ -1429,8 +1448,8 @@ async fn unbound_queued_message_edit_does_not_fall_back_to_alt_up() {
 }
 
 #[tokio::test]
-async fn shift_left_edits_most_recent_queued_message_in_apple_terminal() {
-    assert_shift_left_edits_most_recent_queued_message_for_terminal(TerminalInfo {
+async fn custom_queue_edit_binding_in_apple_terminal() {
+    assert_custom_queue_edit_binding_for_terminal(TerminalInfo {
         name: TerminalName::AppleTerminal,
         term_program: None,
         version: None,
@@ -1441,8 +1460,8 @@ async fn shift_left_edits_most_recent_queued_message_in_apple_terminal() {
 }
 
 #[tokio::test]
-async fn shift_left_edits_most_recent_queued_message_in_warp_terminal() {
-    assert_shift_left_edits_most_recent_queued_message_for_terminal(TerminalInfo {
+async fn custom_queue_edit_binding_in_warp_terminal() {
+    assert_custom_queue_edit_binding_for_terminal(TerminalInfo {
         name: TerminalName::WarpTerminal,
         term_program: None,
         version: None,
@@ -1453,8 +1472,8 @@ async fn shift_left_edits_most_recent_queued_message_in_warp_terminal() {
 }
 
 #[tokio::test]
-async fn shift_left_edits_most_recent_queued_message_in_vscode_terminal() {
-    assert_shift_left_edits_most_recent_queued_message_for_terminal(TerminalInfo {
+async fn custom_queue_edit_binding_in_vscode_terminal() {
+    assert_custom_queue_edit_binding_for_terminal(TerminalInfo {
         name: TerminalName::VsCode,
         term_program: None,
         version: None,
@@ -1465,8 +1484,8 @@ async fn shift_left_edits_most_recent_queued_message_in_vscode_terminal() {
 }
 
 #[tokio::test]
-async fn shift_left_edits_most_recent_queued_message_in_tmux() {
-    assert_shift_left_edits_most_recent_queued_message_for_terminal(TerminalInfo {
+async fn custom_queue_edit_binding_in_tmux() {
+    assert_custom_queue_edit_binding_for_terminal(TerminalInfo {
         name: TerminalName::Iterm2,
         term_program: None,
         version: None,

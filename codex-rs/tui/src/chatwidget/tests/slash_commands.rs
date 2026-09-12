@@ -527,7 +527,7 @@ async fn queued_slash_review_with_args_restores_for_edit() {
     handle_turn_started(&mut chat, "turn-1");
 
     queue_composer_text(&mut chat, "/review check regressions");
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
 
     assert_eq!(
         chat.bottom_pane.composer_text(),
@@ -1227,7 +1227,7 @@ async fn queued_goal_slash_command_restores_large_paste_for_edit() {
     let paste = "x".repeat(codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS + 1);
 
     queue_goal_with_large_paste(&mut chat, paste.clone());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
 
     assert_eq!(chat.bottom_pane.composer_pending_pastes()[0].1, paste);
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));

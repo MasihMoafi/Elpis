@@ -22,6 +22,6 @@ Toggle Raw Output | alt-r | Global toggle_raw_output Toggle Raw Output Toggle ra
 Interrupt Turn | esc | Chat interrupt_turn Interrupt Turn Interrupt the active turn. esc Default
 Decrease Reasoning Effort | alt-,, shift-down | Chat decrease_reasoning_effort Decrease Reasoning Effort Decrease reasoning effort. alt-,, shift-down Default
 Increase Reasoning Effort | alt-., shift-up | Chat increase_reasoning_effort Increase Reasoning Effort Increase reasoning effort. alt-., shift-up Default
-Edit Queued Message | alt-up, shift-left | Chat edit_queued_message Edit Queued Message Edit the most recently queued message. alt-up, shift-left Default
+Edit Queued Message | up | Chat edit_queued_message Edit Queued Message Recall all queued messages into the composer for editing. up Default
 Submit | enter | Composer submit Submit Submit the current composer draft. enter Default
 Queue | unbound | Composer queue Queue Queue the draft while a task is running. unbound Default

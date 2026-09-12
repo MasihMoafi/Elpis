@@ -97,7 +97,7 @@ pub(super) const KEYMAP_ACTIONS: &[KeymapActionDescriptor] = &[
     action("chat", "Chat", "interrupt_turn", "Interrupt the active turn."),
     action("chat", "Chat", "decrease_reasoning_effort", "Decrease reasoning effort."),
     action("chat", "Chat", "increase_reasoning_effort", "Increase reasoning effort."),
-    action("chat", "Chat", "edit_queued_message", "Edit the most recently queued message."),
+    action("chat", "Chat", "edit_queued_message", "Recall all queued messages into the composer for editing."),
     action("composer", "Composer", "submit", "Submit the current composer draft."),
     action("composer", "Composer", "queue", "Queue the draft while a task is running."),
     action("composer", "Composer", "toggle_shortcuts", "Show or hide the composer shortcut overlay."),

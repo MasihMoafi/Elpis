@@ -43,6 +43,20 @@ impl ChatWidget {
         if self.handle_selection_copy_key(key_event) {
             return;
         }
+        if key_event.kind == KeyEventKind::Press
+            && (key_hint::plain(KeyCode::Up).is_press(key_event)
+                || self.chat_keymap.edit_queued_message.is_pressed(key_event))
+            && self.has_queued_follow_up_messages()
+            && self.bottom_pane.no_modal_or_popup_active()
+        {
+            if let Some(composer) = self.drain_pending_messages_for_restore(false) {
+                self.focus_composer();
+                self.restore_composer_state(composer);
+                self.refresh_pending_input_preview();
+                self.request_redraw();
+            }
+            return;
+        }
         if key_hint::plain(KeyCode::Tab).is_press(key_event)
             && !self.bottom_pane.has_active_view()
             && !self.bottom_pane.no_modal_or_popup_active()
@@ -167,27 +181,6 @@ impl ChatWidget {
                 self.quit_shortcut_key = None;
             }
             _ => {}
-        }
-
-        let recall_queued_with_up = key_event.code == KeyCode::Up
-            && key_event.modifiers.is_empty()
-            && self.bottom_pane.composer_is_empty();
-        if key_event.kind == KeyEventKind::Press
-            && (self.chat_keymap.edit_queued_message.is_pressed(key_event) || recall_queued_with_up)
-            && self.has_queued_follow_up_messages()
-            && self.bottom_pane.no_modal_or_popup_active()
-        {
-            let composer = if recall_queued_with_up {
-                self.drain_pending_messages_for_restore(false)
-            } else {
-                self.pop_latest_queued_composer_state()
-            };
-            if let Some(composer) = composer {
-                self.restore_composer_state(composer);
-                self.refresh_pending_input_preview();
-                self.request_redraw();
-            }
-            return;
         }
 
         const REVIEW_STEER_UNAVAILABLE_MESSAGE: &str = "Steer messages aren't supported during /review. Press Ctrl+C now to cancel the review.";

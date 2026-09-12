@@ -90,7 +90,7 @@ Evidence: `production-compaction.log`, `production-compaction-cancel.log`, and
 ## Artifacts
 
 CLI 0.2.0 SHA256:
-`24a96237abaf1f4431c33e119e6bb4e8f568c34d0ee1f0a1139324f0b3fc6c13`.
+`ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31ca32d91e05b`.
 Bundled sandbox SHA256:
 `fec1a33f7eed16567ff508a462363f8cf5f7991ac5f5e5b621d2460364e423dc`.
 IDE candidate version: 0.1.20. Its VSIX contains the runtime, sandbox, and license.
@@ -99,7 +99,7 @@ The renderer test build took 164,745 ms (70 C peak); the updater test build took
 6,792 ms (61 C). Final optimized build took 30,866 ms (68 C). Each reported
 `build_result status=ok` under the required two-job build wrapper.
 
-The installed follow-up includes UI commit `dafcc61f` and the separate
+The earlier installed follow-up included UI commit `dafcc61f` and the separate
 resume-command repair `f93c259d`. Its optimized build reported success in
 600,941 ms, including a long wait for another session's Cargo cache lock; the
 wrapper recorded a 78 C peak and five thermal pauses. Evidence:
@@ -123,3 +123,28 @@ hashes match:
 Installation output is in `production-ide-install.log`. No visible application
 was opened. Start a fresh CLI by typing `elpis`; reload the IDE window to activate
 the extension update. No public release or tag was created in this work.
+
+The latest CLI follow-up makes plain Up recall the entire queue, even with an
+existing draft or Ledger focus. Existing draft text is preserved after the
+queued messages; recall does not submit or interrupt. Up is the default binding,
+configured alternatives share the same whole-queue behavior, and the old
+last-message-only restore function was removed. Popup navigation stays intact.
+
+Installed baseline `up-all-installed-before/result.json` reproduces the failure:
+three messages remain queued while the Ledger keeps focus. Candidate
+`up-all-candidate/result.json` passes the same real VTE interaction: three normal
+Enter presses queue messages, one Up recalls them with the draft, and subsequent
+Enter submission reaches the local fixture with exactly the combined text.
+Both screenshots were inspected. Full TUI tests: 3,178 passed, 0 failed, 5 ignored
+(`up-all-final-full-tests.log`). Twelve reviewed snapshots update only the queue
+hint/default shortcut and associated layout. Optimized build passed in 122,316 ms
+with a 69°C peak (`up-all-optimized.log`). Evidence is under `.tmp/final-candidate/`.
+
+The installed CLI matches the current artifact hash above. Its immediate
+predecessor (SHA256 `24a96237abaf1f4431c33e119e6bb4e8f568c34d0ee1f0a1139324f0b3fc6c13`)
+is preserved at `~/.local/share/elpis/release-recovery/up-all-20260912/elpis-before`.
+This installation includes the committed checkpoint-ownership and selection
+foundation changes; transcript mouse selection is still incomplete and normal
+mouse capture remains off. This is a CLI queue fix, not the final CLI/IDE release.
+The installed binary also passed the same test in a light terminal
+(`up-all-installed-light/result.json`); its recalled-draft screenshot was inspected.

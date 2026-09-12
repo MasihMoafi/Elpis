@@ -145,36 +145,6 @@ impl ChatWidget {
         }
     }
 
-    pub(super) fn pop_latest_queued_composer_state(&mut self) -> Option<ThreadComposerState> {
-        if let Some(user_message) = self.input_queue.queued_user_messages.pop_back() {
-            let history_record = self
-                .input_queue
-                .queued_user_message_history_records
-                .pop_back()
-                .unwrap_or(UserMessageHistoryRecord::UserMessageText);
-            let QueuedUserMessage {
-                user_message,
-                pending_pastes,
-                ..
-            } = user_message;
-            Some(Self::composer_state_from_user_message(
-                user_message_for_restore(user_message, &history_record),
-                pending_pastes,
-            ))
-        } else {
-            let user_message = self.input_queue.rejected_steers_queue.pop_back()?;
-            let history_record = self
-                .input_queue
-                .rejected_steer_history_records
-                .pop_back()
-                .unwrap_or(UserMessageHistoryRecord::UserMessageText);
-            Some(Self::composer_state_from_user_message(
-                user_message_for_restore(user_message, &history_record),
-                Vec::new(),
-            ))
-        }
-    }
-
     pub(crate) fn enqueue_rejected_steer(&mut self) -> bool {
         let Some(pending_steer) = self.input_queue.pending_steers.pop_front() else {
             tracing::warn!(
