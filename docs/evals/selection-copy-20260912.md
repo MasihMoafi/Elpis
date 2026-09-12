@@ -1,9 +1,36 @@
 # Drag selection and clean copying — September 12
 
-The installed CLI (SHA256
+## Current installed candidate
+
+CLI source `1741efdd` is installed at `~/.local/bin/elpis`, SHA256
+`423a11b2260e55ab008c717b1399081dc0c4ebeae28791c707c2eeb59f94ac9c`.
+The installed-binary `mouse-installed-smoke` passes cross-boundary copy during
+streaming. Previous binary: `~/.local/share/elpis/release-recovery/mouse-selection-20260912/elpis-before`.
+Full production and packaged IDE acceptance remain separate, unfinished gates.
+The sections below preserve earlier failures and intermediate candidate states.
+
+### Corrected xterm evaluation
+
+The terminal-only probe isolated the failure to the test configuration. xterm's
+`allowSendEvents: true` forcibly disables its `allowXXXOps` settings, including
+mouse operations (documented in xterm 390's installed-package manual). The fixture
+now leaves that setting at its default and uses XTest input. It accounts for the
+two-pixel terminal border and finds the window by class, since Elpis changes its
+title. The F12 screen-print action is paused during selection. Earlier resource,
+modifier and coordinate hypotheses were not product defects.
+
+`xterm-live-correct` and `xterm-cross-light` pass release/Ctrl+C copy, clipboard
+retention after dismissal, and continued streaming; the cross-boundary screenshot
+was inspected. `xterm-wheel-valid` reaches first/latest history and returns via q.
+The corrected `xterm-live-control` still fails on the old installed source
+`2265c0d0`, preserving a valid negative control. No additional Elpis source change
+or Rust rebuild was needed for these harness corrections.
+
+## Original baseline
+
+The original installed CLI (SHA256
 `24a96237abaf1f4431c33e119e6bb4e8f568c34d0ee1f0a1139324f0b3fc6c13`)
-fails two distinct user requirements. No selection repair has been installed by
-this investigation.
+failed two distinct user requirements before this investigation's repairs.
 
 ## Reproduced failures
 
