@@ -213,3 +213,29 @@ one planted marker in the first model request after app-server restart/resume.
 Existing admission/withdrawal boundaries passed alongside it. The added test was
 formatted separately and compiled/executed by the app-server target after the
 initial workspace check. No runtime code changed during this verification pass.
+
+## Installed CLI final interaction and offline install
+
+The installed CLI (`9a544d0c…`) passed a fresh native VTE queue check:
+Enter queued three messages; one Up with the ledger focused recalled all three
+plus the draft without sending or interrupting; Enter then submitted their exact
+combined text. `final-up-queue/result.json` records both expected and submitted
+text. The recalled-draft screenshot was inspected and its four lines were readable.
+This is scoped evidence, not blanket visual acceptance.
+
+The same installed binary passed `bash tests/install/clean_linux.sh
+.tmp/final-candidate/linux-package` in the existing offline Ubuntu 24.04 image:
+installation, version, bundled Bubblewrap, allowed workspace write and denied
+outside write. `bash tests/install/test_install.sh` passed supported/unsupported
+platform cases and corrupt-sandbox preservation. Logs: `final-clean-linux.log`,
+`final-installer-tests.log`. The first direct script invocation failed because the
+script lacks its executable bit; invoking it through Bash ran the actual checks.
+These checks validate the local artifact, not a hosted release or Debian package.
+
+The user's saved `~/.elpis/compaction.json` still has `remaining_percent: 30`.
+A read-only scan of this thread's rollout found 18 compaction records and their 18
+completion notifications, but no start/timing events. Therefore it cannot measure
+compaction duration or establish the cause of the reported delay. The existing
+controlled timing comparison remains the only measured latency evidence; the
+live-provider delay remains unresolved. Metadata-only scan evidence is
+`current-session-compaction-events.json`; no conversation contents were copied.
