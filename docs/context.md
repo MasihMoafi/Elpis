@@ -57,6 +57,37 @@ You do not have to go looking for these: `prune_report.md` renders `ace.json` an
 
 ## 3. Memory and checkpoints
 
+```mermaid
+flowchart LR
+    U[User goal] --> G[GOAL.md]
+    T[Completed CLI turn] --> E[Generated ES.md]
+    N[User-maintained notes] --> M[MEMORY.md]
+    G --> A{Ledger admission}
+    E --> A
+    M --> A
+    A --> L[Per-source character limits]
+    L --> C[Model working context]
+    H[Conversation and tool results] --> C
+    C --> R[Next agent turn]
+    R --> T
+    C --> P[Pruning or native compaction]
+    P --> C
+```
+
+Admission controls what is supplied; it does not judge whether a remembered claim
+is still true. GOAL is limited to 6,000 characters, generated ES to 8,000, and
+manual MEMORY to 8,000. These are separate limits, not a combined memory budget.
+Overlong admitted sources retain their beginning, followed by an ellipsis;
+there is no relevance ranking or intelligent consolidation at this boundary.
+Stale or repetitive notes can therefore consume attention and reinforce a wrong
+assumption. The limits bound size, not this risk. Check current files and runtime
+evidence before acting on a checkpoint.
+
+On September 12, this workspace admits GOAL and ES but has manual MEMORY off;
+the manual memory file contains only its heading. Continuity here is therefore
+primarily the goal, checkpoint, and conversation, not an automatically learned
+long-term knowledge base. These local settings can change through the Ledger.
+
 These files have different writers and purposes:
 
 | Source | What actually happens |

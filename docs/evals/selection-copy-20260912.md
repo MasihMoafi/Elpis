@@ -235,6 +235,20 @@ The built candidate SHA256 is
 `e4db9cefc558c4cd64113c776aae4a129323fcbfba45dc5de8ea0c1a2cedfe20`.
 The installed CLI remains `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31ca32d91e05b`.
 
+## Synchronized selection repaint — September 12 follow-up
+
+Inline selection now uses Tui's existing capability-gated synchronized update,
+including cursor restoration and flushing. Unsupported terminals retain plain
+drawing. This removes an unsynchronized path; elimination of flicker is unproven.
+
+`selection-sync-test-build.log` and `selection-sync-optimized.log` both finish
+with `build_result status=ok`. `selection-sync-full-tests.log`: 3,189 passed,
+zero failed, five ignored. Native `selection-sync-native` copies exactly
+`ELPIS_SELECTION_SENTINEL_734129` on release and Ctrl+C, retains it after
+dismissal, and leaves the single provider stream open. Selected screenshot
+inspected. This uses the test-only mouse wrapper; normal capture remains off
+pending live-cell selection and lifecycle work. Candidate not installed.
+
 ## Main inline finalized history — subsequent candidate
 
 The main chat now uses retained physical history rows for held selection. The

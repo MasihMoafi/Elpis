@@ -1,10 +1,7 @@
-use std::io::Write;
-
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
 use crossterm::event::MouseButton;
 use crossterm::event::MouseEventKind;
-use ratatui::backend::Backend;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
@@ -23,19 +20,7 @@ impl InlineHistorySelection {
     fn paint(&mut self, tui: &mut Tui) -> std::io::Result<()> {
         let mut buffer = Buffer::empty(self.area);
         self.selection.render(self.area, &mut buffer);
-        let cursor = tui.terminal.last_known_cursor_pos;
-        let mut cells = Vec::new();
-        for y in self.area.y..self.area.bottom() {
-            let mut x = self.area.x;
-            while x < self.area.right() {
-                let cell = &buffer[(x, y)];
-                cells.push((x, y, cell));
-                x += crate::custom_terminal::display_width(cell.symbol()).max(1) as u16;
-            }
-        }
-        tui.terminal.backend_mut().draw(cells.into_iter())?;
-        tui.terminal.backend_mut().set_cursor_position(cursor)?;
-        Write::flush(tui.terminal.backend_mut())
+        tui.draw_selection_buffer(&buffer)
     }
 }
 
