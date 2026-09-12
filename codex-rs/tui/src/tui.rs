@@ -591,16 +591,23 @@ fn with_synchronized_update(supported: bool, draw: impl FnOnce() -> Result<()>) 
 }
 
 impl Tui {
-    pub(crate) fn draw_selection_buffer(&mut self, buffer: &ratatui::buffer::Buffer) -> Result<()> {
+    pub(crate) fn draw_selection_buffer(
+        &mut self,
+        buffer: &ratatui::buffer::Buffer,
+        areas: &[Rect],
+    ) -> Result<()> {
         with_synchronized_update(self.synchronized_output_supported, || {
             let cursor = self.terminal.last_known_cursor_pos;
             let mut cells = Vec::new();
-            for y in buffer.area.y..buffer.area.bottom() {
-                let mut x = buffer.area.x;
-                while x < buffer.area.right() {
-                    let cell = &buffer[(x, y)];
-                    cells.push((x, y, cell));
-                    x += crate::custom_terminal::display_width(cell.symbol()).max(1) as u16;
+            for area in areas {
+                let area = area.intersection(buffer.area);
+                for y in area.y..area.bottom() {
+                    let mut x = area.x;
+                    while x < area.right() {
+                        let cell = &buffer[(x, y)];
+                        cells.push((x, y, cell));
+                        x += crate::custom_terminal::display_width(cell.symbol()).max(1) as u16;
+                    }
                 }
             }
             self.terminal.backend_mut().draw(cells.into_iter())?;

@@ -712,6 +712,7 @@ pub(crate) struct ChatWidget {
     turn_runtime_metrics: RuntimeMetricsSummary,
     last_rendered_width: std::cell::Cell<Option<usize>>,
     stream_motion: std::cell::RefCell<crate::elpis_motion::TextReveal>,
+    displayed_live_cells: std::cell::RefCell<Vec<rendering::DisplayedLiveCell>>,
     ledger_motion: std::cell::RefCell<crate::elpis_motion::TextReveal>,
     // Feedback sink for /feedback
     // Current session rollout path (if known)

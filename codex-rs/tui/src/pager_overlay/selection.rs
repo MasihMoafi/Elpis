@@ -78,6 +78,14 @@ impl Selection {
         self.rows.len()
     }
 
+    pub(crate) fn into_visible_rows(self, height: u16) -> Vec<HyperlinkLine> {
+        self.rows
+            .into_iter()
+            .skip(self.scroll)
+            .take(usize::from(height))
+            .collect()
+    }
+
     pub(crate) fn start(&mut self, area: Rect, x: u16, y: u16) {
         self.anchor = self.position(area, x, y);
         self.focus = self.anchor;

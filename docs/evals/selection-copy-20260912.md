@@ -237,6 +237,29 @@ The installed CLI remains `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31
 
 ## Synchronized selection repaint — September 12 follow-up
 
+### Live-row snapshot follow-up
+
+The main renderer now retains logical source lines, exact display rectangles,
+and clipping offsets for active, hook, and pending-usage cells. Mouse selection
+combines their visible rows with retained finalized history. Painting is limited
+to the constituent rectangles, so a narrower live area does not erase the ledger.
+Resize invalidates the cached live geometry. Wrapping the selection snapshot is
+deferred until mouse-down rather than repeated during every animation frame.
+
+`live-cell-test-build.log` and `live-cell-optimized.log` both pass.
+`live-cell-full-tests.log`: 3,191 passed, zero failed, five ignored. New checks
+cover a clipped source-aware streaming cell at a nonzero origin, Unicode, bullet
+exclusion, and an invisible zero-height cell. Native history regression
+`live-cell-history-regression` passes release/Ctrl+C copy and clipboard retention
+while the provider stream stays open; its selected screenshot preserves the ledger.
+
+Live-tail probes `live-cell-before` and `live-cell-static-before` failed setup:
+the unfinished line did not appear. Running-command probes `live-command-before`
+and `live-command-output-before` also did not expose the requested sentinel.
+These are not negative controls or proof of working native live selection.
+Native live/cross-boundary acceptance, scrolling, capture lifecycle, and installation
+remain open. Normal mouse reporting is still disabled.
+
 Inline selection now uses Tui's existing capability-gated synchronized update,
 including cursor restoration and flushing. Unsupported terminals retain plain
 drawing. This removes an unsynchronized path; elimination of flicker is unproven.

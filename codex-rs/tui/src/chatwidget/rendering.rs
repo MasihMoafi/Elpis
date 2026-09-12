@@ -4,12 +4,65 @@
 use super::*;
 use ratatui::text::Span;
 
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+
+    #[test]
+    fn live_snapshot_copies_only_visible_source_rows_without_the_bullet() {
+        let displayed = std::cell::RefCell::new(Vec::new());
+        let cell = history_cell::StreamingAgentTailCell::new(
+            vec!["hidden".into(), "visible界".into(), "last".into()],
+            true,
+        );
+        let area = Rect::new(3, 7, 12, 2);
+        let mut buffer = Buffer::empty(area);
+        TranscriptAreaRenderable {
+            child: &cell,
+            displayed: &displayed,
+            top: 0,
+            right: 0,
+        }
+        .render(area, &mut buffer);
+        let snapshot = displayed.borrow_mut().pop().expect("displayed cell");
+        assert_eq!(snapshot.area, area);
+        let rows =
+            crate::pager_overlay::Selection::new(snapshot.lines, area.width, snapshot.scroll)
+                .into_visible_rows(area.height);
+        let mut selection = crate::pager_overlay::Selection::new(rows, area.width, 0);
+        selection.start(area, area.x, area.y);
+        selection.update(area, area.right(), area.bottom());
+        assert_eq!(selection.text(), "visible界\nlast");
+        let visible: String = (area.x..area.right())
+            .map(|x| buffer[(x, area.y)].symbol())
+            .collect();
+        assert!(visible.contains("visible界"));
+        assert!(!visible.contains("hidden"));
+    }
+
+    #[test]
+    fn zero_height_live_cell_does_not_leave_selectable_rows() {
+        let displayed = std::cell::RefCell::new(Vec::new());
+        let cell = history_cell::PlainHistoryCell::new(vec!["invisible".into()]);
+        let area = Rect::new(0, 0, 10, 0);
+        TranscriptAreaRenderable {
+            child: &cell,
+            displayed: &displayed,
+            top: 0,
+            right: 0,
+        }
+        .render(area, &mut Buffer::empty(area));
+        assert!(displayed.borrow().is_empty());
+    }
+}
+
 impl ChatWidget {
     pub(super) fn as_renderable(&self) -> RenderableItem<'_> {
         let active_cell_right_reserve = 0;
         let active_cell_renderable = match &self.transcript.active_cell {
             Some(cell) => RenderableItem::Owned(Box::new(TranscriptAreaRenderable {
                 child: cell.as_ref(),
+                displayed: &self.displayed_live_cells,
                 top: 0,
                 right: active_cell_right_reserve,
             })),
@@ -19,6 +72,7 @@ impl ChatWidget {
             Some(cell) if cell.should_render() => {
                 RenderableItem::Owned(Box::new(TranscriptAreaRenderable {
                     child: cell,
+                    displayed: &self.displayed_live_cells,
                     top: 0,
                     right: active_cell_right_reserve,
                 }))
@@ -33,6 +87,7 @@ impl ChatWidget {
                 /*flex*/ 1,
                 RenderableItem::Owned(Box::new(TranscriptAreaRenderable {
                     child: cell,
+                    displayed: &self.displayed_live_cells,
                     top: 0,
                     right: active_cell_right_reserve,
                 })),
@@ -104,15 +159,25 @@ impl Renderable for BottomPaneComposerReserveRenderable<'_> {
 
 struct TranscriptAreaRenderable<'a> {
     child: &'a dyn HistoryCell,
+    displayed: &'a std::cell::RefCell<Vec<DisplayedLiveCell>>,
     top: u16,
     right: u16,
+}
+
+pub(super) struct DisplayedLiveCell {
+    area: Rect,
+    lines: Vec<HyperlinkLine>,
+    scroll: usize,
 }
 
 impl Renderable for TranscriptAreaRenderable<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         let area = self.child_area(area);
-        let lines = self.child.display_lines(area.width);
-        let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
+        let lines = self.child.display_hyperlink_lines(area.width);
+        let paragraph = Paragraph::new(Text::from(crate::terminal_hyperlinks::visible_lines(
+            lines.clone(),
+        )))
+        .wrap(Wrap { trim: false });
         let y = if area.height == 0 {
             0
         } else {
@@ -123,6 +188,13 @@ impl Renderable for TranscriptAreaRenderable<'_> {
         };
         Clear.render(area, buf);
         paragraph.scroll((y, 0)).render(area, buf);
+        if !area.is_empty() {
+            self.displayed.borrow_mut().push(DisplayedLiveCell {
+                area,
+                lines,
+                scroll: usize::from(y),
+            });
+        }
     }
 
     fn desired_height(&self, width: u16) -> u16 {
@@ -145,6 +217,26 @@ impl TranscriptAreaRenderable<'_> {
 }
 
 impl ChatWidget {
+    pub(crate) fn clear_displayed_live_rows(&self) {
+        self.displayed_live_cells.borrow_mut().clear();
+    }
+
+    pub(crate) fn displayed_live_rows(&self) -> Vec<(Rect, Vec<HyperlinkLine>)> {
+        self.displayed_live_cells
+            .borrow()
+            .iter()
+            .map(|cell| {
+                let rows = crate::pager_overlay::Selection::new(
+                    cell.lines.clone(),
+                    cell.area.width,
+                    cell.scroll,
+                )
+                .into_visible_rows(cell.area.height);
+                (cell.area, rows)
+            })
+            .collect()
+    }
+
     /// Rows from the top of the chat column down to the top edge of the composer box.
     /// The composer is the last child of the chat flex, so this is the column's full
     /// height minus the composer's own height.
@@ -161,6 +253,7 @@ impl ChatWidget {
 
 impl Renderable for ChatWidget {
     fn render(&self, area: Rect, buf: &mut Buffer) {
+        self.displayed_live_cells.borrow_mut().clear();
         let ledger_width = self.context_ledger_width(area.width);
         let chat_area = Rect::new(
             area.x,

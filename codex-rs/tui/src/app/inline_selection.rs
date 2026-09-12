@@ -13,6 +13,7 @@ use crate::tui::TuiEvent;
 
 pub(super) struct InlineHistorySelection {
     area: Rect,
+    paint_areas: Vec<Rect>,
     selection: Selection,
 }
 
@@ -20,7 +21,7 @@ impl InlineHistorySelection {
     fn paint(&mut self, tui: &mut Tui) -> std::io::Result<()> {
         let mut buffer = Buffer::empty(self.area);
         self.selection.render(self.area, &mut buffer);
-        tui.draw_selection_buffer(&buffer)
+        tui.draw_selection_buffer(&buffer, &self.paint_areas)
     }
 }
 
@@ -32,6 +33,7 @@ impl App {
     ) -> std::io::Result<bool> {
         if matches!(event, TuiEvent::Resize) {
             tui.invalidate_saved_history_rows();
+            self.chat_widget.clear_displayed_live_rows();
         }
         if self.overlay.is_some() {
             self.inline_history_selection = None;
@@ -40,18 +42,43 @@ impl App {
         match event {
             TuiEvent::Mouse(mouse) if mouse.kind == MouseEventKind::Down(MouseButton::Left) => {
                 let viewport = tui.terminal.viewport_area;
-                let rows = tui.terminal.history_rows();
-                let area = Rect::new(
+                let history = tui.terminal.history_rows();
+                let history_area = Rect::new(
                     0,
-                    viewport.y.saturating_sub(rows.len() as u16),
+                    viewport.y.saturating_sub(history.len() as u16),
                     viewport.width,
-                    rows.len() as u16,
+                    history.len() as u16,
                 );
-                if area.contains(Position::new(mouse.column, mouse.row)) {
-                    let mut selection = Selection::new(rows.to_vec(), area.width, 0);
+                let mut segments = self.chat_widget.displayed_live_rows();
+                segments.insert(0, (history_area, history.to_vec()));
+                segments.retain(|(area, _)| !area.is_empty());
+                if segments
+                    .iter()
+                    .any(|(area, _)| area.contains(Position::new(mouse.column, mouse.row)))
+                {
+                    let area = segments
+                        .iter()
+                        .map(|(area, _)| *area)
+                        .reduce(|area, next| area.union(next))
+                        .expect("mouse is inside a displayed segment");
+                    let mut rows = vec![
+                        crate::terminal_hyperlinks::HyperlinkLine::from("");
+                        usize::from(area.height)
+                    ];
+                    let mut paint_areas = Vec::new();
+                    for (segment, lines) in segments {
+                        for (offset, line) in lines.into_iter().enumerate() {
+                            rows[usize::from(segment.y - area.y) + offset] = line;
+                        }
+                        paint_areas.push(segment);
+                    }
+                    let mut selection = Selection::new(rows, area.width, 0);
                     selection.start(area, mouse.column, mouse.row);
-                    self.inline_history_selection =
-                        Some(InlineHistorySelection { area, selection });
+                    self.inline_history_selection = Some(InlineHistorySelection {
+                        area,
+                        paint_areas,
+                        selection,
+                    });
                     return Ok(true);
                 }
             }
