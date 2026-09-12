@@ -265,13 +265,20 @@ impl ChatWidget {
         }
         let model = self.current_model();
         let location = format_directory_display(self.status_line_cwd(), /*max_width*/ None);
-        let spans = vec![
-            Span::styled(" Elpis ", crate::style::brand_style()),
+        let mut spans = crate::elpis_motion::animated_text(" Elpis ", self.config.animations);
+        for span in &mut spans {
+            span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
+        }
+        spans.extend([
             "· model ".dim(),
             Span::raw(model),
             " · location ".dim(),
             location.dim(),
-        ];
+        ]);
         Line::from(spans).render(area, buf);
+        if self.config.animations {
+            self.frame_requester
+                .schedule_frame_in(std::time::Duration::from_millis(160));
+        }
     }
 }

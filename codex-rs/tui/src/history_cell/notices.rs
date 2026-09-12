@@ -205,7 +205,7 @@ pub(crate) fn new_info_event(message: String, hint: Option<String>) -> PlainHist
     let mut line = vec!["• ".dim(), message.into()];
     if let Some(hint) = hint {
         line.push(" ".into());
-        line.push(hint.dark_gray());
+        line.push(hint.into());
     }
     let lines: Vec<Line<'static>> = vec![line.into()];
     PlainHistoryCell { lines }
