@@ -539,6 +539,7 @@ pub struct Tui {
     pub(crate) terminal: Terminal,
     pending_history_lines: Vec<PendingHistoryLines>,
     alt_saved_viewport: Option<ratatui::layout::Rect>,
+    alt_saved_history: Option<SavedHistoryRows>,
     #[cfg(unix)]
     suspend_context: SuspendContext,
     // True when overlay alt-screen UI is active
@@ -560,6 +561,12 @@ pub struct Tui {
 struct PendingHistoryLines {
     lines: Vec<HyperlinkLine>,
     wrap_policy: HistoryLineWrapPolicy,
+}
+
+struct SavedHistoryRows {
+    screen: ratatui::layout::Size,
+    visible_rows: u16,
+    rows: Vec<HyperlinkLine>,
 }
 
 fn clear_for_viewport_change<B>(terminal: &mut CustomTerminal<B>, new_area: Rect) -> Result<()>
@@ -605,6 +612,7 @@ impl Tui {
             terminal,
             pending_history_lines: vec![],
             alt_saved_viewport: None,
+            alt_saved_history: None,
             #[cfg(unix)]
             suspend_context: SuspendContext::new(),
             alt_screen_active: Arc::new(AtomicBool::new(false)),
@@ -750,13 +758,18 @@ impl Tui {
     /// Enter alternate screen and expand the viewport to full terminal size, saving the current
     /// inline viewport for restoration when leaving.
     pub fn enter_alt_screen(&mut self) -> Result<()> {
-        if !self.alt_screen_enabled {
+        if !self.alt_screen_enabled || self.alt_screen_active.load(Ordering::Relaxed) {
             return Ok(());
         }
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
         // Enable "alternate scroll" so terminals may translate wheel to arrows
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
         if let Ok(size) = self.terminal.size() {
+            self.alt_saved_history = Some(SavedHistoryRows {
+                screen: size,
+                visible_rows: self.terminal.visible_history_rows(),
+                rows: self.terminal.history_rows().to_vec(),
+            });
             self.alt_saved_viewport = Some(self.terminal.viewport_area);
             self.terminal.set_viewport_area(ratatui::layout::Rect::new(
                 0,
@@ -781,8 +794,18 @@ impl Tui {
         if let Some(saved) = self.alt_saved_viewport.take() {
             self.terminal.set_viewport_area(saved);
         }
+        if let Some(saved) = self.alt_saved_history.take()
+            && self.terminal.size().ok() == Some(saved.screen)
+        {
+            self.terminal.note_history_rows_inserted(saved.visible_rows);
+            self.terminal.record_history_rows(saved.rows);
+        }
         self.alt_screen_active.store(false, Ordering::Relaxed);
         Ok(())
+    }
+
+    pub(crate) fn invalidate_saved_history_rows(&mut self) {
+        self.alt_saved_history = None;
     }
 
     pub fn insert_history_lines(&mut self, lines: Vec<Line<'static>>) {

@@ -45,6 +45,9 @@ impl App {
         tui: &mut Tui,
         event: &TuiEvent,
     ) -> std::io::Result<bool> {
+        if matches!(event, TuiEvent::Resize) {
+            tui.invalidate_saved_history_rows();
+        }
         if self.overlay.is_some() {
             self.inline_history_selection = None;
             return Ok(false);

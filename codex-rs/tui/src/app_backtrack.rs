@@ -203,6 +203,7 @@ impl App {
 
     /// Close transcript overlay and restore normal UI.
     pub(crate) fn close_transcript_overlay(&mut self, tui: &mut tui::Tui) {
+        let rebuild_inline_history = !tui.is_alt_screen_active();
         if let Some(Overlay::Transcript(overlay)) = &mut self.overlay
             && let Some(lease) = overlay.take_clipboard_lease()
         {
@@ -219,6 +220,10 @@ impl App {
         }
         self.overlay = None;
         self.backtrack.overlay_preview_active = false;
+        if rebuild_inline_history && let Err(error) = self.rebuild_transcript_from_source(tui) {
+            self.chat_widget
+                .add_error_message(format!("Could not restore chat history: {error}"));
+        }
         tui.frame_requester().schedule_frame();
         if was_backtrack {
             // Ensure backtrack state is fully reset when overlay closes (e.g. via 'q').

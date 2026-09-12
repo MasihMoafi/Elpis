@@ -258,3 +258,29 @@ correction; the native candidate includes and checks that correction. Candidate
 SHA256: `bf20e06d936f852fe4dd03183c38e21729f6d1d9186ce3b86eca8badc58d46c8`.
 It is not installed. Active-cell selection, dragging across live/history rows,
 scrolling, alternate-screen restoration, and normal mouse lifecycle remain open.
+
+## Viewer close and resize restoration
+
+The native fixture originally always passed `--no-alt-screen`. Its first reopen
+check failed because history was no longer visible after closing the pager. The
+fixture now explicitly selects default alternate-screen mode when requested.
+
+The default path retains inline source rows while the alternate screen is open,
+restores them at the original geometry, and discards stale mappings on resize.
+The no-alt-screen path rebuilds the transcript from its source when the pager
+closes, using the existing transcript replay routine.
+
+Final candidate checks pass in `inline-restored-dark` (no-alt-screen),
+`inline-restored-alt-light` (default mode), and `inline-restored-resize-isolated`
+(resize while the viewer is open). Each checks mouse-release copying, Ctrl+C,
+Escape dismissal, and continued provider streaming. Screenshots were inspected.
+The first resize attempt failed while hiding the ledger, before resizing; it
+remains recorded as a setup failure, not a pass.
+
+These checks still use test-only mouse reporting. Candidate SHA256:
+`fcfc5414d81b245db57b36189cbc54e965dbdf159a1069ba4aeffbd444499ca3`.
+Normal capture, scrolling, active-cell selection, and final installation remain open.
+
+The final source test build passed in 251,056 ms (peak 70°C); its complete TUI
+suite passed 3,189 tests, with five ignored, in 14.74 seconds. Logs:
+`inline-restored-test-build.log` and `inline-restored-full-tests.log`.
