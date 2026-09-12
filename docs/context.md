@@ -178,6 +178,14 @@ The separate repository `ES.md` had 52,698 characters; that is manually accumula
 project state, not proof that 52,698 characters were automatically admitted.
 These are one-session observations, not a memory-quality score.
 
+The root project checkpoint was subsequently consolidated manually from 58,967 to
+4,436 characters, replacing accumulated contradictory status blocks with current
+state, constraints, evidence links and remaining work. Earlier notes are retained
+outside the active file in `.tmp/final-candidate/root-es-before-consolidation.md`.
+The active task checklist was consolidated similarly. This is maintenance of
+agent-written project notes, not an automatic semantic-memory capability or a
+measured improvement in model decisions.
+
 Intelligent checkpoint saving remains unfinished. Its acceptance criteria are to
 retain the current goal, constraints, unresolved work and evidence locations within
 the admission budget, replace superseded facts, and preserve detailed evidence
