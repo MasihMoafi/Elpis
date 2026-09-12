@@ -11,8 +11,12 @@ This file records what Masih asked Elpis to become. It is deliberately separate 
 
 ## Requested outcomes
 
+September 12 follow-up: record each newly requested change here; cross-project
+requests are indexed in `../USER_REQUESTS.md` from the repository root.
+
 | ID | Masih-requested outcome | Current state | Acceptance belongs to Masih |
 | --- | --- | --- | --- |
+| U14 | **Working exact-resume command.** `elpis resume 01a0952c-0ff6-7232-9590-4e5c29656c9a` must reopen that existing conversation, not fail argument parsing or start a fresh prompt. Preserve `--resume` compatibility and session history. | Fix `f93c259d` installed in the combined UI build; exact UUID help check passes and installed/build hashes match. All 26 CLI tests pass; [evidence](evals/resume-command-20260912.md). No session history changed. | Masih restarts and resumes the exact conversation successfully. |
 | U1 | **A dependable personalized Codex daily driver.** Elpis should first be at least as usable and reliable as current Codex while preserving the working OpenAI subscription model/reasoning picker, authentication, state, and session behavior. | Under acceptance | Use Elpis normally and find no important regression from Codex. |
 | U2 | **Codex-equivalent compaction with optional Elpis pruning.** Native compaction should match Codex. Manual `/prune` remains available. Automatic pruning is clearly labelled Experimental, visible in settings, and does not silently become the trusted default. | Under acceptance | Compare long Elpis and Codex sessions; manually accept compaction, `/prune`, and the Experimental control. |
 | U3 | **A deliberately tiny, user-chosen skill/context set.** `/home/masih/Desktop/p/skills/dev` is the default Elpis development-rule source. Unrelated bundled/installed skills must not flood the Context Ledger. The currently named hand-picked skill choices are `first-principles` and `experiment-workflow`; no additional skill becomes an Elpis default without Masih choosing it. Ledger provenance and token estimates must describe the actual source files. | Under acceptance | Inspect the Ledger and settings; approve the exact final allowlist and verify no unrelated skills are loaded by default. |
