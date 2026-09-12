@@ -5,6 +5,7 @@
 //! when text reaches a terminal buffer or scrollback writer so OSC 8 bytes never affect geometry.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -30,10 +31,88 @@ pub(crate) struct TerminalHyperlink {
     pub(crate) destination: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SelectionSpan {
+    pub(crate) displayed_bytes: Range<usize>,
+    pub(crate) source_bytes: Range<usize>,
+}
+
+/// Text before presentation prefixes and wrapping, shared by its rendered fragments.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SelectionSource {
+    pub(crate) text: Arc<str>,
+    pub(crate) spans: Vec<SelectionSpan>,
+}
+
+impl SelectionSource {
+    fn new(text: String) -> Self {
+        let len = text.len();
+        Self {
+            text: text.into(),
+            spans: if len == 0 {
+                Vec::new()
+            } else {
+                vec![SelectionSpan {
+                    displayed_bytes: 0..len,
+                    source_bytes: 0..len,
+                }]
+            },
+        }
+    }
+
+    fn prepend(&mut self, bytes: usize) {
+        for span in &mut self.spans {
+            span.displayed_bytes.start += bytes;
+            span.displayed_bytes.end += bytes;
+        }
+    }
+
+    fn append(&mut self, displayed_start: usize, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let mut updated = String::new();
+        for span in &mut self.spans {
+            let start = updated.len();
+            updated.push_str(&self.text[span.source_bytes.clone()]);
+            span.source_bytes = start..updated.len();
+        }
+        let source_start = updated.len();
+        updated.push_str(text);
+        self.text = updated.into();
+        self.spans.push(SelectionSpan {
+            displayed_bytes: displayed_start..displayed_start + text.len(),
+            source_bytes: source_start..source_start + text.len(),
+        });
+    }
+
+    fn remap(&self, displayed: Range<usize>, offset: usize) -> Self {
+        let spans = self
+            .spans
+            .iter()
+            .filter_map(|span| {
+                let start = span.displayed_bytes.start.max(displayed.start);
+                let end = span.displayed_bytes.end.min(displayed.end);
+                (start < end).then(|| SelectionSpan {
+                    displayed_bytes: offset + start - displayed.start
+                        ..offset + end - displayed.start,
+                    source_bytes: span.source_bytes.start + start - span.displayed_bytes.start
+                        ..span.source_bytes.start + end - span.displayed_bytes.start,
+                })
+            })
+            .collect();
+        Self {
+            text: Arc::clone(&self.text),
+            spans,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct HyperlinkLine {
     pub(crate) line: Line<'static>,
     pub(crate) hyperlinks: Vec<TerminalHyperlink>,
+    pub(crate) selection: Option<SelectionSource>,
 }
 
 impl HyperlinkLine {
@@ -41,6 +120,7 @@ impl HyperlinkLine {
         Self {
             line,
             hyperlinks: Vec::new(),
+            selection: None,
         }
     }
 
@@ -48,9 +128,35 @@ impl HyperlinkLine {
         self.line.width()
     }
 
+    pub(crate) fn selection_source(&self) -> SelectionSource {
+        self.selection
+            .clone()
+            .unwrap_or_else(|| SelectionSource::new(line_text(&self.line)))
+    }
+
+    pub(crate) fn prepend_spans(&mut self, mut prefix: Vec<Span<'static>>) {
+        let columns = prefix
+            .iter()
+            .map(|span| span.content.width())
+            .sum::<usize>();
+        let bytes = prefix.iter().map(|span| span.content.len()).sum();
+        let mut selection = self.selection_source();
+        selection.prepend(bytes);
+        self.selection = Some(selection);
+        prefix.append(&mut self.line.spans);
+        self.line.spans = prefix;
+        for hyperlink in &mut self.hyperlinks {
+            hyperlink.columns = hyperlink.columns.start + columns..hyperlink.columns.end + columns;
+        }
+    }
+
     pub(crate) fn push_span(&mut self, span: Span<'static>, destination: Option<&str>) {
         let start = self.width();
         let end = start + span.content.width();
+        if let Some(selection) = &mut self.selection {
+            let displayed_start = self.line.spans.iter().map(|span| span.content.len()).sum();
+            selection.append(displayed_start, &span.content);
+        }
         self.line.push_span(span);
         if end > start
             && let Some(destination) = destination.and_then(web_destination)
@@ -108,14 +214,7 @@ pub(crate) fn prefix_hyperlink_lines(
             } else {
                 subsequent_prefix.clone()
             };
-            let shift = prefix.content.width();
-            let mut spans = Vec::with_capacity(line.line.spans.len() + 1);
-            spans.push(prefix);
-            spans.extend(line.line.spans);
-            line.line = Line::from(spans).style(line.line.style);
-            for hyperlink in &mut line.hyperlinks {
-                hyperlink.columns = hyperlink.columns.start + shift..hyperlink.columns.end + shift;
-            }
+            line.prepend_spans(vec![prefix]);
             line
         })
         .collect()
@@ -190,9 +289,11 @@ pub(crate) fn remap_wrapped_line(
 ) -> Vec<HyperlinkLine> {
     let mut out = plain_hyperlink_lines(wrapped);
     let source_text = line_text(&source.line);
+    let source_selection = source.selection_source();
     let mut source_byte = 0usize;
     let mut source_column = 0usize;
     for (index, line) in out.iter_mut().enumerate() {
+        line.selection = Some(source_selection.remap(0..0, 0));
         if index > 0 {
             let trimmed = source_text[source_byte..].trim_start_matches(char::is_whitespace);
             let skipped = source_text[source_byte..].len() - trimmed.len();
@@ -206,6 +307,8 @@ pub(crate) fn remap_wrapped_line(
             continue;
         };
         let mapped = &rendered[rendered_start..];
+        line.selection =
+            Some(source_selection.remap(source_byte..source_byte + mapped.len(), rendered_start));
         let mut output_column = rendered[..rendered_start].width();
         for ch in mapped.chars() {
             let width = ch.width().unwrap_or(/*default*/ 0);
@@ -559,6 +662,118 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
+    fn selection_source_excludes_nested_prefixes_and_preserves_unicode() {
+        let text = "  文e\u{301}👩‍💻 content";
+        let lines = prefix_hyperlink_lines(
+            prefix_hyperlink_lines(vec![HyperlinkLine::from(text)], "› ".into(), "  ".into()),
+            "λ ".into(),
+            "  ".into(),
+        );
+        let source = lines[0].selection_source();
+        assert_eq!(&*source.text, text);
+        assert_eq!(source.spans.len(), 1);
+        assert_eq!(source.spans[0].displayed_bytes.start, "λ › ".len());
+        assert_eq!(
+            &line_text(&lines[0].line)[source.spans[0].displayed_bytes.clone()],
+            text
+        );
+    }
+
+    #[test]
+    fn selection_source_retains_spaces_across_repeated_wrapping() {
+        let text = "alpha   beta 文 gamma delta";
+        let source = HyperlinkLine::from(text);
+        let wrapped = adaptive_wrap_hyperlink_lines(
+            &[source],
+            RtOptions::new(12)
+                .initial_indent("› ".into())
+                .subsequent_indent("  ".into()),
+        );
+        assert!(wrapped.len() > 1);
+        let rewrapped = adaptive_wrap_hyperlink_lines(&wrapped, RtOptions::new(9));
+        let sources: Vec<_> = rewrapped
+            .iter()
+            .map(HyperlinkLine::selection_source)
+            .collect();
+        let first = sources.first().unwrap();
+        let last = sources.last().unwrap();
+        for (line, source) in rewrapped.iter().zip(&sources) {
+            assert!(Arc::ptr_eq(&first.text, &source.text));
+            let displayed = line_text(&line.line);
+            for span in &source.spans {
+                assert_eq!(
+                    &displayed[span.displayed_bytes.clone()],
+                    &source.text[span.source_bytes.clone()]
+                );
+            }
+        }
+        assert_eq!(
+            &first.text[first.spans.first().unwrap().source_bytes.start
+                ..last.spans.last().unwrap().source_bytes.end],
+            text,
+        );
+    }
+
+    #[test]
+    fn appended_content_keeps_prior_selection_source_immutable() {
+        let mut line =
+            prefix_hyperlink_lines(vec![HyperlinkLine::from("draft")], "› ".into(), "  ".into())
+                .remove(0);
+        let previous = line.selection_source();
+        line.push_span(Span::raw(" + tail"), None);
+        let current = line.selection_source();
+        assert_eq!(&*previous.text, "draft");
+        assert_eq!(&*current.text, "draft + tail");
+        let displayed = line_text(&line.line);
+        let copied: String = current
+            .spans
+            .iter()
+            .map(|span| &displayed[span.displayed_bytes.clone()])
+            .collect();
+        assert_eq!(copied, "draft + tail");
+    }
+
+    #[test]
+    fn appending_to_wrapped_fragment_does_not_copy_other_rows() {
+        let mut lines = adaptive_wrap_hyperlink_lines(
+            &[HyperlinkLine::from("first second third")],
+            RtOptions::new(6),
+        );
+        let mut first = lines.remove(0);
+        first.push_span(Span::raw("!"), None);
+        assert_eq!(&*first.selection_source().text, "first!");
+        assert_eq!(&*lines[0].selection_source().text, "first second third");
+    }
+
+    #[test]
+    fn markdown_selection_ranges_match_rendered_text_at_multiple_widths() {
+        let markdown = "> Quote with **bold** and 文.\n\n- first item with `code`\n- [a link](https://example.com/path)\n\n```rust\nlet x = \"文\";\n```\n\n| Name | Value |\n| --- | --- |\n| alpha | 文 and words |\n";
+        for width in [8, 12, 28, 80] {
+            let lines = crate::markdown::render_markdown_agent_with_links_and_cwd(
+                markdown,
+                Some(width),
+                None,
+            );
+            for line in lines {
+                let displayed = line_text(&line.line);
+                let source = line.selection_source();
+                for span in source.spans {
+                    assert_eq!(
+                        displayed
+                            .get(span.displayed_bytes)
+                            .expect("display byte range"),
+                        source
+                            .text
+                            .get(span.source_bytes)
+                            .expect("source byte range"),
+                        "selection mapping at width {width}: {displayed:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn only_supported_terminal_destinations_receive_osc8() {
         assert!(osc8_hyperlink("https://example.com/a", "a").contains("\x1b]8;;"));
         let file_url = Url::from_file_path(std::env::temp_dir().join("ledger.md"))
@@ -608,6 +823,7 @@ mod tests {
                 columns: 0..destination.width(),
                 destination: destination.to_string(),
             }],
+            selection: None,
         };
 
         assert_eq!(

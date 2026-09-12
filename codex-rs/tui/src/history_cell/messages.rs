@@ -2,6 +2,7 @@
 //! User, assistant, reasoning, and streaming message history cells.
 
 use super::*;
+use crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines;
 
 #[derive(Debug)]
 pub(crate) struct UserHistoryCell {
@@ -96,11 +97,13 @@ fn remote_image_display_line(style: Style, index: usize) -> Line<'static> {
     Line::from(local_image_label_text(index)).style(style)
 }
 
-fn trim_trailing_blank_lines(mut lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    while lines
-        .last()
-        .is_some_and(|line| line.spans.iter().all(|span| span.content.trim().is_empty()))
-    {
+fn trim_trailing_blank_lines(mut lines: Vec<HyperlinkLine>) -> Vec<HyperlinkLine> {
+    while lines.last().is_some_and(|line| {
+        line.line
+            .spans
+            .iter()
+            .all(|span| span.content.trim().is_empty())
+    }) {
         lines.pop();
     }
     lines
@@ -108,6 +111,10 @@ fn trim_trailing_blank_lines(mut lines: Vec<Line<'static>>) -> Vec<Line<'static>
 
 impl HistoryCell for UserHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        visible_lines(self.display_hyperlink_lines(width))
+    }
+
+    fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         let message = sanitize_user_text(&self.message);
         let text_elements = if message == self.message {
             self.text_elements.as_slice()
@@ -126,13 +133,16 @@ impl HistoryCell for UserHistoryCell {
         let wrapped_remote_images = if self.remote_image_urls.is_empty() {
             None
         } else {
-            Some(adaptive_wrap_lines(
-                self.remote_image_urls
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, _url)| {
-                        remote_image_display_line(element_style, idx.saturating_add(1))
-                    }),
+            Some(adaptive_wrap_hyperlink_lines(
+                &plain_hyperlink_lines(
+                    self.remote_image_urls
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, _url)| {
+                            remote_image_display_line(element_style, idx.saturating_add(1))
+                        })
+                        .collect(),
+                ),
                 RtOptions::new(usize::from(wrap_width))
                     .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit),
             ))
@@ -142,10 +152,13 @@ impl HistoryCell for UserHistoryCell {
             None
         } else if text_elements.is_empty() {
             let message_without_trailing_newlines = message.trim_end_matches(['\r', '\n']);
-            let wrapped = adaptive_wrap_lines(
-                message_without_trailing_newlines
-                    .split('\n')
-                    .map(|line| Line::from(line).style(style)),
+            let wrapped = adaptive_wrap_hyperlink_lines(
+                &plain_hyperlink_lines(
+                    message_without_trailing_newlines
+                        .split('\n')
+                        .map(|line| Line::from(line.to_owned()).style(style))
+                        .collect(),
+                ),
                 // Wrap algorithm matches textarea.rs.
                 RtOptions::new(usize::from(wrap_width))
                     .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit),
@@ -159,8 +172,8 @@ impl HistoryCell for UserHistoryCell {
                 style,
                 element_style,
             );
-            let wrapped = adaptive_wrap_lines(
-                raw_lines,
+            let wrapped = adaptive_wrap_hyperlink_lines(
+                &plain_hyperlink_lines(raw_lines),
                 RtOptions::new(usize::from(wrap_width))
                     .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit),
             );
@@ -172,29 +185,33 @@ impl HistoryCell for UserHistoryCell {
             return Vec::new();
         }
 
-        let mut lines: Vec<Line<'static>> = vec![Line::from("").style(style)];
+        let mut lines = vec![HyperlinkLine::new(Line::from("").style(style))];
 
         if let Some(wrapped_remote_images) = wrapped_remote_images {
-            lines.extend(prefix_lines(
+            lines.extend(prefix_hyperlink_lines(
                 wrapped_remote_images,
                 "  ".into(),
                 "  ".into(),
             ));
             if wrapped_message.is_some() {
-                lines.push(Line::from("").style(style));
+                lines.push(HyperlinkLine::new(Line::from("").style(style)));
             }
         }
 
         if let Some(wrapped_message) = wrapped_message {
-            lines.extend(prefix_lines(
+            lines.extend(prefix_hyperlink_lines(
                 wrapped_message,
                 "› ".bold().dim(),
                 "  ".into(),
             ));
         }
 
-        lines.push(Line::from("").style(style));
+        lines.push(HyperlinkLine::new(Line::from("").style(style)));
         lines
+    }
+
+    fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        self.display_hyperlink_lines(width)
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
@@ -463,6 +480,7 @@ impl HistoryCell for StreamingAgentTailCell {
             {
                 line.line = Line::default().style(line.line.style);
                 line.hyperlinks.clear();
+                line.selection = None;
             }
         }
         lines

@@ -2058,6 +2058,52 @@ fn user_history_cell_wraps_and_prefixes_each_line_snapshot() {
 }
 
 #[test]
+fn user_history_selection_preserves_hard_newlines_and_excludes_prompt() {
+    let logical_line = "alpha   beta 文 gamma";
+    let cell = UserHistoryCell {
+        message: format!("{logical_line}\n{logical_line}"),
+        text_elements: Vec::new(),
+        local_image_paths: Vec::new(),
+        remote_image_urls: Vec::new(),
+    };
+    let lines = cell.display_hyperlink_lines(14);
+    let sources: Vec<_> = lines
+        .iter()
+        .map(HyperlinkLine::selection_source)
+        .filter(|source| !source.spans.is_empty())
+        .collect();
+    assert!(sources.len() > 2);
+    let mut logical_sources = Vec::new();
+    for source in &sources {
+        if logical_sources
+            .last()
+            .is_none_or(|previous| !std::sync::Arc::ptr_eq(previous, &source.text))
+        {
+            logical_sources.push(source.text.clone());
+        }
+    }
+    assert_eq!(logical_sources.len(), 2);
+    assert_eq!(&*logical_sources[0], logical_line);
+    assert_eq!(&*logical_sources[1], logical_line);
+    for line in lines {
+        let source = line.selection_source();
+        let displayed: String = line
+            .line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        for span in source.spans {
+            assert!(span.displayed_bytes.start >= 2);
+            assert_eq!(
+                &displayed[span.displayed_bytes],
+                &source.text[span.source_bytes]
+            );
+        }
+    }
+}
+
+#[test]
 fn user_history_cell_renders_remote_image_urls() {
     let cell = UserHistoryCell {
         message: "describe these".to_string(),

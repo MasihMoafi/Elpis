@@ -60,6 +60,21 @@ as part of integration, in both native VTE and VS Code's terminal.
 
 ## Composer implementation progress
 
+Transcript layout now carries optional source-text mappings through prefixing and
+wrapping. User messages retain their source text and logical-line identity before
+wrapping; rich Markdown maps rendered text rather than its original markup.
+Composed table content establishes a new logical source. Mutating a wrapped
+fragment excludes hidden text from other rows and leaves earlier snapshots intact.
+The mapping has not yet been connected to transcript mouse selection.
+
+`transcript-source-regression-test-build.log` passed (160,393 ms, peak 64°C).
+`transcript-source-full-tests.log` passed: 3,177 tests, 0 failed, 5 ignored.
+Six new checks cover nested prefixes, Unicode, repeated wrapping and whitespace,
+logical newlines, immutable source snapshots, appending to wrapped fragments,
+and formatted Markdown at widths 8, 12, 28, and 80. Existing rendering snapshots
+pass without updates. No new optimized artifact or installation was made for
+this layout-only step; interaction and release validation remain pending.
+
 The boundary follow-up permits starting a draft selection on its identity row,
 border, or prompt gutter. It uses the actual rendered identity rectangle to
 bound this region and keeps the neighboring ledger outside it. Pointer rows

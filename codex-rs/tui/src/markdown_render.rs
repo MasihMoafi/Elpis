@@ -163,7 +163,7 @@ impl TableCell {
     fn push_span(&mut self, span: Span<'static>) {
         self.ensure_line();
         if let Some(line) = self.lines.last_mut() {
-            line.line.push_span(span);
+            line.push_span(span, None);
         }
     }
 
@@ -172,6 +172,7 @@ impl TableCell {
         if let Some(line) = self.lines.last_mut() {
             let shift = line.width();
             line.line.spans.append(&mut appended.line.spans);
+            line.selection = None;
             line.hyperlinks
                 .extend(appended.hyperlinks.into_iter().map(|mut link| {
                     link.columns = link.columns.start + shift..link.columns.end + shift;
@@ -1824,14 +1825,7 @@ where
                     self.push_output_line(wrapped.style(style));
                 }
             } else {
-                let mut spans = self.current_initial_indent.clone();
-                let shift = spans.iter().map(|span| span.content.width()).sum::<usize>();
-                spans.append(&mut line.line.spans);
-                for hyperlink in &mut line.hyperlinks {
-                    hyperlink.columns =
-                        hyperlink.columns.start + shift..hyperlink.columns.end + shift;
-                }
-                line.line = Line::from_iter(spans);
+                line.prepend_spans(self.current_initial_indent.clone());
                 self.push_output_line(line.style(style));
             }
             self.current_initial_indent.clear();
@@ -1863,13 +1857,7 @@ where
             line.line.style
         };
 
-        let mut spans = self.prefix_spans(pending_marker_line);
-        let shift = spans.iter().map(|span| span.content.width()).sum::<usize>();
-        spans.append(&mut line.line.spans);
-        for hyperlink in &mut line.hyperlinks {
-            hyperlink.columns = hyperlink.columns.start + shift..hyperlink.columns.end + shift;
-        }
-        line.line = Line::from(spans);
+        line.prepend_spans(self.prefix_spans(pending_marker_line));
         self.push_output_line(line.style(style));
     }
 
@@ -1895,15 +1883,17 @@ where
 
     fn push_hyperlink_line(&mut self, line: HyperlinkLine) {
         let hyperlinks = line.hyperlinks;
+        let selection = line.selection;
         self.push_line(line.line);
         if let Some(current) = self.current_line_content.as_mut() {
             current.hyperlinks = hyperlinks;
+            current.selection = selection;
         }
     }
 
     fn push_span(&mut self, span: Span<'static>) {
         if let Some(line) = self.current_line_content.as_mut() {
-            line.line.push_span(span);
+            line.push_span(span, None);
         } else {
             self.push_line(Line::from(vec![span]));
         }
@@ -1916,6 +1906,7 @@ where
         if let Some(line) = self.current_line_content.as_mut() {
             let shift = line.width();
             line.line.spans.append(&mut appended.line.spans);
+            line.selection = None;
             line.hyperlinks
                 .extend(appended.hyperlinks.into_iter().map(|mut link| {
                     link.columns = link.columns.start + shift..link.columns.end + shift;
