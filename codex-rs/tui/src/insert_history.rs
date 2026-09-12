@@ -39,6 +39,8 @@ use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryLineWrapPolicy {
@@ -155,11 +157,11 @@ where
         };
         wrapped_rows += line_wrapped
             .iter()
-            .map(|wrapped_line| wrapped_line.width().max(1).div_ceil(wrap_width))
+            .map(|wrapped_line| physical_row_count(&wrapped_line.line, wrap_width))
             .sum::<usize>();
         wrapped.extend(line_wrapped);
     }
-    let wrapped_lines = wrapped_rows as u16;
+    let wrapped_lines = wrapped_rows.min(usize::from(u16::MAX)) as u16;
     match mode {
         InsertHistoryMode::ZellijRaw => {
             // The existing viewport is immediately replaced in the same draw pass. Clear it
@@ -277,6 +279,27 @@ pub(crate) fn leading_whitespace_prefix(line: &Line<'_>) -> Line<'static> {
     Line::from(spans).style(line.style)
 }
 
+fn physical_row_count(line: &Line<'_>, width: usize) -> usize {
+    let width = width.max(1);
+    let mut rows = 1;
+    let mut column = 0;
+    for span in &line.spans {
+        for grapheme in span.content.graphemes(true) {
+            let cells = grapheme.width().min(width);
+            if cells == 0 {
+                continue;
+            }
+            // A wide glyph cannot occupy the last single column of a row.
+            if column + cells > width {
+                rows += 1;
+                column = 0;
+            }
+            column += cells;
+        }
+    }
+    rows
+}
+
 /// Render a single wrapped history line: clear continuation rows for wide lines,
 /// set foreground/background colors, and write styled spans. Caller is responsible
 /// for cursor positioning and any leading `\r\n`.
@@ -285,7 +308,8 @@ fn write_history_line<W: Write>(
     line: &HyperlinkLine,
     wrap_width: usize,
 ) -> io::Result<()> {
-    let physical_rows = line.width().max(1).div_ceil(wrap_width) as u16;
+    let physical_rows =
+        physical_row_count(&line.line, wrap_width).min(usize::from(u16::MAX)) as u16;
     if physical_rows > 1 {
         queue!(writer, SavePosition)?;
         for _ in 1..physical_rows {
@@ -910,6 +934,30 @@ mod tests {
                 .any(|row| row.trim_end() == "alpha beta gamma del"),
             "expected terminal soft-wrap instead of Codex word pre-wrap, rows: {rows:?}"
         );
+    }
+
+    #[test]
+    fn vt100_wide_character_wrap_keeps_all_rows_above_growing_viewport() {
+        for mode in [InsertHistoryMode::Standard, InsertHistoryMode::ZellijRaw] {
+            let mut term = crate::custom_terminal::Terminal::with_options(VT100Backend::new(5, 8))
+                .expect("terminal");
+            term.set_viewport_area(Rect::new(0, 0, 5, 1));
+            insert_history_lines_with_mode_and_wrap_policy(
+                &mut term,
+                vec![Line::from("abcd界abcd")],
+                mode,
+                HistoryLineWrapPolicy::Terminal,
+            )
+            .expect("insert history");
+            assert_eq!(term.viewport_area.y, 3, "mode: {mode:?}");
+            assert_eq!(term.visible_history_rows(), 3);
+            let rows: Vec<String> = term.backend().vt100().screen().rows(0, 5).collect();
+            assert_eq!(&rows[..3], &["abcd", "界abc", "d"], "mode: {mode:?}");
+            assert!(
+                rows[3].trim().is_empty(),
+                "history must not occupy composer"
+            );
+        }
     }
 
     #[test]
