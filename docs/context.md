@@ -88,7 +88,7 @@ Every item admitted into Elpis context carries an explicit lifetime:
 
 Elpis provides interactive context admission control in the TUI:
 
-- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing portable context sources with their byte sizes, per-source estimates, and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. While a turn is running, `Tab` defers to the composer's queue-the-draft action; `Alt+C` always toggles the ledger.
+- **Context Ledger Panel (`Tab` or `Alt+C`):** A side panel shown by default, listing portable context sources with their byte sizes, per-source estimates, and the percentage of the model context window in use. It is 52 columns wide, narrowing to a proportional slice on smaller terminals so the composer keeps room. Tab completes an active composer popup first; otherwise it opens/focuses the ledger, then closes it. `p` toggles Smart Prune while the ledger is focused; Esc returns to editing. Alt+C always toggles visibility. Enter queues during an active reply; Tab never submits queued messages.
 - **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)

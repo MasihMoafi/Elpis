@@ -1,5 +1,12 @@
 # Installed candidate and remaining release blocker
 
+**Superseded September 12:** the installed CLI is now
+`b386b39a5fc54b0758e23910b07253a4ba52df422d77fdce4ae00e2991ce894e`.
+Completion/ledger focus and readable highlight motion are corrected; 3,155 TUI
+tests and the actual terminal checks passed. Follow the current
+[audit and launch checklist](ui-upstream-audit-20260912.md). Everything below is
+the September 11 checkpoint, including its old animation and cursor behavior.
+
 The corrected candidate is installed for Masih to launch with `elpis`. This UI
 correction used headless terminal checks; no desktop window was opened for Masih.
 This is not a new public release, and functional acceptance remains open.

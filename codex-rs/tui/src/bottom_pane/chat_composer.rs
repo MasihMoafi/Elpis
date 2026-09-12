@@ -4368,6 +4368,12 @@ impl ChatComposer {
             }
             ActivePopup::None => {
                 let footer_props = self.footer_props();
+                if footer_props.animations_enabled
+                    && footer_props.approval_mode_label.is_some()
+                    && let Some(requester) = self.frame_requester.as_ref()
+                {
+                    requester.schedule_frame_in(crate::elpis_motion::FRAME_TICK);
+                }
                 let show_cycle_hint = !footer_props.is_task_running
                     && self.footer.collaboration_mode_indicator.is_some();
                 let show_shortcuts_hint = match footer_props.mode {

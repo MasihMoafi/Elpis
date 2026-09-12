@@ -116,7 +116,7 @@ pub(super) struct ContextLedgerState {
 impl Default for ContextLedgerState {
     fn default() -> Self {
         Self {
-            // Open by default; Tab or Alt+C hides it.
+            // Visible by default; keyboard focus stays in the composer.
             visible: true,
             focused: false,
             selected: 0,
@@ -146,10 +146,14 @@ impl ContextLedgerState {
 }
 
 impl ChatWidget {
+    pub(super) fn context_ledger_has_focus(&self) -> bool {
+        self.context_ledger.visible && self.context_ledger.focused
+    }
+
     /// The ledger is a sidebar shown by default and toggled with `Tab` or `Alt+C`:
-    /// one press hides it, the next shows and focuses it. On narrower terminals
-    /// the ledger takes a proportional slice instead of a fixed 52 columns so the
-    /// composer keeps room.
+    /// Tab focuses a visible sidebar, then closes it; Alt+C always toggles it.
+    /// On narrower terminals it takes a proportional slice instead of a fixed
+    /// 52 columns so the composer keeps room.
     pub(super) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
         if !self.context_ledger.visible
             || self.bottom_pane.has_active_view()
@@ -200,7 +204,9 @@ impl ChatWidget {
         let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
         let is_toggle_key = is_tab || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
         if is_toggle_key {
-            if !self.context_ledger.visible {
+            if !self.context_ledger.visible
+                || (is_tab && !self.context_ledger.focused && !self.bottom_pane.has_active_view())
+            {
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
             } else {
@@ -424,9 +430,9 @@ impl ChatWidget {
             )
         };
         let interaction_hint = if self.context_ledger.focused {
-            "p Smart Prune · Up/Down move · Space/Enter toggle · i all · w why · Esc exit"
+            "p Smart Prune · Up/Down move · Space/Enter toggle · i all · w why · Tab close · Esc edit"
         } else {
-            "Tab hide/show · Ctrl+click open file"
+            "Tab controls · Alt+C hide · Ctrl+click open file"
         };
         let mut lines = vec![
             Line::from(vec![

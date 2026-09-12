@@ -4,8 +4,10 @@ use crate::terminal_palette::{best_color, default_bg};
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, text::Span};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
-pub(crate) const FRAME_TICK: Duration = Duration::from_millis(125);
+pub(crate) const FRAME_TICK: Duration = Duration::from_millis(40);
 
 pub(crate) fn elapsed() -> Duration {
     static START: OnceLock<Instant> = OnceLock::new();
@@ -41,18 +43,22 @@ pub(crate) fn animated_text(text: &str, animated: bool) -> Vec<Span<'static>> {
 }
 
 fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
-    let count = text.chars().count().max(1) as f64;
+    let width = text.width().max(1) as f64;
     let light = default_bg().is_some_and(is_light);
-    text.chars()
-        .enumerate()
-        .map(|(index, ch)| {
+    let half_width = (width * 0.1).max(3.0);
+    let position = (time.as_secs_f64() % 2.5) / 2.5 * (width + 2.0 * half_width) - half_width;
+    let mut column = 0.0;
+    text.graphemes(true)
+        .map(|glyph| {
+            let center = column + glyph.width() as f64 / 2.0;
+            column += glyph.width() as f64;
+            let distance = ((center - position).abs() / half_width).min(1.0);
+            let intensity = 0.425 * (1.0 + (std::f64::consts::PI * distance).cos());
+            let base = pigment(center / width * 0.75, time.as_secs_f64(), light);
+            let highlight = if light { (80, 45, 0) } else { (255, 255, 255) };
             Span::styled(
-                ch.to_string(),
-                Style::default().fg(best_color(pigment(
-                    index as f64 / count * 0.75,
-                    time.as_secs_f64(),
-                    light,
-                ))),
+                glyph.to_owned(),
+                Style::default().fg(best_color(blend(highlight, base, intensity as f32))),
             )
         })
         .collect()
@@ -113,27 +119,18 @@ pub(crate) fn paint_surface(area: Rect, buf: &mut Buffer) {
     }
 }
 
-pub(crate) const REVEAL_DURATION: Duration = Duration::from_millis(420);
-pub(crate) const REVEAL_COMMIT_AGE: Duration = Duration::from_millis(500);
-
-pub(crate) fn elpising_effect() -> tachyonfx::Effect {
-    use tachyonfx::{Interpolation, fx};
-    fx::repeating(fx::sequence(&[
-        fx::sleep(1800),
-        fx::dissolve((900, Interpolation::SineInOut)),
-        fx::coalesce((900, Interpolation::SineInOut)),
-    ]))
-}
+pub(crate) const REVEAL_DURATION: Duration = Duration::from_millis(160);
+pub(crate) const REVEAL_COMMIT_AGE: Duration = Duration::from_millis(180);
 
 /// Canonical text is saved before effects, so settled text never restarts.
 #[derive(Default)]
-pub(crate) struct CoalescingText {
+pub(crate) struct TextReveal {
     previous: Option<Buffer>,
     reveals: Vec<(Rect, Vec<String>, tachyonfx::Effect)>,
     last_frame: Option<Instant>,
 }
 
-impl CoalescingText {
+impl TextReveal {
     pub(crate) fn render(
         &mut self,
         buf: &mut Buffer,
@@ -232,10 +229,17 @@ impl CoalescingText {
                     self.reveals.push((
                         rect,
                         symbols,
-                        tachyonfx::fx::coalesce((
-                            REVEAL_DURATION.as_millis() as u32,
-                            tachyonfx::Interpolation::SineOut,
-                        )),
+                        tachyonfx::fx::fade_from_fg(
+                            best_color(if default_bg().is_some_and(is_light) {
+                                (90, 90, 85)
+                            } else {
+                                (180, 180, 175)
+                            }),
+                            (
+                                REVEAL_DURATION.as_millis() as u32,
+                                tachyonfx::Interpolation::SineOut,
+                            ),
+                        ),
                     ));
                 }
             }
@@ -251,7 +255,22 @@ impl CoalescingText {
             {
                 return false;
             }
+            let foregrounds = (rect.x..rect.right())
+                .map(|x| buf[(x, rect.y)].fg)
+                .collect::<Vec<_>>();
+            for x in rect.x..rect.right() {
+                if buf[(x, rect.y)].fg == ratatui::style::Color::Reset {
+                    buf[(x, rect.y)].fg = best_color(
+                        crate::terminal_palette::default_fg().unwrap_or((222, 222, 219)),
+                    );
+                }
+            }
             effect.process(delta.into(), buf, *rect);
+            if effect.done() {
+                for (x, fg) in (rect.x..rect.right()).zip(foregrounds) {
+                    buf[(x, rect.y)].fg = fg;
+                }
+            }
             !effect.done()
         });
         !self.reveals.is_empty()
@@ -263,7 +282,7 @@ mod tests {
     #[test]
     fn committing_front_row_does_not_finish_younger_rows_effect() {
         let area = Rect::new(0, 0, 40, 4);
-        let mut motion = CoalescingText::default();
+        let mut motion = TextReveal::default();
         let mut buf = Buffer::empty(area);
         buf.set_string(0, 0, "  Older row", Style::default());
         buf.set_string(0, 1, "  Younger row", Style::default());
@@ -282,7 +301,7 @@ mod tests {
 
     #[test]
     fn moving_stream_viewport_preserves_reveal_progress() {
-        let mut motion = CoalescingText::default();
+        let mut motion = TextReveal::default();
         let mut initial = Buffer::empty(Rect::new(0, 0, 40, 8));
         initial.set_string(0, 3, "Text stays in motion", Style::default());
         let canonical = initial.clone();
@@ -308,19 +327,18 @@ mod tests {
     }
 
     #[test]
-    fn elpising_holds_readable_text_before_dissolving() {
-        use tachyonfx::Shader;
-        let mut canonical = Buffer::empty(Rect::new(0, 0, 20, 1));
-        canonical.set_string(0, 0, "Elpising…", Style::default());
-        let mut effect = elpising_effect();
-        for _ in 0..17 {
-            let mut rendered = canonical.clone();
-            effect.process(
-                Duration::from_millis(100).into(),
-                &mut rendered,
-                canonical.area,
+    fn activity_highlight_preserves_every_grapheme_at_every_phase() {
+        let label = "Elpising… 文 e\u{301}";
+        for millis in (0..5000).step_by(40) {
+            let spans = gradient_text_at(label, Duration::from_millis(millis));
+            assert_eq!(
+                spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>(),
+                label
             );
-            assert_eq!(rendered, canonical);
+            assert_eq!(spans.len(), label.graphemes(true).count());
         }
     }
 
@@ -371,7 +389,7 @@ mod tests {
         let area = Rect::new(0, 0, 30, 2);
         let mut canonical = Buffer::empty(area);
         canonical.set_string(0, 0, "Hello 文", Style::default());
-        let mut motion = CoalescingText::default();
+        let mut motion = TextReveal::default();
         let mut first = canonical.clone();
         assert!(motion.render(&mut first, area, true, true));
         assert_ne!(first, canonical);
@@ -394,38 +412,18 @@ mod tests {
         assert!(!motion.render(&mut still, Rect::new(0, 0, 20, 2), true, true));
     }
     #[test]
-    fn tachyonfx_dissolves_letters_without_touching_background_or_other_cells() {
-        use tachyonfx::Shader;
-        crate::terminal_palette::with_test_default_colors(
-            crate::terminal_probe::DefaultColors {
-                fg: (35, 35, 35),
-                bg: (255, 255, 255),
-            },
-            || {
-                let mut original = Buffer::empty(Rect::new(0, 0, 20, 1));
-                for (index, span) in text("Elpising…").iter().enumerate() {
-                    original[(index as u16, 0)]
-                        .set_symbol(&span.content)
-                        .set_style(span.style);
-                }
-                let mut rendered = original.clone();
-                let mut effect = elpising_effect();
-                effect.process(
-                    Duration::from_millis(2699).into(),
-                    &mut rendered,
-                    Rect::new(0, 0, 9, 1),
-                );
-                assert_ne!(rendered, original);
-                for x in 0..20 {
-                    assert_eq!(rendered[(x, 0)].bg, original[(x, 0)].bg);
-                }
-                assert_eq!(rendered[(12, 0)], original[(12, 0)]);
-            },
-        );
-        for light in [false, true] {
-            for step in 0..100 {
-                let (r, g, b) = pigment(f64::from(step) / 100.0, 0.0, light);
-                assert!(r >= g && g > b, "palette must stay orange/yellow");
+    fn reveal_preserves_symbols_backgrounds_and_neighbors() {
+        let area = Rect::new(0, 0, 30, 1);
+        let mut original = Buffer::empty(area);
+        original.set_string(0, 0, "Elpising… 文", Style::default());
+        let mut motion = TextReveal::default();
+        for _ in 0..8 {
+            let mut rendered = original.clone();
+            motion.last_frame = Some(Instant::now() - Duration::from_millis(40));
+            motion.render(&mut rendered, area, true, true);
+            for x in 0..area.width {
+                assert_eq!(rendered[(x, 0)].symbol(), original[(x, 0)].symbol());
+                assert_eq!(rendered[(x, 0)].bg, original[(x, 0)].bg);
             }
         }
     }

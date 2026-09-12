@@ -5,6 +5,13 @@ use super::*;
 
 impl ChatWidget {
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if key_hint::plain(KeyCode::Tab).is_press(key_event)
+            && !self.bottom_pane.has_active_view()
+            && !self.bottom_pane.no_modal_or_popup_active()
+        {
+            self.bottom_pane.handle_key_event(key_event);
+            return;
+        }
         let ledger_toggle = key_hint::plain(KeyCode::Tab).is_press(key_event)
             || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
         if ledger_toggle && self.handle_context_ledger_key_event(key_event) {

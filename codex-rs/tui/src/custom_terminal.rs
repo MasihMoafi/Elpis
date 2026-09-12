@@ -301,6 +301,9 @@ where
     /// current backend for drawing.
     pub fn flush(&mut self) -> io::Result<()> {
         let updates = diff_buffers(self.previous_buffer(), self.current_buffer());
+        if !updates.is_empty() {
+            self.hide_cursor()?;
+        }
         let last_put_command = updates.iter().rfind(|command| command.is_put());
         if let Some(&DrawCommand::Put { x, y, .. }) = last_put_command {
             self.last_known_cursor_pos = Position { x, y };
@@ -1034,5 +1037,26 @@ mod tests {
         let output = terminal.backend().output();
         assert_eq!(output.matches("\u{1b}[?25l").count(), 1);
         assert_eq!(output.matches("\u{1b}[?25h").count(), 1);
+    }
+
+    #[test]
+    fn changed_frame_hides_cursor_while_painting_then_restores_it() {
+        let mut terminal = Terminal::with_options(CaptureBackend::new(10, 1)).unwrap();
+        terminal.set_viewport_area(Rect::new(0, 0, 10, 1));
+        terminal
+            .try_draw(|frame| {
+                frame
+                    .buffer_mut()
+                    .set_string(0, 0, "draft", ratatui::style::Style::default());
+                frame.set_cursor_style(SetCursorStyle::SteadyBar);
+                frame.set_cursor_position((5, 0));
+                io::Result::Ok(())
+            })
+            .unwrap();
+        let output = terminal.backend().output();
+        let hidden = output.find("\u{1b}[?25l").expect("hide before painting");
+        let painted = output.find("draft").expect("paint text");
+        let shown = output.find("\u{1b}[?25h").expect("restore cursor");
+        assert!(hidden < painted && painted < shown, "{output:?}");
     }
 }

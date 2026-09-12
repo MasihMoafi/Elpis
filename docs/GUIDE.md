@@ -47,17 +47,17 @@ The product succeeds only when these behaviors pass their acceptance checks and 
 
 ## Proof Standard
 
-The September 10 installed build is under acceptance; further corrections remain
-in progress. The current candidate's controls are: Tab exclusively shows
-or hides the Context Ledger, including during active turns. Ctrl+Q queues a
-follow-up without sending it during the current turn. Up in an empty composer
-recalls all queued follow-ups in order. Label colors animate without
-dissolving transcript text; the animation beside “Elpising” is removed. See
-[`evals/final-delivery-20260910.md`](evals/final-delivery-20260910.md) for the
-installed CLI/editor evidence, pressure compaction, recovery status, and checklist.
-The later queue-shortcut and terminal corrections are tracked separately in
-[`evals/terminal-selection-20260910.md`](evals/terminal-selection-20260910.md);
-they are not yet installed.
+Masih rejected the September 11 installed UI; corrections remain in progress.
+Enter queues a follow-up during an active response. Up in an empty composer
+recalls all queued follow-ups in order; there is no default Ctrl+Q shortcut.
+The September 12 correction gives Tab to active completion popups first;
+otherwise Tab opens/focuses the Context Ledger, then closes it. Alt+C toggles
+ledger visibility directly. Elpising, streaming, ledger updates, and permission
+labels retain animation; the Elpis name remains static, with no separate spinner
+beside Elpising. Current source comparison and verification limits live in
+[`evals/ui-upstream-audit-20260912.md`](evals/ui-upstream-audit-20260912.md).
+Installed artifact evidence is separate in the release handoff; source changes
+and automated tests do not constitute visual acceptance.
 
 A feature is real only when its user-visible acceptance check passes and the evidence is recorded. Documentation, hidden code, or a plausible architecture is not proof. `TASKS.md` is the current-state record against this standard.
 

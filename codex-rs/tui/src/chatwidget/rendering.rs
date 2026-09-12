@@ -186,7 +186,7 @@ impl Renderable for ChatWidget {
         );
         if stream_animating {
             self.frame_requester
-                .schedule_frame_in(std::time::Duration::from_millis(40));
+                .schedule_frame_in(crate::elpis_motion::FRAME_TICK);
         }
         if let Some((ledger_desired_height, ledger_lines)) =
             self.context_ledger_lines_with_height(ledger_width)
@@ -221,7 +221,7 @@ impl Renderable for ChatWidget {
                 false,
             ) {
                 self.frame_requester
-                    .schedule_frame_in(std::time::Duration::from_millis(40));
+                    .schedule_frame_in(crate::elpis_motion::FRAME_TICK);
             }
         }
         self.last_rendered_width.set(Some(area.width as usize));
@@ -240,6 +240,9 @@ impl Renderable for ChatWidget {
 
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
         let ledger_width = self.context_ledger_width(area.width);
+        if ledger_width > 0 && self.context_ledger_has_focus() {
+            return None;
+        }
         let content_area = Rect::new(
             area.x,
             area.y,
@@ -269,9 +272,5 @@ impl ChatWidget {
             location.dim(),
         ];
         Line::from(spans).render(area, buf);
-        if self.config.animations {
-            self.frame_requester
-                .schedule_frame_in(crate::elpis_motion::FRAME_TICK);
-        }
     }
 }
