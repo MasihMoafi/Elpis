@@ -67,7 +67,9 @@ These files have different writers and purposes:
 | `MEMORY.md` in the configured memory directory | User-maintained durable notes, explicitly admitted per workspace. See the Manual Memory controls below. |
 
 The generated checkpoint shares one path per workspace, so the last completed
-thread to write it replaces the previous checkpoint. Busy turns produce longer
+thread to write it replaces the previous checkpoint. An interrupted turn with no
+result, file changes, or commands preserves the same thread's prior checkpoint,
+including its original turn and status metadata. Busy turns produce longer
 files than short replies. Results are capped at 4,000 characters and each command
 at 240 characters while writing; the admitted ES source is then capped at 8,000
 characters. A large on-disk file therefore does not mean the model receives all

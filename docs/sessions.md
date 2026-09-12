@@ -85,6 +85,12 @@ Written by `write_session_checkpoint` in the same module, from the completed tur
 
 Both files are written to a temporary path and renamed into place, so a crash mid-write cannot leave a truncated checkpoint.
 
+An interrupted turn with no result or file/command evidence leaves an existing
+checkpoint from the same thread intact. Its original turn and status remain
+attached to that evidence. A first interruption still creates a checkpoint;
+new progress still replaces it. This preservation rule does not consolidate
+earlier results or protect concurrent threads sharing a workspace path.
+
 ---
 
 ## 4. Failure Behavior

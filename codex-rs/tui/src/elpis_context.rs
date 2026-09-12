@@ -192,6 +192,22 @@ pub(crate) async fn write_session_checkpoint(
         }
     }
 
+    let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
+    if turn.status == TurnStatus::Interrupted
+        && latest_result.is_none()
+        && changed_files.is_empty()
+        && commands.is_empty()
+    {
+        match tokio::fs::read_to_string(&checkpoint_path).await {
+            // Keep the earlier turn's metadata with its evidence, rather than
+            // attributing that evidence to the interrupted turn.
+            Ok(previous) if belongs_to_thread(&previous, thread_id) => return Ok(None),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("read Elpis checkpoint before replacing it"),
+        }
+    }
+
     let mut content = format!(
         "# Elpis Session Checkpoint\n\n\
          - Workspace: `{}`\n\
@@ -227,7 +243,6 @@ pub(crate) async fn write_session_checkpoint(
     content.push_str(&commands);
     content.push_str("\n\n## Exact Evidence\n\n- Full turn remains in the provider transcript.\n");
 
-    let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
     let temporary_path = checkpoint_path.with_extension(format!("md.tmp-{thread_id}"));
     tokio::fs::write(&temporary_path, content)
         .await
@@ -441,6 +456,57 @@ mod tests {
         assert!(content.contains("`src/main.rs` (completed)"));
         assert!(!content.contains("large exact diff stays in transcript"));
         assert!(content.contains("Full turn remains in the provider transcript."));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_interruption_preserves_checkpoint_but_later_progress_replaces_it() -> Result<()>
+    {
+        let home = tempdir()?;
+        let memories_root = home.path().join("memories");
+        let cwd = Path::new("/tmp/project");
+        let mut turn = Turn {
+            id: "completed-turn".into(),
+            items: vec![ThreadItem::AgentMessage {
+                id: "result".into(),
+                text: "Tests passed; next verify the IDE.".into(),
+                phase: None,
+            }],
+            items_view: TurnItemsView::Full,
+            status: TurnStatus::Completed,
+            error: None,
+            started_at: Some(1),
+            completed_at: Some(2),
+            duration_ms: Some(1_000),
+        };
+        let path = write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn)
+            .await?
+            .context("checkpoint path")?;
+        let previous = tokio::fs::read(&path).await?;
+        turn.id = "interrupted-turn".into();
+        turn.status = TurnStatus::Interrupted;
+        turn.items.clear();
+        write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn).await?;
+        assert_eq!(tokio::fs::read(&path).await?, previous);
+
+        turn.items.push(ThreadItem::AgentMessage {
+            id: "progress".into(),
+            text: "IDE verification found a startup error.".into(),
+            phase: None,
+        });
+        write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn).await?;
+        let content = tokio::fs::read_to_string(&path).await?;
+        assert!(content.contains("IDE verification found a startup error."));
+        assert!(content.contains("- Status: interrupted"));
+
+        turn.items.clear();
+        write_session_checkpoint(Some(&memories_root), cwd, "thread-two", &turn).await?;
+        let content = tokio::fs::read_to_string(&path).await?;
+        assert!(content.contains("- Thread: `thread-two`"));
+        assert!(!content.contains("IDE verification found"));
+        tokio::fs::remove_file(&path).await?;
+        write_session_checkpoint(Some(&memories_root), cwd, "thread-two", &turn).await?;
+        assert!(path.exists(), "first interruption still records its status");
         Ok(())
     }
 
