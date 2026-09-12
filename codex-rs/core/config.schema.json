@@ -2996,8 +2996,8 @@
               "$ref": "#/definitions/TuiAppearance"
             }
           ],
-          "default": "dark",
-          "description": "Interface appearance: dark (default), light, or the terminal's system colors."
+          "default": "system",
+          "description": "Interface appearance: terminal colors (default), or an explicit dark/light override."
         },
         "keymap": {
           "allOf": [

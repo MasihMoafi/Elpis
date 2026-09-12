@@ -6,6 +6,43 @@ This audit does not grant visual acceptance or authorize a premature release.
 
 ## Reference
 
+### Subsequent light-terminal correction
+
+Masih reported unreadable colors when the terminal follows a light desktop theme.
+The installed candidate rendered a forced-dark surface inside the light terminal;
+its `/theme` command also opened an extra appearance menu. Reproduction:
+`.tmp/final-candidate/theme-light-before/{draft,theme}.png` and
+`theme-light-before.log` (direct syntax-picker assertion failed).
+
+Changed the default appearance to System and the user's saved setting from Dark
+to System. `/theme` now directly opens the existing Codex picker; removed the
+unused intermediate menu, events and setter. The picker source matches reference
+`c4017a87` exactly. Explicit configuration overrides remain compatible. Existing
+adaptive darker gold/light-background styling is used; dark colors and animation
+code are unchanged.
+
+Verification: the System-default/override round-trip test passed, as did all
+3,155 TUI tests (zero failures, five existing ignored; 14.84 seconds). Test build:
+638,530 ms, peak 70 C. Optimized build: 709,158 ms, peak 71 C. Both used two jobs
+and reported `build_result status=ok`. Logs: `theme-config-tests.log`,
+`theme-tui-tests.log`, `theme-test-build.log`, and `theme-optimized.log`, all under
+`.tmp/final-candidate`.
+
+Actual light and dark native-terminal checks passed with no provider requests.
+Inspected `theme-light-after/{draft,theme,shell}.png` and
+`theme-dark-after/{draft,shell}.png`: typed text, darker light-background accents,
+the direct syntax picker, and the shell prompt after exit are readable. The shell
+wrapper prints its marker without resetting colors, so this check observes the
+state Elpis leaves behind. Fixture results/screenshots live under
+`.tmp/final-candidate`; this is appearance evidence, not a selection regression pass.
+
+Installed CLI SHA256:
+`0749eda505463b88541b6c07aa13e6b2b7eda34681b68c4873a0a3b97a5d45d1`.
+The installed and built executables match. Rollback:
+`~/.local/share/elpis/release-recovery/theme-system-20260912/elpis-before`.
+Restart `elpis` to use it. This supersedes the earlier CLI hash below; it is a
+local correction, not a public release or a claim about the remaining blockers.
+
 Updated the clean `/home/masih/Desktop/p/codex` reference with
 `gh repo sync --source openai/codex --branch main`, without force or local edits.
 It moved from `a9519cbc` (August 31) to

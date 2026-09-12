@@ -543,7 +543,7 @@ pub const DEFAULT_TERMINAL_RESIZE_REFLOW_FALLBACK_MAX_ROWS: usize = 1_000;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct Tui {
-    /// Interface appearance: dark (default), light, or the terminal's system colors.
+    /// Interface appearance: terminal colors (default), or an explicit dark/light override.
     #[serde(default)]
     pub appearance: TuiAppearance,
     #[serde(default, flatten)]
@@ -643,9 +643,9 @@ pub struct Tui {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TuiAppearance {
-    #[default]
     Dark,
     Light,
+    #[default]
     System,
 }
 
@@ -654,9 +654,9 @@ mod appearance_tests {
     use super::*;
 
     #[test]
-    fn dark_is_default_and_all_appearance_choices_round_trip() {
+    fn system_is_default_and_all_appearance_choices_round_trip() {
         let defaults: Tui = toml::from_str("").unwrap();
-        assert_eq!(defaults.appearance, TuiAppearance::Dark);
+        assert_eq!(defaults.appearance, TuiAppearance::System);
         for (name, expected) in [
             ("dark", TuiAppearance::Dark),
             ("light", TuiAppearance::Light),

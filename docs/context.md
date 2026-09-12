@@ -96,6 +96,16 @@ Elpis provides interactive context admission control in the TUI:
   - Individual portable development rules installed by Elpis
     (`~/.elpis/skills/dev/*.md`)
 
+### Terminal appearance
+
+Elpis follows the terminal's foreground and background by default. A terminal
+configured to follow the desktop theme therefore switches Elpis with it. Light
+backgrounds use darker gold accents and a dark moving highlight; dark backgrounds
+retain the orange-yellow palette. `/theme` opens the Codex syntax-theme picker
+directly, including live preview and cancel/restore. It changes code highlighting,
+not the terminal's base colors. Existing explicit `tui.appearance` overrides remain
+supported in configuration; use `appearance = "system"` to follow the terminal.
+
 ### Manual memory is explicit
 
 The configured memory directory has one dedicated `MEMORY.md` row. The row remains visible while

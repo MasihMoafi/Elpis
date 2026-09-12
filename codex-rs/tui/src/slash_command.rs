@@ -118,7 +118,7 @@ impl SlashCommand {
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
-            SlashCommand::Theme => "choose appearance and code highlighting",
+            SlashCommand::Theme => "choose a syntax highlighting theme",
             SlashCommand::Ps => "list background terminals",
             SlashCommand::Stop => "kill all background terminals",
             SlashCommand::Model => "choose a provider-aware model and reasoning effort",
