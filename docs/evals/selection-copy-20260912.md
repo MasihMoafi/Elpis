@@ -184,3 +184,53 @@ terminal glitches are gone. The installed CLI remains the Up-recall candidate
 with SHA256 `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31ca32d91e05b`.
 Normal mouse capture remains off. Actual transcript selection, scrolling, and
 mouse-mode lifecycle are still outstanding.
+
+## Transcript viewer selection under integration
+
+The transcript viewer now handles dragging, source-text highlighting, copy on
+release, Ctrl+C copying, and wheel movement through a held document. Selection
+uses the last displayed cells and live tail, so incoming events cannot change
+what the initial click selects. The agent continues receiving output behind the
+held view. Navigation resumes the live view; width changes and backtrack preview
+discard stale selection coordinates. Clipboard ownership transfers to the chat
+when the viewer closes, preserving copied text on Linux.
+
+The source-row layout preserves Unicode, logical newlines, and the underlying
+text across soft wraps while excluding the prompt decoration. Adjacent spans
+with matching styles are combined. Row styles and hyperlinks survive the held
+view; selecting a short range does not scan text from every unselected row.
+
+Evidence under `.tmp/final-candidate/`:
+
+- `transcript-copy-before-absolute/`: the previous viewer fails the native copy
+  check with mouse reporting supplied by the fixture.
+- `transcript-copy-close-before-detail.log`: the intermediate implementation
+  copies the sentinel, then loses it on close (`afterClose: null`).
+- `transcript-selection-row-style-full-tests.log`: 3,185 passed, zero failed,
+  five ignored. New cases cover wrapping/Unicode, partial selection and real
+  newlines, footer boundaries, full-row backgrounds including blank padding,
+  incoming cells before and after mouse-down, resizing, and backtrack preview.
+- `transcript-selection-row-style-build.log`: test build passed, 176,340 ms,
+  peak 65°C. `transcript-selection-row-style-optimized.log`: optimized build
+  passed, 43,567 ms, peak 72°C.
+- `transcript-copy-row-style-{dark,light}/result.json`: native GTK/VTE checks
+  pass. Dragging and Ctrl+C copy exactly the sentinel; the fixture delivers more
+  text during the drag, verifies it appears after closing the viewer, and checks
+  that the clipboard survives closing. One request remains open throughout.
+  Both `selected.png` captures were inspected: the selection is readable and the
+  original full-width message background is preserved.
+
+Visual inspection rejected an intermediate implementation that reduced the
+message background to the text width. The initial style test was too narrow;
+it was corrected to compare with a paragraph styled across its entire area.
+Earlier logs and captures are retained as intermediate evidence.
+
+These native checks use the existing **test-only mouse-reporting wrapper** and a
+local Responses fixture, not a live provider. Normal mouse capture remains off.
+Main inline transcript selection, integrated scrolling/mouse lifecycle, xterm
+acceptance, long-history performance, and final CLI/IDE gates remain open. This
+is not an installed or released selection feature.
+
+The built candidate SHA256 is
+`e4db9cefc558c4cd64113c776aae4a129323fcbfba45dc5de8ea0c1a2cedfe20`.
+The installed CLI remains `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31ca32d91e05b`.

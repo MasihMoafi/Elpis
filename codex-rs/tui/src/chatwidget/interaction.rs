@@ -4,6 +4,10 @@
 use super::*;
 
 impl ChatWidget {
+    pub(crate) fn retain_clipboard_lease(&mut self, lease: crate::clipboard_copy::ClipboardLease) {
+        self.clipboard_lease = Some(lease);
+    }
+
     fn copy_selected_text(&mut self, text: &str) {
         match crate::clipboard_copy::copy_to_clipboard(text) {
             Ok(lease) => self.clipboard_lease = lease,

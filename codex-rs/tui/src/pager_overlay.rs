@@ -52,6 +52,9 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 
+mod selection;
+use selection::Selection;
+
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
@@ -179,7 +182,7 @@ impl PagerView {
 
         self.render_content(content_area, buf);
 
-        self.render_bottom_bar(area, content_area, buf, content_height);
+        self.render_bottom_bar(area, content_area, buf, content_height, self.scroll_offset);
     }
 
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
@@ -232,6 +235,7 @@ impl PagerView {
         content_area: Rect,
         buf: &mut Buffer,
         total_len: usize,
+        scroll_offset: usize,
     ) {
         let sep_y = content_area.bottom();
         let sep_rect = Rect::new(full_area.x, sep_y, full_area.width, 1);
@@ -246,8 +250,7 @@ impl PagerView {
             if max_scroll == 0 {
                 100
             } else {
-                (((self.scroll_offset.min(max_scroll)) as f32 / max_scroll as f32) * 100.0).round()
-                    as u8
+                (((scroll_offset.min(max_scroll)) as f32 / max_scroll as f32) * 100.0).round() as u8
             }
         };
         let pct_text = format!(" {percent}% ");
@@ -466,7 +469,22 @@ pub(crate) struct TranscriptOverlay {
     highlight_cell: Option<usize>,
     /// Cache key for the render-only live tail appended after committed cells.
     live_tail_key: Option<LiveTailKey>,
+    live_tail_lines: Arc<Vec<HyperlinkLine>>,
+    displayed: TranscriptSnapshot,
+    cells_changed: bool,
+    selection: Option<Selection>,
+    selection_area: Rect,
+    clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
+    copy_error: Option<String>,
     is_done: bool,
+}
+
+#[derive(Default)]
+struct TranscriptSnapshot {
+    cells: Vec<Arc<dyn HistoryCell>>,
+    tail: Arc<Vec<HyperlinkLine>>,
+    tail_key: Option<LiveTailKey>,
+    scroll: usize,
 }
 
 /// Cache key for the active-cell "live tail" appended to the transcript overlay.
@@ -500,6 +518,13 @@ impl TranscriptOverlay {
             cells: transcript_cells,
             highlight_cell: None,
             live_tail_key: None,
+            live_tail_lines: Arc::default(),
+            displayed: TranscriptSnapshot::default(),
+            cells_changed: true,
+            selection: None,
+            selection_area: Rect::default(),
+            clipboard_lease: None,
+            copy_error: None,
             is_done: false,
         }
     }
@@ -557,6 +582,7 @@ impl TranscriptOverlay {
         let had_prior_cells = !self.cells.is_empty();
         let tail_renderable = self.take_live_tail_renderable();
         self.cells.push(cell);
+        self.cells_changed = true;
         self.view.renderables = Self::render_cells(&self.cells, self.highlight_cell);
         if let Some(tail) = tail_renderable {
             let tail = if !had_prior_cells
@@ -677,9 +703,11 @@ impl TranscriptOverlay {
 
         self.take_live_tail_renderable();
         self.live_tail_key = next_key;
+        self.live_tail_lines = Arc::default();
 
         if let Some(key) = next_key {
             let lines = compute_lines(width).unwrap_or_default();
+            self.live_tail_lines = Arc::new(lines.clone());
             if !lines.is_empty() {
                 self.view.renderables.push(Self::live_tail_renderable(
                     lines,
@@ -694,6 +722,7 @@ impl TranscriptOverlay {
     }
 
     pub(crate) fn set_highlight_cell(&mut self, cell: Option<usize>) {
+        self.selection = None;
         self.highlight_cell = cell;
         self.rebuild_renderables();
         if let Some(idx) = self.highlight_cell {
@@ -706,10 +735,11 @@ impl TranscriptOverlay {
     /// The `App` draw loop uses this to decide whether to schedule animation frames for the live
     /// tail; if the user has scrolled up, we avoid driving animation work that they cannot see.
     pub(crate) fn is_scrolled_to_bottom(&self) -> bool {
-        self.view.is_scrolled_to_bottom()
+        self.selection.is_none() && self.view.is_scrolled_to_bottom()
     }
 
     fn rebuild_renderables(&mut self) {
+        self.cells_changed = true;
         let tail_renderable = self.take_live_tail_renderable();
         self.view.renderables = Self::render_cells(&self.cells, self.highlight_cell);
         if let Some(tail) = tail_renderable {
@@ -797,8 +827,106 @@ impl TranscriptOverlay {
         let top_h = area.height.saturating_sub(3);
         let top = Rect::new(area.x, area.y, area.width, top_h);
         let bottom = Rect::new(area.x, area.y + top_h, area.width, 3);
-        self.view.render(top, buf);
+        let content_area = self.view.content_area(top);
+        if self.selection_area.width != content_area.width {
+            self.selection = None;
+        }
+        self.selection_area = content_area;
+        if let Some(selection) = &mut self.selection {
+            Clear.render(top, buf);
+            self.view.render_header(top, buf);
+            selection.render(self.selection_area, buf);
+            if top.height >= 2 {
+                self.view.render_bottom_bar(
+                    top,
+                    self.selection_area,
+                    buf,
+                    selection.len(),
+                    selection.scroll,
+                );
+            }
+        } else {
+            self.view.render(top, buf);
+            if self.cells_changed {
+                self.displayed.cells = self.cells.clone();
+                self.cells_changed = false;
+            }
+            self.displayed.tail = Arc::clone(&self.live_tail_lines);
+            self.displayed.tail_key = self.live_tail_key;
+            self.displayed.scroll = self.view.scroll_offset;
+        }
         self.render_hints(bottom, buf);
+        if self.selection.is_some() {
+            Paragraph::new("Selection held · Ctrl+C copy · arrow key resumes live view").render(
+                Rect::new(bottom.x, bottom.y, bottom.width, bottom.height.min(1)),
+                buf,
+            );
+        }
+        if let Some(error) = &self.copy_error {
+            Paragraph::new(format!("Copy failed: {error}")).render(bottom, buf);
+        }
+    }
+
+    fn begin_selection(&mut self, column: u16, row: u16) {
+        if !self.selection_area.contains((column, row).into()) {
+            return;
+        }
+        if self.selection.is_none() {
+            let mut lines = Vec::new();
+            for (index, cell) in self.displayed.cells.iter().enumerate() {
+                if index > 0 && !cell.is_stream_continuation() {
+                    lines.push(HyperlinkLine::default());
+                }
+                let mut cell_lines = cell.transcript_hyperlink_lines(self.selection_area.width);
+                if cell.as_any().is::<UserHistoryCell>() {
+                    for line in &mut cell_lines {
+                        line.line.style = line.line.style.patch(user_message_style());
+                    }
+                }
+                lines.extend(cell_lines);
+            }
+            if !self.displayed.tail.is_empty() {
+                if !self.displayed.cells.is_empty()
+                    && self
+                        .displayed
+                        .tail_key
+                        .is_some_and(|key| !key.is_stream_continuation)
+                {
+                    lines.push(HyperlinkLine::default());
+                }
+                lines.extend(self.displayed.tail.iter().cloned());
+            }
+            self.selection = Some(Selection::new(
+                lines,
+                self.selection_area.width,
+                self.displayed.scroll,
+            ));
+        }
+        if let Some(selection) = &mut self.selection {
+            selection.start(self.selection_area, column, row);
+        }
+        self.copy_error = None;
+    }
+
+    fn copy_selection(&mut self) {
+        let Some(selection) = &self.selection else {
+            return;
+        };
+        let text = selection.text();
+        if text.is_empty() {
+            return;
+        }
+        match crate::clipboard_copy::copy_to_clipboard(&text) {
+            Ok(lease) => {
+                self.clipboard_lease = lease;
+                self.copy_error = None;
+            }
+            Err(error) => self.copy_error = Some(error),
+        }
+    }
+
+    pub(crate) fn take_clipboard_lease(&mut self) -> Option<crate::clipboard_copy::ClipboardLease> {
+        self.clipboard_lease.take()
     }
 }
 
@@ -806,20 +934,72 @@ impl TranscriptOverlay {
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         match event {
             TuiEvent::Key(key_event) => match key_event {
+                e if key_hint::ctrl(KeyCode::Char('c')).is_press(e) && self.selection.is_some() => {
+                    self.copy_selection();
+                    tui.frame_requester().schedule_frame();
+                    Ok(())
+                }
                 e if self.view.keymap.close.is_pressed(e)
                     || self.view.keymap.close_transcript.is_pressed(e) =>
                 {
                     self.is_done = true;
                     Ok(())
                 }
-                other => self.view.handle_key_event(tui, other),
+                other => {
+                    self.selection = None;
+                    self.view.handle_key_event(tui, other)
+                }
             },
             TuiEvent::Mouse(mouse_event) => {
-                self.view.scroll_by_wheel(mouse_event.kind);
+                use crossterm::event::MouseButton;
+                match mouse_event.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        self.begin_selection(mouse_event.column, mouse_event.row)
+                    }
+                    MouseEventKind::Drag(MouseButton::Left)
+                    | MouseEventKind::Up(MouseButton::Left) => {
+                        if let Some(selection) = &mut self.selection
+                            && selection.dragging
+                        {
+                            selection.update(
+                                self.selection_area,
+                                mouse_event.column,
+                                mouse_event.row,
+                            );
+                            if mouse_event.kind == MouseEventKind::Up(MouseButton::Left) {
+                                selection.dragging = false;
+                                self.copy_selection();
+                                if self
+                                    .selection
+                                    .as_ref()
+                                    .is_some_and(|selection| selection.text().is_empty())
+                                {
+                                    self.selection = None;
+                                }
+                            }
+                        }
+                    }
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                        if let Some(selection) = &mut self.selection {
+                            selection.scroll = if mouse_event.kind == MouseEventKind::ScrollUp {
+                                selection.scroll.saturating_sub(3)
+                            } else {
+                                selection.scroll.saturating_add(3)
+                            };
+                        } else {
+                            self.view.scroll_by_wheel(mouse_event.kind);
+                        }
+                    }
+                    _ => {}
+                }
+                tui.frame_requester().schedule_frame();
                 Ok(())
             }
             TuiEvent::Paste(_) => Ok(()),
             TuiEvent::Draw | TuiEvent::Resize => {
+                if matches!(event, TuiEvent::Resize) {
+                    self.selection = None;
+                }
                 tui.draw(u16::MAX, |frame| {
                     self.render(frame.area(), frame.buffer);
                 })?;
@@ -1034,6 +1214,53 @@ mod tests {
             scroll_offset,
             default_pager_keymap(),
         )
+    }
+
+    #[test]
+    fn transcript_selection_stays_stable_when_new_cells_arrive() {
+        let mut overlay = transcript_overlay(vec![Arc::new(TestCell {
+            lines: vec!["original".into()],
+        })]);
+        let area = Rect::new(0, 0, 40, 12);
+        let mut buf = Buffer::empty(area);
+        overlay.render(area, &mut buf);
+        let content = overlay.selection_area;
+        overlay.begin_selection(content.x, content.y - 1);
+        assert!(
+            overlay.selection.is_none(),
+            "header must not become selectable text"
+        );
+        overlay.insert_cell(Arc::new(TestCell {
+            lines: vec!["arrived before mouse down".into()],
+        }));
+        overlay.begin_selection(content.x, content.y);
+        overlay
+            .selection
+            .as_mut()
+            .unwrap()
+            .update(content, content.right(), content.y);
+        overlay.insert_cell(Arc::new(TestCell {
+            lines: vec!["new response".into()],
+        }));
+        overlay.render(area, &mut buf);
+        assert_eq!(overlay.selection.as_ref().unwrap().text(), "original");
+        assert!(!buffer_to_text(&buf, area).contains("new response"));
+        overlay.selection = None;
+        overlay.render(area, &mut buf);
+        assert!(buffer_to_text(&buf, area).contains("new response"));
+        overlay.begin_selection(content.x, content.y);
+        let resized = Rect::new(0, 0, 30, 12);
+        overlay.render(resized, &mut Buffer::empty(resized));
+        assert!(
+            overlay.selection.is_none(),
+            "width changes must discard stale selection coordinates"
+        );
+        overlay.begin_selection(overlay.selection_area.x, overlay.selection_area.y);
+        overlay.set_highlight_cell(Some(0));
+        assert!(
+            overlay.selection.is_none(),
+            "backtrack preview must show its current target"
+        );
     }
 
     #[test]

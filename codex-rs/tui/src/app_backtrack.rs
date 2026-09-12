@@ -203,6 +203,11 @@ impl App {
 
     /// Close transcript overlay and restore normal UI.
     pub(crate) fn close_transcript_overlay(&mut self, tui: &mut tui::Tui) {
+        if let Some(Overlay::Transcript(overlay)) = &mut self.overlay
+            && let Some(lease) = overlay.take_clipboard_lease()
+        {
+            self.chat_widget.retain_clipboard_lease(lease);
+        }
         let _ = tui.leave_alt_screen();
         let was_backtrack = self.backtrack.overlay_preview_active;
         if !self.deferred_history_lines.is_empty() {
