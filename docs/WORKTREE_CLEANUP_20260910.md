@@ -22,14 +22,20 @@ did not establish that its features were integrated.
 | `portable-checkpoint` | Independent commit `1730ac2b` adds `STARTER_PROMPT.md`. | Preserved evaluation prompt, not an implemented portable-memory feature. |
 | `release-v0.3.0-vscode` | Independent `5d761053` changes release version/workflow and IDE packaging. | Unpublished alternative release preparation; do not silently change the selected version by merging it. |
 | `paper-controlled-study-20260905` | Independent history includes `82b9ca30`, selecting Luna Max optimizer policy. Main currently uses Low. | Preserve historical study; do not restore a superseded optimizer policy through a documentation merge. |
+| `elpis-ide-detailed` | Early `0b0ca274` supplies editor read, diagnostics, definitions/references and proposed edits; those tool paths exist in the current, expanded extension. | Earlier implementation base superseded; preserve its design/evaluation notes. Current packaged startup and editor tests are the applicable evidence. |
+| `release-v0.2.0-candidate` | Archived interaction code lacks current clipboard retention, plain-Up queue restoration and completion priority. Its context rendering also contains the old dark-gray text. | Keep current tested replacements; do not regress the user's later corrections by restoring the archived UI files. |
+| `site-seo-20260905` | Patch adds canonical/OpenGraph/Twitter/schema metadata absent from current `website/index.html`. | Unintegrated website work, not an installed CLI feature. Preserve for the website publishing review. |
+| `site-live-seo-20260905` | Website implementation/assets differ substantially from the current site. | Separate website candidate; preserve rather than replacing the site during CLI readiness work. |
+| `modern-UI` | Extensive alternative website implementation and visualization assets differ from the current site. | Separate visual proposal, not the TUI fixes requested here. Preserve for a dedicated website decision. |
+| `terminal-bench-eval` | Branch contains real-task pilot and compaction-pair reports. Local CompCert raw rollouts confirm one compaction in each arm; saved results report both passing. | Historical research evidence retained; no general pruning-quality or compaction-frequency win established. See the research boundary in docs/context.md. |
 
-These dispositions distinguish superseded code, required runtime behavior and
-research material. They do not prove that every distinct change in each branch
-was reviewed. In particular, the alternate detailed IDE, website variants, terminal
-benchmark history and remaining release-candidate differences still need review.
+These dispositions cover all 20 archived tree categories and distinguish
+superseded code, requested runtime behavior and research material. They do not
+claim a line-by-line correctness audit of every archived change, or that all
+branches were merged. The missing configuration override, orchestration work,
+website variants and research artifacts remain explicitly preserved outside main.
 
-The remaining archive rows below still need individual disposition. This audit
-does not establish that all 79 trees' distinct work is available in the installed
+This audit does not establish that all 79 trees' distinct work is available in the installed
 candidate. Website and historical research changes must not be blindly applied to
 the CLI as part of integration.
 

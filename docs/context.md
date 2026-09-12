@@ -189,6 +189,36 @@ defaults.
 
 ---
 
+### Research boundary: historical real-task evidence
+
+The recovered `terminal-bench-eval` branch contains historical pilot results that
+must not be confused with memory evaluation. A September 12 read-only check of the
+September 10 CompCert pair found the same binary hash, Terra model, medium effort
+and 60,000-token compaction setting in both saved launch records. The raw rollouts
+contain one native compaction each. The saved results report both tasks passing:
+
+| Recorded measure | Pruning off | Pruning on |
+| --- | ---: | ---: |
+| Model requests | 164 | 190 |
+| Main-model tokens | 6,091,091 | 6,793,934 |
+| Native compactions, recounted from raw rollouts | 1 | 1 |
+
+This single pair does not establish general causality or current-build performance.
+The task verdicts and token totals were read from saved results, not independently
+rerun; optimizer cost is not included in the main-token row. It does show why gross
+pruned tokens cannot be presented as total savings, and why fewer compactions must
+be measured rather than assumed. It says nothing about the usefulness of admitted
+GOAL, ES or MEMORY. The historical six-pair report also describes mixed results;
+its broader statistics have not been independently reproduced here.
+
+Evidence remains under `~/elpis-tb-scratch/compact/compile-compcert-{off,on}/`;
+the metadata-only recount is `.tmp/final-candidate/historical-compcert-audit.json`.
+The source report is `docs/evals/terminal-bench/PLAN.md` on
+`recovery/committed-20260910/terminal-bench-eval`. A paper should separate delivery
+correctness, recall quality, task completion, total usage and latency, retaining
+negative results and excluding invalid runs. There is no defensible current claim
+that Elpis has proven superior memory or uniformly cheaper agent execution.
+
 ## 4. Context Ledger (`Tab` / `Alt+C`) & `admission.toml`
 
 Elpis provides interactive context admission control in the TUI:
