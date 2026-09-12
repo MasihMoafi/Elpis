@@ -55,32 +55,35 @@ You do not have to go looking for these: `prune_report.md` renders `ace.json` an
 
 ---
 
-## 3. Context Lifetimes
+## 3. Memory and checkpoints
 
-Every item admitted into Elpis context carries an explicit lifetime:
+These files have different writers and purposes:
 
-```text
-+-----------------------------------------------------------------------------------+
-| DURABLE LIFETIME                                                                 |
-| - AGENTS.md rules, active GOAL.md, MEMORY.md, explicit user constraints           |
-+-----------------------------------------------------------------------------------+
-                                         |
-                                         v
-+-----------------------------------------------------------------------------------+
-| TASK LIFETIME                                                                     |
-| - Decisions, changed file paths, blockers, verification, ES.md checkpoint         |
-+-----------------------------------------------------------------------------------+
-                                         |
-                                         v
-+-----------------------------------------------------------------------------------+
-| TURN LIFETIME (Expires after turn question is answered)                           |
-| - Terminal reads, searches, directory listings, command probes, temporary diffs   |
-+-----------------------------------------------------------------------------------+
-```
+| Source | What actually happens |
+| --- | --- |
+| `GOAL.md` in Elpis workspace state | Records the explicit goal. Admission is a separate Ledger choice. |
+| `ES.md` beside that goal | The CLI replaces it after a completed turn with the latest result, changed-file entries, command entries, and an evidence pointer. It is a checkpoint of that turn, not an accumulated or model-written summary of the whole project. |
+| `ES.md` in a repository | Ordinary project notes written by a person or agent. This is a different file; it is not automatically synchronized with the generated checkpoint. |
+| `MEMORY.md` in the configured memory directory | User-maintained durable notes, explicitly admitted per workspace. See the Manual Memory controls below. |
 
-1. **Durable:** Survives across compaction, model switches, and restarts.
-2. **Task:** Survives across turn execution within the current task; summarized into `ES.md` upon task transition.
-3. **Turn:** Expires immediately after the active turn question is answered. Raw output is evicted from working context, leaving behind an exact evidence pointer (rollout ID / log path).
+The generated checkpoint shares one path per workspace, so the last completed
+thread to write it replaces the previous checkpoint. Busy turns produce longer
+files than short replies. Results are capped at 4,000 characters and each command
+at 240 characters while writing; the admitted ES source is then capped at 8,000
+characters. A large on-disk file therefore does not mean the model receives all
+of it. Finishing or clearing an owning goal also clears its matching checkpoint.
+
+Ordinary tool output does not automatically expire after every turn. Native
+compaction and optional pruning change working history through their own paths.
+Persistent files can be loaded again when admitted; their existence does not
+establish that the model used them correctly.
+
+We have checks for persistence, admission, and context inclusion, but no completed
+paired study proving the quality benefit of the current memory/checkpoint system.
+The [continuity comparison protocol](evals/context-continuity/README.md) explicitly
+records that its paired provider runs have not been performed. A useful benefit
+test must hold model, task, and budget fixed, compare admission on/off after a
+restart, and score factual recall, task completion, stale-memory errors, and cost.
 
 ---
 
@@ -127,8 +130,8 @@ render.
   request.
 - `Space` or `Enter` explicitly admits or withdraws an existing file for the next request. Bulk
   admission skips Memory while its status or another Memory change is pending.
-- Lowercase `p` copies the exact configured `MEMORY.md` path. It does not open an editor or file
-  manager. Ctrl+click opens a file only after the cached status confirms that a regular file
+- Lowercase `p` toggles Smart Prune; it is not a Memory path-copy shortcut.
+  Ctrl+click opens a file only after the cached status confirms that a regular file
   exists.
 - At most 8,000 trimmed Unicode characters can enter one request. The row reports the next-request
   count, the count that would be eligible if admitted, and whether longer content is truncated.

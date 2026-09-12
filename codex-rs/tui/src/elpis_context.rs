@@ -18,6 +18,13 @@ fn goal_is_finished(status: &str) -> bool {
     matches!(status, "complete" | "completed" | "abandoned")
 }
 
+fn belongs_to_thread(content: &str, thread_id: &str) -> bool {
+    content
+        .lines()
+        .find(|line| line.starts_with("- Thread: "))
+        .is_some_and(|line| line == format!("- Thread: `{thread_id}`"))
+}
+
 pub(crate) async fn write_goal(
     memories_root: Option<&Path>,
     cwd: &Path,
@@ -73,7 +80,6 @@ pub(crate) async fn clear_goal(
     cwd: &Path,
     thread_id: &str,
 ) -> Result<Option<PathBuf>> {
-    let _ = clear_session_checkpoint(memories_root, cwd).await;
     let Some(goal_path) = goal_path(memories_root, cwd) else {
         return Ok(None);
     };
@@ -85,9 +91,10 @@ pub(crate) async fn clear_goal(
                 .with_context(|| format!("read Elpis goal file {}", goal_path.display()));
         }
     };
-    if !content.contains(&format!("- Thread: `{thread_id}`")) {
+    if !belongs_to_thread(&content, thread_id) {
         return Ok(None);
     }
+    clear_session_checkpoint(memories_root, cwd, thread_id).await?;
     tokio::fs::remove_file(&goal_path)
         .await
         .with_context(|| format!("remove Elpis goal file {}", goal_path.display()))?;
@@ -97,12 +104,18 @@ pub(crate) async fn clear_goal(
 pub(crate) async fn clear_session_checkpoint(
     memories_root: Option<&Path>,
     cwd: &Path,
+    thread_id: &str,
 ) -> Result<Option<PathBuf>> {
     let Some(workspace_dir) = workspace_dir(memories_root, cwd) else {
         return Ok(None);
     };
     let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
-    if checkpoint_path.exists() {
+    let content = match tokio::fs::read_to_string(&checkpoint_path).await {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).context("read Elpis checkpoint before clearing it"),
+    };
+    if belongs_to_thread(&content, thread_id) {
         tokio::fs::remove_file(&checkpoint_path)
             .await
             .with_context(|| {
@@ -306,16 +319,53 @@ mod tests {
         assert!(path.starts_with(home.path().join(".elpis/context/workspaces")));
         assert!(content.contains("Ship the context layer"));
         assert!(content.contains("- Thread: `thread-one`"));
+        let checkpoint = path.with_file_name(SESSION_CHECKPOINT_FILE);
+        tokio::fs::write(
+            &checkpoint,
+            "# Elpis Session Checkpoint\n- Thread: `thread-one`\n",
+        )
+        .await?;
         assert_eq!(
             clear_goal(Some(&memories_root), cwd, "thread-two").await?,
             None
         );
         assert!(path.exists());
+        assert!(
+            checkpoint.exists(),
+            "another thread must not clear the checkpoint"
+        );
         assert_eq!(
             clear_goal(Some(&memories_root), cwd, "thread-one").await?,
             Some(path.clone())
         );
         assert!(!path.exists());
+        assert!(!checkpoint.exists());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn clearing_a_goal_preserves_a_checkpoint_written_by_another_thread() -> Result<()> {
+        let home = tempdir()?;
+        let memories_root = home.path().join("memories");
+        let cwd = Path::new("/tmp/shared-project");
+        let goal = write_goal(
+            Some(&memories_root),
+            cwd,
+            "thread-one",
+            "Finish",
+            "active",
+            1,
+        )
+        .await?
+        .context("goal path")?;
+        let checkpoint = goal.with_file_name(SESSION_CHECKPOINT_FILE);
+        let content = "# Elpis Session Checkpoint\n- Thread: `thread-two`\n\n## Latest Result\nQuoted metadata:\n- Thread: `thread-one`\nOther work remains.\n";
+        tokio::fs::write(&checkpoint, content).await?;
+        clear_goal(Some(&memories_root), cwd, "thread-one").await?;
+        assert!(!goal.exists());
+        assert_eq!(tokio::fs::read_to_string(&checkpoint).await?, content);
+        clear_goal(Some(&memories_root), cwd, "thread-one").await?;
+        assert_eq!(tokio::fs::read_to_string(&checkpoint).await?, content);
         Ok(())
     }
 

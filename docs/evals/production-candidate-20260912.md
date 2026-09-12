@@ -8,6 +8,12 @@ UI audit; it does not grant user acceptance.
 
 ## Corrected defects
 
+- Source follow-up, not yet installed: clearing a goal checked its owner only
+  after deleting the workspace ES checkpoint. It now checks both records' owner
+  metadata before deleting either record. Tests cover an unrelated goal-clear,
+  a newer checkpoint owned by another thread, and a quoted owner line inside the
+  result body. This does not change the workspace's last-writer-wins checkpoint
+  design or establish protection against simultaneous cross-process file writes.
 - With a response running and a queued input waiting, Enter in an empty composer
   now interrupts the response and sends the next queued input after cancellation
   completes. Repeated Enter does not issue duplicate interrupts. Enter with a
@@ -43,6 +49,7 @@ Evidence is under `.tmp/final-candidate` unless another path is given.
 | --- | --- | --- |
 | TUI suite | 3,159 passed; zero failed; five existing ignored | `production-tui-tests.log` |
 | Enter/text-layout follow-up TUI suite | 3,162 passed; zero failed; five existing ignored | `ui-followup-final-tests.log` |
+| Checkpoint ownership source follow-up | 3,163 passed; zero failed; five existing ignored | `memory-checkpoint-full-tests.log`; `memory-checkpoint-final-test-build.log` |
 | Enter in native dark/light terminals | Draft queues; empty Enter interrupts; second provider request contains queued text | `enter-queue-after/result.json`; `enter-queue-light-after/result.json` |
 | Follow-up CLI in VS Code terminal | Completion, pruning, resize/Tab, queue recall, three drag-copy trials passed | `ui-followup-xterm.log`; `/tmp/elpis-ide-startup-EBrqdj/folder` |
 | CLI/updater suite | 24 passed; zero failed, including corrupt resource retention | `production-cli-tests.log` |
