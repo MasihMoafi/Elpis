@@ -107,6 +107,11 @@ struct TopCli {
 
 #[derive(clap::Subcommand, Debug)]
 enum ConversationCommand {
+    /// Resume one exact native Elpis session by thread ID.
+    Resume {
+        #[arg(value_parser = parse_thread_id)]
+        session: String,
+    },
     /// Permanently delete a conversation and its spawned descendants.
     Delete {
         #[arg(value_parser = parse_thread_id)]
@@ -131,6 +136,39 @@ fn parse_thread_id(value: &str) -> Result<String, String> {
     codex_protocol::ThreadId::from_string(value)
         .map(|id| id.to_string())
         .map_err(|error| format!("expected a conversation UUID: {error}"))
+}
+
+fn route_conversation_command(
+    command: Option<ConversationCommand>,
+    cli: &mut Cli,
+) -> anyhow::Result<Option<(codex_tui::SessionArchiveAction, String)>> {
+    use codex_tui::DeleteConfirmation;
+    use codex_tui::SessionArchiveAction;
+
+    Ok(match command {
+        Some(ConversationCommand::Resume { session }) => {
+            if cli.resume_session_id.is_some() {
+                anyhow::bail!("Use either `resume SESSION_ID` or `--resume SESSION_ID`, not both");
+            }
+            cli.resume_session_id = Some(session);
+            None
+        }
+        Some(ConversationCommand::Delete { session, force }) => Some((
+            SessionArchiveAction::Delete(if force {
+                DeleteConfirmation::Skip
+            } else {
+                DeleteConfirmation::Prompt
+            }),
+            session,
+        )),
+        Some(ConversationCommand::Archive { session }) => {
+            Some((SessionArchiveAction::Archive, session))
+        }
+        Some(ConversationCommand::Unarchive { session }) => {
+            Some((SessionArchiveAction::Unarchive, session))
+        }
+        None => None,
+    })
 }
 
 fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, elpis_home: &Path) {
@@ -251,7 +289,7 @@ mod tests {
                 .command,
             Some(super::ConversationCommand::Delete { force: false, .. })
         ));
-        for command in ["delete", "archive", "unarchive"] {
+        for command in ["delete", "archive", "unarchive", "resume"] {
             assert!(super::TopCli::try_parse_from(["elpis", command, id]).is_ok());
             assert!(super::TopCli::try_parse_from(["elpis", command, "ambiguous title"]).is_err());
             assert!(super::TopCli::try_parse_from(["elpis", command]).is_err());
@@ -333,6 +371,43 @@ mod tests {
         let parsed =
             TopCli::try_parse_from(["elpis", "--resume", "thread-id"]).expect("exact resume flag");
         assert_eq!(parsed.resume_session_id.as_deref(), Some("thread-id"));
+    }
+
+    #[test]
+    fn printed_resume_command_routes_to_the_exact_native_thread() {
+        let id = "123e4567-e89b-12d3-a456-426614174000";
+        let hint = codex_utils_cli::resume_command(
+            None,
+            Some(codex_protocol::ThreadId::from_string(id).unwrap()),
+        )
+        .unwrap();
+        let mut parsed = TopCli::try_parse_from(hint.split_whitespace()).unwrap();
+        assert!(
+            route_conversation_command(parsed.command.take(), &mut parsed.inner)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(parsed.inner.resume_session_id.as_deref(), Some(id));
+        assert!(parsed.inner.prompt.is_none());
+        assert!(!parsed.inner.resume_picker);
+        assert!(!parsed.inner.resume_last);
+    }
+
+    #[test]
+    fn conflicting_resume_forms_are_rejected_before_loading_history() {
+        let id = "123e4567-e89b-12d3-a456-426614174000";
+        let mut cli = Cli::try_parse_from(["elpis"]).unwrap();
+        cli.resume_session_id = Some(id.to_string());
+        assert!(
+            route_conversation_command(
+                Some(ConversationCommand::Resume {
+                    session: id.to_string()
+                }),
+                &mut cli,
+            )
+            .is_err()
+        );
+        assert_eq!(cli.resume_session_id.as_deref(), Some(id));
     }
 
     #[test]
@@ -433,25 +508,7 @@ fn main() -> anyhow::Result<()> {
             .raw_overrides
             .splice(0..0, top_cli.config_overrides.raw_overrides);
         prepend_elpis_memories_defaults(&mut inner.config_overrides, &elpis_home);
-        if let Some(command) = top_cli.command {
-            use codex_tui::DeleteConfirmation;
-            use codex_tui::SessionArchiveAction;
-            let (action, target) = match command {
-                ConversationCommand::Delete { session, force } => (
-                    SessionArchiveAction::Delete(if force {
-                        DeleteConfirmation::Skip
-                    } else {
-                        DeleteConfirmation::Prompt
-                    }),
-                    session,
-                ),
-                ConversationCommand::Archive { session } => {
-                    (SessionArchiveAction::Archive, session)
-                }
-                ConversationCommand::Unarchive { session } => {
-                    (SessionArchiveAction::Unarchive, session)
-                }
-            };
+        if let Some((action, target)) = route_conversation_command(top_cli.command, &mut inner)? {
             let result = codex_tui::run_session_archive_command(
                 action,
                 target,
