@@ -389,6 +389,7 @@ impl ChatComposerConfig {
 
 pub(crate) struct ChatComposer {
     draft: DraftState,
+    last_textarea_area: std::cell::Cell<Rect>,
     popups: PopupState,
     app_event_tx: AppEventSender,
     history: ChatComposerHistory,
@@ -560,6 +561,7 @@ impl ChatComposer {
 
         let mut this = Self {
             draft: DraftState::new(),
+            last_textarea_area: std::cell::Cell::new(Rect::default()),
             popups: PopupState::default(),
             app_event_tx,
             history: ChatComposerHistory::new(),
@@ -912,6 +914,27 @@ impl ChatComposer {
 
     pub fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
         self.cursor_pos_with_textarea_right_reserve(area, /*textarea_right_reserve*/ 0)
+    }
+
+    pub(crate) fn handle_mouse_selection(
+        &mut self,
+        event: crossterm::event::MouseEvent,
+    ) -> (bool, Option<String>) {
+        let area = self.last_textarea_area.get();
+        if !self.draft.input_enabled || area.is_empty() {
+            return (false, None);
+        }
+        let handled = self.draft.textarea.is_mouse_selecting()
+            || (matches!(
+                event.kind,
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+            ) && area.contains((event.column, event.row).into()));
+        let copied = self.draft.textarea.handle_mouse_selection(
+            event,
+            area,
+            *self.draft.textarea_state.borrow(),
+        );
+        (handled, copied)
     }
 
     pub(crate) fn cursor_pos_with_textarea_right_reserve(
@@ -4353,6 +4376,11 @@ impl ChatComposer {
     ) {
         let [composer_rect, remote_images_rect, textarea_rect, popup_rect] =
             self.layout_areas_with_textarea_right_reserve(area, textarea_right_reserve);
+        self.last_textarea_area.set(if mask_char.is_none() {
+            textarea_rect
+        } else {
+            Rect::default()
+        });
         match &self.popups.active {
             ActivePopup::Command(popup) => {
                 popup.render_ref(popup_rect, buf);

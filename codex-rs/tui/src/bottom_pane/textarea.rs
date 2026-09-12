@@ -24,9 +24,13 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use crossterm::event::MouseButton;
+use crossterm::event::MouseEvent;
+use crossterm::event::MouseEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::WidgetRef;
@@ -114,6 +118,7 @@ pub(crate) struct TextElementSnapshot {
 pub(crate) struct TextArea {
     text: String,
     cursor_pos: usize,
+    mouse_selection: Option<MouseSelection>,
     wrap_cache: RefCell<Option<WrapCache>>,
     preferred_col: Option<usize>,
     elements: Vec<TextElement>,
@@ -127,6 +132,19 @@ pub(crate) struct TextArea {
     vim_normal_keymap: VimNormalKeymap,
     vim_operator_keymap: VimOperatorKeymap,
     vim_text_object_keymap: VimTextObjectKeymap,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MouseSelection {
+    anchor: usize,
+    focus: usize,
+    dragging: bool,
+}
+
+impl MouseSelection {
+    fn range(self) -> Range<usize> {
+        self.anchor.min(self.focus)..self.anchor.max(self.focus)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -155,6 +173,7 @@ impl TextArea {
         Self {
             text: String::new(),
             cursor_pos: 0,
+            mouse_selection: None,
             wrap_cache: RefCell::new(None),
             preferred_col: None,
             elements: Vec::new(),
@@ -206,6 +225,7 @@ impl TextArea {
     fn set_text_inner(&mut self, text: &str, elements: Option<&[UserTextElement]>) {
         // Stage 1: replace the raw text and keep the cursor in a safe byte range.
         self.text = text.to_string();
+        self.mouse_selection = None;
         self.cursor_pos = self.cursor_pos.clamp(0, self.text.len());
         // Stage 2: rebuild element ranges from scratch against the new text.
         self.elements.clear();
@@ -354,10 +374,17 @@ impl TextArea {
     }
 
     pub fn insert_str(&mut self, text: &str) {
+        if let Some(selection) = self.mouse_selection.take()
+            && !selection.range().is_empty()
+        {
+            self.replace_range(selection.range(), text);
+            return;
+        }
         self.insert_str_at(self.cursor_pos, text);
     }
 
     pub fn insert_str_at(&mut self, pos: usize, text: &str) {
+        self.mouse_selection = None;
         let pos = self.clamp_pos_for_insertion(pos);
         self.text.insert_str(pos, text);
         self.wrap_cache.replace(None);
@@ -374,6 +401,7 @@ impl TextArea {
     }
 
     fn replace_range_raw(&mut self, range: std::ops::Range<usize>, text: &str) {
+        self.mouse_selection = None;
         assert!(range.start <= range.end);
         let start = range.start.clamp(0, self.text.len());
         let end = range.end.clamp(0, self.text.len());
@@ -443,6 +471,77 @@ impl TextArea {
         self.text.is_empty()
     }
 
+    fn byte_at_screen_position(&self, area: Rect, state: TextAreaState, x: u16, y: u16) -> usize {
+        if area.is_empty() {
+            return self.cursor_pos;
+        }
+        let lines = self.wrapped_lines(area.width);
+        let scroll = self.effective_scroll(area.height, &lines, state.scroll);
+        let row = y.saturating_sub(area.y).min(area.height - 1) as usize + scroll as usize;
+        let Some(line) = lines.get(row) else {
+            return self.text.len();
+        };
+        let end = line.end.saturating_sub(1).min(self.text.len());
+        let target = usize::from(x.saturating_sub(area.x));
+        let mut column = 0;
+        for (offset, grapheme) in self.text[line.start..end].grapheme_indices(true) {
+            let next = column + text_for_display(grapheme).width();
+            if next > target {
+                return self.clamp_pos_to_nearest_boundary(line.start + offset);
+            }
+            column = next;
+        }
+        self.clamp_pos_to_nearest_boundary(end)
+    }
+
+    pub(crate) fn is_mouse_selecting(&self) -> bool {
+        self.mouse_selection
+            .is_some_and(|selection| selection.dragging)
+    }
+
+    /// Returns source text on release; terminal borders and soft-wrap breaks are never copied.
+    pub(crate) fn handle_mouse_selection(
+        &mut self,
+        event: MouseEvent,
+        area: Rect,
+        state: TextAreaState,
+    ) -> Option<String> {
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if !area.contains((event.column, event.row).into()) {
+                    self.mouse_selection = None;
+                    return None;
+                }
+                let position = self.byte_at_screen_position(area, state, event.column, event.row);
+                self.cursor_pos = position;
+                self.preferred_col = None;
+                self.mouse_selection = Some(MouseSelection {
+                    anchor: position,
+                    focus: position,
+                    dragging: true,
+                });
+            }
+            MouseEventKind::Drag(MouseButton::Left) | MouseEventKind::Up(MouseButton::Left) => {
+                let Some(mut selection) =
+                    self.mouse_selection.filter(|selection| selection.dragging)
+                else {
+                    return None;
+                };
+                selection.focus =
+                    self.byte_at_screen_position(area, state, event.column, event.row);
+                selection.dragging = matches!(event.kind, MouseEventKind::Drag(_));
+                self.cursor_pos = selection.focus;
+                self.preferred_col = None;
+                self.mouse_selection = Some(selection);
+                if !selection.dragging && !selection.range().is_empty() {
+                    return Some(self.text[selection.range()].to_owned());
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
     fn current_display_col(&self) -> usize {
         let bol = self.beginning_of_current_line();
         self.text[bol..self.cursor_pos].width()
@@ -508,6 +607,9 @@ impl TextArea {
             return;
         }
         if self.vim_enabled {
+            if self.vim_mode == VimMode::Normal {
+                self.mouse_selection = None;
+            }
             self.handle_vim_input(event);
         } else {
             let keymap = self.editor_keymap.clone();
@@ -516,6 +618,21 @@ impl TextArea {
     }
 
     pub fn input_with_keymap(&mut self, event: KeyEvent, keymap: &EditorKeymap) {
+        if keymap.delete_backward.is_pressed(event) || keymap.delete_forward.is_pressed(event) {
+            if let Some(selection) = self.mouse_selection.take()
+                && !selection.range().is_empty()
+            {
+                self.replace_range(selection.range(), "");
+                return;
+            }
+        }
+        let inserts_text = matches!(event.code, KeyCode::Char(_))
+            && (event.modifiers.is_empty()
+                || event.modifiers == KeyModifiers::SHIFT
+                || is_altgr(event.modifiers));
+        if !inserts_text && !keymap.insert_newline.is_pressed(event) {
+            self.mouse_selection = None;
+        }
         if keymap.insert_newline.is_pressed(event) {
             self.insert_str("\n");
             return;
@@ -2012,6 +2129,21 @@ impl TextArea {
                 let x_off = self.text[line_range.start..overlap_start].width() as u16;
                 buf.set_string(area.x + x_off, y, text_for_display(highlighted), *style);
             }
+            if let Some(selection) = self.mouse_selection {
+                let selected = selection.range();
+                let start = selected.start.max(line_range.start);
+                let end = selected.end.min(line_range.end);
+                if start < end {
+                    let x = area.x
+                        + text_for_display(&self.text[line_range.start..start]).width() as u16;
+                    let width = (text_for_display(&self.text[start..end]).width() as u16)
+                        .min(area.right().saturating_sub(x));
+                    buf.set_style(
+                        Rect::new(x, y, width, 1),
+                        Style::default().add_modifier(Modifier::REVERSED),
+                    );
+                }
+            }
         }
     }
 
@@ -2043,6 +2175,111 @@ mod tests {
     // crossterm types are intentionally not imported here to avoid unused warnings
     use pretty_assertions::assert_eq;
     use rand::prelude::*;
+
+    fn drag_text(
+        textarea: &mut TextArea,
+        area: Rect,
+        from: (u16, u16),
+        to: (u16, u16),
+    ) -> Option<String> {
+        let event = |kind, (column, row)| MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        textarea.handle_mouse_selection(
+            event(MouseEventKind::Down(MouseButton::Left), from),
+            area,
+            TextAreaState::default(),
+        );
+        textarea.handle_mouse_selection(
+            event(MouseEventKind::Drag(MouseButton::Left), to),
+            area,
+            TextAreaState::default(),
+        );
+        textarea.handle_mouse_selection(
+            event(MouseEventKind::Up(MouseButton::Left), to),
+            area,
+            TextAreaState::default(),
+        )
+    }
+
+    #[test]
+    fn mouse_selection_copies_source_across_soft_wraps_in_both_directions() {
+        let mut textarea = TextArea::new();
+        textarea.set_text_clearing_elements("abcdefghijkl");
+        let area = Rect::new(10, 5, 6, 2);
+        assert_eq!(
+            drag_text(&mut textarea, area, (10, 5), (16, 6)).as_deref(),
+            Some("abcdefghijkl")
+        );
+        assert_eq!(
+            drag_text(&mut textarea, area, (15, 6), (10, 5)).as_deref(),
+            Some("abcdefghijk")
+        );
+    }
+
+    #[test]
+    fn mouse_selection_preserves_unicode_and_real_newlines() {
+        let mut textarea = TextArea::new();
+        textarea.set_text_clearing_elements("ab👩‍💻cd\nef");
+        let area = Rect::new(10, 5, 10, 2);
+        assert_eq!(
+            drag_text(&mut textarea, area, (12, 5), (12, 6)).as_deref(),
+            Some("👩‍💻cd\nef")
+        );
+        let mut buffer = Buffer::empty(area);
+        let mut state = TextAreaState::default();
+        StatefulWidgetRef::render_ref(&&textarea, area, &mut buffer, &mut state);
+        assert!(buffer[(12, 5)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(10, 5)].modifier.contains(Modifier::REVERSED));
+        assert_eq!(textarea.text(), "ab👩‍💻cd\nef");
+    }
+
+    #[test]
+    fn typing_and_deleting_replace_only_the_selected_source() {
+        let area = Rect::new(2, 3, 20, 2);
+        let mut textarea = TextArea::new();
+        textarea.set_text_clearing_elements("alpha beta");
+        assert_eq!(
+            drag_text(&mut textarea, area, (2, 3), (7, 3)).as_deref(),
+            Some("alpha")
+        );
+        textarea.input(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE));
+        assert_eq!(textarea.text(), "X beta");
+        drag_text(&mut textarea, area, (4, 3), (8, 3));
+        textarea.input(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(textarea.text(), "X ");
+        textarea.set_text_clearing_elements("new draft");
+        textarea.insert_str("!");
+        assert_eq!(textarea.text(), "ne!w draft");
+    }
+
+    #[test]
+    fn mouse_selection_preserves_tabs_but_highlights_the_displayed_columns() {
+        let area = Rect::new(2, 3, 10, 1);
+        let mut textarea = TextArea::new();
+        textarea.set_text_clearing_elements("\tAB");
+        assert_eq!(
+            drag_text(&mut textarea, area, (2, 3), (3, 3)).as_deref(),
+            Some("\t")
+        );
+        let mut buffer = Buffer::empty(area);
+        let mut state = TextAreaState::default();
+        StatefulWidgetRef::render_ref(&&textarea, area, &mut buffer, &mut state);
+        assert!(buffer[(2, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(3, 3)].modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn dragging_from_outside_the_textarea_does_not_copy_chrome() {
+        let area = Rect::new(2, 3, 20, 2);
+        let mut textarea = TextArea::new();
+        textarea.set_text_clearing_elements("draft");
+        assert_eq!(drag_text(&mut textarea, area, (0, 2), (7, 3)), None);
+        assert_eq!(textarea.text(), "draft");
+    }
 
     fn rand_grapheme(rng: &mut rand::rngs::StdRng) -> String {
         let r: u8 = rng.random_range(0..100);

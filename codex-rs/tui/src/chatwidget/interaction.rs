@@ -4,6 +4,25 @@
 use super::*;
 
 impl ChatWidget {
+    pub(crate) fn handle_composer_mouse_selection(
+        &mut self,
+        event: crossterm::event::MouseEvent,
+    ) -> bool {
+        let (handled, copied) = self.bottom_pane.handle_composer_mouse_selection(event);
+        if let Some(text) = copied {
+            match crate::clipboard_copy::copy_to_clipboard(&text) {
+                Ok(lease) => self.clipboard_lease = lease,
+                Err(error) => {
+                    self.add_error_message(format!("Could not copy selected text: {error}"))
+                }
+            }
+        }
+        if handled || matches!(event.kind, crossterm::event::MouseEventKind::Down(_)) {
+            self.frame_requester.schedule_frame();
+        }
+        handled
+    }
+
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
         if key_hint::plain(KeyCode::Tab).is_press(key_event)
             && !self.bottom_pane.has_active_view()

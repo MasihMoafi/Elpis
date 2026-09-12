@@ -57,3 +57,36 @@ Unicode, and real newlines; do not strip characters heuristically from the final
 clipboard. Keep animations and do not send, edit, or interrupt the draft/agent
 as a side effect of selecting. Verify scrolling, resize, and mouse-mode cleanup
 as part of integration, in both native VTE and VS Code's terminal.
+
+## Composer implementation progress
+
+The textarea now maps mouse coordinates to source byte ranges, paints selection,
+and returns only selected source text on release. Typing/backspace/delete replace
+the selected draft range. Rendering does not mutate the selected source. Composer
+geometry excludes the prompt, border, and neighboring ledger; masked inputs and
+active popups are not routed through this selection path. App events forward the
+copy payload to the existing clipboard backend.
+
+Five new tests cover soft wrapping in both directions, Unicode and real newlines,
+tabs versus displayed spaces, selected-text editing, and rejecting a drag starting
+outside the textarea. The last check is the textarea boundary contract, not proof
+that the eventual application controller skips chrome when a drag starts there.
+The full TUI suite passed: 3,168 passed, zero failed, five existing ignored.
+Evidence: `.tmp/final-candidate/composer-selection-full-tests.log`.
+
+An optimized executable passed two real GTK/VTE clipboard checks using a test-only
+wrapper that enables mouse reporting. With animations enabled, both the active
+response and completed-response cases copied exactly `preserve this draft`, with
+no prompt or ledger text. The active response's connection remained open; no
+extra provider request was sent. Screenshot inspected. Evidence:
+`.tmp/final-candidate/composer-selection-{busy,idle}-padded/result.json` and
+`composer-selection-busy-padded/composer-selected.png`. The initial fixture ended
+one pixel short because it omitted VTE's left padding; those failed results are
+retained in `composer-selection-{busy,idle}/result.json`. The corrected endpoint
+is immediately after the final character's cell.
+
+This is not a completed or installed selection feature. Global mouse capture
+remains disabled in the normal runtime. Transcript selection, cross-region drag
+handling, scrolling, selection-aware copy shortcuts, mouse focus transfer from
+the Ledger, and mouse-mode lifecycle still need integration and terminal checks.
+The user's existing installed executable is unchanged by this work.

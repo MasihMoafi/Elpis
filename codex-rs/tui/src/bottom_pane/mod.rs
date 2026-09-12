@@ -1388,6 +1388,16 @@ impl BottomPane {
     /// This is the UI-level definition of "no modal/popup is active" for key routing decisions.
     /// It intentionally does not include task state, since some actions are safe while a task is
     /// running and some are not.
+    pub(crate) fn handle_composer_mouse_selection(
+        &mut self,
+        event: crossterm::event::MouseEvent,
+    ) -> (bool, Option<String>) {
+        if !self.no_modal_or_popup_active() {
+            return (false, None);
+        }
+        self.composer.handle_mouse_selection(event)
+    }
+
     pub(crate) fn no_modal_or_popup_active(&self) -> bool {
         self.can_launch_external_editor()
     }

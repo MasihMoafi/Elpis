@@ -1324,6 +1324,10 @@ See the Elpis keymap documentation for supported actions and examples."
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, app_server, key_event).await;
                 }
+                TuiEvent::Mouse(mouse_event)
+                    if self
+                        .chat_widget
+                        .handle_composer_mouse_selection(mouse_event) => {}
                 TuiEvent::Mouse(mouse_event) => match mouse_event.kind {
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
                         self.chat_widget
