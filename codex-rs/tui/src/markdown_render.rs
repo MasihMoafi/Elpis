@@ -1404,7 +1404,12 @@ where
             .map(|width| segment_char.repeat(*width + (TABLE_CELL_PADDING * 2)))
             .collect::<Vec<_>>()
             .join(&gap);
-        HyperlinkLine::new(Line::from(Span::styled(text, style)))
+        let mut line = HyperlinkLine::new(Line::from(Span::styled(text, style)));
+        line.selection = Some(crate::terminal_hyperlinks::SelectionSource {
+            text: "".into(),
+            spans: Vec::new(),
+        });
+        line
     }
 
     fn render_table_row(

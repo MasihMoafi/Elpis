@@ -201,9 +201,9 @@ impl PreparedResumeAction {
 fn suspend_process() -> Result<()> {
     super::restore()?;
     super::terminal_stderr::pause()?;
-    unsafe {
-        libc::kill(/*pid*/ 0, libc::SIGTSTP)
-    };
+    // A process-group signal can stop another thread after this one has already
+    // re-enabled terminal modes. Raise on this thread and return only on resume.
+    unsafe { libc::raise(libc::SIGTSTP) };
     // After the process resumes, reapply terminal modes so drawing can continue.
     super::terminal_stderr::resume()?;
     super::set_modes()?;

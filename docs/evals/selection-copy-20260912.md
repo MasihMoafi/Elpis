@@ -239,6 +239,38 @@ The installed CLI remains `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31
 
 ### Normal mouse integration — latest candidate
 
+### Cross-boundary copy and suspend fixes — subsequent candidate
+
+`cross-live-dark` reproduced decorative table dividers in copied text when
+dragging from a completed user message into the live table. Table separators now
+retain their visible style but carry empty selection metadata. `cross-live-fixed`
+and `cross-live-fixed-light` pass: the copied words are exactly the selected user
+message, table headings, and sentinel, allowing whitespace differences. Release,
+Ctrl+C, retention after dismissal, and continued provider streaming are checked.
+
+`mouse-suspend-live` and `mouse-suspend-repeat` reproduced enabled mouse modes
+while the shell held control after Ctrl+Z. Tracing changed the timing and passed;
+that traced run alone was not accepted as proof. Suspend now raises SIGTSTP on
+the calling thread before re-enabling terminal modes. This suspends the Elpis
+process rather than broadcasting SIGTSTP to its process group; separate tool
+processes may continue. Untraced `mouse-suspend-fixed` and
+`mouse-suspend-fixed-light` both confirm disabled modes while stopped, then exact
+live-table copying after foreground resume with the original stream still open.
+
+The final `suspend-fixed-test-build.log` and `suspend-fixed-optimized.log` pass.
+`suspend-fixed-full-tests.log`: 3,191 passed, zero failed, five ignored.
+
+xterm 390 was downloaded without the proxy and unpacked under the temporary eval
+directory; no system package was installed. The harness required GdkX11 3.0,
+UTF-8 locale, correctly escaped X resource translations, and a screen-print
+action. Earlier xterm probes failed setup and are not product evidence.
+`xterm-live-locale` and `xterm-live-held` reach the live table but fail copy: the
+clipboard retains its control value. Pausing screen-print keystrokes during the
+drag did not resolve it. The captured print row for the sentinel is 16 (10x20
+cells), while the post-delta screenshot shows it two rows higher; inspect native
+mouse coordinates and pre-drag display geometry next. xterm acceptance remains
+unproven, and this candidate is not installed.
+
 Normal startup now enables button-motion and SGR mouse reporting. It does not
 enable all-pointer-motion events. The common terminal restore path disables mouse
 reporting. Wheel-up opens the existing transcript viewer and scrolls upward;
