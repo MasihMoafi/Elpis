@@ -3,8 +3,8 @@
 The candidate is not production-ready. The later
 [selection audit](selection-copy-20260912.md) supersedes the earlier active-response
 selection failures below: corrected VTE and xterm checks pass. User acceptance
-remains open. The reported long live-provider compaction delay has
-not been reproduced. Public release and published-artifact verification remain
+remains open. Live activity inspection now confirms compaction phases lasting
+about 194–230 seconds; the provider/local breakdown is still unresolved. Public release and published-artifact verification remain
 pending. This report supersedes the installed-artifact information in the earlier
 UI audit; it does not grant user acceptance.
 
@@ -253,3 +253,41 @@ was killed. To apply the installed changes to this thread, restart and use:
 ```bash
 elpis resume 01a08a44-2bba-7213-bce0-4a7e5f0423aa
 ```
+
+## Live latency and optimizer overhead recovered from activity data
+
+A read-only request to the running conversation's localhost dashboard recovered
+existing scalar measurements; no logging policy or runtime code was changed.
+Rollouts omit `TurnProfile` deliberately, but `turn/activityUpdated` feeds the
+in-memory activity view. The response wraps this data under `state.activity`.
+
+Four of the 20 retained activity rows reported nonzero compaction time:
+194,423 ms, 229,775 ms, 193,735 ms and 198,951 ms. This confirms real multi-minute
+compaction phases in this running session, superseding the earlier statement that
+no live measurement was available. The phase guard covers the compaction operation;
+it does not separate provider time from local history preparation and application.
+These numbers cannot establish a renderer defect or the root cause of the delay.
+Raw scalar evidence: `.tmp/final-candidate/live-activity-timings.json`.
+
+The same conversation's live pruning summary reported:
+
+| Measure | Reported value |
+| --- | ---: |
+| Outputs examined / shortened / unchanged | 251 / 183 / 68 |
+| Approximate source / admitted tokens | 414,099 / 157,614 |
+| Gross shortened tokens | 256,485 |
+| Optimizer requests / usage reports | 259 / 249 |
+| Reported optimizer input / output tokens | 911,398 / 987,524 |
+| Reported optimizer total tokens | 1,898,922 |
+| Reasoning output, included in output | 798,752 |
+| Failed batches | 13 |
+| Accumulated optimizer latency | 19,041,355 ms (5.29 hours) |
+
+Smart Prune was configured off at inspection. These are the running conversation's
+summary counters, not an all-installations total. Accumulated request latency is
+not necessarily additional elapsed wall time. Ten requests have no usage report.
+Optimizer tokens and shortened context tokens describe different quantities;
+subtracting them does not estimate net savings because later context reuse and
+cache effects matter. The large recorded optimizer workload is a concrete reason
+to avoid selling the gross reduction as an efficiency win. No subscription dollar
+cost is inferred. Raw scalar evidence: `live-pruning-totals.json` in the same folder.
