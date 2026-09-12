@@ -604,6 +604,18 @@ enum DrawCommand {
     ClearToEnd { x: u16, y: u16, bg: Color },
 }
 
+fn cells_visually_equal(a: &Cell, b: &Cell) -> bool {
+    a == b
+        || (a.symbol() == " "
+            && b.symbol() == " "
+            && a.bg == b.bg
+            && a.modifier == b.modifier
+            && a.skip == b.skip
+            && !a
+                .modifier
+                .intersects(Modifier::REVERSED | Modifier::UNDERLINED | Modifier::CROSSED_OUT))
+}
+
 fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
     let previous_buffer = &a.content;
     let next_buffer = &b.content;
@@ -634,7 +646,10 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
 
         let tail_start = row_start + last_nonblank_column + 1;
         if tail_start < row_end
-            && next_buffer[tail_start..row_end] != previous_buffer[tail_start..row_end]
+            && !next_buffer[tail_start..row_end]
+                .iter()
+                .zip(&previous_buffer[tail_start..row_end])
+                .all(|(next, previous)| cells_visually_equal(next, previous))
         {
             let (x, y) = a.pos_of(tail_start);
             updates.push(DrawCommand::ClearToEnd { x, y, bg });
@@ -649,7 +664,10 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
     // their place (the skipped cells should be blank anyway), or due to per-cell-skipping:
     let mut to_skip: usize = 0;
     for (i, (current, previous)) in next_buffer.iter().zip(previous_buffer.iter()).enumerate() {
-        if !current.skip && (current != previous || invalidated > 0) && to_skip == 0 {
+        if !current.skip
+            && (!cells_visually_equal(current, previous) || invalidated > 0)
+            && to_skip == 0
+        {
             let (x, y) = a.pos_of(i);
             let row = i / a.area.width as usize;
             if x <= last_nonblank_columns[row] {
@@ -911,6 +929,35 @@ mod tests {
         let mut buffer = Buffer::empty(Rect::new(0, 0, 80, 2));
         buffer.set_string(0, 0, "Keep this selected transcript", Style::default());
         assert!(diff_buffers(&buffer, &buffer).is_empty());
+    }
+
+    #[test]
+    fn blank_foreground_animation_emits_no_terminal_writes() {
+        let mut previous = Buffer::empty(Rect::new(0, 0, 80, 2));
+        // A background gradient keeps these spaces inside the painted region.
+        for x in 0..80 {
+            previous[(x, 0)].set_bg(Color::Rgb(x as u8, 20, 20));
+        }
+        let mut next = previous.clone();
+        for cell in &mut next.content {
+            cell.set_fg(Color::Yellow);
+        }
+        assert!(diff_buffers(&previous, &next).is_empty());
+    }
+
+    #[test]
+    fn decorated_spaces_still_repaint_foreground_changes() {
+        for modifier in [
+            Modifier::REVERSED,
+            Modifier::UNDERLINED,
+            Modifier::CROSSED_OUT,
+        ] {
+            let mut previous = Buffer::empty(Rect::new(0, 0, 1, 1));
+            previous[(0, 0)].set_style(Style::default().add_modifier(modifier));
+            let mut next = previous.clone();
+            next[(0, 0)].set_fg(Color::Yellow);
+            assert_eq!(diff_buffers(&previous, &next).len(), 1);
+        }
     }
 
     #[test]
