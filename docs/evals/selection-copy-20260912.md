@@ -85,6 +85,11 @@ one pixel short because it omitted VTE's left padding; those failed results are
 retained in `composer-selection-{busy,idle}/result.json`. The corrected endpoint
 is immediately after the final character's cell.
 
+A further busy-response capture waited 1.2 seconds after release and retained the
+selection highlight while the response stayed open; its exact clipboard check
+also passed. Evidence: `composer-selection-busy-settled/result.json` and the
+visually inspected `composer-selected.png` in that directory.
+
 This is not a completed or installed selection feature. Global mouse capture
 remains disabled in the normal runtime. Transcript selection, cross-region drag
 handling, scrolling, selection-aware copy shortcuts, mouse focus transfer from
