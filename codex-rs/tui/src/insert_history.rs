@@ -253,6 +253,11 @@ where
     }
     if wrapped_lines > 0 {
         terminal.note_history_rows_inserted(wrapped_lines);
+        terminal.record_history_rows(
+            wrapped
+                .iter()
+                .flat_map(|line| physical_history_rows(line, wrap_width)),
+        );
     }
 
     Ok(())
@@ -277,6 +282,30 @@ pub(crate) fn leading_whitespace_prefix(line: &Line<'_>) -> Line<'static> {
         }
     }
     Line::from(spans).style(line.style)
+}
+
+fn physical_history_rows(line: &HyperlinkLine, width: usize) -> Vec<HyperlinkLine> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut column = 0;
+    for span in &line.line.spans {
+        for grapheme in span.content.graphemes(true) {
+            let cells = grapheme.width().min(width);
+            if cells > 0 && column + cells > width {
+                rows.push(Line::from(std::mem::take(&mut spans)).style(line.line.style));
+                column = 0;
+            }
+            if let Some(last) = spans.last_mut().filter(|last| last.style == span.style) {
+                last.content.to_mut().push_str(grapheme);
+            } else {
+                spans.push(Span::styled(grapheme.to_owned(), span.style));
+            }
+            column += cells;
+        }
+    }
+    rows.push(Line::from(spans).style(line.line.style));
+    remap_wrapped_line(line, rows)
 }
 
 fn physical_row_count(line: &Line<'_>, width: usize) -> usize {
@@ -951,6 +980,12 @@ mod tests {
             .expect("insert history");
             assert_eq!(term.viewport_area.y, 3, "mode: {mode:?}");
             assert_eq!(term.visible_history_rows(), 3);
+            let retained: Vec<String> = term
+                .history_rows()
+                .iter()
+                .map(|row| row.line.to_string())
+                .collect();
+            assert_eq!(retained, ["abcd", "界abc", "d"]);
             let rows: Vec<String> = term.backend().vt100().screen().rows(0, 5).collect();
             assert_eq!(&rows[..3], &["abcd", "界abc", "d"], "mode: {mode:?}");
             assert!(
@@ -958,6 +993,55 @@ mod tests {
                 "history must not occupy composer"
             );
         }
+    }
+
+    #[test]
+    fn retained_history_is_bounded_and_invalidated_with_screen_coordinates() {
+        let mut term = crate::custom_terminal::Terminal::with_options(VT100Backend::new(10, 4))
+            .expect("terminal");
+        term.set_viewport_area(Rect::new(0, 3, 10, 1));
+        insert_history_lines(
+            &mut term,
+            (0..20).map(|i| Line::from(format!("row {i}"))).collect(),
+        )
+        .expect("insert history");
+        assert_eq!(term.history_rows().len(), 3);
+        assert_eq!(term.history_rows()[0].line.to_string(), "row 17");
+        term.set_viewport_area(Rect::new(0, 2, 10, 2));
+        assert_eq!(term.history_rows().len(), 2);
+        assert_eq!(term.history_rows()[0].line.to_string(), "row 18");
+        term.resize(Size::new(8, 4)).expect("resize");
+        assert!(term.history_rows().is_empty());
+        term.set_viewport_area(Rect::new(0, 2, 8, 2));
+        insert_history_lines(&mut term, vec![Line::from("fresh")]).expect("insert after resize");
+        assert_eq!(term.history_rows().len(), 1);
+        term.clear_visible_screen().expect("clear");
+        assert!(term.history_rows().is_empty());
+    }
+
+    #[test]
+    fn retained_physical_rows_preserve_source_without_prompt_prefix() {
+        let lines = crate::terminal_hyperlinks::prefix_hyperlink_lines(
+            plain_hyperlink_lines(vec![Line::from("abcd界abcd")]),
+            Span::from("› "),
+            Span::from("  "),
+        );
+        let rows = physical_history_rows(&lines[0], 5);
+        assert_eq!(rows.len(), 3);
+        let source = rows[0].selection_source();
+        assert_eq!(&*source.text, "abcd界abcd");
+        let copied = rows
+            .iter()
+            .map(|row| {
+                let source = row.selection_source();
+                source
+                    .spans
+                    .iter()
+                    .map(|span| source.text[span.source_bytes.clone()].to_string())
+                    .collect::<String>()
+            })
+            .collect::<String>();
+        assert_eq!(copied, "abcd界abcd");
     }
 
     #[test]

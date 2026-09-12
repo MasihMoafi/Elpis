@@ -167,6 +167,7 @@ where
     pub last_known_cursor_pos: Position,
     /// Count of visible history rows rendered above the viewport in inline mode.
     visible_history_rows: u16,
+    history_rows: Vec<crate::terminal_hyperlinks::HyperlinkLine>,
 }
 
 impl<B> Drop for Terminal<B>
@@ -245,6 +246,7 @@ where
             last_known_screen_size: screen_size,
             last_known_cursor_pos: cursor_pos,
             visible_history_rows: 0,
+            history_rows: Vec::new(),
         }
     }
 
@@ -316,16 +318,23 @@ where
     /// Requested area will be saved to remain consistent when rendering. This leads to a full clear
     /// of the screen.
     pub fn resize(&mut self, screen_size: Size) -> io::Result<()> {
+        if screen_size.width != self.last_known_screen_size.width {
+            self.history_rows.clear();
+        }
         self.last_known_screen_size = screen_size;
         Ok(())
     }
 
     /// Sets the viewport area.
     pub fn set_viewport_area(&mut self, area: Rect) {
+        if area.width != self.viewport_area.width {
+            self.history_rows.clear();
+        }
         self.current_buffer_mut().resize(area);
         self.previous_buffer_mut().resize(area);
         self.viewport_area = area;
         self.visible_history_rows = self.visible_history_rows.min(area.top());
+        self.trim_history_rows();
     }
 
     /// Queries the backend for size and resizes if it doesn't match the previous size.
@@ -550,6 +559,7 @@ where
         self.set_cursor_position(home)?;
         std::io::Write::flush(&mut self.backend)?;
         self.visible_history_rows = 0;
+        self.history_rows.clear();
         self.previous_buffer_mut().reset();
         Ok(())
     }
@@ -569,6 +579,7 @@ where
         std::io::Write::flush(&mut self.backend)?;
         self.last_known_cursor_pos = Position { x: 0, y: 0 };
         self.visible_history_rows = 0;
+        self.history_rows.clear();
         self.previous_buffer_mut().reset();
         Ok(())
     }
@@ -582,6 +593,35 @@ where
             .visible_history_rows
             .saturating_add(inserted_rows)
             .min(self.viewport_area.top());
+    }
+
+    pub(crate) fn record_history_rows(
+        &mut self,
+        rows: impl IntoIterator<Item = crate::terminal_hyperlinks::HyperlinkLine>,
+    ) {
+        let limit = self.visible_history_rows as usize;
+        if limit == 0 {
+            self.history_rows.clear();
+            return;
+        }
+        for row in rows {
+            if self.history_rows.len() == limit {
+                self.history_rows.remove(0);
+            }
+            self.history_rows.push(row);
+        }
+    }
+
+    pub(crate) fn history_rows(&self) -> &[crate::terminal_hyperlinks::HyperlinkLine] {
+        &self.history_rows
+    }
+
+    fn trim_history_rows(&mut self) {
+        let excess = self
+            .history_rows
+            .len()
+            .saturating_sub(self.visible_history_rows as usize);
+        self.history_rows.drain(..excess);
     }
 
     /// Clears the inactive buffer and swaps it with the current buffer
