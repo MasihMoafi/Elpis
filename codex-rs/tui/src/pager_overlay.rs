@@ -156,8 +156,14 @@ impl PagerView {
     }
 
     fn render(&mut self, area: Rect, buf: &mut Buffer) {
+        if area.is_empty() {
+            return;
+        }
         Clear.render(area, buf);
         self.render_header(area, buf);
+        if area.height == 1 {
+            return;
+        }
         let content_area = self.content_area(area);
         self.update_last_content_height(content_area.height);
         let content_height = self.content_height(content_area.width);
@@ -192,10 +198,10 @@ impl PagerView {
             let height = renderable.desired_height(area.width) as isize;
             y += height;
             let bottom = y;
-            if bottom < area.y as isize {
+            if bottom <= 0 {
                 continue;
             }
-            if top > area.y as isize + area.height as isize {
+            if top >= area.height as isize {
                 break;
             }
             if top < 0 {
@@ -245,8 +251,9 @@ impl PagerView {
             }
         };
         let pct_text = format!(" {percent}% ");
-        let pct_w = pct_text.chars().count() as u16;
-        let pct_x = sep_rect.x + sep_rect.width - pct_w - 1;
+        let pct_w = (pct_text.chars().count() as u16).min(sep_rect.width);
+        let trailing_margin = u16::from(sep_rect.width > pct_w);
+        let pct_x = sep_rect.right() - pct_w - trailing_margin;
         Span::from(pct_text)
             .dim()
             .render_ref(Rect::new(pct_x, sep_rect.y, pct_w, 1), buf);
@@ -938,7 +945,7 @@ fn render_offset_content(
         0,
         0,
         area.width,
-        height.min(area.height + scroll_offset),
+        height.min(area.height.saturating_add(scroll_offset)),
     ));
     renderable.render(*tall_buf.area(), &mut tall_buf);
     let copy_height = area
@@ -1027,6 +1034,42 @@ mod tests {
             scroll_offset,
             default_pager_keymap(),
         )
+    }
+
+    #[test]
+    fn pager_content_clipping_is_independent_of_screen_origin() {
+        for scroll in 0..5 {
+            let renderables = (0..5)
+                .map(|i| paragraph_block(&format!("row{i}-"), 1))
+                .collect();
+            let view = pager_view(renderables, "test", scroll);
+            let origin = Rect::new(0, 0, 20, 3);
+            let shifted = Rect::new(4, 7, 20, 3);
+            let mut expected = Buffer::empty(origin);
+            let mut actual = Buffer::empty(shifted);
+            view.render_content(origin, &mut expected);
+            view.render_content(shifted, &mut actual);
+            assert_eq!(
+                buffer_to_text(&actual, shifted),
+                buffer_to_text(&expected, origin)
+            );
+        }
+    }
+
+    #[test]
+    fn pager_fits_tiny_viewports() {
+        for width in 0..12 {
+            for height in 0..8 {
+                let area = Rect::new(3, 5, width, height);
+                let mut buf = Buffer::empty(area);
+                let mut view = pager_view(vec![paragraph_block("row", 4)], "test", 0);
+                view.render(area, &mut buf);
+                if width == 5 && height >= 6 {
+                    let footer = Rect::new(area.x, area.bottom() - 1, width, 1);
+                    assert_eq!(buffer_to_text(&buf, footer), " 100%\n");
+                }
+            }
+        }
     }
 
     #[test]

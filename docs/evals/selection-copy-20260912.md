@@ -158,3 +158,29 @@ remains disabled in the normal runtime. Transcript selection, cross-region drag
 handling, scrolling, selection-aware copy shortcuts, mouse focus transfer from
 the Ledger, and mouse-mode lifecycle still need integration and terminal checks.
 The user's existing installed executable is unchanged by this work.
+
+## Pager geometry follow-up
+
+While tracing transcript selection geometry, a focused regression reproduced
+missing content when the pager's content rectangle has a nonzero screen origin:
+three ordinary rows became three empty-row markers. The clipping loop compared
+content-relative row offsets with absolute screen coordinates. It now clips
+against zero and the content height. Footer geometry also fits the available
+width, empty and single-row viewports are handled explicitly, and offset-buffer
+height addition saturates.
+
+Evidence under `.tmp/final-candidate/`:
+
+- `pager-geometry-before-tests.log`: origin-invariance check fails against the
+  previous renderer. The initial tiny-viewport no-panic check passed; it was
+  strengthened to assert the visible percentage text.
+- `pager-geometry-after-tests.log`: all 21 pager checks pass, including the two
+  new cases. Existing snapshots required no updates.
+- `pager-geometry-after-build.log`: test build passed, 166,968 ms, peak 68°C.
+- `pager-geometry-full-tests.log`: 3,180 passed, zero failed, five ignored.
+
+This patch has not been installed and does not establish that the user's main
+terminal glitches are gone. The installed CLI remains the Up-recall candidate
+with SHA256 `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31ca32d91e05b`.
+Normal mouse capture remains off. Actual transcript selection, scrolling, and
+mouse-mode lifecycle are still outstanding.
