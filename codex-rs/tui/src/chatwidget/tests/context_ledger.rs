@@ -47,6 +47,63 @@ async fn tab_completes_slash_command_before_touching_ledger() {
 }
 
 #[tokio::test]
+async fn composer_drag_from_identity_or_border_selects_only_draft() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane
+        .set_composer_text("draft text".into(), Vec::new(), Vec::new());
+    let area = Rect::new(0, 0, 120, 40);
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(&chat, area, &mut buffer);
+    let (x, y) = Renderable::cursor_pos(&chat, area).expect("composer cursor");
+    let header_y = (area.top()..area.bottom())
+        .find(|row| {
+            (area.left()..area.right())
+                .map(|column| buffer[(column, *row)].symbol())
+                .collect::<String>()
+                .contains(" Elpis ")
+        })
+        .expect("identity row");
+    let mouse = |kind, column, row| MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    };
+    for (start_x, start_y) in [(1, header_y), (1, header_y + 1), (x - 11, y)] {
+        assert!(chat.handle_composer_mouse_selection(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            start_x,
+            start_y,
+        )));
+        assert!(chat.handle_composer_mouse_selection(mouse(
+            MouseEventKind::Drag(MouseButton::Left),
+            x,
+            y,
+        )));
+        assert_eq!(
+            chat.bottom_pane.selected_composer_text(),
+            Some("draft text")
+        );
+        chat.handle_composer_mouse_selection(mouse(
+            MouseEventKind::Drag(MouseButton::Left),
+            x,
+            header_y,
+        ));
+        assert_eq!(chat.bottom_pane.selected_composer_text(), None);
+    }
+    chat.handle_composer_mouse_selection(mouse(MouseEventKind::Up(MouseButton::Left), x, header_y));
+    assert!(!chat.handle_composer_mouse_selection(mouse(
+        MouseEventKind::Down(MouseButton::Left),
+        area.right() - 1,
+        y,
+    )));
+    assert_eq!(chat.bottom_pane.composer_text(), "draft text");
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn tab_focuses_visible_ledger_for_pruning_then_closes_it() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));

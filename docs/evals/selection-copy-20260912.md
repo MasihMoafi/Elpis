@@ -60,6 +60,27 @@ as part of integration, in both native VTE and VS Code's terminal.
 
 ## Composer implementation progress
 
+The boundary follow-up permits starting a draft selection on its identity row,
+border, or prompt gutter. It uses the actual rendered identity rectangle to
+bound this region and keeps the neighboring ledger outside it. Pointer rows
+above/below the textarea map to the first/last visible source endpoint,
+independent of horizontal position.
+
+- `selection-boundary-test-build.log`: successful build.
+- `selection-boundary-full-tests.log`: 3,171 passed, 0 failed, 5 ignored.
+  Added identity/border/gutter and adjacent-ledger checks, plus Unicode selection
+  clamping above/below the text area.
+- `selection-boundary-optimized.log`: successful optimized build.
+- `selection-boundary-busy/result.json` and
+  `selection-boundary-light-busy/result.json`: both pass the original
+  identity-to-draft drag using the application selection handler during an open
+  local-fixture response. Copy and Ctrl+C restore exactly the draft, without
+  changing it, interrupting, or making another request. Both screenshots were
+  inspected: only the draft is highlighted, with readable dark/light contrast.
+
+These checks still use the test-only mouse-capture wrapper. Transcript selection,
+scrolling, normal-runtime capture, and release installation remain unfinished.
+
 The follow-up routing change releases Context Ledger focus when the composer
 handles a drag. Ctrl+C copies a nonempty composer selection before interrupt or
 side-conversation return handling; with no selection, existing key routing is

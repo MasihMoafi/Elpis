@@ -482,6 +482,12 @@ impl TextArea {
             return self.text.len();
         };
         let end = line.end.saturating_sub(1).min(self.text.len());
+        if y < area.y {
+            return self.clamp_pos_to_nearest_boundary(line.start);
+        }
+        if y >= area.bottom() {
+            return self.clamp_pos_to_nearest_boundary(end);
+        }
         let target = usize::from(x.saturating_sub(area.x));
         let mut column = 0;
         for (offset, grapheme) in self.text[line.start..end].grapheme_indices(true) {
@@ -2243,6 +2249,21 @@ mod tests {
         assert_eq!(textarea.selected_text(), Some("👩‍💻cd\nef"));
         textarea.input(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
         assert_eq!(textarea.selected_text(), None);
+    }
+
+    #[test]
+    fn mouse_selection_clamps_rows_outside_text_to_visible_endpoints() {
+        let mut textarea = TextArea::new();
+        textarea.set_text_clearing_elements("ab文\ncd");
+        let area = Rect::new(10, 5, 10, 2);
+        assert_eq!(
+            drag_text(&mut textarea, area, (12, 5), (10, 9)).as_deref(),
+            Some("文\ncd")
+        );
+        assert_eq!(
+            drag_text(&mut textarea, area, (12, 6), (19, 4)).as_deref(),
+            Some("ab文\ncd")
+        );
     }
 
     #[test]

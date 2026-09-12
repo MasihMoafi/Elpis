@@ -1389,6 +1389,10 @@ impl BottomPane {
             .flatten()
     }
 
+    pub(crate) fn set_composer_selection_header_area(&self, area: Rect) {
+        self.composer.set_selection_header_area(area);
+    }
+
     pub(crate) fn handle_composer_mouse_selection(
         &mut self,
         event: crossterm::event::MouseEvent,

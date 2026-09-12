@@ -259,6 +259,7 @@ impl Renderable for ChatWidget {
 
 impl ChatWidget {
     fn render_identity_line(&self, area: Rect, buf: &mut Buffer) {
+        self.bottom_pane.set_composer_selection_header_area(area);
         if area.is_empty() {
             return;
         }

@@ -390,6 +390,7 @@ impl ChatComposerConfig {
 pub(crate) struct ChatComposer {
     draft: DraftState,
     last_textarea_area: std::cell::Cell<Rect>,
+    selection_header_area: std::cell::Cell<Rect>,
     popups: PopupState,
     app_event_tx: AppEventSender,
     history: ChatComposerHistory,
@@ -562,6 +563,7 @@ impl ChatComposer {
         let mut this = Self {
             draft: DraftState::new(),
             last_textarea_area: std::cell::Cell::new(Rect::default()),
+            selection_header_area: std::cell::Cell::new(Rect::default()),
             popups: PopupState::default(),
             app_event_tx,
             history: ChatComposerHistory::new(),
@@ -923,19 +925,41 @@ impl ChatComposer {
             .flatten()
     }
 
+    pub(crate) fn set_selection_header_area(&self, area: Rect) {
+        self.selection_header_area.set(area);
+    }
+
     pub(crate) fn handle_mouse_selection(
         &mut self,
-        event: crossterm::event::MouseEvent,
+        mut event: crossterm::event::MouseEvent,
     ) -> (bool, Option<String>) {
         let area = self.last_textarea_area.get();
         if !self.draft.input_enabled || area.is_empty() {
             return (false, None);
         }
+        let header = self.selection_header_area.get();
+        let left_down = matches!(
+            event.kind,
+            crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+        );
+        if left_down && !header.is_empty() {
+            let start_area = Rect::new(
+                header.x,
+                header.y,
+                header.width,
+                area.bottom().saturating_sub(header.y),
+            );
+            if start_area.contains((event.column, event.row).into()) {
+                if event.row < area.y {
+                    event.row = area.y;
+                    event.column = area.x;
+                } else {
+                    event.column = event.column.clamp(area.x, area.right() - 1);
+                }
+            }
+        }
         let handled = self.draft.textarea.is_mouse_selecting()
-            || (matches!(
-                event.kind,
-                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
-            ) && area.contains((event.column, event.row).into()));
+            || (left_down && area.contains((event.column, event.row).into()));
         let copied = self.draft.textarea.handle_mouse_selection(
             event,
             area,
