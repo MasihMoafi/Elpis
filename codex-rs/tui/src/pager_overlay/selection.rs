@@ -16,16 +16,16 @@ use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
 use crate::terminal_hyperlinks::remap_wrapped_line;
 
-pub(super) struct Selection {
+pub(crate) struct Selection {
     rows: Vec<HyperlinkLine>,
     anchor: (usize, usize),
     focus: (usize, usize),
-    pub(super) scroll: usize,
-    pub(super) dragging: bool,
+    pub(crate) scroll: usize,
+    pub(crate) dragging: bool,
 }
 
 impl Selection {
-    pub(super) fn new(lines: Vec<HyperlinkLine>, width: u16, scroll: usize) -> Self {
+    pub(crate) fn new(lines: Vec<HyperlinkLine>, width: u16, scroll: usize) -> Self {
         let mut rows = Vec::new();
         if width > 0 {
             for line in lines {
@@ -74,17 +74,17 @@ impl Selection {
         }
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.rows.len()
     }
 
-    pub(super) fn start(&mut self, area: Rect, x: u16, y: u16) {
+    pub(crate) fn start(&mut self, area: Rect, x: u16, y: u16) {
         self.anchor = self.position(area, x, y);
         self.focus = self.anchor;
         self.dragging = true;
     }
 
-    pub(super) fn update(&mut self, area: Rect, x: u16, y: u16) {
+    pub(crate) fn update(&mut self, area: Rect, x: u16, y: u16) {
         self.focus = self.position(area, x, y);
     }
 
@@ -153,7 +153,7 @@ impl Selection {
         fragments
     }
 
-    pub(super) fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         let mut out = String::new();
         if self.rows.is_empty() {
             return out;
@@ -187,7 +187,7 @@ impl Selection {
         out
     }
 
-    pub(super) fn render(&mut self, area: Rect, buf: &mut Buffer) {
+    pub(crate) fn render(&mut self, area: Rect, buf: &mut Buffer) {
         self.scroll = self
             .scroll
             .min(self.rows.len().saturating_sub(area.height as usize));

@@ -55,7 +55,7 @@ use unicode_width::UnicodeWidthStr;
 /// characters inside OSC payloads (like `]`, `8`, `;`, and URL characters).
 /// This function strips them first so that only visible characters contribute
 /// to the width.
-fn display_width(s: &str) -> usize {
+pub(crate) fn display_width(s: &str) -> usize {
     // Fast path: no escape sequences present.
     if !s.contains('\x1B') {
         return s.width();

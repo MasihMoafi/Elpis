@@ -53,7 +53,7 @@ use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 
 mod selection;
-use selection::Selection;
+pub(crate) use selection::Selection;
 
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),

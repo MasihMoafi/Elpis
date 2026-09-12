@@ -208,6 +208,7 @@ mod background_requests;
 mod config_persistence;
 mod event_dispatch;
 mod history_ui;
+mod inline_selection;
 mod input;
 mod loaded_threads;
 mod pending_interactive_replay;
@@ -564,6 +565,7 @@ pub(crate) struct App {
     pub(crate) file_search: FileSearchManager,
 
     pub(crate) transcript_cells: Vec<Arc<dyn HistoryCell>>,
+    inline_history_selection: Option<inline_selection::InlineHistorySelection>,
     /// Recompute the Ledger's transcript attribution once after committed history
     /// changes, rather than rescanning every animation frame.
     context_usage_transcript_dirty: bool,
@@ -1087,6 +1089,7 @@ See the Elpis keymap documentation for supported actions and examples."
             enhanced_keys_supported,
             keymap: runtime_keymap,
             transcript_cells: Vec::new(),
+            inline_history_selection: None,
             context_usage_transcript_dirty: true,
             overlay: None,
             deferred_history_lines: Vec::new(),
@@ -1313,6 +1316,9 @@ See the Elpis keymap documentation for supported actions and examples."
         app_server: &mut AppServerSession,
         event: TuiEvent,
     ) -> Result<AppRunControl> {
+        if self.handle_inline_history_selection(tui, &event)? {
+            return Ok(AppRunControl::Continue);
+        }
         if matches!(event, TuiEvent::Draw | TuiEvent::Resize) {
             self.handle_draw_pre_render(tui)?;
         }
@@ -1377,6 +1383,9 @@ See the Elpis keymap documentation for supported actions and examples."
     }
 
     fn render_chat_widget_frame(&mut self, tui: &mut tui::Tui) -> Result<Rect> {
+        if self.inline_history_selection.is_some() {
+            return Ok(tui.terminal.viewport_area);
+        }
         self.refresh_context_usage_transcript_totals();
         let desired_height = self.chat_widget.desired_height(tui.terminal.size()?.width);
         let mut rendered_area = Rect::default();

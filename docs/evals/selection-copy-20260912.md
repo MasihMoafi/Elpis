@@ -234,3 +234,27 @@ is not an installed or released selection feature.
 The built candidate SHA256 is
 `e4db9cefc558c4cd64113c776aae4a129323fcbfba45dc5de8ea0c1a2cedfe20`.
 The installed CLI remains `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31ca32d91e05b`.
+
+## Main inline finalized history — subsequent candidate
+
+The main chat now uses retained physical history rows for held selection. The
+provider continues producing events while the displayed view stays fixed;
+Escape dismisses selection without interrupting the agent. This covers finalized
+history, including lines already committed by an ongoing streamed response.
+
+The native `INLINE_HISTORY_COPY_EVAL` baseline failed to copy the sentinel.
+Dark/light candidate runs in `inline-history-{dark,light}` copied only the sentinel
+with Ctrl+C, retained it after Escape, and displayed output received during the
+drag after dismissal. Both kept one provider request open. Both screenshots were
+inspected and had readable selection highlights. These runs use the test-only
+mouse-reporting wrapper and local fixture.
+
+The strengthened `inline-history-release-{dark,light}` runs also assert that
+mouse release itself copies the sentinel before replacing the clipboard control
+and testing Ctrl+C. Both pass.
+
+The TUI suite passed 3,189 tests with five ignored before the final Escape routing
+correction; the native candidate includes and checks that correction. Candidate
+SHA256: `bf20e06d936f852fe4dd03183c38e21729f6d1d9186ce3b86eca8badc58d46c8`.
+It is not installed. Active-cell selection, dragging across live/history rows,
+scrolling, alternate-screen restoration, and normal mouse lifecycle remain open.
