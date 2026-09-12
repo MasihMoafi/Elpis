@@ -96,6 +96,15 @@ Elpis provides interactive context admission control in the TUI:
   - Individual portable development rules installed by Elpis
     (`~/.elpis/skills/dev/*.md`)
 
+### Saved Full Access
+
+`/yolo` selects Full Access and saves it as the default for future chats in the
+current Elpis configuration. This allows unrestricted filesystem/network access
+without approval prompts. Explicit project/profile overrides and managed
+requirements still apply. `/permissions` can change the current chat's access;
+it does not undo the saved `/yolo` default. A save failure is reported explicitly
+and leaves Full Access active only for the current chat.
+
 ### Terminal appearance
 
 Elpis follows the terminal's foreground and background by default. A terminal

@@ -16,6 +16,7 @@ pub enum SlashCommand {
     Model,
     PrunerModel,
     Permissions,
+    Yolo,
     #[strum(serialize = "hotkeys", serialize = "keymap")]
     Keymap,
     Vim,
@@ -133,6 +134,7 @@ impl SlashCommand {
                 "start a side conversation in an ephemeral fork"
             }
             SlashCommand::Permissions => "choose what Elpis is allowed to do",
+            SlashCommand::Yolo => "save Full Access as the default for future chats",
             SlashCommand::Keymap => "view or change TUI hotkeys",
             SlashCommand::Vim => "toggle Vim mode for the composer",
             SlashCommand::ElevateSandbox => "set up elevated agent sandbox",
@@ -221,6 +223,7 @@ impl SlashCommand {
             | SlashCommand::PrunerModel
             | SlashCommand::Personality
             | SlashCommand::Permissions
+            | SlashCommand::Yolo
             | SlashCommand::Copy
             | SlashCommand::Raw
             | SlashCommand::Rename
@@ -257,6 +260,7 @@ impl SlashCommand {
             SlashCommand::Model
             | SlashCommand::PrunerModel
             | SlashCommand::Permissions
+            | SlashCommand::Yolo
             | SlashCommand::Add
             | SlashCommand::Skills
             | SlashCommand::Hooks

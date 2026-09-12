@@ -58,6 +58,53 @@ pub(super) fn resume_model_settings_for_overrides(
 }
 
 impl App {
+    pub(super) async fn enable_yolo(&mut self) -> bool {
+        use crate::legacy_core::config::edit::ConfigEdit;
+        use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
+
+        if !self
+            .apply_permission_profile_selection(PermissionProfileSelection {
+                profile_id: BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string(),
+                approval_policy: Some(AskForApproval::Never),
+                approvals_reviewer: Some(ApprovalsReviewer::User),
+                display_label: "Full Access".to_string(),
+            })
+            .await
+        {
+            return false;
+        }
+        let mut edits = vec![ConfigEdit::ClearPath {
+            segments: vec!["sandbox_mode".into()],
+        }];
+        for (key, value) in [
+            (
+                "default_permissions",
+                BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+            ),
+            ("approval_policy", "never"),
+            ("approvals_reviewer", "user"),
+        ] {
+            edits.push(ConfigEdit::SetPath {
+                segments: vec![key.into()],
+                value: value.into(),
+            });
+        }
+        match ConfigEditsBuilder::for_config(&self.config)
+            .with_edits(edits)
+            .apply()
+            .await
+        {
+            Ok(()) => self.chat_widget.add_info_message(
+                "Full Access saved as the default for future chats.".to_string(),
+                None,
+            ),
+            Err(err) => self.chat_widget.add_error_message(format!(
+                "Full Access is active for this chat, but the default could not be saved: {err}"
+            )),
+        }
+        true
+    }
+
     pub(super) async fn rebuild_config_for_cwd(&self, cwd: PathBuf) -> Result<Config> {
         let mut overrides = self.harness_overrides.clone();
         overrides.cwd = Some(cwd.clone());

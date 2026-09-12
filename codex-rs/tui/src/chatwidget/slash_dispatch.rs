@@ -327,6 +327,10 @@ impl ChatWidget {
                 self.open_permissions_popup();
                 self.defer_input_until_settings_applied();
             }
+            SlashCommand::Yolo => {
+                self.app_event_tx.send(AppEvent::EnableYolo);
+                self.defer_input_until_settings_applied();
+            }
             SlashCommand::Vim => {
                 self.toggle_vim_mode_and_notify();
             }
@@ -1118,6 +1122,7 @@ impl ChatWidget {
             | SlashCommand::Agent
             | SlashCommand::MultiAgents
             | SlashCommand::Permissions
+            | SlashCommand::Yolo
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental

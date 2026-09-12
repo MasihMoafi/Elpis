@@ -6,6 +6,33 @@ This audit does not grant visual acceptance or authorize a premature release.
 
 ## Reference
 
+### Persistent Full Access command
+
+Added `/yolo`: validate/select existing Full Access for the current chat, then
+atomically save the user-config defaults (`default_permissions`, approval policy
+Never and user reviewer), removing the conflicting legacy sandbox-mode default.
+Managed requirements and explicit profile/project overrides remain effective.
+IDE permission selections are explicit overrides, not changed by this CLI command.
+The command itself sends no model request. Save errors explicitly distinguish
+current-chat access from an unsaved future default. `/permissions` still changes
+the current chat only. The user's live defaults were not changed while testing.
+
+Verification: command-routing and fresh-project config reload tests passed;
+complete TUI suite **3,157 passed, zero failed, five existing ignored** (14.92 s).
+The old binary failed the command check. Both final headless native-terminal
+checks passed: successful persistence and a read-only config-directory failure
+that preserved the original file and displayed no false success. Screenshots
+were inspected. Evidence under `.tmp/final-candidate`: `yolo-before`, `yolo-after`,
+`yolo-save-failure` (each `result.json`), `yolo-focused-tests.log`, and
+`yolo-tui-tests.log`. Builds passed: test 302,286 ms/70 C; optimized 111,480 ms/64 C.
+
+Installed CLI SHA256:
+`b8166cb4b51dd5d60549d94ee27d755226e1356ab621c2ad930c6086d2668664`.
+Installed and built hashes match; rollback is
+`~/.local/share/elpis/release-recovery/yolo-20260912/elpis-before`.
+This supersedes earlier installed CLI hashes below. No public release; the
+unresolved selection/compaction verification still prevents a production-ready claim.
+
 ### Subsequent light-terminal correction
 
 Masih reported unreadable colors when the terminal follows a light desktop theme.

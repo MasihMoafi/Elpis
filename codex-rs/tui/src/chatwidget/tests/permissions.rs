@@ -11,6 +11,14 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use pretty_assertions::assert_eq;
 
+#[tokio::test]
+async fn yolo_dispatches_permission_change_without_a_model_request() {
+    let (mut chat, mut events, mut ops) = make_chatwidget_manual(None).await;
+    chat.dispatch_command(SlashCommand::Yolo);
+    assert!(matches!(events.try_recv(), Ok(AppEvent::EnableYolo)));
+    assert!(ops.try_recv().is_err());
+}
+
 fn app_server_workspace_write_profile(extra_root: AbsolutePathBuf) -> PermissionProfile {
     PermissionProfile::Managed {
         network: NetworkSandboxPolicy::Restricted,

@@ -1741,6 +1741,41 @@ async fn open_agent_picker_prompts_to_enable_multi_agent_when_disabled() -> Resu
 }
 
 #[tokio::test]
+async fn yolo_persists_full_access_for_a_fresh_project() -> Result<()> {
+    let (mut app, _events, _ops) = make_test_app_with_channels().await;
+    let home = tempdir()?;
+    let project = tempdir()?;
+    std::fs::write(
+        home.path().join("config.toml"),
+        "sandbox_mode = \"workspace-write\"\napproval_policy = \"on-request\"\n",
+    )?;
+    app.config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert!(app.enable_yolo().await);
+    let fresh = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .harness_overrides(ConfigOverrides {
+            cwd: Some(project.path().to_path_buf()),
+            ..Default::default()
+        })
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    assert_eq!(
+        AskForApproval::from(fresh.permissions.approval_policy.value()),
+        AskForApproval::Never
+    );
+    assert_eq!(
+        fresh.permissions.active_permission_profile().unwrap().id,
+        codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn apply_permission_profile_selection_preserves_loader_overrides() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let codex_home = tempdir()?;

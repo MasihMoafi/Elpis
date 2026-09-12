@@ -2056,6 +2056,12 @@ impl App {
                     self.chat_widget.submit_initial_user_message_if_pending();
                 }
             }
+            AppEvent::EnableYolo => {
+                if self.enable_yolo().await {
+                    self.resolve_full_access_approvals(app_server).await;
+                    self.chat_widget.submit_initial_user_message_if_pending();
+                }
+            }
             AppEvent::UpdateApprovalsReviewer(policy) => {
                 self.config.approvals_reviewer = policy;
                 self.chat_widget.set_approvals_reviewer(policy);
