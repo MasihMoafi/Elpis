@@ -88,6 +88,20 @@ updated for the corrected Tab focus/close sequence. Evidence:
 `.tmp/final-candidate/native-sep12-readable.log` and
 `.tmp/final-candidate/native-sep12-readable/result.json`.
 
+A follow-up isolated selection from ledger keys and paused screenshot/text
+sampling before the drag, while leaving CLI output running. Selection still
+failed (`native-sep12-selection-isolated/result.json`), ruling out ongoing
+sampling as a necessary cause in that trial. The preceding combined attempt
+stopped earlier on a ledger-close assertion and supplies no selection evidence
+(`native-sep12-no-capture/result.json`). Minimal static and 125 ms repaint controls
+both selected the exact marker with sampling paused (`native-sep12-control-0`
+and `native-sep12-control-1`, each `result.json`). These single trials differ in
+output volume/cadence from Elpis; they do not support blaming all animation or
+declaring the issue exclusively VTE's fault. Earlier controls were intermittent.
+No production changes followed this experiment. Confirmation of the original
+red typing artifact still needs the user's terminal identity and a current
+reproduction; native clipboard failure is not proof of the same defect.
+
 Remaining release limits: native VTE live selection still fails; the reported
 long live compaction stall was not
 reproduced by the controlled fixture; user visual acceptance remains open.
