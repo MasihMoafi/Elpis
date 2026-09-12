@@ -18,6 +18,7 @@ use crossterm::Command;
 use crossterm::SynchronizedUpdate;
 use crossterm::cursor::SetCursorStyle;
 use crossterm::event::DisableBracketedPaste;
+use crossterm::event::DisableMouseCapture;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
 #[cfg(not(unix))]
@@ -175,6 +176,9 @@ pub fn set_modes() -> Result<()> {
     ensure_virtual_terminal_processing()?;
 
     execute!(stdout(), EnableBracketedPaste)?;
+    // Report button drags, not every pointer movement during normal typing.
+    stdout().write_all(b"\x1b[?1002h\x1b[?1006h")?;
+    stdout().flush()?;
 
     enable_raw_mode()?;
     // Enable keyboard enhancement flags so modifiers for keys like Enter are disambiguated.
@@ -255,6 +259,9 @@ fn restore_common(
     }
 
     if let Err(err) = execute!(stdout(), DisableBracketedPaste) {
+        first_error.get_or_insert(err);
+    }
+    if let Err(err) = execute!(stdout(), DisableMouseCapture) {
         first_error.get_or_insert(err);
     }
     let _ = execute!(stdout(), DisableFocusChange);

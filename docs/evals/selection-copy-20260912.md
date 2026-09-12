@@ -237,6 +237,40 @@ The installed CLI remains `ca221c9fdaf1b700abde51418dd413d585c5ded9b8e7c60f44c31
 
 ## Synchronized selection repaint — September 12 follow-up
 
+### Normal mouse integration — latest candidate
+
+Normal startup now enables button-motion and SGR mouse reporting. It does not
+enable all-pointer-motion events. The common terminal restore path disables mouse
+reporting. Wheel-up opens the existing transcript viewer and scrolls upward;
+wheel-down scrolls that viewer, and its documented `q` key returns to chat.
+Escape retains the existing backtrack behavior.
+
+The installed `2265c0d0` baseline fails the new live-table copy probe: mouse release
+leaves `clipboard control` unchanged. Candidate `1eb35dc6` passes with test-only
+capture. The normal-capture candidate then passes without that wrapper in
+`mouse-live-direct` and `mouse-live-light`: exact source text copied on release
+and Ctrl+C, clipboard retained after dismissal, one provider request still open.
+An unfinished Markdown table is the valid live-tail fixture; unfinished ordinary
+prose is intentionally newline-gated, as the controller tests establish.
+
+Additional direct-candidate checks:
+
+- `mouse-composer-direct`: light-mode busy draft copies exactly, draft survives,
+  Ctrl+C copies, and the original stream stays open.
+- `mouse-wheel-before`: baseline fails to open history under mouse capture.
+- `mouse-wheel-close`: wheel opens history, reaches row 001, returns to the latest
+  row, and `q` restores chat without interrupting. The earlier `mouse-wheel-direct`
+  incorrectly expected Escape to close; retain that failure as a fixture correction.
+- `mouse-restore-direct`: after normal exit, VTE answers DEC mode queries with
+  disabled state for both 1002 and 1006. This checks terminal state, not just bytes
+  that Elpis intended to send.
+
+Live selection, busy composer, and wheel-top screenshots were inspected.
+`mouse-integration-test-build.log` and `mouse-integration-optimized.log` pass;
+`mouse-integration-full-tests.log`: 3,191 passed, zero failed, five ignored.
+Cross-boundary drag, suspend/resume, xterm, and final release acceptance remain
+open. xterm is not installed on this workstation. This candidate is not installed.
+
 ### Live-row snapshot follow-up
 
 The main renderer now retains logical source lines, exact display rectangles,
