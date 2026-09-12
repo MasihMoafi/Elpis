@@ -297,6 +297,13 @@ jobs:
           cargo install cargo-deb --locked
           cargo deb --no-build -p codex-tui
 
+      - name: Verify clean Debian package installation
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          for package in codex-rs/target/debian/*.deb; do
+            bash tests/install/clean_linux.sh "$package"
+          done
+
       - name: Upload Elpis .deb
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

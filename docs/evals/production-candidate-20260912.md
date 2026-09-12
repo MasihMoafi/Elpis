@@ -291,3 +291,23 @@ subtracting them does not estimate net savings because later context reuse and
 cache effects matter. The large recorded optimizer workload is a concrete reason
 to avoid selling the gross reduction as an efficiency win. No subscription dollar
 cost is inferred. Raw scalar evidence: `live-pruning-totals.json` in the same folder.
+
+## Debian package gate — September 13
+
+The release workflow previously tested the standalone installer but uploaded the
+Debian artifact without installing it. `clean_linux.sh` now accepts either the
+binary/resource directory or a Debian package. In the package case it runs `dpkg -i`
+in the clean offline Ubuntu container and locates the installed binary before
+checking its companion resource and actual sandbox write boundaries. Tagged CI
+runs this check after `cargo deb` and before uploading the package.
+
+Local verification used Debian fixtures built with `dpkg-deb` and the current
+installed CLI/resource: valid package passed; package omitting Bubblewrap failed
+(exit 1); existing standalone-directory mode still passed. Bash syntax and diff
+checks passed. This validates the gate, not the hosted `cargo deb` output: cargo-deb
+is not installed locally, and no tool download or hosted run was performed.
+An initial probe ran before fixture construction finished and failed setup; the
+completed valid fixture was then tested successfully. Logs, control metadata and
+fixture hashes remain in `.tmp/final-candidate/deb-check/`; large disposable
+packages and staging copies were deleted after verification. No binary rebuild,
+installation, upload or public release was performed for this change.
