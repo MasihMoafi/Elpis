@@ -7,7 +7,52 @@ Elpis enforces **Context Sovereignty**: the principle that context is a strictly
 
 ## 1. Systemic Role in Elpis
 
-Context management acts as the primary gatekeeper between raw workspace/session events and the active model inference loop:
+Context management controls the working information supplied to the model. It is
+one part of the system; admission, execution permissions, and evidence validation
+are different controls.
+
+```mermaid
+flowchart TD
+    User[User: goal, messages, permissions] --> UI[TUI or IDE]
+    UI --> Runtime[Codex-derived agent runtime]
+    Sources[GOAL, ES, manual notes and rules] --> Ledger[Elpis context admission]
+    Ledger --> Runtime
+    Runtime --> Provider[Selected model/provider]
+    Provider --> Runtime
+    Runtime --> Tools[Tools within effective permissions]
+    Tools --> Workspace[Workspace changes and command results]
+    Workspace --> Runtime
+    Runtime --> Evidence[Transcript and verification artifacts]
+    Runtime --> Checkpoint[CLI turn checkpoint]
+    Checkpoint --> Ledger
+    Runtime --> History[Conversation history]
+    History --> Reduction[Native compaction / optional pruning]
+    Reduction --> Runtime
+    Runtime -. optional experimental dispatch .-> Graph[Persisted work graph]
+    Graph --> Workers[Scoped workers and dependent verification]
+    Workers --> Evidence
+```
+
+The model proposes actions; the runtime executes allowed tools and feeds their
+results back. More results improve observability but consume context and time.
+Pruning reduces selected output while native compaction summarizes history;
+either can lose useful detail. The transcript and artifacts remain the place to
+verify a shortened claim. A checkpoint carries continuity into later turns, but
+can also carry stale assumptions. Admission is a user control, not a truth check.
+
+Elpis's distinctive product direction is this combination of visible admission,
+goal continuity, optional pruning and inspectable work graphs around a
+Codex-derived runtime. These are implemented additions, not evidence of scientific
+novelty or superiority. The model, basic tool loop, native compaction and much of
+the interface come from the underlying runtime. A research claim needs controlled
+comparisons of task completion, stale-fact errors, latency and total token use.
+
+The existing [work graph](WORK_GRAPHS.md) is experimental and off by default. It
+adds task dependencies, bounded write scopes, concurrency control and evidence
+requirements. It does not yet fulfill the requested seamless observe/pause/redirect
+interface or a general sentinel against duplicate reasoning and wrong decisions.
+Those remain the next phase after daily-driver readiness. Scope enforcement can
+restrict writes; it cannot prove that a permitted edit is correct.
 
 ---
 
@@ -117,6 +162,25 @@ The [continuity comparison protocol](evals/context-continuity/README.md) explici
 records that its paired provider runs have not been performed. A useful benefit
 test must hold model, task, and budget fixed, compare admission on/off after a
 restart, and score factual recall, task completion, stale-memory errors, and cost.
+
+### Observed checkpoint pressure, September 12
+
+A read-only inspection at source commit `391ec269` found the generated checkpoint
+had 9,604 characters and 41 shell-command entries. Its `Exact Evidence` section
+fell outside the first 8,000 characters. This confirms a concrete ordering problem:
+old command entries can occupy the admitted space before the evidence pointer.
+The separate repository `ES.md` had 52,698 characters; that is manually accumulated
+project state, not proof that 52,698 characters were automatically admitted.
+These are one-session observations, not a memory-quality score.
+
+Intelligent checkpoint saving remains unfinished. Its acceptance criteria are to
+retain the current goal, constraints, unresolved work and evidence locations within
+the admission budget, replace superseded facts, and preserve detailed evidence
+outside that budget. A comparison must include long command-heavy turns, empty
+interruptions, changed facts and competing threads. A summary that merely fits is
+insufficient: it must retain the facts required to resume correctly. This work must
+not silently re-enable automatic durable-memory promotion or change admission
+defaults.
 
 ---
 

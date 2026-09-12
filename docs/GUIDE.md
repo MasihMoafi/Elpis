@@ -53,7 +53,8 @@ recalls all queued follow-ups in order; there is no default Ctrl+Q shortcut.
 The September 12 correction gives Tab to active completion popups first;
 otherwise Tab opens/focuses the Context Ledger, then closes it. Alt+C toggles
 ledger visibility directly. Elpising, streaming, ledger updates, and permission
-labels retain animation; the Elpis name remains static, with no separate spinner
+labels retain animation; the live Elpis name also has the requested warm highlight,
+with no separate spinner
 beside Elpising. Current source comparison and verification limits live in
 [`evals/ui-upstream-audit-20260912.md`](evals/ui-upstream-audit-20260912.md).
 Installed artifact evidence is separate in the release handoff; source changes
