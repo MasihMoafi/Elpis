@@ -154,14 +154,19 @@ impl PendingInputPreview {
         if !self.queued_messages.is_empty()
             && let Some(edit_binding) = self.edit_binding
         {
-            lines.push(
-                Line::from(vec![
-                    "    ".into(),
-                    edit_binding.into(),
-                    " edit last queued message".into(),
-                ])
-                .dim(),
-            );
+            lines.extend(adaptive_wrap_lines(
+                std::iter::once(
+                    Line::from(vec![
+                        "    ".into(),
+                        key_hint::plain(KeyCode::Up).into(),
+                        " edit all · enter send · ".into(),
+                        edit_binding.into(),
+                        " last".into(),
+                    ])
+                    .dim(),
+                ),
+                RtOptions::new(width as usize).subsequent_indent(Line::from("    ".dim())),
+            ));
         }
 
         Paragraph::new(lines).into()
@@ -301,8 +306,8 @@ mod tests {
         let width = 36;
         let height = queue.desired_height(width);
         assert_eq!(
-            height, 3,
-            "expected header, one message row, and hint row for URL-like token"
+            height, 4,
+            "expected header, one message row, and two wrapped hint rows for URL-like token"
         );
 
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));

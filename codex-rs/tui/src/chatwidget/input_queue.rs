@@ -39,7 +39,8 @@ pub(super) struct InputQueueState {
     /// Steers already submitted to core but not yet committed into history.
     pub(super) pending_steers: VecDeque<PendingSteer>,
     /// When set, the next interrupt should resubmit all pending steers as one
-    /// fresh user turn instead of restoring them into the composer.
+    /// fresh user turn instead of restoring them into the composer. If there are
+    /// no in-flight steers, submit the next queued input after the interrupt.
     pub(super) submit_pending_steers_after_interrupt: bool,
     pub(super) suppress_queue_autosend: bool,
 }

@@ -229,8 +229,8 @@ impl ChatWidget {
                 let (user_message, history_record) =
                     merge_user_messages_with_history_record(pending_steers);
                 self.submit_user_message_with_history_record(user_message, history_record);
-            } else if let Some(combined) = self.drain_pending_messages_for_restore(true) {
-                self.restore_composer_state(combined);
+            } else {
+                self.maybe_send_next_queued_input();
             }
         } else if let Some(combined) = self.drain_pending_messages_for_restore(true) {
             self.restore_composer_state(combined);

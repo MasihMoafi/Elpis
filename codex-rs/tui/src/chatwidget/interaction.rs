@@ -154,6 +154,24 @@ impl ChatWidget {
 
         const REVIEW_STEER_UNAVAILABLE_MESSAGE: &str = "Steer messages aren't supported during /review. Press Ctrl+C now to cancel the review.";
 
+        if key_hint::plain(KeyCode::Enter).is_press(key_event)
+            && self.bottom_pane.composer_is_empty()
+            && self.has_queued_follow_up_messages()
+            && self.bottom_pane.is_task_running()
+            && self.bottom_pane.no_modal_or_popup_active()
+            && !self.manual_memory_submission_blocked()
+            && !self.input_queue.suppress_queue_autosend
+        {
+            if self.input_queue.submit_pending_steers_after_interrupt {
+                return;
+            }
+            self.input_queue.submit_pending_steers_after_interrupt = true;
+            if !self.submit_op(AppCommand::interrupt()) {
+                self.input_queue.submit_pending_steers_after_interrupt = false;
+            }
+            return;
+        }
+
         if self.chat_keymap.interrupt_turn.is_pressed(key_event)
             && self.review.is_review_mode
             && (!self.input_queue.pending_steers.is_empty()

@@ -1,6 +1,6 @@
 use ratatui::text::Line;
 use ratatui::text::Span;
-use unicode_width::UnicodeWidthChar;
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
@@ -43,12 +43,12 @@ pub(crate) fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> L
         let style = span.style;
         let text = span.content.as_ref();
         let mut end_idx = 0usize;
-        for (idx, ch) in text.char_indices() {
-            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        for (idx, grapheme) in text.grapheme_indices(true) {
+            let ch_width = UnicodeWidthStr::width(grapheme);
             if used + ch_width > max_width {
                 break;
             }
-            end_idx = idx + ch.len_utf8();
+            end_idx = idx + grapheme.len();
             used += ch_width;
         }
 
@@ -63,6 +63,21 @@ pub(crate) fn truncate_line_to_width(line: Line<'static>, max_width: usize) -> L
         style,
         alignment,
         spans: spans_out,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncation_preserves_whole_emoji_and_combining_sequences() {
+        for text in ["👩‍💻", "🇮🇷", "e\u{301}"] {
+            let width = UnicodeWidthStr::width(text);
+            let truncated = truncate_line_to_width(Line::from(format!("{text}tail")), width);
+            assert_eq!(truncated.to_string(), text);
+            assert_eq!(truncated.width(), width);
+        }
     }
 }
 

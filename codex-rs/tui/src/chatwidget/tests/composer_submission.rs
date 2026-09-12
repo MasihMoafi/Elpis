@@ -1050,6 +1050,33 @@ async fn empty_enter_during_task_does_not_queue() {
     assert!(chat.input_queue.queued_user_messages.is_empty());
 }
 
+#[tokio::test]
+async fn enter_interrupts_and_submits_the_queued_follow_up() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.on_task_started();
+    chat.input_queue
+        .queued_user_messages
+        .push_back(UserMessage::from("queued instruction").into());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    next_interrupt_op(&mut op_rx);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(op_rx.try_recv().is_err());
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+    chat.on_interrupted_turn(TurnAbortReason::Interrupted);
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => assert_eq!(
+            items,
+            vec![UserInput::Text {
+                text: "queued instruction".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ),
+        other => panic!("expected queued follow-up, got {other:?}"),
+    }
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+}
+
 fn interrupted_history(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
     prompt: &str,

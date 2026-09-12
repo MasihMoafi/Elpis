@@ -214,13 +214,12 @@ impl StatusIndicatorWidget {
 
         if out.len() > self.details_max_lines {
             out.truncate(self.details_max_lines);
-            let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
-            let max_base_len = content_width.saturating_sub(1);
-            if let Some(last) = out.last_mut()
-                && let Some(span) = last.spans.last_mut()
-            {
-                let trimmed: String = span.content.as_ref().chars().take(max_base_len).collect();
-                *span = format!("{trimmed}…").dim();
+            if let Some(last) = out.last_mut() {
+                *last = crate::line_truncation::truncate_line_to_width(
+                    std::mem::take(last),
+                    usize::from(width).saturating_sub(1),
+                );
+                last.push_span("…".dim());
             }
         }
 
@@ -500,9 +499,34 @@ mod tests {
         assert_eq!(lines.len(), STATUS_DETAILS_DEFAULT_MAX_LINES);
         let last = lines.last().expect("expected last details line");
         assert!(
-            last.spans[1].content.as_ref().ends_with("…"),
+            last.to_string().ends_with("…"),
             "expected ellipsis in last line: {last:?}"
         );
+    }
+
+    #[test]
+    fn secondary_text_ellipsis_fits_narrow_unicode_rows() {
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let mut widget = StatusIndicatorWidget::new(
+            AppEventSender::new(tx),
+            crate::tui::FrameRequester::test_dummy(),
+            false,
+        );
+        for text in ["读取文件 读取文件 读取文件", "👩‍💻 👩‍💻 👩‍💻 👩‍💻"]
+        {
+            widget.update_details(
+                Some(text.to_string()),
+                StatusDetailsCapitalization::Preserve,
+                1,
+            );
+            for width in 5..16 {
+                let lines = widget.wrapped_details_lines(width);
+                assert!(
+                    lines.iter().all(|line| line.width() <= usize::from(width)),
+                    "{width}: {lines:?}"
+                );
+            }
+        }
     }
 
     #[test]
