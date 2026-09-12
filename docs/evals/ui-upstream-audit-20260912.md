@@ -81,8 +81,15 @@ installed extension's preceding six-conversation check remains recorded in
 in empty, file-only, and folder windows. Broader preceding verification returned
 code 0 in `full-surface-post-tui-result.json`; it is not a fresh workspace-wide run.
 
-Remaining release limits: the native VTE live-selection issue has not been
-retested with this correction; the reported long live compaction stall was not
+The installed correction was also retested in native VTE under Xvfb. Completion
+of the selection failed: the PRIMARY clipboard reported `target STRING not
+available` after a continuous drag during the active response. The harness was
+updated for the corrected Tab focus/close sequence. Evidence:
+`.tmp/final-candidate/native-sep12-readable.log` and
+`.tmp/final-candidate/native-sep12-readable/result.json`.
+
+Remaining release limits: native VTE live selection still fails; the reported
+long live compaction stall was not
 reproduced by the controlled fixture; user visual acceptance remains open.
 These checks do not establish that every terminal glitch is gone.
 
