@@ -179,3 +179,37 @@ Optimized build passed in 93,851 ms, peak 70°C; installed `--version` reports
 `~/.local/share/elpis/release-recovery/mouse-selection-20260912/elpis-before-checkpoint-budget`.
 One worktree remains. IDE unchanged; no public release. This installation does not
 close the outstanding production gates.
+
+## Refreshed IDE verification and recovery audit
+
+At CLI source `59964954`, all 46 prescribed editor tests passed. Direct headless
+VS Code startup passed empty-window, single-file and folder cases, two responses
+each, using the current local-release app-server. The snap CLI shim exited before
+producing test results; rerunning with `/snap/code/current/usr/share/code/code`
+reached and passed the assertions. This was a launch-fixture failure, not a passed
+product check.
+
+A new local VSIX was packaged from the current runtime. All 30 packaged source and
+asset files matched the tested extension. Its extracted runtime passed the same
+six conversations (`final-packaged-ide-startup.log`, fixtures
+`/tmp/elpis-ide-startup-jlI3m8`). The VSIX was installed successfully; installed and
+packaged runtime SHA256 both equal
+`f316426acd857a8be5b2b97bd1b6f4d3cfe5876a254acd6c4a008c263ae85d0c`.
+This is identical to the prior stripped runtime, so no new IDE behavior is claimed.
+Rollback is `~/.local/share/elpis/release-recovery/mouse-selection-20260912/ide-before-checkpoint-runtime.tar.gz`.
+Raw logs are under `.tmp/final-candidate/final-editor-tests.log`,
+`final-ide-startup-direct.log`, `final-ide-package.log`, and `final-ide-install.log`.
+
+The worktree audit now identifies recovered ACE behavior present in main and the
+missing restart/resume regression. Larger agent-control work remains preserved
+and unfinished. See [the recovery audit](../WORKTREE_CLEANUP_20260910.md).
+
+`CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 scripts/verify-elpis --surface full`
+completed with exit 0 (`full-release-gate.log`). This covers the verifier's declared
+formatting, workspace, TUI, context/pruning, telemetry, work-graph, memory and
+provider checks; it is not every possible test or manual production acceptance.
+The restored archive test passed: no manual memory before admission, then exactly
+one planted marker in the first model request after app-server restart/resume.
+Existing admission/withdrawal boundaries passed alongside it. The added test was
+formatted separately and compiled/executed by the app-server target after the
+initial workspace check. No runtime code changed during this verification pass.

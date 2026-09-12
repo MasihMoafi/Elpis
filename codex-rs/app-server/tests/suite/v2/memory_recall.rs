@@ -8,6 +8,8 @@ use app_test_support::TestAppServer;
 use app_test_support::to_response;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ThreadResumeParams;
+use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::TurnStartParams;
@@ -22,8 +24,104 @@ const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 const MEMORY_CREATE_MARKER: &str = "MEMORY_CREATE_MARKER";
 const MEMORY_UPDATED_MARKER: &str = "MEMORY_UPDATED_MARKER";
+const MEMORY_RESTART_RESUME_MARKER: &str = "MANUAL_MEMORY_RESTART_RESUME_MARKER_7A6F2D39";
 const MEMORY_SOURCE_HEADER: &str = "MEMORY.md (";
 const ELPIS_CONTINUITY_HEADER: &str = "## Elpis Admitted Context\n\n";
+
+#[tokio::test]
+async fn admitted_manual_memory_reaches_first_turn_after_restart_and_resume() -> Result<()> {
+    let server = responses::start_mock_server().await;
+    let response_mock = responses::mount_sse_sequence(
+        &server,
+        (1..=2)
+            .map(|turn| {
+                responses::sse(vec![
+                    responses::ev_response_created(&format!("resp-{turn}")),
+                    responses::ev_assistant_message(&format!("msg-{turn}"), "acknowledged"),
+                    responses::ev_completed(&format!("resp-{turn}")),
+                ])
+            })
+            .collect(),
+    )
+    .await;
+
+    let codex_home = TempDir::new()?;
+    let workspace = TempDir::new()?;
+    let memory_root = codex_home.path().join("memories");
+    write_config_toml(codex_home.path(), &server.uri())?;
+
+    let thread_id = {
+        let mut app = TestAppServer::builder()
+            .with_codex_home(codex_home.path())
+            .without_auto_env()
+            .build()
+            .await?;
+        timeout(DEFAULT_READ_TIMEOUT, app.initialize()).await??;
+
+        let request_id = app
+            .send_thread_start_request(ThreadStartParams {
+                cwd: Some(workspace.path().to_string_lossy().to_string()),
+                ..Default::default()
+            })
+            .await?;
+        let response: JSONRPCResponse = timeout(
+            DEFAULT_READ_TIMEOUT,
+            app.read_stream_until_response_message(RequestId::Integer(request_id)),
+        )
+        .await??;
+        let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(response)?;
+
+        complete_turn(&mut app, &thread.id).await?;
+        codex_core::elpis_context::create_manual_memory(
+            Some(memory_root.as_path()),
+            workspace.path(),
+        )?;
+        tokio::fs::write(memory_root.join("MEMORY.md"), MEMORY_RESTART_RESUME_MARKER).await?;
+        codex_core::elpis_context::set_continuity_source_admitted(
+            Some(memory_root.as_path()),
+            workspace.path(),
+            "MEMORY.md",
+            true,
+        )?;
+        thread.id
+    };
+
+    let mut restarted_app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, restarted_app.initialize()).await??;
+
+    let request_id = restarted_app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: thread_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        restarted_app.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let ThreadResumeResponse { thread, .. } = to_response::<ThreadResumeResponse>(response)?;
+    assert_eq!(thread.id, thread_id);
+
+    complete_turn(&mut restarted_app, &thread.id).await?;
+    let first_request = response_mock.requests()[0].message_input_texts("developer");
+    assert_no_manual_memory(&first_request);
+    let developer = response_mock.requests()[1].message_input_texts("developer");
+    let marker_count = developer
+        .iter()
+        .map(|text| text.matches(MEMORY_RESTART_RESUME_MARKER).count())
+        .sum::<usize>();
+    assert_eq!(
+        marker_count, 1,
+        "resumed turn must contain the admitted manual-memory marker exactly once: {developer:#?}"
+    );
+
+    Ok(())
+}
 
 #[tokio::test]
 async fn manual_memory_request_boundaries_follow_current_admission() -> Result<()> {

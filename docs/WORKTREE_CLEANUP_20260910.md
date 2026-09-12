@@ -1,5 +1,23 @@
 # Worktree cleanup — 2026-09-10
 
+## September 12 source coverage follow-up
+
+At `59964954`, one worktree remains. This supersedes the historical two-tree
+status below. The archives and recovery branches still exist; removing a checkout
+did not establish that its features were integrated.
+
+| Recovered work | Current source evidence | Disposition |
+| --- | --- | --- |
+| `ace-inactivity-180` | `core/src/session/smart_prune.rs` has both 180-second timeouts, provider timeout adjustment and completion-event collection, with tests. | Core behavior present in main; no need to reapply the old patch. |
+| `ace-fact-preservation` | The default prompt in `core/src/pruner_settings.rs` preserves distinct facts and uncertainty; optimizer effort is Low in `smart_prune.rs`. | These behaviors are present. The archived `smart_prune_reasoning_effort` configuration override is absent; do not claim complete patch integration. |
+| `manual-memory-resume-test` | Restored the archived restart/resume case in `app-server/tests/suite/v2/memory_recall.rs`, adding an assertion that the first request has no admitted memory. | Integrated and passed through the full verifier: the first resumed request contains the newly admitted marker exactly once. This tests delivery, not model quality. |
+| `daily-driver-readiness` | Recovery retains `cd088885` agent-control protocol types, `e0f4f48c` graph ownership work and unfinished authority/readback edits. Current source lacks the new authority snapshot and exact-edge helpers. | Preserved, unintegrated orchestration work; not a completed feature secretly installed in main. |
+
+The remaining archive rows below still need individual disposition. This audit
+does not establish that all 79 trees' distinct work is available in the installed
+candidate. Website and historical research changes must not be blindly applied to
+the CLI as part of integration.
+
 The initial cleanup reduced 79 registrations to **one: main**. The first pass removed 54 redundant
 checkouts and four missing registrations. At Masih's request, the remaining 20
 secondary checkouts were then archived and removed. Temporary integration and
