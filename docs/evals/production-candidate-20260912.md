@@ -171,3 +171,11 @@ The fixed test build passed in 240,139 ms, peak 70°C, two jobs.
 This is deterministic budget allocation, not semantic consolidation. Cross-thread
 last-writer behavior, intelligent preservation of constraints/unresolved facts,
 and measured task-quality benefit remain open.
+
+Installed CLI source `2f0bdc8d`; build and installed SHA256 both
+`9a544d0c62fa0ae1f41fd8e2b5d560706f58eff412ebc4d76c3f6e382a62d051`.
+Optimized build passed in 93,851 ms, peak 70°C; installed `--version` reports
+`elpis 0.2.0`. Rollback binary:
+`~/.local/share/elpis/release-recovery/mouse-selection-20260912/elpis-before-checkpoint-budget`.
+One worktree remains. IDE unchanged; no public release. This installation does not
+close the outstanding production gates.
