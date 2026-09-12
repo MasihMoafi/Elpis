@@ -1,4 +1,16 @@
-# Extension 0.1.17
+# Extension 0.1.20 candidate — September 12, 2026
+
+The Linux package now includes the Bubblewrap sandbox executable and its license
+beside the app-server runtime. Previously, sandboxed commands depended on a
+compatible system installation of Bubblewrap. The updated package can use its
+bundled copy on a fresh system.
+
+The current source passed 46 Node tests and six controlled-provider conversations:
+two each in empty, file-only, and folder VS Code windows. These checks do not
+establish public release acceptance. Native-terminal drag selection remains an
+open CLI issue; the VS Code terminal checks pass.
+
+## Historical extension 0.1.17 acceptance
 
 Accepted by Masih on 2026-09-09. Linux x64; VS Code 1.136 or later.
 

@@ -24,6 +24,8 @@ priority = "optional"
 recommends = "tmux"
 assets = [
     ["target/release/elpis", "usr/bin/elpis", "755"],
+    ["target/release/bwrap", "usr/bin/codex-resources/bwrap", "755"],
+    ["../vendor/bubblewrap/COPYING", "usr/share/doc/elpis/bubblewrap.COPYING", "644"],
 ]
 
 [lib]

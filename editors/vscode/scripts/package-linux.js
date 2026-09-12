@@ -7,6 +7,13 @@ assert(process.platform === 'linux' && process.arch === 'x64', 'This package tar
 const root = path.resolve(__dirname, '..');
 const source = process.env.ELPIS_APP_SERVER || path.join(root, '.test-data/cargo-target/debug/codex-app-server');
 const destination = path.join(root, 'bin/elpis-app-server');
+const sandbox = process.env.ELPIS_BWRAP || path.join(path.dirname(source), 'bwrap');
+assert(fs.existsSync(sandbox), 'Set ELPIS_BWRAP to the built Linux sandbox binary.');
+const resourceDir = path.join(root, 'bin/codex-resources');
+fs.mkdirSync(resourceDir, { recursive: true });
+fs.copyFileSync(sandbox, path.join(resourceDir, 'bwrap'));
+fs.chmodSync(path.join(resourceDir, 'bwrap'), 0o755);
+fs.copyFileSync(path.join(root, '../../codex-rs/vendor/bubblewrap/COPYING'), path.join(resourceDir, 'COPYING'));
 fs.mkdirSync(path.dirname(destination), { recursive: true });
 fs.copyFileSync(source, destination);
 fs.chmodSync(destination, 0o755);

@@ -16,6 +16,7 @@ use tempfile::NamedTempFile;
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/MasihMoafi/Elpis/releases/latest";
 const MAX_BINARY_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_CHECKSUM_BYTES: usize = 16 * 1024;
+const SANDBOX_ASSET: &str = "elpis-bwrap-linux-x86_64";
 const PROGRESS_BAR_WIDTH: usize = 28;
 const PROGRESS_REDRAW_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -249,6 +250,27 @@ async fn run_with_config(mut config: UpdateConfig) -> Result<String> {
         .as_file()
         .sync_all()
         .context("cannot flush the staged Elpis update")?;
+    let sandbox_url = release_asset_url(&release, SANDBOX_ASSET)?;
+    let sandbox_checksum_url = release_asset_url(&release, &format!("{SANDBOX_ASSET}.sha256"))?;
+    let sandbox_checksum = fetch_checksum(&client, sandbox_checksum_url, SANDBOX_ASSET).await?;
+    let resource_dir = parent.join("codex-resources");
+    std::fs::create_dir_all(&resource_dir)
+        .context("cannot create the sandbox resource directory")?;
+    let mut sandbox = NamedTempFile::new_in(&resource_dir)?;
+    let actual = download_binary(
+        &client,
+        sandbox_url,
+        &mut sandbox,
+        "Downloading the Linux sandbox",
+        &mut SilentProgress,
+    )
+    .await?;
+    if actual != sandbox_checksum {
+        bail!("Linux sandbox update checksum mismatch");
+    }
+    make_executable(&sandbox)?;
+    sandbox.as_file().sync_all()?;
+    persist_update(sandbox, &resource_dir.join("bwrap"))?;
     (config.persist)(staged, &config.install_path)?;
 
     Ok(format!(
@@ -519,6 +541,14 @@ mod tests {
                 {
                     "name": "elpis-linux-x86_64.sha256",
                     "browser_download_url": format!("{}/checksum", server.uri())
+                },
+                {
+                    "name": SANDBOX_ASSET,
+                    "browser_download_url": format!("{}/sandbox", server.uri())
+                },
+                {
+                    "name": format!("{SANDBOX_ASSET}.sha256"),
+                    "browser_download_url": format!("{}/sandbox-checksum", server.uri())
                 }
             ]
         });
@@ -535,6 +565,19 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/checksum"))
             .respond_with(ResponseTemplate::new(200).set_body_string(checksum))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/sandbox"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"sandbox fixture"))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/sandbox-checksum"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(format!("{}  {SANDBOX_ASSET}\n", sha256(b"sandbox fixture"))),
+            )
             .mount(server)
             .await;
     }
@@ -560,7 +603,54 @@ mod tests {
             .expect("successful update");
 
         assert_eq!(fs::read(&fixture.install_path).unwrap(), binary);
+        assert_eq!(
+            fs::read(
+                fixture
+                    .install_path
+                    .parent()
+                    .unwrap()
+                    .join("codex-resources/bwrap")
+            )
+            .unwrap(),
+            b"sandbox fixture"
+        );
         assert!(message.contains("Updated Elpis from 0.1.1 to 0.1.2"));
+    }
+
+    #[tokio::test]
+    async fn sandbox_checksum_failure_preserves_the_installed_files() {
+        let server = MockServer::start().await;
+        let fixture = Fixture::new();
+        let binary = b"new elpis";
+        mount_release(
+            &server,
+            binary,
+            &format!("{}  elpis-linux-x86_64\n", sha256(binary)),
+        )
+        .await;
+        let resources = fixture
+            .install_path
+            .parent()
+            .unwrap()
+            .join("codex-resources");
+        fs::create_dir(&resources).unwrap();
+        fs::write(resources.join("bwrap"), b"old sandbox").unwrap();
+        Mock::given(method("GET"))
+            .and(path("/sandbox"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"corrupt sandbox"))
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        let error = run_with_config(fixture.config(&server, "0.1.1"))
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("sandbox update checksum mismatch")
+        );
+        assert_eq!(fs::read(&fixture.install_path).unwrap(), b"old elpis");
+        assert_eq!(fs::read(resources.join("bwrap")).unwrap(), b"old sandbox");
     }
 
     #[tokio::test]

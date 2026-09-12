@@ -32,6 +32,14 @@ curl --fail --location --progress-bar \
 curl --fail --location --progress-bar \
   "$release_url/$asset.sha256" --output "$temporary_dir/$asset.sha256"
 
+if [ "$platform" = Linux-x86_64 ]; then
+  resource=elpis-bwrap-linux-x86_64
+  curl --fail --location --progress-bar \
+    "$release_url/$resource" --output "$temporary_dir/$resource"
+  curl --fail --location --progress-bar \
+    "$release_url/$resource.sha256" --output "$temporary_dir/$resource.sha256"
+fi
+
 (
   cd "$temporary_dir"
   # macOS ships `shasum`, not GNU `sha256sum`; both read the same checksum format.
@@ -40,9 +48,17 @@ curl --fail --location --progress-bar \
   else
     shasum -a 256 --check "$asset.sha256"
   fi
+  if [ "$platform" = Linux-x86_64 ]; then
+    sha256sum --check "$resource.sha256"
+  fi
 )
 
 mkdir -p "$install_dir"
+if [ "$platform" = Linux-x86_64 ]; then
+  mkdir -p "$install_dir/codex-resources"
+  install -m 0755 "$temporary_dir/$resource" "$install_dir/codex-resources/.bwrap.installing"
+  mv -f "$install_dir/codex-resources/.bwrap.installing" "$install_dir/codex-resources/bwrap"
+fi
 install -m 0755 "$temporary_dir/$asset" "$install_dir/.elpis.installing"
 mv -f "$install_dir/.elpis.installing" "$install_dir/elpis"
 printf 'Installed Elpis at %s\n' "$install_dir/elpis"

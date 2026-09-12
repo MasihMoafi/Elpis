@@ -1,5 +1,10 @@
 # UI and compaction audit — September 12, 2026
 
+The subsequent [production candidate report](production-candidate-20260912.md)
+records the current installed artifacts, the blank-cell repaint correction,
+bundled sandbox packaging, and remaining release blockers. Earlier hashes below
+are historical.
+
 Masih rejected the installed UI at `635b5b48`. Earlier passing tests did not cover
 slash completion through the top-level key router or first-press ledger focus.
 This audit does not grant visual acceptance or authorize a premature release.
