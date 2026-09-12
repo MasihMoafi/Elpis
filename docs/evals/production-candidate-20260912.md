@@ -239,3 +239,17 @@ compaction duration or establish the cause of the reported delay. The existing
 controlled timing comparison remains the only measured latency evidence; the
 live-provider delay remains unresolved. Metadata-only scan evidence is
 `current-session-compaction-events.json`; no conversation contents were copied.
+
+## Running session versus installed binary
+
+The process holding this conversation's rollout (PID 44849 at inspection) still
+uses its old, unlinked executable, SHA256
+`24a96237abaf1f4431c33e119e6bb4e8f568c34d0ee1f0a1139324f0b3fc6c13`.
+The installed CLI is `9a544d0c…`. Atomic installation does not replace code in an
+already-running process. This explains why this conversation can still write the
+old, command-heavy checkpoint despite the installed writer correction. No process
+was killed. To apply the installed changes to this thread, restart and use:
+
+```bash
+elpis resume 01a08a44-2bba-7213-bce0-4a7e5f0423aa
+```

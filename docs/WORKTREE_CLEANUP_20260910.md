@@ -12,6 +12,21 @@ did not establish that its features were integrated.
 | `ace-fact-preservation` | The default prompt in `core/src/pruner_settings.rs` preserves distinct facts and uncertainty; optimizer effort is Low in `smart_prune.rs`. | These behaviors are present. The archived `smart_prune_reasoning_effort` configuration override is absent; do not claim complete patch integration. |
 | `manual-memory-resume-test` | Restored the archived restart/resume case in `app-server/tests/suite/v2/memory_recall.rs`, adding an assertion that the first request has no admitted memory. | Integrated and passed through the full verifier: the first resumed request contains the newly admitted marker exactly once. This tests delivery, not model quality. |
 | `daily-driver-readiness` | Recovery retains `cd088885` agent-control protocol types, `e0f4f48c` graph ownership work and unfinished authority/readback edits. Current source lacks the new authority snapshot and exact-edge helpers. | Preserved, unintegrated orchestration work; not a completed feature secretly installed in main. |
+| `ci-linux-v4` | Main contains `TurnActivityUpdatedNotification`, terminal activity sequencing, and the public-submission manual-memory test helper from the historical work. | Relevant timing and test behavior present; reapplying the old commits is unnecessary. |
+| `elpis-ide-reference-controls` | Current source differs in four UI files; the archived extension writes settings only to `WorkspaceFolder`, while main supports empty/file windows and protects startup submission. | Keep the newer implementation. The current packaged runtime passed empty/file/folder startup checks. |
+| `elpis-ide-default-model` | The archived installer/workflow patch additionally auto-installs VS Code from the CLI installer; current installer does not. Current extension retains model selection and conversation history. | Do not claim the automatic installer integration shipped. Local IDE installation is separately verified; automatic cross-product installation is not necessary for the requested chat/startup fix. |
+| `elpis-ide-provider-completion` | Archived UI is an earlier implementation lacking the later follow-up, ledger, settings and IDE-context modules. | Superseded as an implementation base; do not overwrite the tested current extension with it. |
+| `elpis-ide-smart-runtime` | Recovery tip has no `editors/` tree; its runtime work predates the current extension. | Historical runtime/evidence branch, not a replacement for the current IDE package. |
+| `release-v020-evidence-refresh` | Main has `dashboard_evidence.rs` and its token-gated evidence routing. The recovery commit's separate note is absent. | Evidence-viewer behavior present; historical release notes are not a new runtime feature. |
+| `parallel-runner-offline` | All 52 files added by its recovery commit remain absent from main. | Research harness/protocol/results preserved on the recovery branch; not installed or integrated. Review before using for a paper. |
+| `portable-checkpoint` | Independent commit `1730ac2b` adds `STARTER_PROMPT.md`. | Preserved evaluation prompt, not an implemented portable-memory feature. |
+| `release-v0.3.0-vscode` | Independent `5d761053` changes release version/workflow and IDE packaging. | Unpublished alternative release preparation; do not silently change the selected version by merging it. |
+| `paper-controlled-study-20260905` | Independent history includes `82b9ca30`, selecting Luna Max optimizer policy. Main currently uses Low. | Preserve historical study; do not restore a superseded optimizer policy through a documentation merge. |
+
+These dispositions distinguish superseded code, required runtime behavior and
+research material. They do not prove that every distinct change in each branch
+was reviewed. In particular, the alternate detailed IDE, website variants, terminal
+benchmark history and remaining release-candidate differences still need review.
 
 The remaining archive rows below still need individual disposition. This audit
 does not establish that all 79 trees' distinct work is available in the installed
