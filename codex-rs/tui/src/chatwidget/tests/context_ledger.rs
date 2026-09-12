@@ -1,6 +1,39 @@
 use super::*;
 
 #[tokio::test]
+async fn composer_drag_releases_ledger_focus_without_submitting() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_task_running(true);
+    chat.bottom_pane
+        .set_composer_text("draft text".into(), Vec::new(), Vec::new());
+    let area = Rect::new(0, 0, 120, 40);
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(&chat, area, &mut buffer);
+    let (x, y) = Renderable::cursor_pos(&chat, area).expect("composer cursor");
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    assert!(chat.context_ledger_has_focus());
+    assert!(chat.handle_composer_mouse_selection(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: x,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    }));
+    assert!(!chat.context_ledger_has_focus());
+    assert!(chat.handle_composer_mouse_selection(MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: x - 4,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    }));
+    assert_eq!(chat.bottom_pane.selected_composer_text(), Some("text"));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
+    assert_eq!(chat.bottom_pane.composer_text(), "draft ");
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn tab_completes_slash_command_before_touching_ledger() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(120));

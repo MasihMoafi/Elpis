@@ -1383,11 +1383,12 @@ impl BottomPane {
         self.view_stack.is_empty() && !self.composer.popup_active()
     }
 
-    /// Returns true when the bottom pane has no active modal view and no active composer popup.
-    ///
-    /// This is the UI-level definition of "no modal/popup is active" for key routing decisions.
-    /// It intentionally does not include task state, since some actions are safe while a task is
-    /// running and some are not.
+    pub(crate) fn selected_composer_text(&self) -> Option<&str> {
+        self.no_modal_or_popup_active()
+            .then(|| self.composer.selected_text())
+            .flatten()
+    }
+
     pub(crate) fn handle_composer_mouse_selection(
         &mut self,
         event: crossterm::event::MouseEvent,
@@ -1398,6 +1399,8 @@ impl BottomPane {
         self.composer.handle_mouse_selection(event)
     }
 
+    /// Returns true when the bottom pane has no active modal view or composer popup,
+    /// regardless of whether a task is running.
     pub(crate) fn no_modal_or_popup_active(&self) -> bool {
         self.can_launch_external_editor()
     }

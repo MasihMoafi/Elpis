@@ -96,6 +96,9 @@ impl App {
         app_server: &mut AppServerSession,
         key_event: KeyEvent,
     ) {
+        if self.overlay.is_none() && self.chat_widget.handle_selection_copy_key(key_event) {
+            return;
+        }
         // Some terminals, especially on macOS, encode Option+Left/Right as Option+b/f unless
         // enhanced keyboard reporting is available. We only treat those word-motion fallbacks as
         // agent-switch shortcuts when the composer is empty so we never steal the expected

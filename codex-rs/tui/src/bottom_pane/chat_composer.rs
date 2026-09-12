@@ -916,6 +916,13 @@ impl ChatComposer {
         self.cursor_pos_with_textarea_right_reserve(area, /*textarea_right_reserve*/ 0)
     }
 
+    pub(crate) fn selected_text(&self) -> Option<&str> {
+        self.draft
+            .input_enabled
+            .then(|| self.draft.textarea.selected_text())
+            .flatten()
+    }
+
     pub(crate) fn handle_mouse_selection(
         &mut self,
         event: crossterm::event::MouseEvent,

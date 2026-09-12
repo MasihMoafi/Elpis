@@ -146,6 +146,10 @@ impl ContextLedgerState {
 }
 
 impl ChatWidget {
+    pub(super) fn focus_composer(&mut self) {
+        self.context_ledger.focused = false;
+    }
+
     pub(super) fn context_ledger_has_focus(&self) -> bool {
         self.context_ledger.visible && self.context_ledger.focused
     }

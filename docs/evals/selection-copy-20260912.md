@@ -60,6 +60,33 @@ as part of integration, in both native VTE and VS Code's terminal.
 
 ## Composer implementation progress
 
+The follow-up routing change releases Context Ledger focus when the composer
+handles a drag. Ctrl+C copies a nonempty composer selection before interrupt or
+side-conversation return handling; with no selection, existing key routing is
+preserved. Active popups/modal views do not expose the underlying selection.
+The same clipboard function handles release and keyboard copy.
+
+Verification for this follow-up:
+
+- `selection-routing-final-test-build.log`: successful build.
+- `selection-routing-full-tests.log`: 3,169 passed, 0 failed, 5 ignored.
+  The new focus test selects a draft while the ledger is focused and verifies
+  Backspace edits only that selection without sending an operation. An initial
+  version asserted immediate ordinary character insertion, which is deferred by
+  paste detection; the direct editing check replaces that timing assumption.
+- `selection-routing-optimized.log`: successful optimized build.
+- `selection-routing-busy/result.json`: real GTK/VTE, animations enabled,
+  response open. Focus ledger, select draft, replace the clipboard with a control
+  value, then Ctrl+C. Clipboard returns exactly `preserve this draft`; draft
+  remains and only the original request exists. Response stays open.
+  `composer-selected.png` was inspected and retains the source-only highlight.
+- `selection-routing-idle/result.json`: the same clipboard replacement/Ctrl+C
+  check also passes after the response completes, with the draft preserved.
+
+These files are under `.tmp/final-candidate/`. Mouse capture is still enabled
+only by the test wrapper. This follow-up is not installed and does not establish
+transcript selection or normal-runtime mouse-mode completeness.
+
 The textarea now maps mouse coordinates to source byte ranges, paints selection,
 and returns only selected source text on release. Typing/backspace/delete replace
 the selected draft range. Rendering does not mutate the selected source. Composer

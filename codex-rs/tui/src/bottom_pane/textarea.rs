@@ -499,6 +499,11 @@ impl TextArea {
             .is_some_and(|selection| selection.dragging)
     }
 
+    pub(crate) fn selected_text(&self) -> Option<&str> {
+        let range = self.mouse_selection?.range();
+        (!range.is_empty()).then(|| &self.text[range])
+    }
+
     /// Returns source text on release; terminal borders and soft-wrap breaks are never copied.
     pub(crate) fn handle_mouse_selection(
         &mut self,
@@ -533,8 +538,8 @@ impl TextArea {
                 self.cursor_pos = selection.focus;
                 self.preferred_col = None;
                 self.mouse_selection = Some(selection);
-                if !selection.dragging && !selection.range().is_empty() {
-                    return Some(self.text[selection.range()].to_owned());
+                if !selection.dragging {
+                    return self.selected_text().map(str::to_owned);
                 }
             }
             _ => {}
@@ -2235,6 +2240,9 @@ mod tests {
         assert!(buffer[(12, 5)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(10, 5)].modifier.contains(Modifier::REVERSED));
         assert_eq!(textarea.text(), "ab👩‍💻cd\nef");
+        assert_eq!(textarea.selected_text(), Some("👩‍💻cd\nef"));
+        textarea.input(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert_eq!(textarea.selected_text(), None);
     }
 
     #[test]

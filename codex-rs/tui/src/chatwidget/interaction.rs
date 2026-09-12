@@ -4,18 +4,34 @@
 use super::*;
 
 impl ChatWidget {
+    fn copy_selected_text(&mut self, text: &str) {
+        match crate::clipboard_copy::copy_to_clipboard(text) {
+            Ok(lease) => self.clipboard_lease = lease,
+            Err(error) => self.add_error_message(format!("Could not copy selected text: {error}")),
+        }
+    }
+
+    pub(crate) fn handle_selection_copy_key(&mut self, key_event: KeyEvent) -> bool {
+        if !key_hint::ctrl(KeyCode::Char('c')).is_press(key_event) {
+            return false;
+        }
+        let Some(text) = self.bottom_pane.selected_composer_text().map(str::to_owned) else {
+            return false;
+        };
+        self.copy_selected_text(&text);
+        true
+    }
+
     pub(crate) fn handle_composer_mouse_selection(
         &mut self,
         event: crossterm::event::MouseEvent,
     ) -> bool {
         let (handled, copied) = self.bottom_pane.handle_composer_mouse_selection(event);
+        if handled {
+            self.focus_composer();
+        }
         if let Some(text) = copied {
-            match crate::clipboard_copy::copy_to_clipboard(&text) {
-                Ok(lease) => self.clipboard_lease = lease,
-                Err(error) => {
-                    self.add_error_message(format!("Could not copy selected text: {error}"))
-                }
-            }
+            self.copy_selected_text(&text);
         }
         if handled || matches!(event.kind, crossterm::event::MouseEventKind::Down(_)) {
             self.frame_requester.schedule_frame();
@@ -24,6 +40,9 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.handle_selection_copy_key(key_event) {
+            return;
+        }
         if key_hint::plain(KeyCode::Tab).is_press(key_event)
             && !self.bottom_pane.has_active_view()
             && !self.bottom_pane.no_modal_or_popup_active()
