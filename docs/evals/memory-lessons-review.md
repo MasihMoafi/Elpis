@@ -415,3 +415,12 @@ personal-path byte check. CLI SHA256:
 `dd8be96df525054bf79e8f25c516375a3e4247f6f352ac7cdeb49ccad5e57165`;
 packaged runtime SHA256:
 `34fb5726fffaf1f482188fe887f2196435a4ea0ac2e8b886c14da0103923965a`.
+
+Source `c6f58c0e` is installed. Both installed binary hashes match the above; all42
+non-manifest extension files match the package, and the manifest matches excluding
+VS Code's installation metadata. CLI still reports0.2.0; extension is0.1.26.
+Rollback copies are at
+`~/.local/share/elpis/release-recovery/memory-numeric-20260914/`.
+The default shared socket was absent before installation. No running user session
+was stopped, visible app opened, or remote release published. One main worktree
+remains, preserving unrelated `docs/USER_REQUESTS.md` edits.
