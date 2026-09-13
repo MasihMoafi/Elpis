@@ -305,3 +305,44 @@ The default shared socket was absent at verification. No visible app was opened,
 user session restarted, or remote release published. Existing processes require
 normal exit before replacement code can run. One main worktree remains, with
 unrelated `docs/USER_REQUESTS.md` edits preserved.
+
+### Replacement prompt and entry-selection probe — September 14
+
+The same captured input from receipt
+`3568eeff-1485-409f-af32-11132b7de03e.json` was replayed with a replacement prompt,
+rather than another appended paragraph. The model remained Luna-low, tools were
+disabled, and the proxy allowed one forwarded request with no model fallback.
+The replacement still updated the installed-version entry instead of removing it,
+kept per-run evaluation status and the stale `runtime-query.js` task, and damaged
+two full citations. Its old short numeric citations were preserved; comparisons
+were made against the captured input, not today's changed memory file.
+Result: **failed**, 25,344 reported tokens, 37.680 seconds.
+Raw evidence: `.tmp/final-candidate/memory-retention-replacement-result.json`;
+candidate instructions: `memory-retention-replacement.md` in that directory.
+
+A second probe changed the output operation: select keep/drop for each existing
+entry and supply only additions with evidence IDs. Existing entries would be
+retained verbatim locally, eliminating model rewrites of their citations. It used
+the same captured conversation evidence and previous memory content represented as
+indexed bullets. This is an experimental contract, not the production saver.
+One connection closed without a response (`socket hang up`); the proxy blocked the
+runtime retry. That failed attempt is retained as
+`memory-retention-decisions-connection-error.json`, with no reported usage.
+One explicit fresh attempt then completed: 24,580 reported tokens, 21.087 seconds.
+
+The selection probe preserved all twelve expected preferences/lessons, removed
+the old distilled-evaluation entry and installed-version entry, added no new facts,
+and no longer carried the stale runtime-query task. It nevertheless retained three
+entries covered by the predeclared exclusion checks, including the bridge entry's
+52-test count. The checkpoint also used abbreviated/backtick citations rather than
+consistently preserving complete bracketed identifiers. **The acceptance check
+failed; do not present this as a working retention replacement.** Raw output:
+`memory-retention-decisions-result.json`; check:
+`check-memory-retention-decisions.cjs`, both under `.tmp/final-candidate/`.
+
+These probes reported 49,924 tokens in total, excluding the connection failure
+whose usage is unknown. The apparent latency difference is one observation per
+contract, not a performance benchmark. Neither candidate was applied to production
+or to real memory. The installed version remains unchanged. Further work must
+resolve mixed durable/status entries and checkpoint fidelity, and separately the
+global/project boundary; another passing serialization test cannot close them.
