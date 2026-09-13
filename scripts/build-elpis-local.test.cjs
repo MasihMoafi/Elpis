@@ -49,8 +49,8 @@ test('temperature at the ceiling prevents compiler startup', () => {
   assert.equal(result.compilerStarted, false);
 });
 
-test('TUI and config tests use separate Cargo feature graphs', () => {
-  for (const [mode, crate] of [['test-build', 'codex-tui'], ['config-test-build', 'codex-config']]) {
+test('TUI, core and config tests use separate Cargo feature graphs', () => {
+  for (const [mode, crate] of [['test-build', 'codex-tui'], ['core-test-build', 'codex-core'], ['config-test-build', 'codex-config']]) {
     const result = runGuard(50000, mode);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.deepEqual(result.args.flatMap((arg, i) => arg === '-p' ? [result.args[i + 1]] : []), [crate]);

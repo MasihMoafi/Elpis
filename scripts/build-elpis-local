@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|dev|optimized|schema-build|test-build|config-test-build|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|dev|optimized|schema-build|test-build|core-test-build|config-test-build|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -33,6 +33,11 @@ case "$mode" in
         cargo_args=(test --profile local-release --locked --offline -p codex-tui --lib --bins --no-run)
         artifact=
         ;;
+    core-test-build)
+        profile=local-release
+        cargo_args=(test --profile local-release --locked --offline -p codex-core --lib --no-run)
+        artifact=
+        ;;
     config-test-build)
         profile=local-release
         cargo_args=(test --profile local-release --locked --offline -p codex-config --lib --no-run)
@@ -44,7 +49,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, dev, optimized, schema-build, test-build, config-test-build, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, dev, optimized, schema-build, test-build, core-test-build, config-test-build, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
@@ -171,7 +176,7 @@ fi
 # Freeze path-remapping flags for both locally optimized profiles so repeats
 # reuse the same Cargo fingerprint and installed artifacts do not expose the
 # workstation path. Dev/check retain the caller's normal fingerprint.
-if [ "$mode" = optimized ] || [ "$mode" = schema-build ] || [ "$mode" = test-build ] || [ "$mode" = config-test-build ] || [ "$mode" = shipping ]; then
+if [ "$mode" = optimized ] || [ "$mode" = schema-build ] || [ "$mode" = test-build ] || [ "$mode" = core-test-build ] || [ "$mode" = config-test-build ] || [ "$mode" = shipping ]; then
     remap_from=${ELPIS_REMAP_PATH_FROM:-/home/masih}
     append_rustflag "--remap-path-prefix=$remap_from=/build"
     export CFLAGS="-ffile-prefix-map=$remap_from=/build -fdebug-prefix-map=$remap_from=/build"

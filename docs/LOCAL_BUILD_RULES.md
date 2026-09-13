@@ -59,6 +59,8 @@ TUI tests. Use `scripts/build-elpis-local config-test-build` separately when con
 tests are required. Combining those packages enables config's test-only networking
 features throughout the TUI dependency graph and forces expensive recompilation
 before `optimized`; keep their test invocations separate.
+Use `scripts/build-elpis-local core-test-build` for core unit-test executables;
+it applies the same thermal guard and compiler settings without adding TUI tests.
 The workspace also enables `similar/inline`, matching the snapshot-test dependency
 features so switching between TUI tests and the installable build reuses core.
 

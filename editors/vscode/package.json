@@ -2,7 +2,7 @@
   "name": "elpis-editor",
   "displayName": "Elpis",
   "description": "Chat with your Elpis runtime using live VS Code documents and language intelligence.",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "publisher": "elpis-local",
   "license": "Apache-2.0",
   "engines": {

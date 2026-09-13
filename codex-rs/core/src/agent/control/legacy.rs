@@ -40,7 +40,9 @@ impl AgentControl {
                         )
                         .await
                 {
-                    warn!("failed to persist thread-spawn edge status for {agent_id}: {err}");
+                    return Err(CodexErr::Fatal(format!(
+                        "failed to persist thread-spawn edge status for {agent_id}: {err}"
+                    )));
                 }
             }
             Err(CodexErr::ThreadNotFound(_)) if known_agent => {

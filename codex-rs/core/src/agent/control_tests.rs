@@ -2846,6 +2846,172 @@ async fn shutdown_agent_tree_closes_descendants_when_started_at_child() {
 }
 
 #[tokio::test]
+async fn close_agent_preserves_loaded_child_when_closed_edge_write_fails_and_retry_succeeds() {
+    use codex_agent_graph_store::AgentGraphStore;
+    use codex_agent_graph_store::AgentGraphStoreError;
+    use codex_agent_graph_store::AgentGraphStoreFuture;
+    use codex_agent_graph_store::LocalAgentGraphStore;
+    use codex_agent_graph_store::ThreadSpawnEdgeStatus;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::Ordering;
+
+    struct FailClosedWrite {
+        inner: LocalAgentGraphStore,
+        fail: AtomicBool,
+    }
+
+    impl AgentGraphStore for FailClosedWrite {
+        fn upsert_thread_spawn_edge(
+            &self,
+            parent: ThreadId,
+            child: ThreadId,
+            status: ThreadSpawnEdgeStatus,
+        ) -> AgentGraphStoreFuture<'_, ()> {
+            self.inner.upsert_thread_spawn_edge(parent, child, status)
+        }
+
+        fn set_thread_spawn_edge_status(
+            &self,
+            child: ThreadId,
+            status: ThreadSpawnEdgeStatus,
+        ) -> AgentGraphStoreFuture<'_, ()> {
+            if status == ThreadSpawnEdgeStatus::Closed && self.fail.load(Ordering::SeqCst) {
+                return Box::pin(async {
+                    Err(AgentGraphStoreError::Internal {
+                        message: "injected Closed edge write failure".to_string(),
+                    })
+                });
+            }
+            self.inner.set_thread_spawn_edge_status(child, status)
+        }
+
+        fn list_thread_spawn_children(
+            &self,
+            parent: ThreadId,
+            status: Option<ThreadSpawnEdgeStatus>,
+        ) -> AgentGraphStoreFuture<'_, Vec<ThreadId>> {
+            self.inner.list_thread_spawn_children(parent, status)
+        }
+
+        fn list_thread_spawn_descendants(
+            &self,
+            root: ThreadId,
+            status: Option<ThreadSpawnEdgeStatus>,
+        ) -> AgentGraphStoreFuture<'_, Vec<ThreadId>> {
+            self.inner.list_thread_spawn_descendants(root, status)
+        }
+    }
+
+    let mut harness = AgentControlHarness::new().await;
+    let graph = Arc::new(FailClosedWrite {
+        inner: LocalAgentGraphStore::new(harness.state_db.clone().expect("state database")),
+        fail: AtomicBool::new(true),
+    });
+    let auth = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy"));
+    harness.manager = ThreadManager::new(
+        &harness.config,
+        auth.clone(),
+        crate::thread_manager::build_models_manager(&harness.config, auth),
+        crate::CodexAppsToolsCache::default(),
+        SessionSource::Exec,
+        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+        empty_extension_registry(),
+        Arc::new(crate::test_support::EmptyUserInstructionsProvider),
+        Arc::new(LocalThreadStore::new(
+            LocalThreadStoreConfig::from_config(&harness.config),
+            harness.state_db.clone(),
+        )),
+        Some(graph.clone()),
+        uuid::Uuid::new_v4().to_string(),
+        None,
+        None,
+    );
+    harness.control = harness.manager.agent_control();
+    let (parent_id, _parent) = harness.start_thread().await;
+    let child_id = harness
+        .control
+        .spawn_agent_with_communication(
+            harness.config.clone(),
+            InterAgentCommunication::new(
+                AgentPath::root(),
+                AgentPath::root().join("child").expect("child path"),
+                Vec::new(),
+                "child remains available after failed close".to_string(),
+                /*trigger_turn*/ false,
+            ),
+            AgentCommunicationContext::new(AgentCommunicationKind::Message, parent_id),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: parent_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+            SpawnAgentOptions::default(),
+        )
+        .await
+        .expect("spawn child")
+        .thread_id;
+    let child = harness
+        .manager
+        .get_thread(child_id)
+        .await
+        .expect("loaded child");
+    let error = harness
+        .control
+        .close_agent(child_id)
+        .await
+        .expect_err("close must report failed persistence");
+    assert!(
+        error
+            .to_string()
+            .contains("injected Closed edge write failure")
+    );
+    let still_loaded = harness
+        .manager
+        .get_thread(child_id)
+        .await
+        .expect("failed close preserves runtime");
+    assert!(Arc::ptr_eq(&child, &still_loaded));
+    assert!(!matches!(child.agent_status().await, AgentStatus::Shutdown));
+    assert!(harness.control.get_agent_metadata(child_id).is_some());
+    assert_eq!(
+        graph
+            .list_thread_spawn_children(parent_id, Some(ThreadSpawnEdgeStatus::Open))
+            .await
+            .expect("open edges"),
+        vec![child_id]
+    );
+
+    graph.fail.store(false, Ordering::SeqCst);
+    harness
+        .control
+        .close_agent(child_id)
+        .await
+        .expect("retry close succeeds");
+    assert_thread_not_loaded(&harness.manager, child_id).await;
+    assert_eq!(
+        graph
+            .list_thread_spawn_children(parent_id, Some(ThreadSpawnEdgeStatus::Closed))
+            .await
+            .expect("closed edges"),
+        vec![child_id]
+    );
+    assert!(
+        graph
+            .list_thread_spawn_children(parent_id, Some(ThreadSpawnEdgeStatus::Open))
+            .await
+            .expect("open edges")
+            .is_empty()
+    );
+    harness
+        .control
+        .shutdown_live_agent(parent_id)
+        .await
+        .expect("shutdown parent");
+}
+
+#[tokio::test]
 async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
