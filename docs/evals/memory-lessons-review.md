@@ -293,3 +293,15 @@ checks pass with none skipped (`memory-user-editor-regression.log`). These runti
 checks use controlled localhost responses; only the separate failed retention
 replay uses live Luna. Formatting and diff checks pass. Full Rust unit suites and
 native visual checks were not rerun for this evidence-selection change.
+
+Installation completed September 14 from source `996e32cb`: CLI SHA256
+`e9c5bd947cd11eb6a0727e52da85a4924b805f8befac9041836ce49fc3e7f951`,
+IDE extension 0.1.25 runtime SHA256
+`bf95ef0a5fdf9abcc4de5db14196e4ca8d3c16aa0b023cd5a098bc6994211648`.
+All 42 non-manifest files match the extracted package; the manifest matches after
+excluding VS Code installation metadata. CLI reports 0.2.0. Recovery is retained
+under `~/.local/share/elpis/release-recovery/memory-evidence-20260914/`.
+The default shared socket was absent at verification. No visible app was opened,
+user session restarted, or remote release published. Existing processes require
+normal exit before replacement code can run. One main worktree remains, with
+unrelated `docs/USER_REQUESTS.md` edits preserved.
