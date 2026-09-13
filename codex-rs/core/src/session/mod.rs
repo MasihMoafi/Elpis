@@ -1490,6 +1490,13 @@ impl Session {
         state.session_configuration.thread_config_snapshot()
     }
 
+    pub(crate) async fn attach_dynamic_tools(&self, tools: Vec<DynamicToolSpec>) {
+        let mut state = self.state.lock().await;
+        if state.session_configuration.dynamic_tools.is_empty() {
+            state.session_configuration.dynamic_tools = tools;
+        }
+    }
+
     pub(crate) async fn set_app_server_client_info(
         &self,
         app_server_client_name: Option<String>,

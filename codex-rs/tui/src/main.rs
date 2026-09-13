@@ -1,5 +1,7 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 use clap::Parser;
+use codex_app_server_client::shared_local;
+use codex_app_server_client::shared_local::prepend_elpis_defaults as prepend_elpis_memories_defaults;
 use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::arg0_dispatch_or_else;
 use codex_config::LoaderOverrides;
@@ -15,6 +17,7 @@ use codex_tui::ExitReason;
 use codex_tui::run_main;
 use codex_utils_cli::CliConfigOverrides;
 use std::io::Write;
+#[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
 use supports_color::Stream;
@@ -53,6 +56,8 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 #[derive(Parser, Debug)]
 #[command(name = "elpis")]
 struct TopCli {
+    #[arg(long, hide = true)]
+    serve_local: bool,
     #[command(subcommand)]
     command: Option<ConversationCommand>,
     /// Update the user-local Elpis installation and exit.
@@ -173,29 +178,6 @@ fn route_conversation_command(
         }
         None => None,
     })
-}
-
-fn prepend_elpis_memories_defaults(config_overrides: &mut CliConfigOverrides, elpis_home: &Path) {
-    let memories_root = elpis_home.join("memories");
-    let state_root = elpis_home.join("state");
-    let memories_value = toml::Value::String(memories_root.to_string_lossy().into_owned());
-    let state_value = toml::Value::String(state_root.to_string_lossy().into_owned());
-    config_overrides.raw_overrides.splice(
-        0..0,
-        [
-            // Native automatic compaction is the context-window backstop. Prepended, so a
-            // user config file can still turn it off deliberately.
-            "model_auto_compact_enabled=true".to_string(),
-            // The native threshold is measured against the whole active context.
-            "model_auto_compact_token_limit_scope=total".to_string(),
-            // Elpis starts from an explicitly curated skill set; user config can re-enable
-            // skills through later overrides.
-            "skills.default_enabled=false".to_string(),
-            "skills.bundled.enabled=false".to_string(),
-            format!("memories.root={memories_value}"),
-            format!("memories.state_root={state_value}"),
-        ],
-    );
 }
 
 fn resolve_elpis_home() -> anyhow::Result<PathBuf> {
@@ -488,6 +470,11 @@ fn main() -> anyhow::Result<()> {
     codex_tui::startup_timing::record("elpis_environment");
     arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
         let mut top_cli = TopCli::parse();
+        if top_cli.serve_local {
+            return shared_local::serve(arg0_paths, &elpis_home)
+                .await
+                .map_err(Into::into);
+        }
         if top_cli.update {
             println!("{}", elpis_update::run().await?);
             return Ok(());
@@ -503,7 +490,7 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         let provider = top_cli.provider.clone();
-        let remote_endpoint = top_cli
+        let mut remote_endpoint = top_cli
             .remote
             .as_deref()
             .map(codex_tui::resolve_remote_addr)
@@ -517,6 +504,12 @@ fn main() -> anyhow::Result<()> {
             .config_overrides
             .raw_overrides
             .splice(0..0, top_cli.config_overrides.raw_overrides);
+        let automatically_share = cfg!(unix)
+            && remote_endpoint.is_none()
+            && inner.config_overrides.raw_overrides.is_empty()
+            && !inner.strict_config
+            && !inner.bypass_hook_trust
+            && inner.config_profile_v2.is_none();
         prepend_elpis_memories_defaults(&mut inner.config_overrides, &elpis_home);
         if let Some((action, target)) = route_conversation_command(top_cli.command, &mut inner)? {
             let result = codex_tui::run_session_archive_command(
@@ -532,6 +525,13 @@ fn main() -> anyhow::Result<()> {
             .map_err(|error| anyhow::anyhow!("{error}"))?;
             println!("{result}");
             return Ok(());
+        }
+        if automatically_share {
+            remote_endpoint = Some(
+                codex_app_server_client::RemoteAppServerEndpoint::UnixSocket {
+                    socket_path: shared_local::ensure_started(&elpis_home).await?,
+                },
+            );
         }
         let loader_overrides = LoaderOverrides {
             project_config_dir_name: Some(".elpis".to_string()),

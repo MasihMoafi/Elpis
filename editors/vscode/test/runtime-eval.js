@@ -33,7 +33,7 @@ class Provider {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         res.end(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''));
       } catch (error) {
-        this.error = error;
+        this.error ??= error;
         res.writeHead(500); res.end(error.message);
       }
     });

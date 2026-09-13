@@ -8,7 +8,7 @@ test('IDE discovers a CLI-origin thread and resumes its transcript under the sam
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-cli-history-')),home=path.join(root,'home');await fs.mkdir(home);
   const provider=new Provider();await provider.start();
   await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_provider="cli_eval"\n[model_providers.cli_eval]\nname="CLI eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
-  const options={home,executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
+  const options={home,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}},executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
   const cli=new Session(root,{cancel(){}},{...options,threadParams:{dynamicTools:[]},transport:{args:['--session-source','cli'],env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}}});
   let ide;
   const send=async(session,text,response)=>{
@@ -44,7 +44,7 @@ test('real history renames, archives and restores; foreign-workspace changes are
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-history-')),home=path.join(root,'home');await fs.mkdir(home);
   const provider=new Provider();await provider.start();
   await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_provider="history_eval"\n[model_providers.history_eval]\nname="History eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
-  const options={home,executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
+  const options={home,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}},executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
   const session=new Session(root,{cancel(){}},options);let timer;
   try {
     provider.actions.push(message('HISTORY_BODY_SENTINEL'));

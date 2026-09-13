@@ -9,7 +9,7 @@ test('settings write reaches real config, redacts unrelated values and rejects a
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-settings-'));
   const home=path.join(root,'home');await fs.mkdir(home);
   await fs.writeFile(path.join(home,'config.toml'),'model="gpt-5.4"\nweb_search="disabled"\n[model_providers.private]\nname="Private"\nbase_url="http://127.0.0.1:1"\nenv_key="SETTINGS_SECRET_SENTINEL"\n');
-  const options={home,executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
+  const options={home,transport:{env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home}},executable:process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server')};
   try {
     const before=await readSettings(root,options,'configuration');
     assert.equal(before.values.web_search,'disabled');

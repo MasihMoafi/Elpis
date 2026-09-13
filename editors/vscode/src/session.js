@@ -1,5 +1,5 @@
 'use strict';
-const {approvalMode}=require('./approval-modes');
+const {approvalMode,modeFromRuntime,runtimePermissionUpdate}=require('./approval-modes');
 const { connectAccount, refreshAccount } = require('./account-source');
 const { EventEmitter } = require('node:events');
 const { runtimeTransport } = require('./runtime-query');
@@ -60,6 +60,7 @@ class Session extends EventEmitter {
         pendingLedger.push(message);return;
       }
       if (p.threadId && p.threadId !== this.threadId) return;
+      if(message.method==='thread/settings/updated')this.syncPermissions(p.threadSettings);
       if(message.method==='thread/tokenUsage/updated'){
         this.contextUsage=p.tokenUsage;this.smartPrune=p.tokenUsage.smartPrune??this.smartPrune;
       }
@@ -112,12 +113,12 @@ class Session extends EventEmitter {
         cwd: this.root,
         ...(this.options.model ? { model: this.options.model } : {}),
         ...(this.options.provider ? { modelProvider: this.options.provider } : {}),
-        // The locally selected mode applies to both new and resumed threads.
-        ...approvalMode(this.options.approvalMode).runtime,
-        developerInstructions: [customInstructions, 'You are Elpis inside VS Code. Use editor_documents and editor_read for live unsaved text. Use editor_diagnostics, editor_definition, and editor_references for language intelligence. To edit editor buffers, read the current version, propose an edit with editor_propose_edit, then use editor_apply_edit. Never save editor buffers or bypass a rejection. After applying a fix, use editor_diagnostics again and report its actual result. Positions are zero-based. Editor access may be disabled; explain unavailable capabilities honestly.', approvalMode(this.options.approvalMode).description].filter(Boolean).join('\n\n'),
+        ...(this.options.resumeThreadId ? {} : approvalMode(this.options.approvalMode).runtime),
+        developerInstructions: [customInstructions, 'You are Elpis inside VS Code. Use editor_documents and editor_read for live unsaved text. Use editor_diagnostics, editor_definition, and editor_references for language intelligence. To edit editor buffers, read the current version, propose an edit with editor_propose_edit, then use editor_apply_edit. Never save editor buffers or bypass a rejection. After applying a fix, use editor_diagnostics again and report its actual result. Positions are zero-based. Editor access may be disabled; explain unavailable capabilities honestly.'].filter(Boolean).join('\n\n'),
         ...(this.options.threadParams || {}),
       });
       this.threadId = thread.thread.id;
+      this.syncPermissions(thread);
       this.hasTurns = (thread.thread.turns?.length || 0) > 0;
       const activeTurn=thread.thread.turns?.find(turn=>turn.status==='inProgress');
       if(activeTurn){
@@ -175,6 +176,33 @@ class Session extends EventEmitter {
       rpc.send({ id: message.id, error: { code: -32601, message: `Unsupported editor request: ${message.method}` } });
       this.status(`Unsupported runtime capability: ${message.method}`);
     }
+  }
+  syncPermissions(settings) {
+    const mode=modeFromRuntime(settings);
+    if(mode){this.options.approvalMode=mode;this.emit('permissions',approvalMode(mode));}
+  }
+  async setApprovalMode(mode) {
+    if(this.busy)throw new Error('Finish or stop the response before changing permissions.');
+    await this.connect();
+    const update=runtimePermissionUpdate(mode,this.root);
+    const rpc=this.rpc;
+    await new Promise((resolve,reject)=>{
+      const finish=error=>{
+        clearTimeout(timer);
+        rpc.off('notification',notification);
+        rpc.off('disconnect',disconnected);
+        error?reject(error):resolve();
+      };
+      const notification=message=>{
+        if(message.method==='thread/settings/updated'&&message.params?.threadId===this.threadId
+          &&modeFromRuntime(message.params.threadSettings)===mode)finish();
+      };
+      const disconnected=error=>finish(error);
+      const timer=setTimeout(()=>finish(new Error('The runtime did not confirm the permission change.')),15000);
+      rpc.on('notification',notification);
+      rpc.on('disconnect',disconnected);
+      rpc.request('thread/settings/update',{threadId:this.threadId,...update}).catch(finish);
+    });
   }
   updateIdentity() {
     this.identity = `Elpis · ${this.modelProvider} · ${this.model} · ${path.basename(this.root)}`;

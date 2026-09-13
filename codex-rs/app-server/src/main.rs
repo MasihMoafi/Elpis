@@ -22,6 +22,11 @@ const DISABLE_MANAGED_CONFIG_ENV_VAR: &str = "CODEX_APP_SERVER_DISABLE_MANAGED_C
 #[derive(Debug, Parser)]
 #[command(version)]
 struct AppServerArgs {
+    /// Use the shared local Elpis server, starting it when needed.
+    #[arg(long, conflicts_with_all = ["connect", "listen", "strict_config", "remote_control", "serve_local"])]
+    shared: bool,
+    #[arg(long, hide = true)]
+    serve_local: bool,
     /// Connect this JSON-lines client to an existing local app-server socket.
     #[arg(long, value_name = "SOCKET", conflicts_with_all = ["listen", "strict_config", "remote_control"])]
     connect: Option<PathBuf>,
@@ -68,6 +73,8 @@ fn main() -> anyhow::Result<()> {
     let remote_control_disabled = codex_app_server::take_remote_control_disabled_env();
     arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
         let AppServerArgs {
+            shared,
+            serve_local,
             connect,
             config_overrides,
             listen,
@@ -78,6 +85,20 @@ fn main() -> anyhow::Result<()> {
             disable_plugin_startup_tasks_for_tests,
             remote_control,
         } = AppServerArgs::parse();
+        if shared || serve_local {
+            anyhow::ensure!(
+                config_overrides.raw_overrides.is_empty(),
+                "shared startup cannot apply per-client launch overrides"
+            );
+            let home = codex_core::config::find_codex_home()?;
+            if serve_local {
+                return codex_app_server::shared_local::serve(arg0_paths, &home)
+                    .await
+                    .map_err(Into::into);
+            }
+            let socket = codex_app_server::shared_local::ensure_started(&home).await?;
+            return local_connection::run(socket.as_path()).await;
+        }
         if let Some(socket_path) = connect {
             anyhow::ensure!(
                 config_overrides.raw_overrides.is_empty(),

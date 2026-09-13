@@ -3294,6 +3294,9 @@ impl ThreadRequestProcessor {
                     active_path.display()
                 )));
             }
+            if let Some(tools) = params.dynamic_tools.as_ref() {
+                existing_thread.attach_dynamic_tools(tools.clone()).await;
+            }
             let config_snapshot = existing_thread.config_snapshot().await;
             let mismatch_details = collect_resume_override_mismatches(params, &config_snapshot);
             if !mismatch_details.is_empty() {

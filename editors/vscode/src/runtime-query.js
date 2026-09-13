@@ -10,17 +10,7 @@ async function runtimeTransport(options = {}) {
   const home = runtimeHome(options);
   await fs.mkdir(home, {recursive:true});
   const env = {...process.env, ...options.env, CODEX_HOME:home, ELPIS_HOME:home};
-  if (process.platform !== 'win32') {
-    const socket = path.join(home, 'app-server-control', 'app-server-control.sock');
-    try {
-      const entry = await fs.stat(socket);
-      if (!entry.isSocket()) throw new Error('The local Elpis app-server path is not a socket.');
-      return {args:['--connect',socket],env};
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-  }
-  return {env};
+  return process.platform==='win32'?{env}:{args:['--shared'],env};
 }
 async function withRuntime(root, options, query) {
   const rpc = new AppServer(options.executable, root, await runtimeTransport(options));

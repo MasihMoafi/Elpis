@@ -573,6 +573,14 @@ impl CodexThread {
         self.session.thread_config_snapshot().await
     }
 
+    /// Attach tools for future turns without replacing a running turn's tool set.
+    pub async fn attach_dynamic_tools(
+        &self,
+        tools: Vec<codex_protocol::dynamic_tools::DynamicToolSpec>,
+    ) {
+        self.session.attach_dynamic_tools(tools).await;
+    }
+
     /// Returns the files that supplied the thread's loaded model instructions.
     pub async fn instruction_sources(&self) -> Vec<PathUri> {
         self.session.instruction_sources().await

@@ -71,6 +71,7 @@ function activate(context) {
     }
     async function createSession(resumeThreadId,mode=currentMode().id) {
       const s = new Session(root.uri.fsPath, bridge, {...await connectionOptions(), approvalMode:mode, ...(resumeThreadId ? {resumeThreadId} : {})});
+      s.on('permissions',mode=>{if(s===session)post({type:'approvalMode',mode});});
       for (const type of ['user', 'delta', 'status','failure']) s.on(type, text => { if (s !== session) return; post({ type, text }); if (s.identity) { post({ type: 'identity', text: s.identity }); selection(); } });
       s.on('busy', busy => { if (s === session) {if(!busy)approvals.cancel();post({ type: 'busy', busy });} });
       s.on('queue',queue=>{if(s===session)post({type:'queue',...queue});});
@@ -97,7 +98,7 @@ function activate(context) {
     let catalogRequest = 0;
     let resuming = false;
     const selection = () => {
-      post({type:'approvalMode',mode:currentMode()});
+      post({type:'approvalMode',mode:approvalMode(session.options.approvalMode)});
       post({ type: 'selection', provider: selectedProvider(config().get('provider', '')).label, model: session.model || session.options.model || 'Configured model', effort:config().get('reasoningEffort', '') });
     };
     async function catalogFor(providerId) {
@@ -132,15 +133,14 @@ function activate(context) {
         if (message.type === 'approvalMode') {
           if(session.busy)throw new Error('Finish or stop the response before changing permissions.');
           const picked={mode:approvalMode(message.mode)};
-          if(!picked || picked.mode.id===currentMode().id)return;
+          if(!picked || picked.mode.id===session.options.approvalMode)return;
           if(picked.mode.id==='full' && await vscode.window.showWarningMessage('Allow full access? Elpis can run commands and change files outside this project without approval. This choice is saved locally for this project.',{modal:true},'Allow full access')!=='Allow full access')return;
           if(session.busy)throw new Error('Finish or stop the response before changing permissions.');
-          const threadId=session.hasTurns ? session.threadId : undefined;
           resuming=true;
           try {
-            session.dispose();session=await createSession(threadId,picked.mode.id);await session.connect();
+            await session.setApprovalMode(picked.mode.id);
             await context.workspaceState.update(modeKey,picked.mode.id);selection();
-          }catch(error){session.dispose();session=await createSession(threadId);selection();throw error;}
+          }catch(error){selection();throw error;}
           finally{resuming=false;}
           return;
         }

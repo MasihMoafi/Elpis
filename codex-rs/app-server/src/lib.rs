@@ -109,6 +109,7 @@ mod outgoing_message;
 mod request_processors;
 mod request_serialization;
 mod server_request_error;
+pub mod shared_local;
 mod skills_watcher;
 mod thread_state;
 mod thread_status;

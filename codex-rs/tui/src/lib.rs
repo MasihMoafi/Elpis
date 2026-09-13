@@ -802,6 +802,9 @@ fn app_server_target_for_launch(
     can_reuse_implicit_local_daemon: bool,
 ) -> AppServerTarget {
     match explicit_remote_endpoint {
+        Some(endpoint @ RemoteAppServerEndpoint::UnixSocket { .. }) => {
+            AppServerTarget::LocalDaemon { endpoint }
+        }
         Some(endpoint) => AppServerTarget::Remote { endpoint },
         None if can_reuse_implicit_local_daemon => {
             default_daemon_socket.map_or(AppServerTarget::Embedded, |socket_path| {

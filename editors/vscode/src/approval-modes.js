@@ -9,4 +9,15 @@ function approvalMode(id='ask') {
   if(!mode)throw new Error(`Unknown approval mode: ${id}`);
   return mode;
 }
-module.exports={modes,approvalMode};
+function modeFromRuntime(settings) {
+  const sandbox=settings.sandboxPolicy || settings.sandbox;
+  if(!sandbox || !settings.approvalPolicy)return undefined;
+  if(sandbox.type==='dangerFullAccess'&&settings.approvalPolicy==='never')return 'full';
+  return settings.approvalsReviewer==='auto_review'?'auto':'ask';
+}
+function runtimePermissionUpdate(id,root) {
+  const {approvalPolicy,approvalsReviewer}=approvalMode(id).runtime;
+  const sandboxPolicy=id==='full'?{type:'dangerFullAccess'}:id==='auto'?{type:'workspaceWrite',writableRoots:[root],networkAccess:false}:{type:'readOnly',networkAccess:false};
+  return {approvalPolicy,approvalsReviewer,sandboxPolicy};
+}
+module.exports={modes,approvalMode,modeFromRuntime,runtimePermissionUpdate};
