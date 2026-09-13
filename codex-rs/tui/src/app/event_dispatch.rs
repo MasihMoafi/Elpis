@@ -607,6 +607,16 @@ impl App {
             AppEvent::BeginThreadSwitchHistoryReplayBuffer => {
                 self.begin_thread_switch_history_replay_buffer();
             }
+            AppEvent::OpenUsage(cell) => {
+                tui.enter_alt_screen()?;
+                self.reset_backtrack_state();
+                self.overlay = Some(Overlay::new_static_with_renderables(
+                    vec![Box::new(cell)],
+                    "Usage".to_string(),
+                    self.keymap.pager.clone(),
+                ));
+                tui.frame_requester().schedule_frame();
+            }
             AppEvent::InsertHistoryCell(cell) => {
                 self.insert_history_cell(tui, cell);
             }

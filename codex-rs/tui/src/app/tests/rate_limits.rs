@@ -75,7 +75,7 @@ fn render_status_output(
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
     );
     match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell
+        Ok(AppEvent::OpenUsage(cell)) => cell
             .display_lines(/*width*/ 120)
             .into_iter()
             .map(|line| line.to_string())
@@ -99,6 +99,58 @@ fn deliver_usage_limit_error(app: &mut App) {
         }),
         /*replay_kind*/ None,
     );
+}
+
+#[tokio::test]
+async fn usage_escape_closes_pager_without_interrupting_active_turn() -> Result<()> {
+    let (mut app, mut events, mut ops) = make_test_app_with_channels().await;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(
+        app.chat_widget.config_ref(),
+    ))
+    .await?;
+    app.chat_widget.handle_server_notification(
+        turn_started_notification(ThreadId::new(), "usage-escape"),
+        None,
+    );
+    assert!(app.chat_widget.is_task_running_for_test());
+    while events.try_recv().is_ok() {}
+    while ops.try_recv().is_ok() {}
+
+    app.chat_widget.add_status_output(false, None);
+    let event = events.try_recv().expect("usage window event");
+    assert!(matches!(&event, AppEvent::OpenUsage(_)));
+    app.handle_event(&mut tui, &mut server, event).await?;
+    assert!(matches!(app.overlay, Some(Overlay::Static(_))));
+    app.handle_tui_event(
+        &mut tui,
+        &mut server,
+        TuiEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        )),
+    )
+    .await?;
+
+    assert!(app.overlay.is_none());
+    assert!(app.chat_widget.is_task_running_for_test());
+    for event in std::iter::from_fn(|| events.try_recv().ok()) {
+        assert!(
+            !matches!(
+                event,
+                AppEvent::CodexOp(_)
+                    | AppEvent::SetThreadGoalStatus { .. }
+                    | AppEvent::ClearThreadGoal { .. }
+            ),
+            "closing usage sent an agent or goal operation: {event:?}"
+        );
+    }
+    assert!(
+        ops.try_recv().is_err(),
+        "closing usage must not submit an agent operation"
+    );
+    server.shutdown().await?;
+    Ok(())
 }
 
 #[tokio::test]

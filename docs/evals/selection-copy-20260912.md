@@ -457,3 +457,28 @@ Rollback: `~/.local/share/elpis/release-recovery/light-20260913/elpis-before`.
 This artifact also contains the in-progress, disabled-by-default memory saver from
 the working tree; it is not a production release. Its separate local runtime check
 passed save/restart admission, malformed-output preservation and disabled behavior.
+
+## Usage dismissal — 2026-09-13
+
+`/usage` previously inserted a history cell, leaving Escape routed to the active
+turn's interrupt handler. It now opens the existing static pager with the same
+live rate-limit handle. Closing the pager consumes Escape and restores chat.
+
+The app-level regression opens usage during an active turn and routes Escape
+through the normal TUI event handler. It verifies the pager closes, the turn
+stays active, and no agent operation or goal status change is emitted. Passed.
+The initial test wrongly rejected unrelated UI events; its corrected assertion
+checks agent and goal operations specifically. The other TUI tests passed:
+3,193 passed, five ignored. Formatting and diff checks passed. Logs are in
+`.tmp/final-candidate/usage-{test-build,tui-tests,build}.log`.
+
+This is local regression evidence; user acceptance and overall production
+readiness remain open. The memory saver is still disabled for this workspace.
+
+Installed CLI SHA256:
+`1095305f9c16f25480d79f53293ddb2c563c26139e01f8dcdf49db723c958553`.
+Optimized build: 263,536 ms, peak 68°C. Rollback executable:
+`~/.local/share/elpis/release-recovery/usage-20260913/elpis-before`.
+This working-tree build also includes the pending subagent footer and disabled
+memory changes. The isolated memory runtime probe passed again on this artifact
+(`.tmp/final-candidate/memory-runtime-usage.log`). No public release or IDE update.

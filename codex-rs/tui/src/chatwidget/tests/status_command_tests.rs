@@ -10,7 +10,7 @@ async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgp
     chat.dispatch_command(SlashCommand::Usage);
 
     let rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+        Ok(AppEvent::OpenUsage(cell)) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected status output before refresh request, got {other:?}"),
@@ -36,7 +36,7 @@ async fn status_command_refresh_updates_cached_limits_for_future_status_outputs(
     chat.dispatch_command(SlashCommand::Usage);
 
     match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(_)) => {}
+        Ok(AppEvent::OpenUsage(_)) => {}
         other => panic!("expected status output before refresh request, got {other:?}"),
     }
     let first_request_id = match rx.try_recv() {
@@ -51,7 +51,7 @@ async fn status_command_refresh_updates_cached_limits_for_future_status_outputs(
 
     chat.dispatch_command(SlashCommand::Usage);
     let refreshed = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+        Ok(AppEvent::OpenUsage(cell)) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected refreshed status output, got {other:?}"),
@@ -68,7 +68,7 @@ async fn status_command_renders_immediately_without_rate_limit_refresh() {
 
     chat.dispatch_command(SlashCommand::Usage);
 
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenUsage(_)));
     assert!(
         !std::iter::from_fn(|| rx.try_recv().ok())
             .any(|event| matches!(event, AppEvent::RefreshRateLimits { .. })),
@@ -84,7 +84,7 @@ async fn status_command_uses_catalog_default_reasoning_when_config_empty() {
     chat.dispatch_command(SlashCommand::Usage);
 
     let rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+        Ok(AppEvent::OpenUsage(cell)) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected status output, got {other:?}"),
@@ -102,7 +102,7 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
 
     chat.dispatch_command(SlashCommand::Usage);
     match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(_)) => {}
+        Ok(AppEvent::OpenUsage(_)) => {}
         other => panic!("expected first status output, got {other:?}"),
     }
     let first_request_id = match rx.try_recv() {
@@ -114,7 +114,7 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
 
     chat.dispatch_command(SlashCommand::Usage);
     let second_rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+        Ok(AppEvent::OpenUsage(cell)) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected second status output, got {other:?}"),
@@ -144,7 +144,7 @@ async fn account_update_rejects_stale_status_rate_limit_snapshots() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
     chat.dispatch_command(SlashCommand::Usage);
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenUsage(_)));
     let request_id = match rx.try_recv() {
         Ok(AppEvent::RefreshRateLimits {
             origin: RateLimitRefreshOrigin::UsageCommand { request_id },

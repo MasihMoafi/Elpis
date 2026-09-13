@@ -165,7 +165,7 @@ async fn token_usage_notification_preserves_reported_cache_write_tokens() {
     chat.add_status_output(
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
     );
-    let cells = drain_insert_history(&mut rx);
+    let cells = drain_usage_output(&mut rx);
     let rendered = lines_to_single_string(cells.last().expect("status output inserted"));
     assert!(
         rendered.contains("37 cache writes"),
@@ -211,7 +211,7 @@ async fn status_uses_thread_scoped_manual_prune_savings() {
     chat.add_status_output(
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
     );
-    let cells = drain_insert_history(&mut rx);
+    let cells = drain_usage_output(&mut rx);
     let rendered = lines_to_single_string(cells.last().expect("status output inserted"));
 
     assert!(
@@ -358,7 +358,7 @@ async fn context_and_usage_link_rollout_and_latest_smart_prune_attempt_evidence(
     usage_chat.add_status_output(false, None);
     let usage_cell = std::iter::from_fn(|| usage_rx.try_recv().ok())
         .find_map(|event| match event {
-            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            AppEvent::OpenUsage(cell) => Some(cell),
             _ => None,
         })
         .expect("/usage output");
@@ -402,7 +402,7 @@ async fn context_and_usage_do_not_invent_evidence_links_before_a_session_or_atte
     usage_chat.add_status_output(false, None);
     let usage_cell = std::iter::from_fn(|| usage_rx.try_recv().ok())
         .find_map(|event| match event {
-            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            AppEvent::OpenUsage(cell) => Some(cell),
             _ => None,
         })
         .expect("/usage output");
@@ -568,7 +568,7 @@ async fn token_usage_notification_omits_unreported_cache_write_tokens() {
     chat.add_status_output(
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
     );
-    let cells = drain_insert_history(&mut rx);
+    let cells = drain_usage_output(&mut rx);
     let rendered = lines_to_single_string(cells.last().expect("status output inserted"));
     assert!(
         !rendered.contains("cache writes"),
@@ -599,7 +599,7 @@ async fn token_usage_update_uses_runtime_context_window() {
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
     );
 
-    let cells = drain_insert_history(&mut rx);
+    let cells = drain_usage_output(&mut rx);
     let context_line = cells
         .last()
         .expect("status output inserted")

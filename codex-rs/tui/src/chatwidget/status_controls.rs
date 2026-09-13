@@ -259,7 +259,7 @@ impl ChatWidget {
         if let Some(request_id) = request_id {
             self.refreshing_status_outputs.push((request_id, handle));
         }
-        self.add_to_history(cell);
+        self.app_event_tx.send(AppEvent::OpenUsage(Box::new(cell)));
     }
 
     pub(crate) fn finish_status_rate_limit_refresh(
