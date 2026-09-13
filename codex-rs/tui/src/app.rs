@@ -1335,6 +1335,18 @@ See the Elpis keymap documentation for supported actions and examples."
                         .chat_widget
                         .handle_composer_mouse_selection(mouse_event) => {}
                 TuiEvent::Mouse(mouse_event) => match mouse_event.kind {
+                    crossterm::event::MouseEventKind::ScrollUp => {
+                        self.inline_history_selection = None;
+                        tui.enter_alt_screen()?;
+                        self.overlay = Some(Overlay::new_transcript(
+                            self.transcript_cells.clone(),
+                            self.keymap.pager.clone(),
+                        ));
+                        self.handle_backtrack_overlay_event(tui, TuiEvent::Draw)
+                            .await?;
+                        self.handle_backtrack_overlay_event(tui, TuiEvent::Mouse(mouse_event))
+                            .await?;
+                    }
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
                         self.chat_widget
                             .handle_context_ledger_mouse_click(mouse_event.row, mouse_event.column);

@@ -495,3 +495,14 @@ Usage pager and `CONTINUED_AFTER_USAGE` in the restored chat. Evidence is under
 `.tmp/final-candidate/usage-native-{dark,light}-installed-candidate/` and
 `.tmp/final-candidate/usage-native-light-visible/`. Candidate CLI SHA256:
 `440768541e562df01f83fec50cda6ff5d76d193e5f6370f287881051f7619fea`.
+
+### Scroll-up routing regression, September 13
+
+Mouse capture for selection left the main chat discarding wheel events. The native
+wheel test failed on the preceding candidate (`wheel-before-routing.log`). The
+main chat now opens the existing transcript view and routes the wheel event there.
+Native VTE checks passed with and without alternate-screen mode: scroll to the
+oldest fixture row, scroll back to the latest, close history with q, and preserve
+the active provider response. Evidence: `.tmp/final-candidate/wheel-after-routing/`
+and `wheel-after-routing-altscreen/`. Installed CLI SHA256:
+`6d630f77f038e443fe8954c22a808ecc88c92f6f2b0aa2af317bcc31627058cd`.
