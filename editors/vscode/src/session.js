@@ -2,8 +2,7 @@
 const {approvalMode}=require('./approval-modes');
 const { connectAccount, refreshAccount } = require('./account-source');
 const { EventEmitter } = require('node:events');
-const fs = require('node:fs/promises');
-const { runtimeHome } = require('./runtime-query');
+const { runtimeTransport } = require('./runtime-query');
 const path = require('node:path');
 const { AppServer } = require('./rpc');
 const { specs } = require('./editor');
@@ -40,10 +39,9 @@ class Session extends EventEmitter {
     const generation = this.generation;
     this.threadId=null;this.contextUsage=undefined;this.smartPrune=undefined;
     this.pendingUserEchoes=[];this.userItemIds.clear();this.messageText.clear();
-    const home = runtimeHome(this.options);
-    if (!this.options.transport) await fs.mkdir(home, { recursive: true });
+    const transport = await runtimeTransport(this.options);
     if (generation !== this.generation) throw new Error('Connection cancelled.');
-    this.rpc = new AppServer(this.options.executable, this.root, this.options.transport || { env: { ...process.env, ...this.options.env, CODEX_HOME: home } });
+    this.rpc = new AppServer(this.options.executable, this.root, transport);
     const rpc = this.rpc;
     rpc.on('disconnect', error => {
       this.contextUsage=undefined;this.smartPrune=undefined;

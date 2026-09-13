@@ -98,6 +98,10 @@ struct TopCli {
     #[arg(long = "resume", value_name = "SESSION_ID")]
     resume_session_id: Option<String>,
 
+    /// Connect to an existing app-server, for example unix:///path/to/server.sock.
+    #[arg(long, value_name = "URL")]
+    remote: Option<String>,
+
     #[clap(flatten)]
     config_overrides: CliConfigOverrides,
 
@@ -499,6 +503,12 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         let provider = top_cli.provider.clone();
+        let remote_endpoint = top_cli
+            .remote
+            .as_deref()
+            .map(codex_tui::resolve_remote_addr)
+            .transpose()
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
         let resume_session_id = top_cli.resume_session_id.take();
         append_provider_override(&mut top_cli.config_overrides, provider.as_deref());
         let mut inner = top_cli.inner;
@@ -515,7 +525,7 @@ fn main() -> anyhow::Result<()> {
                 codex_tui::SessionArchiveCommandOptions {
                     cli: inner,
                     arg0_paths,
-                    explicit_remote_endpoint: None,
+                    explicit_remote_endpoint: remote_endpoint,
                 },
             )
             .await
@@ -527,13 +537,7 @@ fn main() -> anyhow::Result<()> {
             project_config_dir_name: Some(".elpis".to_string()),
             ..LoaderOverrides::default()
         };
-        let exit_info = run_main(
-            inner,
-            arg0_paths,
-            loader_overrides,
-            /*explicit_remote_endpoint*/ None,
-        )
-        .await?;
+        let exit_info = run_main(inner, arg0_paths, loader_overrides, remote_endpoint).await?;
         let is_fatal = match &exit_info.exit_reason {
             ExitReason::Fatal(message) => {
                 eprintln!("ERROR: {message}");

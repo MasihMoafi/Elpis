@@ -33,18 +33,20 @@ test('two clients observe the same running turn and the observer can interrupt i
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-shared-')),home=path.join(root,'home');
   await fs.mkdir(home);
   const provider=new Provider();await provider.start();
-  await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_provider="shared_eval"\n[model_providers.shared_eval]\nname="Shared eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
-  const socket=path.join(home,'server.sock');
+  await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.6-luna"\nmodel_provider="shared_eval"\n[model_providers.shared_eval]\nname="Shared eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
+  const socket=path.join(home,'app-server-control','app-server-control.sock');
+  await fs.mkdir(path.dirname(socket));
   const executable=process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server');
   const env={...process.env,ELPIS_HOME:home,CODEX_HOME:home};
   const server=spawn(executable,['--listen',`unix://${socket}`,'--session-source','cli'],{cwd:root,env,stdio:'ignore'});
-  const options={home,executable,transport:{args:['--connect',socket],env}};
+  const transport={args:['--connect',socket],env};
+  const options={home,executable};
   let ownerReads=0,observerReads=0,disconnectOwner=false;
   const owner=new Session(root,{cancel(){},async execute(){
     ownerReads++;
     if(disconnectOwner){owner.dispose();return new Promise(()=>{});}
     return {text:'OWNER_ONLY_SENTINEL'};
-  }},options);let observer,lateObserver,unrelated,terminal;
+  }},options);let observer,lateObserver,unrelated,terminal,nativeCli;
   try {
     await until(()=>require('node:fs').existsSync(socket));
     const missing=new Session(root,{cancel(){}},{...options,transport:{args:['--connect',path.join(home,'missing.sock')],env}});
@@ -55,6 +57,10 @@ test('two clients observe the same running turn and the observer can interrupt i
     await Promise.all([once(owner,'completed',{signal:AbortSignal.timeout(10000)}),owner.send('Initialize shared history')]);
     observer=new Session(root,{cancel(){},async execute(){observerReads++;return {text:'OBSERVER_SENTINEL'};}},{...options,resumeThreadId:owner.threadId});
     await observer.connect();
+    if(process.env.ELPIS_EDITOR_TEST_CLI){
+      nativeCli=require('./shared-cli')({executable:process.env.ELPIS_EDITOR_TEST_CLI,root,home,socket,threadId:owner.threadId});
+      await until(()=>nativeCli.text().includes('INITIAL_REPLY'));
+    }
     const seen=[];observer.on('user',text=>seen.push(text));
     provider.actions.push({hang:true});
     await owner.send('EXTERNAL_USER_SENTINEL');
@@ -79,6 +85,15 @@ test('two clients observe the same running turn and the observer can interrupt i
     assert.equal(observerReads,0,'watching a conversation must not execute its editor tool twice');
     assert(JSON.stringify(provider.requests.at(-1).body.input).includes('OWNER_ONLY_SENTINEL'));
     assert.equal(provider.requests.length,4);
+    const expectedMessages=['IDE follow-up'];
+    if(nativeCli){
+      await until(()=>nativeCli.text().includes('SHARED_REPLY_SENTINEL'));
+      provider.actions.push(message('NATIVE_TERMINAL_REPLY'));
+      await Promise.all([once(observer,'completed',{signal:AbortSignal.timeout(10000)}),nativeCli.send('NATIVE_TERMINAL_FOLLOWUP')]);
+      expectedMessages.push('NATIVE_TERMINAL_FOLLOWUP');
+      assert.deepEqual(ownMessages,expectedMessages,'the IDE sees the actual terminal message once');
+      await until(()=>nativeCli.text().includes('NATIVE_TERMINAL_REPLY'));
+    }
     disconnectOwner=true;
     provider.actions.push(call('owner_disconnect','editor_documents',{}),message('DISCONNECT_HANDLED'));
     await Promise.all([once(observer,'completed',{signal:AbortSignal.timeout(10000)}),observer.send('Handle owner disconnect')]);
@@ -92,9 +107,9 @@ test('two clients observe the same running turn and the observer can interrupt i
     unrelated=new Session(root,{cancel(){}},options);
     provider.actions.push(message('OTHER_THREAD_REPLY'));
     await Promise.all([once(unrelated,'completed',{signal:AbortSignal.timeout(10000)}),unrelated.send('Other conversation')]);
-    assert.deepEqual(ownMessages,['IDE follow-up','Handle owner disconnect','Use remaining editor'],'unrelated conversations must not leak into the observer');
+    assert.deepEqual(ownMessages,[...expectedMessages,'Handle owner disconnect','Use remaining editor'],'unrelated conversations must not leak into the observer');
     assert.equal(observer.busy,false);
-    terminal=new AppServer(executable,root,options.transport);
+    terminal=new AppServer(executable,root,transport);
     await terminal.request('initialize',{clientInfo:{name:'terminal_observer',version:'1'},capabilities:{experimentalApi:true}});
     terminal.send({method:'initialized'});
     await terminal.request('thread/resume',{threadId:observer.threadId});
@@ -108,6 +123,7 @@ test('two clients observe the same running turn and the observer can interrupt i
     assert.equal(observerReads,1,'a detached editor must not execute new tool calls');
   } finally {
     owner.dispose();observer?.dispose();lateObserver?.dispose();unrelated?.dispose();terminal?.dispose();
+    await nativeCli?.dispose();
     if(server.exitCode===null&&server.signalCode===null){const exited=once(server,'exit');server.kill('SIGKILL');await exited;}
     await provider.close();
     await fs.rm(root,{recursive:true,force:true});

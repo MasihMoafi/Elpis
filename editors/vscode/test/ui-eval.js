@@ -27,20 +27,28 @@ async function uiEvaluation({ vscode, root, document, sentinel, evidence, eventu
   const configText = await fs.readFile(path.join(home, 'config.toml'), 'utf8');
   // Keep context-size limits stable across fixture models.
   await fs.writeFile(path.join(home, 'config.toml'), `model_context_window = 128000\nmodel_catalog_json = ${JSON.stringify(catalogPath)}\n${configText}`);
+  if(process.env.ELPIS_EDITOR_TEST_SHARED==='1')await fs.writeFile(path.join(home,'config.toml'),(await fs.readFile(path.join(home,'config.toml'),'utf8')).replace('model = "gpt-5.4"','model = "gpt-5.6-luna"'));
   process.env.CODEX_HOME = home;
   await vscode.workspace.getConfiguration('elpis').update('executable', process.env.ELPIS_EDITOR_TEST_BUNDLED ? 'elpis-app-server' : process.env.ELPIS_EDITOR_TEST_RUNTIME, vscode.ConfigurationTarget.Global);
   await vscode.workspace.getConfiguration('elpis').update('home', home, vscode.ConfigurationTarget.Global);
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${process.env.ELPIS_EDITOR_TEST_CDP}`);
-  let frame, page;
+  let frame, page, sharedServer;
   try {
+    if(process.env.ELPIS_EDITOR_TEST_SHARED==='1'){
+      const socket=path.join(home,'app-server-control','app-server-control.sock');
+      await fs.mkdir(path.dirname(socket));
+      sharedServer=require('node:child_process').spawn(process.env.ELPIS_EDITOR_TEST_RUNTIME,['--listen',`unix://${socket}`,'--session-source','cli'],{cwd:root.fsPath,env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home},stdio:'ignore'});
+      await eventually(async()=>require('node:fs').existsSync(socket),'shared runtime socket');
+    }
     await vscode.commands.executeCommand('elpis.chat');
     page = browser.contexts()[0].pages()[0];
     await eventually(async () => {
       frame ||= await WebviewDOM.connect(process.env.ELPIS_EDITOR_TEST_CDP);
       return frame && await frame.locator('#prompt').count();
     }, 'actual Elpis webview');
-    await require('./theme-controls').themeControls({vscode, frame, page, evidence, eventually, screenshotsOnly:process.env.ELPIS_EDITOR_TEST_CLI_HANDOFF === '1'});
+    await require('./theme-controls').themeControls({vscode, frame, page, evidence, eventually, screenshotsOnly:process.env.ELPIS_EDITOR_TEST_CLI_HANDOFF === '1'||process.env.ELPIS_EDITOR_TEST_SHARED==='1'});
     assert.equal(await frame.locator('#slash-menu').count(),1,'composer exposes slash commands');
+    if(process.env.ELPIS_EDITOR_TEST_SHARED==='1')return await require('./shared-ui')({root,home,provider,frame,page,document,sentinel,evidence,eventually,data});
     await require('./ide-context-controls')({vscode,root,document,sentinel,home,eventually,evidence,provider,data});
     if (process.env.ELPIS_EDITOR_TEST_CLI_HANDOFF === '1') {
       assert(process.env.ELPIS_IDE_TEST_CLI, 'CLI handoff requires the real TUI control');
@@ -326,6 +334,7 @@ async function uiEvaluation({ vscode, root, document, sentinel, evidence, eventu
     if (first) await first.screenshot({ path: path.join(data, 'ui-failure.png') });
     throw error;
   } finally {
+    if(sharedServer&&sharedServer.exitCode===null&&sharedServer.signalCode===null){const exited=require('node:events').once(sharedServer,'exit');sharedServer.kill('SIGKILL');await exited;}
     if (previousHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousHome;
     frame?.close();
     await browser.close(); provider.close();
