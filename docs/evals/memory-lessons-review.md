@@ -428,11 +428,23 @@ remains, preserving unrelated `docs/USER_REQUESTS.md` edits.
 
 The previously authorized Terra alternative was run once on the captured
 whole-document replacement fixture, using the same old runtime and low effort.
-The response removed transient memory entries, but rewrote existing numeric
-citations and emitted literal `\\n` sequences inside the returned strings. This
-is not an acceptable durable-memory replacement and no production default or
-prompt was changed. It does not establish project isolation or general retention
-quality. The completed request reported 25,257 tokens (23,760 input, 1,497 output,
+Correction to the first assessment: the response preserves all 12 durable entries
+and their numeric citations verbatim, removes all six later temporary/mixed-status
+entries, and adds the explicitly supported contrast rule. Both returned strings
+contain real newlines. The earlier claim of renumbering compared against today's
+memory instead of this request's captured input; the newline claim misread nested
+JSON escaping. Neither was a model failure.
+
+An independent review and `.tmp/final-candidate/check-memory-retention-rewrite.cjs`
+confirm identical input, prompt, schema, low reasoning and runtime hash to the Luna
+replacement baseline, with only model and per-run metadata different. The checker
+rejects that Luna result and accepts Terra: 1,983 memory characters, 1,915 checkpoint
+characters, valid supplied evidence citations and no stale runtime-query task.
+This is one successful replay, not general reliability or production integration;
+project isolation and correction/withdrawal controls remain outstanding. No
+production default or prompt changed.
+
+The completed request reported 25,257 tokens (23,760 input, 1,497 output,
 including 447 reasoning), no cached input, and 35.988 seconds. Raw result and log:
 `.tmp/final-candidate/memory-retention-terra-result.json` and
 `memory-retention-terra.log`. No further paid comparison was started in the
