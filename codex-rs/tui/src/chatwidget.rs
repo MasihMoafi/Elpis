@@ -346,6 +346,8 @@ use self::goal_status::goal_status_indicator_from_app_goal;
 mod goal_menu;
 mod input_queue;
 use self::input_queue::InputQueueState;
+mod ide_context;
+use self::ide_context::IdeContextState;
 mod input_flow;
 mod input_restore;
 mod input_submission;
@@ -665,6 +667,7 @@ pub(crate) struct ChatWidget {
     // Preserves reasoning-summary part boundaries for transcript-only recording.
     reasoning_summary_parts: Vec<String>,
     status_state: StatusState,
+    ide_context: IdeContextState,
     review: ReviewState,
     // Active hook runs render in a dedicated live cell so they can run alongside tools.
     active_hook_cell: Option<HookCell>,

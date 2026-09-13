@@ -179,9 +179,10 @@ function activate(context) {
           try {
           const thread = await readHistory(root.uri.fsPath, await connectionOptions(), message.threadId);
           const resumed = await createSession(thread.id);
-          try { await resumed.connect(); } catch(error) { resumed.dispose(); throw error; }
+          let connected;
+          try { connected = await resumed.connect(); } catch(error) { resumed.dispose(); throw error; }
           session.dispose(); session=resumed;
-          post({type:'reset'});post({type:'transcript',messages:transcript(thread)});selection();
+          post({type:'reset'});post({type:'transcript',messages:transcript(connected.thread)});selection();
           post({type:'status',text:'Conversation resumed'});
           } finally { resuming=false;post({type:'busy',busy:session.busy}); }
         }

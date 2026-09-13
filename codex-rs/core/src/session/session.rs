@@ -202,6 +202,7 @@ impl SessionConfiguration {
 
     pub(super) fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
         ThreadConfigSnapshot {
+            dynamic_tools: self.dynamic_tools.clone(),
             model: self.collaboration_mode.model().to_string(),
             model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
             service_tier: self.service_tier.clone(),

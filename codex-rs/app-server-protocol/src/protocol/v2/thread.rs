@@ -335,6 +335,16 @@ pub struct ThreadSettingsUpdatedNotification {
 pub struct ThreadResumeParams {
     pub thread_id: String,
 
+    /// Supply tools for this resumed session. Omitted or empty lists retain saved tools.
+    /// A loaded thread may only change tools after its clients detach and it becomes idle.
+    #[experimental("thread/resume.dynamicTools")]
+    #[serde(
+        default,
+        deserialize_with = "codex_protocol::dynamic_tools::deserialize_dynamic_tool_specs"
+    )]
+    #[ts(optional = nullable)]
+    pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
+
     /// [UNSTABLE] FOR CODEX CLOUD - DO NOT USE.
     /// If specified, the thread will be resumed with the provided history
     /// instead of loaded from disk.

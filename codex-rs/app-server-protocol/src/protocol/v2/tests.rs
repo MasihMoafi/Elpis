@@ -1869,6 +1869,37 @@ fn client_request_thread_resume_granular_approval_policy_is_marked_experimental(
 }
 
 #[test]
+fn thread_resume_dynamic_tools_are_optional_and_validated() {
+    let omitted: ThreadResumeParams =
+        serde_json::from_value(json!({"threadId": "thr_123"})).unwrap();
+    assert!(omitted.dynamic_tools.is_none());
+    let valid: ThreadResumeParams = serde_json::from_value(json!({
+        "threadId": "thr_123",
+        "dynamicTools": [{
+            "name": "editor_read",
+            "description": "Read editor text",
+            "inputSchema": {"type": "object", "properties": {}}
+        }]
+    }))
+    .unwrap();
+    assert_eq!(valid.dynamic_tools.as_ref().unwrap().len(), 1);
+    let reason = crate::experimental_api::ExperimentalApi::experimental_reason(
+        &crate::ClientRequest::ThreadResume {
+            request_id: crate::RequestId::Integer(2),
+            params: valid,
+        },
+    );
+    assert_eq!(reason, Some("thread/resume.dynamicTools"));
+    assert!(
+        serde_json::from_value::<ThreadResumeParams>(json!({
+            "threadId": "thr_123",
+            "dynamicTools": [{"type": "unknown", "name": "editor_read"}]
+        }))
+        .is_err()
+    );
+}
+
+#[test]
 fn client_request_thread_fork_granular_approval_policy_is_marked_experimental() {
     let reason = crate::experimental_api::ExperimentalApi::experimental_reason(
         &crate::ClientRequest::ThreadFork {

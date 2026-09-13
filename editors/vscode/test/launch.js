@@ -14,7 +14,7 @@ fs.writeFileSync(path.join(data, 'profile', 'User', 'settings.json'), JSON.strin
 const resultPath = path.join(data, 'result.json');
 const args = ['-a', process.execPath, path.join(__dirname, 'electron-launch.js'), process.env.VSCODE_EXECUTABLE || 'code', '--no-sandbox', '--disable-gpu', '--ozone-platform=x11', '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', '--user-data-dir', path.join(data, 'profile'), '--extensions-dir', path.join(data, 'extensions'), '--extensionDevelopmentPath=' + (process.env.ELPIS_EDITOR_TEST_EXTENSION || root), '--extensionTestsPath=' + path.join(__dirname, 'editor.test.js'), fixture];
 if (process.env.ELPIS_EDITOR_TEST_CDP) args.push('--remote-debugging-port=' + process.env.ELPIS_EDITOR_TEST_CDP);
-const child = spawn('xvfb-run', args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELPIS_EDITOR_TEST_RESULT: resultPath, ELPIS_EDITOR_TEST_DATA: data } });
+const child = spawn('xvfb-run', args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELPIS_HOME: path.join(data, 'home'), CODEX_HOME: path.join(data, 'home'), CODEX_AUTH_HOME: undefined, ELPIS_EDITOR_TEST_RESULT: resultPath, ELPIS_EDITOR_TEST_DATA: data } });
 const log = fs.createWriteStream(path.join(data, 'vscode.log'));
 child.stdout.pipe(log); child.stderr.pipe(log);
 const timer = setTimeout(() => child.kill('SIGTERM'), 240000);

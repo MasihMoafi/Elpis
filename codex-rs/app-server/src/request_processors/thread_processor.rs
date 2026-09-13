@@ -25,11 +25,25 @@ struct ThreadListFilters {
     relation_filter: Option<StoreThreadRelationFilter>,
 }
 
+fn resume_dynamic_tools_differ(
+    request: &ThreadResumeParams,
+    config_snapshot: &ThreadConfigSnapshot,
+) -> bool {
+    request
+        .dynamic_tools
+        .as_ref()
+        .is_some_and(|tools| !tools.is_empty() && tools != &config_snapshot.dynamic_tools)
+}
+
 fn collect_resume_override_mismatches(
     request: &ThreadResumeParams,
     config_snapshot: &ThreadConfigSnapshot,
 ) -> Vec<String> {
     let mut mismatch_details = Vec::new();
+
+    if resume_dynamic_tools_differ(request, config_snapshot) {
+        mismatch_details.push("dynamic tools differ from the loaded session".to_string());
+    }
 
     if let Some(requested_model) = request.model.as_deref()
         && requested_model != config_snapshot.model
@@ -2850,6 +2864,9 @@ impl ThreadRequestProcessor {
         app_server_client_version: Option<String>,
         supports_openai_form_elicitation: bool,
     ) -> Result<(), JSONRPCErrorError> {
+        if let Some(dynamic_tools) = params.dynamic_tools.as_ref() {
+            validate_dynamic_tools(dynamic_tools).map_err(invalid_request)?;
+        }
         if let Ok(thread_id) = ThreadId::from_string(&params.thread_id)
             && self
                 .pending_thread_unloads
@@ -2906,6 +2923,7 @@ impl ThreadRequestProcessor {
 
         let ThreadResumeParams {
             thread_id,
+            dynamic_tools,
             history,
             path,
             model,
@@ -2998,12 +3016,13 @@ impl ThreadRequestProcessor {
 
         match self
             .thread_manager
-            .resume_thread_with_history(
+            .resume_thread_with_history_and_tools(
                 config,
                 thread_history,
                 self.auth_manager.clone(),
                 self.request_trace_context(&request_id).await,
                 supports_openai_form_elicitation,
+                dynamic_tools.unwrap_or_default(),
             )
             .await
         {
@@ -3293,6 +3312,12 @@ impl ThreadRequestProcessor {
                             warn!("thread {existing_thread_id} shutdown timed out");
                         }
                     }
+                }
+
+                if resume_dynamic_tools_differ(params, &config_snapshot) {
+                    return Err(invalid_request(format!(
+                        "cannot replace dynamic tools for loaded thread {existing_thread_id}; stop its turn and detach its clients before resuming with different tools"
+                    )));
                 }
 
                 // Preserve rejoin semantics when another client can still observe

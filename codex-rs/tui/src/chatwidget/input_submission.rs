@@ -342,6 +342,7 @@ impl ChatWidget {
         } else {
             None
         };
+        self.maybe_apply_ide_context(&mut items);
         let pending_steer = (!render_in_history).then(|| PendingSteer {
             user_message: UserMessage {
                 text: text.clone(),

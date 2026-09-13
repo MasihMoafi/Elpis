@@ -497,6 +497,7 @@ impl ChatWidget {
             SlashCommand::Mcp => {
                 self.add_mcp_output(McpServerStatusDetail::ToolsAndAuthOnly);
             }
+            SlashCommand::Ide => self.handle_ide_command(),
             SlashCommand::Apps => {
                 self.add_connectors_output();
             }
@@ -722,6 +723,7 @@ impl ChatWidget {
                 }
                 _ => self.add_error_message(SMART_PRUNE_USAGE.to_string()),
             },
+            SlashCommand::Ide => self.handle_ide_command_args(trimmed),
             SlashCommand::Mcp => match trimmed.to_ascii_lowercase().as_str() {
                 "verbose" => self.add_mcp_output(McpServerStatusDetail::Full),
                 "reset" => self.app_event_tx.send(AppEvent::ResetMcpServers),
@@ -1093,6 +1095,7 @@ impl ChatWidget {
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::Mcp
+            | SlashCommand::Ide
             | SlashCommand::Apps
             | SlashCommand::Plugins
             | SlashCommand::Copy

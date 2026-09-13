@@ -311,6 +311,8 @@ mod goal_validation;
 mod guardian;
 pub(crate) mod helpers;
 mod history_replay;
+#[cfg(unix)]
+mod ide_context;
 mod mcp_startup;
 mod permissions;
 mod plan_mode;

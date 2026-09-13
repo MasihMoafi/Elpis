@@ -39,9 +39,33 @@ async function uiEvaluation({ vscode, root, document, sentinel, evidence, eventu
       frame ||= await WebviewDOM.connect(process.env.ELPIS_EDITOR_TEST_CDP);
       return frame && await frame.locator('#prompt').count();
     }, 'actual Elpis webview');
-    await require('./theme-controls').themeControls({vscode, frame, page, evidence, eventually});
+    await require('./theme-controls').themeControls({vscode, frame, page, evidence, eventually, screenshotsOnly:process.env.ELPIS_EDITOR_TEST_CLI_HANDOFF === '1'});
     assert.equal(await frame.locator('#slash-menu').count(),1,'composer exposes slash commands');
     await require('./ide-context-controls')({vscode,root,document,sentinel,home,eventually,evidence,provider,data});
+    if (process.env.ELPIS_EDITOR_TEST_CLI_HANDOFF === '1') {
+      assert(process.env.ELPIS_IDE_TEST_CLI, 'CLI handoff requires the real TUI control');
+      await frame.locator('#more').click();
+      await frame.locator('#history').click();
+      await frame.locator('#history-search').fill('Report whether editor context is available.');
+      await eventually(async()=>await frame.locator('#history-list [data-thread]').count(),'actual CLI chats appear in IDE history');
+      const id=await frame.evaluate('d.querySelector("#history-list [data-thread]").dataset.thread');
+      await page.screenshot({path:path.join(data,'cli-history.png')});
+      await frame.locator(`[data-thread="${id}"]`).click();
+      await eventually(async()=>(await frame.locator('#status').textContent()).includes('Conversation resumed'),'actual CLI chat resumes in IDE');
+      assert((await frame.locator('#messages').textContent()).includes('CLI_IDE_CONTEXT_CONFIRMED'));
+      provider.actions.push(call('cli_handoff_read','editor_read',{uri:document.uri.toString()}));
+      provider.actions.push(request=>{assert(output(request,'cli_handoff_read').text.includes(sentinel));return message('CLI_TO_IDE_EDITOR_CONFIRMED');});
+      await frame.locator('#prompt').fill('Read the live unsaved editor buffer after resuming this CLI chat.');
+      await frame.locator('#send').click();
+      await eventually(async()=>(await frame.locator('#messages').textContent()).includes('CLI_TO_IDE_EDITOR_CONFIRMED'),'CLI handoff has working IDE tools');
+      await eventually(async()=>(await frame.locator('#status').textContent()).includes('completed'),'CLI handoff completes');
+      const thread=await require('../src/history').readHistory(root.fsPath,{home,executable:process.env.ELPIS_EDITOR_TEST_RUNTIME},id);
+      assert(JSON.stringify(thread).includes('CLI_IDE_CONTEXT_CONFIRMED'));
+      assert(JSON.stringify(thread).includes('CLI_TO_IDE_EDITOR_CONFIRMED'));
+      await page.screenshot({path:path.join(data,'cli-resumed.png')});
+      evidence.results.push({name:'Actual CLI conversation appears in IDE history, resumes with live editor tools and saves both clients under the same ID',passed:true});
+      return;
+    }
     assert.equal(await frame.locator('#approval-mode').count(),1,'composer must expose working approval modes');
     assert.equal(await frame.locator('#approval-mode svg').count(),1,'Permissions use a shield icon');
     assert.equal(await frame.locator('#thinking svg').count(),1,'Thinking uses a brain icon');

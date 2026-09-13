@@ -64,6 +64,7 @@ pub enum SlashCommand {
     Statusline,
     Theme,
     Mcp,
+    Ide,
     Apps,
     Plugins,
     Logout,
@@ -145,6 +146,7 @@ impl SlashCommand {
             SlashCommand::AutoReview => "approve one retry of a recent auto-review denial",
             SlashCommand::Add => "add a file to the Context Ledger: /add <path>",
             SlashCommand::Mcp => "list MCP tools; verbose for details, reset to reload connections",
+            SlashCommand::Ide => "include IDE selection and open tabs: /ide [on|off|status]",
             SlashCommand::Apps => "manage apps",
             SlashCommand::Plugins => "browse plugins",
             SlashCommand::Logout => "log out",
@@ -172,6 +174,7 @@ impl SlashCommand {
                 | SlashCommand::Goal
                 | SlashCommand::Keymap
                 | SlashCommand::Mcp
+                | SlashCommand::Ide
                 | SlashCommand::Raw
                 | SlashCommand::Side
                 | SlashCommand::Btw
@@ -239,6 +242,7 @@ impl SlashCommand {
             | SlashCommand::App
             | SlashCommand::Goal
             | SlashCommand::Mcp
+            | SlashCommand::Ide
             | SlashCommand::Apps
             | SlashCommand::Plugins
             | SlashCommand::Title
@@ -276,6 +280,7 @@ impl SlashCommand {
             | SlashCommand::Context
             | SlashCommand::Dashboard
             | SlashCommand::Mcp
+            | SlashCommand::Ide
             | SlashCommand::Quit
             | SlashCommand::Keymap
             | SlashCommand::Theme
@@ -344,10 +349,12 @@ mod tests {
     }
 
     #[test]
-    fn codex_only_ide_command_is_not_available() {
-        assert!(SlashCommand::from_str("ide").is_err());
+    fn ide_command_is_visible_argument_aware_and_available_during_tasks() {
+        assert_eq!(SlashCommand::from_str("ide"), Ok(SlashCommand::Ide));
+        assert!(SlashCommand::Ide.supports_inline_args());
+        assert!(SlashCommand::Ide.available_during_task());
         assert!(
-            !super::built_in_slash_commands()
+            super::built_in_slash_commands()
                 .into_iter()
                 .any(|(name, _)| name == "ide")
         );

@@ -1,4 +1,19 @@
-# Extension 0.1.20 candidate — September 12, 2026
+# Extension 0.1.21 candidate — September 13, 2026
+
+History now includes CLI conversations for the current project and Elpis home,
+across providers. Resuming keeps the conversation ID, displays the fresh resumed
+transcript, and attaches live editor tools. The CLI's restored `/ide on`, `/ide off`,
+and `/ide status` use this extension's context service.
+
+The packaged candidate passed 47 Node checks and ten actual VS Code 1.136.1 checks,
+including native CLI `/ide` on/off controls, same-ID resume, and a live unsaved
+editor read. Light, dark, and high-contrast editor checks passed. No paid provider
+calls were used. This does not provide simultaneous
+live CLI/IDE chat synchronization: finish and exit the CLI session before resuming
+its conversation in the IDE. Full verification details are in
+`../../docs/evals/followup-20260913.md`.
+
+## Historical extension 0.1.20 candidate — September 12, 2026
 
 The Linux package now includes the Bubblewrap sandbox executable and its license
 beside the app-server runtime. Previously, sandboxed commands depended on a

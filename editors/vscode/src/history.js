@@ -5,7 +5,7 @@ const {toolView}=require('./tool-view');
 const sameWorkspace = (thread, root) => typeof thread.cwd === 'string' && path.resolve(thread.cwd) === path.resolve(root);
 async function listHistory(root, options, search = '', cursor, archived=false) {
   return withRuntime(root, options, async rpc => {
-    const result = await rpc.request('thread/list', {cwd:root, sourceKinds:['vscode'], archived, limit:50, ...(search ? {searchTerm:search} : {}), ...(cursor ? {cursor} : {})}, 15000);
+    const result = await rpc.request('thread/list', {cwd:root, modelProviders:[], sortKey:'updated_at', archived, limit:50, ...(search ? {searchTerm:search} : {}), ...(cursor ? {cursor} : {})}, 15000);
     return {threads:result.data.filter(t=>sameWorkspace(t,root)).map(t=>({id:t.id,title:t.name || t.preview || 'Untitled chat',updatedAt:t.updatedAt})), cursor:result.nextCursor};
   });
 }

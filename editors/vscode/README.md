@@ -14,6 +14,13 @@ the editor selection and open-file metadata. `/ide off` disables CLI inclusion.
 The connection is local, scoped to the project and Elpis home, and respects
 workspace trust and the editor-access setting.
 
+Conversation history includes CLI and IDE chats for the current project and Elpis
+home, across providers. Finish the CLI turn and exit that CLI session before
+resuming its chat from the IDE history menu. Resuming retains the conversation ID
+and attaches the IDE's editor tools. `/ide` shares editor context; it does not
+mirror a running conversation between clients. Simultaneous use of the same chat
+in separate clients is not currently synchronized.
+
 The published Linux x64 VSIX bundles the tested Elpis app-server. Extension
 versions are separate from Elpis CLI versions.
 

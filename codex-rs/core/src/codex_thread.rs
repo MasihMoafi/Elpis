@@ -60,6 +60,7 @@ use codex_rollout::state_db::StateDbHandle;
 
 #[derive(Clone, Debug)]
 pub struct ThreadConfigSnapshot {
+    pub dynamic_tools: Vec<codex_protocol::dynamic_tools::DynamicToolSpec>,
     pub model: String,
     pub model_provider_id: String,
     pub service_tier: Option<String>,

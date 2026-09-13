@@ -735,8 +735,9 @@ mod thread_processor_behavior_tests {
     #[test]
     fn collect_resume_override_mismatches_includes_service_tier() {
         let cwd = test_path_buf("/tmp").abs();
-        let request = ThreadResumeParams {
+        let mut request = ThreadResumeParams {
             thread_id: "thread-1".to_string(),
+            dynamic_tools: None,
             history: None,
             path: None,
             model: None,
@@ -755,7 +756,8 @@ mod thread_processor_behavior_tests {
             exclude_turns: false,
             initial_turns_page: None,
         };
-        let config_snapshot = ThreadConfigSnapshot {
+        let mut config_snapshot = ThreadConfigSnapshot {
+            dynamic_tools: Vec::new(),
             model: "gpt-5".to_string(),
             model_provider_id: "openai".to_string(),
             service_tier: Some("flex".to_string()),
@@ -789,6 +791,26 @@ mod thread_processor_behavior_tests {
         assert_eq!(
             collect_resume_override_mismatches(&request, &config_snapshot),
             vec!["service_tier requested=Some(\"priority\") active=Some(\"flex\")".to_string()]
+        );
+
+        request.service_tier = None;
+        let tool: DynamicToolSpec = serde_json::from_value(serde_json::json!({
+            "type": "function",
+            "name": "editor_read",
+            "description": "Read an editor document",
+            "inputSchema": {"type": "object", "properties": {}}
+        }))
+        .unwrap();
+        config_snapshot.dynamic_tools = vec![tool.clone()];
+        assert!(!resume_dynamic_tools_differ(&request, &config_snapshot));
+        request.dynamic_tools = Some(Vec::new());
+        assert!(!resume_dynamic_tools_differ(&request, &config_snapshot));
+        request.dynamic_tools = Some(vec![tool]);
+        assert!(!resume_dynamic_tools_differ(&request, &config_snapshot));
+        config_snapshot.dynamic_tools.clear();
+        assert_eq!(
+            collect_resume_override_mismatches(&request, &config_snapshot),
+            vec!["dynamic tools differ from the loaded session".to_string()]
         );
     }
 

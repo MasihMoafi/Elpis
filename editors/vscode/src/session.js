@@ -96,7 +96,8 @@ class Session extends EventEmitter {
       const configuration = await rpc.request('config/read', {cwd:this.root,includeLayers:false});
       const customInstructions = configuration.config?.developer_instructions || '';
       const thread = await rpc.request(this.options.resumeThreadId ? 'thread/resume' : 'thread/start', {
-        ...(this.options.resumeThreadId ? {threadId:this.options.resumeThreadId} : {dynamicTools:specs}),
+        dynamicTools:specs,
+        ...(this.options.resumeThreadId ? {threadId:this.options.resumeThreadId} : {}),
         cwd: this.root,
         ...(this.options.model ? { model: this.options.model } : {}),
         ...(this.options.provider ? { modelProvider: this.options.provider } : {}),
@@ -106,6 +107,7 @@ class Session extends EventEmitter {
         ...(this.options.threadParams || {}),
       });
       this.threadId = thread.thread.id;
+      this.hasTurns = (thread.thread.turns?.length || 0) > 0;
       for(const message of pendingLedger){
         if(message.params.threadId!==this.threadId)continue;
         if(message.method==='thread/tokenUsage/updated'){this.contextUsage=message.params.tokenUsage;this.smartPrune=message.params.tokenUsage.smartPrune??this.smartPrune;}

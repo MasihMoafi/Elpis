@@ -187,6 +187,7 @@ impl ChatWidget {
             reasoning_buffer: String::new(),
             reasoning_summary_parts: Vec::new(),
             status_state: StatusState::default(),
+            ide_context: IdeContextState::default(),
             review: ReviewState::default(),
             active_hook_cell: None,
             thread_id: None,
