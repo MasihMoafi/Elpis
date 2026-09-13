@@ -124,3 +124,45 @@ preserve manual edits, and allow unrelated workspaces to keep writing. Installat
 state remains in ES and the dated release evidence. This was a manual correction,
 not a runtime fix or a successful automatic-repair test. Future retention checks
 must include real release-status examples as well as the synthetic fixture.
+
+## Release-status retention comparison
+
+Fixed question: can the saver separate a supported concurrency lesson from the
+installation status reported alongside it? The fixture distills the observed Elpis
+case into two assistant evidence items; it is not an exact replay of the historical
+request and does not independently establish that the reported checks ran.
+
+Keep the input, Luna model, low reasoning, 6,000-character budget and tool-free
+request constant. Compare the current consolidation instructions with one appended
+paragraph requiring a future decision, supporting evidence, and a cause/condition/
+prevention rule, while explicitly assigning release identifiers and acceptance
+status to ES. Run one request per condition, capped at two with no fallback.
+Isolated profiles disable actual saving and admission; inspect returned JSON, not
+the user's notes. This evaluates retention decisions, not file persistence.
+
+Acceptance for each response: preserve the user's launch preference; retain the
+supported workspace-lock lesson and manual-edit/unrelated-workspace qualifications;
+keep commit/hash/install/test-status details out of MEMORY; keep unfinished
+acceptance in checkpoint. A tie does not justify shipping a prompt change. A
+single favorable sample does not establish reliable retention or resolve the
+separate project-scope failure.
+
+Driver: retention mode of `.tmp/final-candidate/memory-lessons-live.cjs`. Raw
+requests, outputs, usage, timing and binary hash are recorded in
+`.tmp/final-candidate/memory-retention-comparison-result.json`.
+
+Result: both responses met these criteria. Both kept installation identifiers and
+pending acceptance in checkpoint, preserved the launch preference, and retained
+the workspace-lock/manual-edit/unrelated-workspace lesson in MEMORY. Both parsed
+as the required two-string object within the character budget. This is a tie;
+the proposed prompt paragraph was **not applied to product code**. The distilled
+fixture did not reproduce the original retention error and cannot invalidate it.
+
+Exactly two Luna-low requests completed, with no retries or fallback. Reported
+usage was 903 tokens for baseline and 956 for revision (1,859 total), taking 14.3
+and 12.9 seconds respectively. Those single-run timings do not demonstrate a
+latency improvement. Real memory files and the installed binaries were unchanged.
+Further prompt-only tuning on this passing fixture would provide weak evidence;
+the next retention reproduction needs the original full consolidation input or a
+new captured failure, while project isolation remains a separate implementation
+task.
