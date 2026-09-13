@@ -451,6 +451,51 @@ async fn light_ledger_failures_and_expanded_sources_remain_readable() -> anyhow:
 }
 
 #[tokio::test]
+async fn identity_animation_stops_after_agent_turn_even_with_other_tasks_running() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = true;
+    let identity_colors = |chat: &ChatWidget| {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (222, 222, 219),
+                bg: (17, 18, 20),
+            },
+            || {
+                let area = Rect::new(0, 0, 196, 60);
+                let mut buf = ratatui::buffer::Buffer::empty(area);
+                Renderable::render(chat, area, &mut buf);
+                let row = (0..area.height)
+                    .find(|y| {
+                        (1..6).map(|x| buf[(x, *y)].symbol()).collect::<String>() == "Elpis"
+                    })
+                    .expect("rendered identity line");
+                (1..6).map(|x| buf[(x, row)].fg).collect::<Vec<_>>()
+            },
+        )
+    };
+    let idle = identity_colors(&chat);
+    chat.turn_lifecycle.start(std::time::Instant::now());
+    chat.bottom_pane.set_task_running(true);
+    let busy = identity_colors(&chat);
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+    assert_ne!(busy, identity_colors(&chat), "active agent name animates");
+
+    chat.turn_lifecycle.finish();
+    assert!(chat.bottom_pane.is_task_running());
+    assert_eq!(idle, identity_colors(&chat), "idle warm gradient is restored");
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+    assert_eq!(
+        idle,
+        identity_colors(&chat),
+        "other tasks cannot animate the name"
+    );
+
+    chat.turn_lifecycle.start(std::time::Instant::now());
+    chat.config.animations = false;
+    assert_eq!(idle, identity_colors(&chat), "reduced motion stays static");
+}
+
+#[tokio::test]
 async fn context_ledger_frame_uses_the_shared_elpis_brand() {
     let (chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     let buf = render_ledger_buffer(&chat, 45);

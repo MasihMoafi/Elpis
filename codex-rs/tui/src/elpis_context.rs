@@ -152,10 +152,13 @@ pub(crate) async fn write_session_checkpoint(
     let Some(workspace_dir) = workspace_dir(memories_root, cwd) else {
         return Ok(None);
     };
-    tokio::fs::create_dir_all(&workspace_dir)
-        .await
-        .with_context(|| format!("create Elpis context directory {}", workspace_dir.display()))?;
-
+    // The saver owns the consolidated checkpoint while it reads and updates it.
+    // A late turn notification must not invalidate that snapshot or block the UI.
+    let Some(_checkpoint_lock) =
+        crate::legacy_core::memory_save::try_lock_checkpoint(&workspace_dir)?
+    else {
+        return Ok(None);
+    };
     let latest_result = turn.items.iter().rev().find_map(|item| match item {
         ThreadItem::AgentMessage { text, .. } if !text.trim().is_empty() => {
             Some(truncate_chars(text.trim(), MAX_RESULT_CHARS))
@@ -350,6 +353,144 @@ mod tests {
     use codex_app_server_protocol::PatchChangeKind;
     use codex_app_server_protocol::TurnItemsView;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn tui_checkpoint_does_not_race_enabled_memory_consolidation() -> Result<()> {
+        use crate::legacy_core::memory_save::{MemoryDecision, MemorySaveTiming, MemorySnapshot};
+
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = Path::new("/tmp/checkpoint-race");
+        let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        tokio::fs::create_dir_all(&workspace).await?;
+        tokio::fs::write(workspace.join("ES.md"), "Original checkpoint").await?;
+        tokio::fs::write(
+            workspace.join("memory-autosave.json"),
+            r#"{"enabled":true}"#,
+        )
+        .await?;
+        let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
+        let turn = Turn {
+            id: "current-turn".into(),
+            items: vec![ThreadItem::AgentMessage {
+                id: "result".into(),
+                text: "Response finished while Luna consolidates.".into(),
+                phase: None,
+            }],
+            items_view: TurnItemsView::Full,
+            status: TurnStatus::Completed,
+            error: None,
+            started_at: Some(1),
+            completed_at: Some(2),
+            duration_ms: Some(1_000),
+        };
+        let result = write_session_checkpoint(Some(&root), cwd, "thread", &turn).await?;
+        assert!(
+            write_session_checkpoint(
+                Some(&root),
+                Path::new("/tmp/unrelated-checkpoint"),
+                "other",
+                &turn
+            )
+            .await?
+            .is_some(),
+            "saving in one workspace must not suppress another workspace's checkpoint"
+        );
+        let decision = MemoryDecision {
+            checkpoint: "Current consolidated plan and response evidence.".into(),
+            memory: "Retain the user's verified correction.".into(),
+        };
+        snapshot.commit(
+            &decision,
+            "thread",
+            "current-turn",
+            None,
+            None,
+            MemorySaveTiming::default(),
+        )?;
+        assert!(
+            result.is_none(),
+            "TUI must leave the enabled saver in control"
+        );
+        drop(snapshot);
+        assert!(
+            write_session_checkpoint(Some(&root), cwd, "thread", &turn)
+                .await?
+                .is_some()
+        );
+        let mirrored = tokio::fs::read_to_string(workspace.join("ES.md")).await?;
+        assert!(mirrored.contains(&decision.checkpoint));
+        assert!(mirrored.contains("Response finished while Luna consolidates."));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn memory_waits_for_checkpoint_writer_and_reads_its_finished_state() -> Result<()> {
+        use crate::legacy_core::memory_save::{MemorySnapshot, try_lock_checkpoint};
+
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = Path::new("/tmp/checkpoint-lock-order");
+        let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        let lock = try_lock_checkpoint(&workspace)?.context("writer lock")?;
+        tokio::fs::write(
+            workspace.join("memory-autosave.json"),
+            r#"{"enabled":true}"#,
+        )
+        .await?;
+        let writer = async {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            tokio::fs::write(workspace.join("ES.md"), "Newly finished checkpoint").await?;
+            drop(lock);
+            Ok::<(), anyhow::Error>(())
+        };
+        let (snapshot, written) =
+            tokio::join!(MemorySnapshot::open_when_available(&root, cwd), writer);
+        written?;
+        assert_eq!(
+            snapshot?.context("enabled saver")?.checkpoint,
+            "Newly finished checkpoint"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn manual_checkpoint_change_still_blocks_memory_commit() -> Result<()> {
+        use crate::legacy_core::memory_save::{MemoryDecision, MemorySaveTiming, MemorySnapshot};
+
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = Path::new("/tmp/manual-checkpoint");
+        let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        tokio::fs::create_dir_all(&workspace).await?;
+        tokio::fs::write(workspace.join("ES.md"), "Original checkpoint").await?;
+        tokio::fs::write(
+            workspace.join("memory-autosave.json"),
+            r#"{"enabled":true}"#,
+        )
+        .await?;
+        let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
+        tokio::fs::write(workspace.join("ES.md"), "Newer manual correction").await?;
+        let error = snapshot
+            .commit(
+                &MemoryDecision {
+                    checkpoint: "Stale proposed checkpoint".into(),
+                    memory: "Lesson".into(),
+                },
+                "thread",
+                "turn",
+                None,
+                None,
+                MemorySaveTiming::default(),
+            )
+            .expect_err("manual changes must remain protected");
+        assert!(error.to_string().contains("checkpoint changed"));
+        assert_eq!(
+            tokio::fs::read_to_string(workspace.join("ES.md")).await?,
+            "Newer manual correction"
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     async fn goal_is_written_under_elpis_and_cleared_only_by_its_thread() -> Result<()> {

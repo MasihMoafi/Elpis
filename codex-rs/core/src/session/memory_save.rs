@@ -50,7 +50,9 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
     else {
         return Ok(());
     };
-    let Some(snapshot) = MemorySnapshot::open(config.memory_dir.as_path(), cwd.as_path())? else {
+    let Some(snapshot) =
+        MemorySnapshot::open_when_available(config.memory_dir.as_path(), cwd.as_path()).await?
+    else {
         return Ok(());
     };
     let history = sess.clone_history().await;

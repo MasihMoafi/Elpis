@@ -83,6 +83,9 @@ pub mod legacy_core {
     pub mod elpis_context {
         pub use codex_core::elpis_context::*;
     }
+    pub mod memory_save {
+        pub use codex_core::memory_save::*;
+    }
 
     pub mod context_pruner {
         pub use codex_core::context_pruner::pass_count;

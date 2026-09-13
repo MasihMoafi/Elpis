@@ -55,6 +55,33 @@ pub struct MemorySnapshot {
     pub memory: String,
     pub goal: String,
     _lock: File,
+    _checkpoint_lock: File,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("another memory save is already running")]
+struct MemoryLockBusy;
+
+pub fn try_lock_memory(root: &Path) -> anyhow::Result<Option<File>> {
+    try_lock_file(root, "memory-save.lock")
+}
+
+pub fn try_lock_checkpoint(workspace: &Path) -> anyhow::Result<Option<File>> {
+    try_lock_file(workspace, "checkpoint.lock")
+}
+
+fn try_lock_file(directory: &Path, name: &str) -> anyhow::Result<Option<File>> {
+    std::fs::create_dir_all(directory)?;
+    let lock = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(directory.join(name))?;
+    match lock.try_lock() {
+        Ok(()) => Ok(Some(lock)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn read_optional(path: &Path) -> anyhow::Result<String> {
@@ -66,6 +93,20 @@ fn read_optional(path: &Path) -> anyhow::Result<String> {
 }
 
 impl MemorySnapshot {
+    pub async fn open_when_available(root: &Path, cwd: &Path) -> anyhow::Result<Option<Self>> {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            match Self::open(root, cwd) {
+                Err(error)
+                    if error.is::<MemoryLockBusy>() && tokio::time::Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+                result => return result,
+            }
+        }
+    }
+
     pub fn open(root: &Path, cwd: &Path) -> anyhow::Result<Option<Self>> {
         let workspace = crate::elpis_context::workspace_context_dir(Some(root), cwd)
             .context("workspace memory path unavailable")?;
@@ -75,14 +116,10 @@ impl MemorySnapshot {
         }
         // One writer across workspaces because MEMORY.md is shared. The OS releases
         // this lock on cancellation or process exit; there is no stale lock cleanup.
-        std::fs::create_dir_all(root)?;
-        let lock = File::options()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(root.join("memory-save.lock"))?;
-        lock.try_lock()
-            .context("another memory save is already running")?;
+        let lock = try_lock_memory(root)?.ok_or(MemoryLockBusy)?;
+        // Acquire shared memory first, so waiting savers do not block unrelated
+        // workspace checkpoint writers. Both guards protect the snapshot through commit.
+        let checkpoint_lock = try_lock_checkpoint(&workspace)?.ok_or(MemoryLockBusy)?;
         let memory = read_optional(&root.join("MEMORY.md"))?;
         let checkpoint = read_optional(&workspace.join("ES.md"))?;
         let goal = read_optional(&workspace.join("GOAL.md"))?;
@@ -102,6 +139,7 @@ impl MemorySnapshot {
             checkpoint,
             goal,
             _lock: lock,
+            _checkpoint_lock: checkpoint_lock,
         }))
     }
 
@@ -174,6 +212,53 @@ fn atomic_write(path: &Path, text: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn waits_for_short_memory_lock_but_bounds_contention_and_other_errors()
+    -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let root = dir.path().join("memories");
+        let cwd = dir.path().join("project");
+        let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        std::fs::create_dir_all(&workspace)?;
+        let settings = workspace.join("memory-autosave.json");
+        std::fs::write(&settings, "{\"enabled\":true}")?;
+        let lock = try_lock_checkpoint(&workspace)?.unwrap();
+        assert!(MemorySnapshot::open(&root, &cwd).is_err());
+        assert!(
+            try_lock_memory(&root)?.is_some(),
+            "failed checkpoint acquisition retained the global lock"
+        );
+        let release = async {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            drop(lock);
+        };
+        let (snapshot, ()) =
+            tokio::join!(MemorySnapshot::open_when_available(&root, &cwd), release);
+        let snapshot = snapshot?.unwrap();
+        assert!(try_lock_checkpoint(&workspace)?.is_none());
+        assert!(try_lock_memory(&root)?.is_none());
+        assert!(try_lock_checkpoint(&dir.path().join("other-workspace"))?.is_some());
+        let started = tokio::time::Instant::now();
+        let error = MemorySnapshot::open_when_available(&root, &cwd)
+            .await
+            .err()
+            .unwrap();
+        assert!(error.is::<MemoryLockBusy>());
+        assert_eq!(started.elapsed(), std::time::Duration::from_secs(1));
+        std::fs::write(&settings, "invalid settings")?;
+        let started = tokio::time::Instant::now();
+        let error = MemorySnapshot::open_when_available(&root, &cwd)
+            .await
+            .err()
+            .unwrap();
+        assert!(!error.is::<MemoryLockBusy>());
+        assert!(started.elapsed().is_zero());
+        drop(snapshot);
+        assert!(try_lock_checkpoint(&workspace)?.is_some());
+        assert!(try_lock_memory(&root)?.is_some());
+        Ok(())
+    }
 
     #[test]
     fn rejects_invalid_and_oversized_decisions() {
