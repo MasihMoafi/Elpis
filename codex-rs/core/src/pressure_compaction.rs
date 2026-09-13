@@ -4,11 +4,38 @@ use std::io;
 use std::io::Write;
 use std::path::Path;
 
-/// Reloaded before each turn; absent settings preserve native compaction policy.
+/// Reloaded at user-turn and tool-loop boundaries; absence preserves native policy.
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PressureCompaction {
     pub remaining_percent: Option<f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pressure_crossing_uses_remaining_context() {
+        let setting = PressureCompaction::parse("30").unwrap();
+        assert!(!setting.should_compact(699, Some(1000)));
+        assert!(setting.should_compact(700, Some(1000)));
+        assert!(setting.should_compact(920, Some(1000)));
+        assert!(!setting.should_compact(920, None));
+        assert!(!setting.should_compact(920, Some(0)));
+        assert!(!PressureCompaction::default().should_compact(920, Some(1000)));
+    }
+
+    #[test]
+    fn pressure_settings_reload_between_sampling_boundaries() -> io::Result<()> {
+        let home = tempfile::tempdir()?;
+        assert!(!PressureCompaction::load(home.path())?.should_compact(700, Some(1000)));
+        PressureCompaction::parse("30")?.save(home.path())?;
+        assert!(PressureCompaction::load(home.path())?.should_compact(700, Some(1000)));
+        PressureCompaction::default().save(home.path())?;
+        assert!(!PressureCompaction::load(home.path())?.should_compact(700, Some(1000)));
+        Ok(())
+    }
 }
 
 impl PressureCompaction {

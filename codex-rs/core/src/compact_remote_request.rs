@@ -29,6 +29,7 @@ pub(super) async fn run_remote_compact_attempt(
     compaction_trace: &CompactionTraceContext,
     compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<RemoteCompactAttempt> {
+    let preparation_started = std::time::Instant::now();
     let turn_context = &step_context.turn;
     let mut history = sess.clone_history().await;
     let base_instructions = sess.get_base_instructions().await;
@@ -67,7 +68,9 @@ pub(super) async fn run_remote_compact_attempt(
         window_id,
         CodexResponsesRequestKind::Compaction(compaction_metadata),
     );
-    let new_history = sess
+    let preparation_ms = preparation_started.elapsed().as_millis() as u64;
+    let request_started = std::time::Instant::now();
+    let result = sess
         .services
         .model_client
         .load()
@@ -88,7 +91,15 @@ pub(super) async fn run_remote_compact_attempt(
             compaction_trace,
             &responses_metadata,
         )
-        .await?;
+        .await;
+    info!(
+        thread_id = %sess.session_id(), turn_id = %turn_context.sub_id,
+        preparation_ms,
+        request_ms = request_started.elapsed().as_millis() as u64,
+        succeeded = result.is_ok(),
+        "remote compaction request timing"
+    );
+    let new_history = result?;
     Ok(RemoteCompactAttempt {
         new_history,
         trace_input_history,

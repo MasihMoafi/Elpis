@@ -81,6 +81,43 @@ struct RawDecisionManifest {
     items: Vec<RawDecision>,
 }
 
+pub(crate) fn decision_manifest_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["call_id", "decision", "content"],
+                            "properties": {
+                                "call_id": {"type": "string"},
+                                "decision": {"type": "string", "enum": ["compact"]},
+                                "content": {"type": "string"}
+                            }
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["call_id", "decision", "content"],
+                            "properties": {
+                                "call_id": {"type": "string"},
+                                "decision": {"type": "string", "enum": ["unchanged"]},
+                                "content": {"type": "null"}
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawDecision {

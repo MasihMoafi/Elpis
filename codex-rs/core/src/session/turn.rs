@@ -147,7 +147,15 @@ pub(crate) async fn run_turn(
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
     // when they would push the thread over the compaction threshold.
-    if let Err(err) = run_pre_sampling_compact(&sess, &turn_context, &mut client_session).await {
+    let mut pressure_compaction_suppressed = false;
+    if let Err(err) = run_pre_sampling_compact(
+        &sess,
+        &turn_context,
+        &mut client_session,
+        &mut pressure_compaction_suppressed,
+    )
+    .await
+    {
         if matches!(err, CodexErr::TurnAborted) {
             return Err(err);
         }
@@ -327,6 +335,10 @@ pub(crate) async fn run_turn(
                 )
                 .await;
                 let token_limit_reached = token_status.token_limit_reached;
+                let pressure_reached = pressure_compaction_reached(&turn_context, &token_status);
+                if !pressure_reached {
+                    pressure_compaction_suppressed = false;
+                }
 
                 trace!(
                     turn_id = %turn_context.sub_id,
@@ -346,7 +358,9 @@ pub(crate) async fn run_turn(
                 );
 
                 let should_roll_over = needs_follow_up
-                    && (sess.take_new_context_window_request().await || token_limit_reached);
+                    && (sess.take_new_context_window_request().await
+                        || token_limit_reached
+                        || (pressure_reached && !pressure_compaction_suppressed));
                 let allow_auto_compact_fallback = !should_roll_over && !token_limit_reached;
                 super::token_budget::maybe_record(
                     sess.as_ref(),
@@ -355,7 +369,6 @@ pub(crate) async fn run_turn(
                     allow_auto_compact_fallback,
                 )
                 .await;
-                // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
                 if should_roll_over {
                     if let Err(err) = run_auto_compact(
                         &sess,
@@ -386,6 +399,15 @@ pub(crate) async fn run_turn(
                         }
                         return Ok(None);
                     }
+                    let compacted_status = super::context_window::context_window_token_status(
+                        sess.as_ref(),
+                        turn_context.as_ref(),
+                    )
+                    .await;
+                    // If compaction cannot reach the custom target, don't repeat it after
+                    // every tool result. Native context-limit handling remains active.
+                    pressure_compaction_suppressed =
+                        pressure_compaction_reached(&turn_context, &compacted_status);
                     can_drain_pending_input = !model_needs_follow_up;
                     continue;
                 }
@@ -714,25 +736,13 @@ async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     client_session: &mut ModelClientSession,
+    pressure_compaction_suppressed: &mut bool,
 ) -> CodexResult<()> {
     maybe_run_previous_model_inline_compact(sess, turn_context, client_session).await?;
     let token_status =
         super::context_window::context_window_token_status(sess.as_ref(), turn_context.as_ref())
             .await;
-    let pressure_reached =
-        match crate::pressure_compaction::PressureCompaction::load(&turn_context.config.codex_home)
-        {
-            Ok(settings) => settings.should_compact(
-                token_status.active_context_tokens,
-                token_status.full_context_window_limit,
-            ),
-            Err(error) => {
-                tracing::warn!(%error, "Could not load pressure compaction settings");
-                false
-            }
-        };
-    if token_status.token_limit_reached
-        || (pressure_reached && turn_context.config.automatic_compaction_enabled())
+    if token_status.token_limit_reached || pressure_compaction_reached(turn_context, &token_status)
     {
         if !turn_context.config.automatic_compaction_enabled() {
             return Err(CodexErr::ContextWindowExceeded);
@@ -749,8 +759,34 @@ async fn run_pre_sampling_compact(
             CompactionPhase::PreTurn,
         )
         .await?;
+        let compacted_status = super::context_window::context_window_token_status(
+            sess.as_ref(),
+            turn_context.as_ref(),
+        )
+        .await;
+        *pressure_compaction_suppressed =
+            pressure_compaction_reached(turn_context, &compacted_status);
     }
     Ok(())
+}
+
+fn pressure_compaction_reached(
+    turn_context: &TurnContext,
+    token_status: &super::context_window::ContextWindowTokenStatus,
+) -> bool {
+    if !turn_context.config.automatic_compaction_enabled() {
+        return false;
+    }
+    match crate::pressure_compaction::PressureCompaction::load(&turn_context.config.codex_home) {
+        Ok(settings) => settings.should_compact(
+            token_status.active_context_tokens,
+            token_status.full_context_window_limit,
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "Could not load pressure compaction settings");
+            false
+        }
+    }
 }
 
 /// Returns true only when both turns declare compaction compatibility hashes and they differ.

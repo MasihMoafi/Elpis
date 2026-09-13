@@ -8,7 +8,7 @@ use serde::Serialize;
 pub const DEFAULT_SYSTEM_PROMPT: &str = r#"You are Elpis Smart Prune. Compress fresh tool results before their first use by the main model.
 
 Return exactly one JSON object and no markdown:
-{"items":[{"call_id":"...","decision":"compact","content":"..."},{"call_id":"...","decision":"unchanged"}]}
+{"items":[{"call_id":"...","decision":"compact","content":"..."},{"call_id":"...","decision":"unchanged","content":null}]}
 
 Return exactly one item for every supplied call_id.
 

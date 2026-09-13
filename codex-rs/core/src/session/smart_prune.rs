@@ -998,6 +998,8 @@ async fn run_model_admission(
         base_instructions: BaseInstructions {
             text: instructions.to_string(),
         },
+        output_schema: Some(crate::smart_prune::decision_manifest_schema()),
+        output_schema_strict: true,
         ..Default::default()
     };
     let metadata = turn_context.turn_metadata_state.to_responses_metadata(

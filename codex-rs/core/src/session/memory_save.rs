@@ -38,6 +38,7 @@ pub(crate) async fn save_continuity(sess: &Arc<Session>, turn: &Arc<TurnContext>
 }
 
 async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()> {
+    let preparation_started = std::time::Instant::now();
     if turn.session_source.is_non_root_agent() {
         return Ok(());
     }
@@ -113,6 +114,16 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         base_instructions: BaseInstructions {
             text: include_str!("../../templates/memory_consolidation.md").into(),
         },
+        output_schema: Some(serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["checkpoint", "memory"],
+            "properties": {
+                "checkpoint": {"type": "string"},
+                "memory": {"type": "string"}
+            }
+        })),
+        output_schema_strict: true,
         ..Default::default()
     };
     let metadata = turn.turn_metadata_state.to_responses_metadata(
@@ -122,6 +133,8 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
     );
     let client = sess.services.model_client.load();
     let mut client_session = client.new_session();
+    let preparation_ms = preparation_started.elapsed().as_millis() as u64;
+    let request_started = std::time::Instant::now();
     let response = tokio::time::timeout(TIMEOUT, async {
         let mut stream = client_session
             .stream(
@@ -152,8 +165,15 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         }
         anyhow::bail!("Luna stream ended without completion")
     })
-    .await
-    .context("Luna exceeded the 60-second memory limit")??;
+    .await;
+    let request_ms = request_started.elapsed().as_millis() as u64;
+    tracing::info!(
+        thread_id = %sess.session_id(), turn_id = %turn.sub_id,
+        preparation_ms, request_ms,
+        succeeded = response.as_ref().is_ok_and(|result| result.is_ok()),
+        "memory save request timing"
+    );
+    let response = response.context("Luna exceeded the 60-second memory limit")??;
     let decision = crate::memory_save::parse_decision(&response.0)?;
     snapshot.commit(
         &decision,
@@ -161,6 +181,11 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         &turn.sub_id,
         response.1.as_ref(),
         Some(&input),
+        crate::memory_save::MemorySaveTiming {
+            preparation_ms,
+            request_ms,
+            commit_ms: 0,
+        },
     )?;
     Ok(())
 }

@@ -19,6 +19,10 @@ pub const ELPIS_CONTINUITY_PROMPT_PREFIX: &str = "## Elpis Admitted Context\n\n\
     message when it changes the task.\n\n";
 const ADMISSION_FILE: &str = "admission.toml";
 const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
+const MEMORY_SCOPE_GUIDANCE: &str = "Shared memory can contain global preferences and lessons from different projects. \
+    Apply global preferences across projects. Apply a project-specific lesson only to its named project; \
+    admission does not make it a requirement for other projects. When asked about another project, \
+    inspect that project's evidence or say its requirement is unknown instead of borrowing a remembered command or setting.";
 const MANUAL_MEMORY_TEMPLATE: &str = "# Elpis Memory\n";
 const MANUAL_MEMORY_ADD_GUIDANCE: &str =
     "MEMORY.md is managed by the Memory row; use the Memory row";
@@ -490,10 +494,16 @@ async fn read_continuity_source_section(
             return None;
         }
     }
+    let scope = if source.name == MANUAL_MEMORY_FILE {
+        format!("{MEMORY_SCOPE_GUIDANCE}\n\n")
+    } else {
+        String::new()
+    };
     Some(format!(
-        "### Source: {} ({} characters)\n\n{}",
+        "### Source: {} ({} characters)\n\n{}{}",
         source.path.display(),
         content.chars().count(),
+        scope,
         content
     ))
 }
@@ -2892,6 +2902,34 @@ mod tests {
                 .await
                 .is_some_and(|prompt| prompt.contains("Dev rule"))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn admitted_memory_explains_scope_without_leaking_when_disabled() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        tokio::fs::create_dir_all(&memories).await?;
+        tokio::fs::create_dir_all(&cwd).await?;
+        let notes = "- Global preference: keep replies brief.\n\
+            - In Copper Orchard only, parser changes require parser-regression.\n";
+        tokio::fs::write(memories.join(MANUAL_MEMORY_FILE), notes).await?;
+        set_continuity_source_admitted(Some(&memories), &cwd, MANUAL_MEMORY_FILE, true)?;
+        let admitted = build_continuity_prompt(Some(&memories), &cwd)
+            .await
+            .expect("admitted memory must reach the prompt");
+        assert!(admitted.contains(MEMORY_SCOPE_GUIDANCE));
+        assert!(admitted.contains(notes.trim()));
+        assert!(admitted.contains("Apply global preferences across projects"));
+
+        set_continuity_source_admitted(Some(&memories), &cwd, MANUAL_MEMORY_FILE, false)?;
+        let disabled = build_continuity_prompt(Some(&memories), &cwd)
+            .await
+            .unwrap_or_default();
+        assert!(!disabled.contains(MEMORY_SCOPE_GUIDANCE));
+        assert!(!disabled.contains("Copper Orchard"));
+        assert!(!disabled.contains("keep replies brief"));
         Ok(())
     }
 

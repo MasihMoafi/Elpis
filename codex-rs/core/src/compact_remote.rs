@@ -112,7 +112,13 @@ async fn run_remote_compact_task_inner(
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
     let trigger = compaction_metadata.trigger();
+    let hooks_started = std::time::Instant::now();
     let pre_compact_outcome = run_pre_compact_hooks(sess, turn_context, trigger).await;
+    tracing::info!(
+        thread_id = %sess.session_id(), turn_id = %turn_context.sub_id,
+        pre_hooks_ms = hooks_started.elapsed().as_millis() as u64,
+        "remote compaction pre-hook timing"
+    );
     match pre_compact_outcome {
         PreCompactHookOutcome::Continue => {}
         PreCompactHookOutcome::Stopped => {
@@ -129,7 +135,13 @@ async fn run_remote_compact_task_inner(
     )
     .await;
     if result.is_ok() {
+        let hooks_started = std::time::Instant::now();
         let post_compact_outcome = run_post_compact_hooks(sess, turn_context, trigger).await;
+        tracing::info!(
+            thread_id = %sess.session_id(), turn_id = %turn_context.sub_id,
+            post_hooks_ms = hooks_started.elapsed().as_millis() as u64,
+            "remote compaction post-hook timing"
+        );
         if let PostCompactHookOutcome::Stopped = post_compact_outcome {
             return Err(CodexErr::TurnAborted);
         }
@@ -217,6 +229,7 @@ async fn run_remote_compact_task_inner_impl(
         new_history,
         trace_input_history,
     } = attempt;
+    let application_started = std::time::Instant::now();
     let (new_window_number, new_window_ids) = sess.advance_auto_compact_window().await;
     let (new_history, world_state_baseline) = process_compacted_history(
         sess.as_ref(),
@@ -256,6 +269,11 @@ async fn run_remote_compact_task_inner_impl(
     )
     .await;
     sess.recompute_token_usage(compaction_turn_context).await;
+    tracing::info!(
+        thread_id = %sess.session_id(), turn_id = %turn_context.sub_id,
+        application_ms = application_started.elapsed().as_millis() as u64,
+        "remote compaction application timing"
+    );
 
     sess.emit_turn_item_completed(compaction_turn_context, compaction_item)
         .await;

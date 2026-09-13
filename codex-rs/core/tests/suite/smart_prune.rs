@@ -468,6 +468,11 @@ async fn smart_prune_admits_compact_output_before_first_main_followup() -> Resul
         Some(main_cache_key)
     );
     let optimizer_body = requests[1].body_json();
+    assert_eq!(optimizer_body["text"]["format"]["type"], "json_schema");
+    assert_eq!(optimizer_body["text"]["format"]["strict"], true);
+    let schema = &optimizer_body["text"]["format"]["schema"];
+    assert_eq!(schema["additionalProperties"], false);
+    assert_eq!(schema["required"], serde_json::json!(["items"]));
     let optimizer_cache_key = optimizer_body["prompt_cache_key"]
         .as_str()
         .filter(|key| !key.is_empty())
@@ -623,7 +628,7 @@ async fn smart_prune_malformed_reply_fails_open() -> Result<()> {
     skip_if_host_windows!(Ok(()));
     let harness = harness(true).await?;
     let malformed = sse(vec![
-        ev_assistant_message("bad-smart-prune", "not valid JSON"),
+        ev_assistant_message("bad-smart-prune", r#"{"items":[]} trailing data"#),
         ev_completed_with_tokens("bad-smart-prune", 25),
     ]);
     let requests = mount_sse_sequence(
@@ -658,7 +663,7 @@ async fn smart_prune_malformed_reply_fails_open() -> Result<()> {
     assert_eq!(attempt["reasoning_effort"], "low");
     assert_eq!(attempt["candidate_outputs"], 1);
     assert_eq!(attempt["admitted_outputs"], 0);
-    assert_eq!(attempt["raw_response"], "not valid JSON");
+    assert_eq!(attempt["raw_response"], r#"{"items":[]} trailing data"#);
     assert!(
         attempt["input"]
             .as_str()

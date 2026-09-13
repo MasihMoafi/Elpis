@@ -11,6 +11,14 @@ use serde::Serialize;
 
 pub const OUTPUT_CHARS: usize = 6_000;
 
+#[derive(Default, Serialize)]
+pub struct MemorySaveTiming {
+    pub preparation_ms: u64,
+    pub request_ms: u64,
+    /// Local commit work up to the final receipt write.
+    pub commit_ms: u64,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryDecision {
@@ -104,7 +112,9 @@ impl MemorySnapshot {
         turn: &str,
         usage: Option<&codex_protocol::protocol::TokenUsage>,
         evidence: Option<&str>,
+        mut timing: MemorySaveTiming,
     ) -> anyhow::Result<()> {
+        let commit_started = std::time::Instant::now();
         let memory_path = self.root.join("MEMORY.md");
         let checkpoint_path = self.workspace.join("ES.md");
         anyhow::ensure!(
@@ -146,6 +156,8 @@ impl MemorySnapshot {
             return Err(error);
         }
         receipt["status"] = "committed".into();
+        timing.commit_ms = commit_started.elapsed().as_millis() as u64;
+        receipt["timing"] = serde_json::to_value(timing)?;
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
         Ok(())
     }
@@ -180,6 +192,7 @@ mod tests {
         let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
         std::fs::create_dir_all(&workspace)?;
         assert!(MemorySnapshot::open(&root, &cwd)?.is_none());
+        assert!(!workspace.join("memory-saves").exists());
         std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
         let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
         assert!(MemorySnapshot::open(&root, &cwd).is_err());
@@ -192,7 +205,20 @@ mod tests {
             "turn1",
             None,
             None,
+            MemorySaveTiming {
+                preparation_ms: 12,
+                request_ms: 34,
+                commit_ms: 0,
+            },
         )?;
+        let receipt_path = std::fs::read_dir(workspace.join("memory-saves"))?
+            .next()
+            .unwrap()?
+            .path();
+        let receipt: serde_json::Value = serde_json::from_slice(&std::fs::read(receipt_path)?)?;
+        assert_eq!(receipt["timing"]["preparation_ms"], 12);
+        assert_eq!(receipt["timing"]["request_ms"], 34);
+        assert!(receipt["timing"]["commit_ms"].is_u64());
         drop(snapshot);
         let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
         assert!(snapshot.memory.contains("4812"));
@@ -205,6 +231,11 @@ mod tests {
             "turn2",
             None,
             None,
+            MemorySaveTiming {
+                preparation_ms: 12,
+                request_ms: 34,
+                commit_ms: 0,
+            },
         )?;
         drop(snapshot);
         let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
@@ -220,7 +251,8 @@ mod tests {
                     "thread",
                     "turn3",
                     None,
-                    None
+                    None,
+                    MemorySaveTiming::default()
                 )
                 .is_err()
         );

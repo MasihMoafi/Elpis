@@ -46,6 +46,9 @@ const server = http.createServer(async (request, response) => {
   if (body.model === "gpt-5.6-luna") {
     luna++;
     assert.equal(body.tools?.length || 0, 0, "memory call exposed tools");
+    assert.equal(body.text?.format?.type, "json_schema", "memory call omitted its schema");
+    assert.equal(body.text.format.strict, true, "memory schema was not strict");
+    assert.deepEqual(body.text.format.schema.required, ["checkpoint", "memory"]);
     if (holdMemory) {
       await new Promise(resolve => {
         releaseMemory = resolve;
@@ -97,7 +100,7 @@ async function start() {
   const binary = process.argv[2] ||
     path.resolve(__dirname, "../codex-rs/target/local-release/codex-app-server");
   rpc = new AppServer(binary, cwd, {
-    env: { ...process.env, CODEX_HOME: home, ELPIS_HOME: home },
+    env: { ...process.env, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home },
   });
   rpc.on("disconnect", () => {});
   rpc.on("notification", message => events.push(message));
@@ -160,6 +163,9 @@ async function run() {
   const receipts = fs.readdirSync(receiptDirectory).map(file =>
     JSON.parse(fs.readFileSync(path.join(receiptDirectory, file), "utf8")));
   assert.equal(receipts.length, 2);
+  assert(receipts.every(receipt => ["preparation_ms", "request_ms", "commit_ms"]
+    .every(field => Number.isSafeInteger(receipt.timing?.[field]) && receipt.timing[field] >= 0)),
+  "committed receipts lack phase timings");
   assert(receipts.every(receipt => receipt.status === "committed" &&
     receipt.evidence.includes("Remember: project Cedar")), "receipts lack committed evidence");
   assert(receipts.every(receipt => JSON.parse(receipt.evidence).goal.includes("Verify the Cedar release")),
