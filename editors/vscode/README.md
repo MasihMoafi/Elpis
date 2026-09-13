@@ -14,12 +14,19 @@ the editor selection and open-file metadata. `/ide off` disables CLI inclusion.
 The connection is local, scoped to the project and Elpis home, and respects
 workspace trust and the editor-access setting.
 
-Conversation history includes CLI and IDE chats for the current project and Elpis
-home, across providers. Finish the CLI turn and exit that CLI session before
-resuming its chat from the IDE history menu. Resuming retains the conversation ID
-and attaches the IDE's editor tools. `/ide` shares editor context; it does not
-mirror a running conversation between clients. Simultaneous use of the same chat
-in separate clients is not currently synchronized.
+The current local candidate shares one runtime between ordinary Unix CLI and IDE
+launches using the same Elpis home. Open History in the IDE to resume the CLI chat
+while the terminal remains open. Both clients observe messages, active responses,
+and interruptions. Editor tools execute in one attached editor; attaching an
+editor to a CLI-created chat makes those tools available on subsequent turns.
+`/ide` controls editor context inclusion independently of conversation attachment.
+Explicit CLI configuration overrides and profiles currently use a private runtime.
+
+Provider keys saved through the IDE apply to the shared runtime for that Elpis
+home. VS Code SecretStorage retains them; the runtime keeps overrides in memory.
+Removing an override restores runtime authentication without clearing the chat.
+An OpenAI override uses temporary external authentication and preserves the saved
+login. These shared-runtime changes are not included in the published 0.1.17 VSIX.
 
 The published Linux x64 VSIX bundles the tested Elpis app-server. Extension
 versions are separate from Elpis CLI versions.

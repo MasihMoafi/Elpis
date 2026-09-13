@@ -1818,6 +1818,30 @@
             },
             "method": {
               "enum": [
+                "account/provider/credentials/set"
+              ],
+              "title": "Account/provider/credentials/setRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ProviderCredentialsSetParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Account/provider/credentials/setRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "account/login/start"
               ],
               "title": "Account/login/startRequestMethod",
@@ -14866,6 +14890,31 @@
           "cols",
           "rows"
         ],
+        "type": "object"
+      },
+      "ProviderCredentialsSetParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Replaces a provider key in the running server only; null restores environment lookup.",
+        "properties": {
+          "apiKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "ProviderCredentialsSetParams",
+        "type": "object"
+      },
+      "ProviderCredentialsSetResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ProviderCredentialsSetResponse",
         "type": "object"
       },
       "RateLimitReachedType": {

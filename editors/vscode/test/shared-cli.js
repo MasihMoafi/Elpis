@@ -5,7 +5,7 @@ const syncFs=require('node:fs');
 const path=require('node:path');
 const execFile=require('node:util').promisify(require('node:child_process').execFile);
 
-module.exports=function sharedCli({executable,root,home,socket,threadId}) {
+module.exports=function sharedCli({executable,root,home,authHome=home,socket,threadId}) {
   const configPath=path.join(home,'config.toml');
   const project=`[projects.${JSON.stringify(root)}]`;
   if(!syncFs.readFileSync(configPath,'utf8').includes(project))syncFs.appendFileSync(configPath,`\n${project}\ntrust_level="trusted"\n`);
@@ -13,7 +13,7 @@ module.exports=function sharedCli({executable,root,home,socket,threadId}) {
   const connection=process.env.ELPIS_EDITOR_TEST_AUTO_SHARED==='1'?[]:['--remote',`unix://${socket}`];
   const command=[executable,'--no-alt-screen',...connection,...(threadId?['--resume',threadId]:[])].map(quote).join(' ');
   const child=spawn('script',['-q','-e','-c',`stty rows 40 cols 110; exec ${command}`,'/dev/null'],{
-    cwd:root,detached:true,env:{...process.env,CODEX_HOME:home,ELPIS_HOME:home,TERM:'xterm-256color'},
+    cwd:root,detached:true,env:{...process.env,CODEX_AUTH_HOME:authHome,CODEX_HOME:home,ELPIS_HOME:home,TERM:'xterm-256color'},
   });
   let output='',exited=false,dismissedHooks=false;
   child.once('exit',()=>{exited=true;});

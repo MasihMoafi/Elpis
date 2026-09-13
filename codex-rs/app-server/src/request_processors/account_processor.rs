@@ -78,6 +78,58 @@ pub(crate) struct AccountRequestProcessor {
 }
 
 impl AccountRequestProcessor {
+    pub(crate) async fn set_provider_credentials(
+        &self,
+        params: codex_app_server_protocol::ProviderCredentialsSetParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        let provider = self
+            .config
+            .model_providers
+            .get(&params.provider)
+            .ok_or_else(|| invalid_request("Unknown model provider."))?;
+        if let Some(key) = &params.api_key
+            && (key.is_empty()
+                || key.len() > 8192
+                || !key.bytes().all(|byte| (33..=126).contains(&byte)))
+        {
+            return Err(invalid_request(
+                "API key must contain 1–8192 visible ASCII characters.",
+            ));
+        }
+        if params.provider == codex_model_provider_info::OPENAI_PROVIDER_ID {
+            if let Some(key) = params.api_key {
+                if matches!(
+                    self.config.forced_login_method,
+                    Some(ForcedLoginMethod::Chatgpt)
+                ) {
+                    return Err(invalid_request(
+                        "API key login is disabled. Use ChatGPT login instead.",
+                    ));
+                }
+                self.auth_manager
+                    .set_external_auth(Arc::new(crate::external_auth::ExternalApiKey(key)))
+                    .await
+                    .map_err(|_| internal_error("Could not apply the external API key."))?;
+            } else if self.auth_manager.has_external_auth()
+                && self
+                    .auth_manager
+                    .auth_cached()
+                    .is_some_and(|auth| auth.is_api_key_auth())
+            {
+                self.auth_manager.clear_external_auth();
+                self.auth_manager.reload().await;
+            }
+        } else {
+            let env_key = provider.env_key.as_deref().ok_or_else(|| {
+                invalid_request("This provider does not use API key credentials.")
+            })?;
+            codex_model_provider_info::set_api_key_override(env_key, params.api_key);
+        }
+        Ok(Some(
+            codex_app_server_protocol::ProviderCredentialsSetResponse {}.into(),
+        ))
+    }
+
     pub(crate) fn new(
         auth_manager: Arc<AuthManager>,
         thread_manager: Arc<ThreadManager>,

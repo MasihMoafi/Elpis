@@ -19,15 +19,19 @@ test('ordinary CLI startup creates one shared runtime and IDE attaches tools to 
 },async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-auto-shared-')),home=path.join(root,'home');
   await fs.mkdir(home);
+  const authHome=path.join(root,'login');await fs.mkdir(authHome);
+  await fs.writeFile(path.join(authHome,'auth.json'),JSON.stringify({OPENAI_API_KEY:'automatic-auth-sentinel'}));
   const provider=new Provider();await provider.start();
-  await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.6-luna"\nmodel_provider="automatic_eval"\n[model_providers.automatic_eval]\nname="Automatic eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
-  const cli=require('./shared-cli')({executable:process.env.ELPIS_EDITOR_TEST_CLI,root,home});
+  await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.6-luna"\nmodel_provider="automatic_eval"\n[model_providers.automatic_eval]\nname="Automatic eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=true\n`);
+  const cli=require('./shared-cli')({executable:process.env.ELPIS_EDITOR_TEST_CLI,root,home,authHome});
   let ide,observer;
   try {
     await until(()=>cli.text().includes('gpt-5.6-luna'));
-    provider.actions.push(message('AUTOMATIC_CLI_REPLY'));
+    let authorization;
+    provider.actions.push((request,headers)=>{authorization=headers.authorization;return message('AUTOMATIC_CLI_REPLY');});
     await cli.send('AUTOMATIC_CLI_USER');
     await until(()=>cli.text().includes('AUTOMATIC_CLI_REPLY'));
+    assert.equal(authorization,'Bearer automatic-auth-sentinel');
     const options={home,executable:process.env.ELPIS_EDITOR_TEST_RUNTIME};
     const history=await listHistory(root,options);
     assert.equal(history.threads.length,1);

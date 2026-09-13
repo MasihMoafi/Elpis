@@ -11,6 +11,10 @@ async function accountTokens(options) {
   return { accessToken: auth.tokens.access_token, chatgptAccountId: auth.tokens.account_id };
 }
 async function connectAccount(rpc, options) {
+  for (const provider of require('./providers').providers) {
+    const key=provider.key&&options.env?.[provider.key];
+    if(key)await rpc.request('account/provider/credentials/set',{provider:provider.id,apiKey:key});
+  }
   if (options.accountSource !== 'codex' || options.env?.OPENAI_API_KEY) return;
   await rpc.request('account/login/start', { type: 'chatgptAuthTokens', ...await accountTokens(options) });
 }

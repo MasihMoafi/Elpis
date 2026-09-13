@@ -9,7 +9,7 @@ async function runtimeTransport(options = {}) {
   if (options.transport) return options.transport;
   const home = runtimeHome(options);
   await fs.mkdir(home, {recursive:true});
-  const env = {...process.env, ...options.env, CODEX_HOME:home, ELPIS_HOME:home};
+  const env = {...process.env, ...(process.platform==='win32'?options.env:{}), CODEX_HOME:home, ELPIS_HOME:home};
   return process.platform==='win32'?{env}:{args:['--shared'],env};
 }
 async function withRuntime(root, options, query) {

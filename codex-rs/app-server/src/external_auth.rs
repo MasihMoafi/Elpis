@@ -17,6 +17,22 @@ use crate::outgoing_message::OutgoingMessageSender;
 
 const EXTERNAL_AUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
 
+pub(crate) struct ExternalApiKey(pub(crate) String);
+
+impl ExternalAuth for ExternalApiKey {
+    fn resolve(&self) -> ExternalAuthFuture<'_, CodexAuth> {
+        Box::pin(async { Ok(CodexAuth::from_api_key(&self.0)) })
+    }
+
+    fn refresh(&self, _context: ExternalAuthRefreshContext) -> ExternalAuthFuture<'_, CodexAuth> {
+        Box::pin(async {
+            Err(std::io::Error::other(
+                "Update the API key in the client and reconnect.",
+            ))
+        })
+    }
+}
+
 pub(crate) struct ExternalAuthBridge {
     outgoing: Arc<OutgoingMessageSender>,
     auth: RwLock<CodexAuth>,

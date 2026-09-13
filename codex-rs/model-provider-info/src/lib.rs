@@ -22,7 +22,28 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::LazyLock;
+use std::sync::RwLock;
 use std::time::Duration;
+
+// A local server has one Elpis home and shares provider credentials across clients,
+// just as it shares startup environment credentials. Never serialize this store.
+static API_KEY_OVERRIDES: LazyLock<RwLock<HashMap<String, String>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+pub fn set_api_key_override(env_key: &str, key: Option<String>) {
+    let mut keys = API_KEY_OVERRIDES
+        .write()
+        .unwrap_or_else(|error| error.into_inner());
+    match key {
+        Some(key) => {
+            keys.insert(env_key.to_string(), key);
+        }
+        None => {
+            keys.remove(env_key);
+        }
+    }
+}
 
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;
 const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;
@@ -453,7 +474,12 @@ impl ModelProviderInfo {
     pub fn api_key(&self) -> CodexResult<Option<String>> {
         match &self.env_key {
             Some(env_key) => {
-                let val = std::env::var(env_key).ok().filter(|v| !v.trim().is_empty());
+                let val = API_KEY_OVERRIDES
+                    .read()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .get(env_key)
+                    .cloned()
+                    .or_else(|| std::env::var(env_key).ok().filter(|v| !v.trim().is_empty()));
                 if val.is_none() && self.requires_openai_auth {
                     return Err(CodexErr::EnvVar(EnvVarError {
                         var: env_key.clone(),

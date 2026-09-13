@@ -1,4 +1,17 @@
-# Local candidate 0.1.22
+# Local candidate 0.1.23
+
+Ordinary Unix CLI and IDE launches now share a runtime. IDE History can attach to
+the CLI conversation while it remains open, show its active response, interrupt
+it, and continue the same chat. Editor tools go to one attached editor. Resume
+preserves permissions; permission changes wait for runtime confirmation.
+
+Provider credentials reach an already-running server, remain out of transcripts
+and configuration, and can be replaced or cleared without losing the chat. The
+CLI preserves its login directory when starting the server. Fifty-five extension
+checks and actual simultaneous terminal/VS Code checks pass. Publication and
+Masih's acceptance remain pending; see `../../docs/evals/followup-20260913.md`.
+
+## Historical local candidate 0.1.22
 
 Resuming a conversation now preserves text and completion events arriving during
 attachment. The saved transcript appears before the live continuation. Shared

@@ -2192,6 +2192,24 @@
       ],
       "type": "object"
     },
+    "ProviderCredentialsSetParams": {
+      "description": "Replaces a provider key in the running server only; null restores environment lookup.",
+      "properties": {
+        "apiKey": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
     "RealtimeConversationVersion": {
       "enum": [
         "v1",
@@ -6469,6 +6487,30 @@
         "method"
       ],
       "title": "WindowsSandbox/readinessRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "account/provider/credentials/set"
+          ],
+          "title": "Account/provider/credentials/setRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ProviderCredentialsSetParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Account/provider/credentials/setRequest",
       "type": "object"
     },
     {

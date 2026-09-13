@@ -15,6 +15,28 @@ use serde::Serialize;
 use std::collections::HashMap;
 use ts_rs::TS;
 
+/// Replaces a provider key in the running server only; null restores environment lookup.
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ProviderCredentialsSetParams {
+    pub provider: String,
+    pub api_key: Option<String>,
+}
+
+impl std::fmt::Debug for ProviderCredentialsSetParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderCredentialsSetParams")
+            .field("provider", &self.provider)
+            .field("api_key", &self.api_key.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[ts(export_to = "v2/")]
+pub struct ProviderCredentialsSetResponse {}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(tag = "type")]

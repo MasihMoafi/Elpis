@@ -1005,6 +1005,12 @@ client_request_definitions! {
         response: v2::WindowsSandboxReadinessResponse,
     },
 
+    ProviderCredentialsSet => "account/provider/credentials/set" {
+        params: v2::ProviderCredentialsSetParams,
+        serialization: global("account-auth"),
+        response: v2::ProviderCredentialsSetResponse,
+    },
+
     LoginAccount => "account/login/start" {
         params: v2::LoginAccountParams,
         inspect_params: true,

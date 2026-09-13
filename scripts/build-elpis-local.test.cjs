@@ -15,7 +15,7 @@ function runGuard(temperature, mode = 'check') {
     fs.copyFileSync(path.join(__dirname, 'build-elpis-local'), script);
     fs.writeFileSync(path.join(root, 'bin/rustc'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'bin/cargo'),
-      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\nsleep 1\n', { mode: 0o755 });
+      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\nprintf "%s" "$RUSTFLAGS" > "$ELPIS_GUARD_TEST_MARKER.flags"\nsleep 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'thermal/hwmon/hwmon0/temp1_input'), `${temperature}\n`);
     const marker = path.join(root, 'compiler-started');
     const result = spawnSync('timeout', ['4s', 'bash', script, mode], {
@@ -25,7 +25,7 @@ function runGuard(temperature, mode = 'check') {
         ELPIS_THERMAL_ROOT: `${root}/thermal`, ELPIS_TEMP_POLL_SECONDS: '0.1',
         ELPIS_GUARD_TEST_MARKER: marker },
     });
-    return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n') : [] };
+    return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n') : [], flags:fs.existsSync(`${marker}.flags`)?fs.readFileSync(`${marker}.flags`,'utf8').replaceAll(root,'FIXTURE'):'' };
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -57,4 +57,13 @@ test('TUI and config tests use separate Cargo feature graphs', () => {
     assert(result.args.includes('--no-run'));
     assert(result.args.includes('--offline'));
   }
+});
+
+test('schema export reuses optimized runtime compiler flags and packages',()=>{
+  const optimized=runGuard(50000,'optimized'),schema=runGuard(50000,'schema-build');
+  assert.equal(optimized.status,0,optimized.stdout+optimized.stderr);
+  assert.equal(schema.status,0,schema.stdout+schema.stderr);
+  assert.equal(schema.flags,optimized.flags);
+  assert.deepEqual(schema.args.slice(0,optimized.args.length),optimized.args);
+  assert(schema.args.includes('write_schema_fixtures'));
 });

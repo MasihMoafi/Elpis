@@ -332,6 +332,8 @@ export type { ProcessExitedNotification } from "./ProcessExitedNotification";
 export type { ProcessOutputDeltaNotification } from "./ProcessOutputDeltaNotification";
 export type { ProcessOutputStream } from "./ProcessOutputStream";
 export type { ProcessTerminalSize } from "./ProcessTerminalSize";
+export type { ProviderCredentialsSetParams } from "./ProviderCredentialsSetParams";
+export type { ProviderCredentialsSetResponse } from "./ProviderCredentialsSetResponse";
 export type { RateLimitReachedType } from "./RateLimitReachedType";
 export type { RateLimitResetCredit } from "./RateLimitResetCredit";
 export type { RateLimitResetCreditStatus } from "./RateLimitResetCreditStatus";

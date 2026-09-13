@@ -19,6 +19,8 @@ test('Codex account is opt-in, transient, refreshable, and never silently switch
     assert.equal(calls.pop().result.accessToken,'refreshed-token');
     await refreshAccount(rpc,{id:2,method:'account/chatgptAuthTokens/refresh',params:{previousAccountId:'account-b'}},options);
     assert.match(calls.pop().error.message,/account changed/);
-    await connectAccount(rpc,{...options,env:{OPENAI_API_KEY:'explicit-key'}});assert.equal(calls.length,0);
+    await connectAccount(rpc,{...options,env:{OPENAI_API_KEY:'explicit-key'}});
+    assert.deepEqual(calls.pop(),{method:'account/provider/credentials/set',params:{provider:'openai',apiKey:'explicit-key'}});
+    assert.equal(calls.length,0);
   }finally{await fs.rm(home,{recursive:true,force:true});}
 });

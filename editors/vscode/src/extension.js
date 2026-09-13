@@ -265,14 +265,19 @@ function activate(context) {
           await resetSession();
         }
         if (message.type === 'key') {
+          if(session.busy)throw new Error('Finish or stop the response before changing authentication.');
           const provider = selectedProvider(config().get('provider', ''));
           if (!provider.key) throw new Error('Select an explicit provider first. Existing Elpis configuration uses its current authentication.');
           const value = await vscode.window.showInputBox({ title: `${provider.label} API key`, password: true, ignoreFocusOut: true, prompt: 'Stored in VS Code SecretStorage. Leave empty to remove the stored override and use runtime authentication.' });
           if (value === undefined) return;
+          await session.connect();
+          if(session.busy)throw new Error('Finish or stop the response before changing authentication.');
+          await session.rpc.request('account/provider/credentials/set',{provider:provider.id,apiKey:value.trim() || null});
           if (value.trim()) await context.secrets.store(`elpis.apiKey.${provider.id}`, value.trim());
           else await context.secrets.delete(`elpis.apiKey.${provider.id}`);
-          await resetSession();
-          post({ type: 'status', text: 'Authentication updated. Send a message to connect.' });
+          session.options.env=value.trim()?{[provider.key]:value.trim()}:{};
+          if(!value.trim())await require('./account-source').connectAccount(session.rpc,session.options);
+          post({ type: 'status', text: 'Authentication updated for this shared runtime.' });
         }
         if (message.type === 'runtime') {
           const files = await vscode.window.showOpenDialog({ title: 'Select the Elpis-built app-server executable', canSelectFiles: true, canSelectFolders: false, canSelectMany: false });

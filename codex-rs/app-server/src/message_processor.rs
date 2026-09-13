@@ -1319,6 +1319,11 @@ impl MessageProcessor {
                     .windows_sandbox_setup_start(&request_id, params)
                     .await
             }
+            ClientRequest::ProviderCredentialsSet { params, .. } => {
+                self.account_processor
+                    .set_provider_credentials(params)
+                    .await
+            }
             ClientRequest::LoginAccount { params, .. } => {
                 self.account_processor
                     .login_account(request_id.clone(), params)

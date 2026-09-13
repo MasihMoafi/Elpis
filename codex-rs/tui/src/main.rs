@@ -197,7 +197,10 @@ fn resolve_elpis_home() -> anyhow::Result<PathBuf> {
 }
 
 fn existing_codex_auth_home() -> anyhow::Result<PathBuf> {
-    if let Some(value) = std::env::var_os("CODEX_HOME").filter(|value| !value.is_empty()) {
+    if let Some(value) = ["CODEX_AUTH_HOME", "CODEX_HOME"]
+        .into_iter()
+        .find_map(|key| std::env::var_os(key).filter(|value| !value.is_empty()))
+    {
         let path = PathBuf::from(value);
         return Ok(if path.is_absolute() {
             path
