@@ -28,6 +28,10 @@
 - Use daisyUI components and semantic theme colors first, Tailwind utilities second, and custom CSS only when neither can express the required design.
 - This rule applies to every HTML or JSX edit in this project unless Masih explicitly overrides it.
 
+## Contrast
+
+- Keep text readable against its actual background in both light and dark themes: no dark-on-dark or light-on-light text. Check secondary labels and animated highlights as well as primary text, including the TUI footer and ledgers.
+
 ## Definition of Done
 
 - **Masih is the sole arbiter of truth.** CI, compilation, tests, and agent claims are evidence, not functional acceptance.

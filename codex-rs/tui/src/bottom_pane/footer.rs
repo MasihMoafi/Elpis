@@ -785,8 +785,14 @@ pub(crate) fn passive_footer_status_line(props: &FooterProps) -> Option<Line<'st
     }
 
     if let Some(approval_mode_label) = props.approval_mode_label.as_ref() {
-        let spans =
-            crate::elpis_motion::animated_text(approval_mode_label, props.animations_enabled);
+        let spans = if crate::terminal_palette::default_bg().is_some_and(crate::color::is_light) {
+            vec![Span::styled(
+                approval_mode_label.clone(),
+                crate::elpis_motion::accent_style(),
+            )]
+        } else {
+            crate::elpis_motion::animated_text(approval_mode_label, props.animations_enabled)
+        };
         if let Some(existing) = line.as_mut() {
             existing.spans.push(" · ".dim());
             existing.spans.extend(spans);
@@ -2066,6 +2072,101 @@ mod tests {
             screen.contains('…'),
             "status line should be truncated with ellipsis to keep mode indicator"
         );
+    }
+
+    #[test]
+    fn colored_footer_labels_remain_readable_in_both_themes() {
+        for (fg, bg) in [
+            ((41, 42, 39), (245, 243, 237)),
+            ((222, 222, 219), (17, 18, 20)),
+        ] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors { fg, bg },
+                || {
+                    let props = FooterProps {
+                        animations_enabled: true,
+                        mode: FooterMode::ComposerEmpty,
+                        esc_backtrack_hint: false,
+                        use_shift_enter_hint: false,
+                        is_task_running: false,
+                        queue_submissions: false,
+                        collaboration_modes_enabled: false,
+                        is_wsl: false,
+                        quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
+                        status_line_value: None,
+                        status_line_enabled: false,
+                        key_hints: FooterKeyHints::default_bindings(),
+                        active_agent_label: None,
+                        approval_mode_label: Some("Full Access".into()),
+                    };
+                    let mut lines =
+                        vec![passive_footer_status_line(&props).expect("approval label")];
+                    for mode in [
+                        CollaborationModeIndicator::Plan,
+                        CollaborationModeIndicator::PairProgramming,
+                    ] {
+                        lines.push(left_side_line(
+                            Some(mode),
+                            LeftSideState {
+                                hint: SummaryHintKind::QueueMessage,
+                                show_cycle_hint: false,
+                            },
+                            FooterKeyHints::default_bindings(),
+                        ));
+                    }
+                    for goal in [
+                        GoalStatusIndicator::Active { usage: None },
+                        GoalStatusIndicator::Paused,
+                        GoalStatusIndicator::Blocked,
+                        GoalStatusIndicator::UsageLimited,
+                        GoalStatusIndicator::BudgetLimited { usage: None },
+                        GoalStatusIndicator::Complete { usage: None },
+                    ] {
+                        lines.push(goal_status_indicator_line(Some(&goal)).expect("goal label"));
+                    }
+                    let area = Rect::new(0, 0, 100, lines.len() as u16);
+                    let mut buffer = Buffer::empty(area);
+                    for (y, line) in lines.into_iter().enumerate() {
+                        render_footer_line(
+                            Rect::new(0, y as u16, area.width, 1),
+                            &mut buffer,
+                            line,
+                        );
+                    }
+                    let luminance = |(r, g, b): (u8, u8, u8)| {
+                        let linear = |v: u8| {
+                            let v = f64::from(v) / 255.0;
+                            if v <= 0.04045 {
+                                v / 12.92
+                            } else {
+                                ((v + 0.055) / 1.055).powf(2.4)
+                            }
+                        };
+                        0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+                    };
+                    let background = luminance(bg);
+                    for cell in buffer
+                        .content()
+                        .iter()
+                        .filter(|cell| !cell.symbol().trim().is_empty())
+                    {
+                        let (r, g, b) = match cell.fg {
+                            ratatui::style::Color::Rgb(r, g, b) => (r, g, b),
+                            ratatui::style::Color::Reset => continue,
+                            other => panic!("unexpected foreground: {other:?}"),
+                        };
+                        let foreground = luminance((r, g, b));
+                        let contrast = (foreground.max(background) + 0.05)
+                            / (foreground.min(background) + 0.05);
+                        assert!(
+                            contrast >= 4.5,
+                            "unreadable {:?}: {contrast}",
+                            cell.symbol()
+                        );
+                    }
+                },
+            );
+        }
     }
 
     #[test]
