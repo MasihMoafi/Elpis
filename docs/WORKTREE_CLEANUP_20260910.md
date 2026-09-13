@@ -1,5 +1,31 @@
 # Worktree cleanup — 2026-09-10
 
+## September 14 targeted preservation review
+
+At `e236dcf5`, one main worktree remains. The additional
+`context-live-model-20260905` candidate (`3a44e6e4`, also represented by
+`0386c6b3`) is already present in the recovered source: context snapshots use
+`self.model_display_name()` rather than the initial configured model. All three
+archived `context_model_label_*` regressions are present in current source. Two
+expected labels were subsequently corrected from `one full-window scale` to
+`capacity unknown` when there is no measurement; the third body is unchanged.
+They cover switching before the first request, no switch with unknown usage,
+and switching while retaining an existing measurement.
+
+Those three checks pass in the retained September 13 TUI test executable
+`codex_tui-d9c0df61a72c641b`; output is
+`.tmp/final-candidate/recovered-model-label-tests.log`. This is a rerun of an
+existing executable, not a fresh build of current HEAD or native UI acceptance.
+The current install was built afterward with the same model-label selection.
+No old patch was reapplied and no checkout was created.
+
+The authority/edge/rollback work and optional pruning-effort override listed below
+remain preserved but unintegrated. Current shared CLI/IDE startup and single-editor
+tool ownership are separate, newer implemented behavior; absent archived helper
+names do not establish that those newer features are missing. Website alternatives
+and research artifacts remain separate from the installed CLI. The audit still
+does not prove integration of every original dirty working-copy change.
+
 ## September 12 source coverage follow-up
 
 At `59964954`, one worktree remains. This supersedes the historical two-tree
