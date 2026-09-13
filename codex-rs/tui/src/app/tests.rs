@@ -10,6 +10,7 @@ mod rate_limits;
 mod safety_buffering;
 mod session_summary;
 mod startup;
+mod subagent_visibility;
 
 use super::*;
 use crate::app_backtrack::BacktrackSelection;

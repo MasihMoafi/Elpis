@@ -256,6 +256,32 @@ elpis resume 01a08a44-2bba-7213-bce0-4a7e5f0423aa
 
 ## Live latency and optimizer overhead recovered from activity data
 
+### September 13 runtime and subagent visibility follow-up
+
+A read-only `/proc` audit found both live Elpis processes (9755 and 21093) still
+mapped to the older CLI SHA256
+`c2ff33c9fbb41ddae246ca01b4253a86aaa95528ffefc2a126274b7b7b7c4681`.
+The installed command is `6d630f77…`, documented in `docs/context.md`. Replacing
+the command does not update a running process; these sessions have not acquired
+the new Luna saver, Usage routing or scroll-up fix. No process was stopped.
+
+The focused `canonical_subagent_activity_reaches_history_and_navigation` test
+passed on the current source. It feeds completed canonical Started, Interacted
+and Interrupted events through the app's thread-event handling, checks exactly
+one rendered history entry with the agent path, verifies running-state changes,
+and checks the primary navigation label without requiring primary metadata.
+Evidence: `.tmp/final-candidate/subagent-visibility-test.log`. This is simulated
+protocol evidence, not a live delegated-agent acceptance run. No subagent or
+model request was launched. This change adds a regression test only; the installed
+runtime already contains the exercised behavior.
+
+The September 13 scroll requirement supersedes the earlier native swipe test's
+assertion that wheel-up must never open history. Wheel-up now intentionally opens
+scrollable history. The relevant regression is accidental message editing or
+interruption, not the presence of a history view.
+
+### Retained live measurements
+
 A read-only request to the running conversation's localhost dashboard recovered
 existing scalar measurements; no logging policy or runtime code was changed.
 Rollouts omit `TurnProfile` deliberately, but `turn/activityUpdated` feeds the
