@@ -13,19 +13,23 @@ class AppServer extends EventEmitter {
       cwd, env: options.env || process.env, stdio: ['pipe', 'pipe', 'pipe'], shell: false,
     });
     this.lines = readline.createInterface({ input: this.child.stdout });
-    this.lines.on('line', line => {
-      let message;
-      try { message = JSON.parse(line); } catch { return this.fail(new Error('Invalid JSON from Elpis app-server')); }
-      if (message.method) this.emit(message.id === undefined ? 'notification' : 'request', message);
-      else {
-        const waiter = this.pending.get(message.id);
-        if (!waiter) return;
-        this.pending.delete(message.id);
-        clearTimeout(waiter.timer);
-        if (message.error) waiter.reject(new Error(message.error.message));
-        else waiter.resolve(message.result);
+    const readMessages = async () => {
+      // Let response waiters restore session state before the next wire event.
+      for await (const line of this.lines) {
+        let message;
+        try { message = JSON.parse(line); } catch { return this.fail(new Error('Invalid JSON from Elpis app-server')); }
+        if (message.method) this.emit(message.id === undefined ? 'notification' : 'request', message);
+        else {
+          const waiter = this.pending.get(message.id);
+          if (!waiter) continue;
+          this.pending.delete(message.id);
+          clearTimeout(waiter.timer);
+          if (message.error) waiter.reject(new Error(message.error.message));
+          else waiter.resolve(message.result);
+        }
       }
-    });
+    };
+    void readMessages().catch(error=>this.fail(error));
     // Runtime stderr can contain private paths or tool data. Do not echo it into chat.
     this.child.stderr.on('data', () => {});
     this.child.stdin.on('error', error => this.fail(error));

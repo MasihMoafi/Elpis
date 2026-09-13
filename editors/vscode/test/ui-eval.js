@@ -59,6 +59,7 @@ async function uiEvaluation({ vscode, root, document, sentinel, evidence, eventu
       await frame.locator('#send').click();
       await eventually(async()=>(await frame.locator('#messages').textContent()).includes('CLI_TO_IDE_EDITOR_CONFIRMED'),'CLI handoff has working IDE tools');
       await eventually(async()=>(await frame.locator('#status').textContent()).includes('completed'),'CLI handoff completes');
+      assert.equal((await frame.locator('#messages').textContent()).split('Read the live unsaved editor buffer after resuming this CLI chat.').length-1,1,'one submitted message appears once');
       const thread=await require('../src/history').readHistory(root.fsPath,{home,executable:process.env.ELPIS_EDITOR_TEST_RUNTIME},id);
       assert(JSON.stringify(thread).includes('CLI_IDE_CONTEXT_CONFIRMED'));
       assert(JSON.stringify(thread).includes('CLI_TO_IDE_EDITOR_CONFIRMED'));

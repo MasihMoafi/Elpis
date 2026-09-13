@@ -179,11 +179,20 @@ function activate(context) {
           try {
           const thread = await readHistory(root.uri.fsPath, await connectionOptions(), message.threadId);
           const resumed = await createSession(thread.id);
+          const buffered=[];
+          const listeners=['user','delta','status','failure','busy','queue','notification','toolResult','disconnected'].map(event=>{
+            const listener=payload=>buffered.push([event,payload]);resumed.on(event,listener);return [event,listener];
+          });
           let connected;
           try { connected = await resumed.connect(); } catch(error) { resumed.dispose(); throw error; }
+          finally {for(const [event,listener] of listeners)resumed.off(event,listener);}
           session.dispose(); session=resumed;
           post({type:'reset'});post({type:'transcript',messages:transcript(connected.thread)});selection();
           post({type:'status',text:'Conversation resumed'});
+          for(const [event,payload] of buffered){
+            if(event==='status'&&payload===resumed.identity)continue;
+            resumed.emit(event,payload);
+          }
           } finally { resuming=false;post({type:'busy',busy:session.busy}); }
         }
         if (message.type === 'prune') {

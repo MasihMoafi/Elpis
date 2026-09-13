@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {Session}=require('../src/session');
-const {Provider,message}=require('./runtime-eval');
+const {Provider,message,call}=require('./runtime-eval');
 const {listHistory,readHistory,changeHistory}=require('../src/history');
 test('IDE discovers a CLI-origin thread and resumes its transcript under the same ID',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-cli-history-')),home=path.join(root,'home');await fs.mkdir(home);
@@ -22,19 +22,22 @@ test('IDE discovers a CLI-origin thread and resumes its transcript under the sam
     const id=cli.threadId;cli.dispose();
     assert.equal((await readHistory(root,options,id)).source,'cli');
     assert((await listHistory(root,options)).threads.some(t=>t.id===id),'IDE hid the CLI conversation');
-    ide=new Session(root,{cancel(){}},{...options,resumeThreadId:id});
+    ide=new Session(root,{cancel(){},async execute(){return {documents:[]};}},{...options,resumeThreadId:id});
     await ide.connect();assert.equal(ide.threadId,id);
     assert.equal(ide.hasTurns,true,'resumed history must survive connection-setting changes');
     await assert.rejects(ide.rpc.request('thread/resume',{threadId:id,dynamicTools:[{type:'unknown',name:'editor_read'}]}),/invalid/i);
     await assert.rejects(ide.rpc.request('thread/resume',{threadId:id,dynamicTools:[{name:'different_tool',description:'Different capability',inputSchema:{type:'object',properties:{}}}]}),/cannot replace dynamic tools/);
+    const users=[];ide.on('user',text=>users.push(text));
+    provider.actions.push(call('resume_echo','editor_documents',{}));
     await send(ide,'IDE continuation sentinel','IDE_RESPONSE_SENTINEL');
+    assert.deepEqual(users,['IDE continuation sentinel'],'tool continuation must not repeat the user message');
     assert(JSON.stringify(provider.requests.at(-1).body).includes('CLI_RESPONSE_SENTINEL'),'IDE continuation lost CLI history');
     assert(JSON.stringify(provider.requests.at(-1).body.tools).includes('editor_read'),'resumed CLI conversation has no live editor tools');
     ide.dispose();
     const thread=await readHistory(root,options,id);
     assert(JSON.stringify(thread).includes('CLI_RESPONSE_SENTINEL'));
     assert(JSON.stringify(thread).includes('IDE_RESPONSE_SENTINEL'));
-    assert.equal(provider.requests.length,2);
+    assert.equal(provider.requests.length,3);
   }finally{cli.dispose();ide?.dispose();await provider.close();await fs.rm(root,{recursive:true,force:true});}
 });
 test('real history renames, archives and restores; foreign-workspace changes are rejected',async()=>{

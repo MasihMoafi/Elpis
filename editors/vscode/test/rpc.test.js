@@ -5,6 +5,27 @@ const { AppServer } = require('../src/rpc');
 const { Session } = require('../src/session');
 const { providers, runtimeOptions } = require('../src/providers');
 
+test('resume response and following events in one read preserve text and completed state', async () => {
+  const fixture=`require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
+    const m=JSON.parse(line);if(m.id===undefined)return;
+    if(m.method!=='thread/resume')return console.log(JSON.stringify({id:m.id,result:{}}));
+    const events=[
+      {id:m.id,result:{thread:{id:'shared',turns:[{id:'active',status:'inProgress',items:[{id:'reply',type:'agentMessage',text:'prefix'}]}]},model:'test'}},
+      {method:'item/agentMessage/delta',params:{threadId:'foreign',itemId:'other',delta:'WRONG'}},
+      {method:'item/agentMessage/delta',params:{threadId:'shared',itemId:'reply',delta:' tail'}},
+      {method:'item/completed',params:{threadId:'shared',item:{id:'reply',type:'agentMessage',text:'prefix tail'}}},
+      {method:'turn/completed',params:{threadId:'shared',turn:{id:'active',status:'completed'}}}
+    ];process.stdout.write(events.map(event=>JSON.stringify(event)).join('\\n')+'\\n');
+  });`;
+  const session=new Session(process.cwd(),{cancel(){}},{executable:process.execPath,resumeThreadId:'shared',transport:{args:['-e',fixture]}});
+  let text='',completed=0;session.on('delta',delta=>text+=delta);session.on('completed',()=>completed++);
+  try {
+    await session.connect();await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(text,' tail','post-snapshot events were dropped or duplicated');
+    assert.equal(completed,1);assert.equal(session.busy,false);assert.equal(session.turnId,null);
+  }finally{session.dispose();}
+});
+
 test('history only lists and reads chats from this workspace', async () => {
   const {listHistory,readHistory,transcript}=require('../src/history');
   const root=process.cwd();

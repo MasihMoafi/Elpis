@@ -1,4 +1,13 @@
-# Extension 0.1.21 candidate — September 13, 2026
+# Local candidate 0.1.22
+
+Resuming a conversation now preserves text and completion events arriving during
+attachment. The saved transcript appears before the live continuation. Shared
+runtime observers also track external turns and user messages, including attaching
+mid-response and interrupting the turn. Fifty-one extension checks cover these paths
+and the existing behavior. Automatic live CLI/IDE connection and editor-tool
+ownership remain unfinished; this version does not claim simultaneous live sync.
+
+## Extension 0.1.21 candidate — September 13, 2026
 
 History now includes CLI conversations for the current project and Elpis home,
 across providers. Resuming keeps the conversation ID, displays the fresh resumed
