@@ -1,11 +1,24 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
-const net=require('node:net');
 const {spawn}=require('node:child_process');
+const {execFile}=require('node:child_process');
+const {promisify}=require('node:util');
 const {once}=require('node:events');
 const {Session}=require('../src/session');
 const {Provider,message}=require('./runtime-eval');
+
+test('local connection rejects an incompatible socket and conflicting server options',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-connect-'));
+  const socket=path.join(root,'incompatible.sock');
+  const server=require('node:net').createServer(peer=>{peer.resume();peer.end('not a WebSocket server\n');});
+  const executable=process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server');
+  try {
+    server.listen(socket);await once(server,'listening');
+    await assert.rejects(promisify(execFile)(executable,['--connect',socket],{timeout:10000}),/could not connect to the local app-server/);
+    await assert.rejects(promisify(execFile)(executable,['--connect',socket,'--listen','off'],{timeout:10000}),/cannot be used with/);
+  }finally{await new Promise(resolve=>server.close(resolve));await fs.rm(root,{recursive:true,force:true});}
+});
 
 async function until(predicate) {
   const deadline=Date.now()+10000;
@@ -20,24 +33,17 @@ test('two clients observe the same running turn and the observer can interrupt i
   await fs.mkdir(home);
   const provider=new Provider();await provider.start();
   await fs.writeFile(path.join(home,'config.toml'),`model="gpt-5.4"\nmodel_provider="shared_eval"\n[model_providers.shared_eval]\nname="Shared eval"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
-  const reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');
-  const port=reservation.address().port;await new Promise(resolve=>reservation.close(resolve));
-  const endpoint=`ws://127.0.0.1:${port}`;
-  const server=spawn(process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server'),['--listen',endpoint,'--session-source','cli'],{cwd:root,env:{...process.env,ELPIS_HOME:home,CODEX_HOME:home},stdio:'ignore'});
-  const transport={args:['-e',`
-    const socket=new WebSocket(${JSON.stringify(endpoint)});
-    const lines=require('node:readline').createInterface({input:process.stdin});
-    const pending=[];let ready=false;
-    lines.on('line',line=>ready?socket.send(line):pending.push(line));
-    socket.onopen=()=>{ready=true;for(const line of pending)socket.send(line);};
-    socket.onmessage=event=>process.stdout.write(event.data+'\\n');
-    socket.onerror=()=>process.exit(1);socket.onclose=()=>process.exit(0);
-  `]};
-  const options={home,executable:process.execPath,transport};
+  const socket=path.join(home,'server.sock');
+  const executable=process.env.ELPIS_EDITOR_TEST_RUNTIME || path.join(__dirname,'../bin/elpis-app-server');
+  const env={...process.env,ELPIS_HOME:home,CODEX_HOME:home};
+  const server=spawn(executable,['--listen',`unix://${socket}`,'--session-source','cli'],{cwd:root,env,stdio:'ignore'});
+  const options={home,executable,transport:{args:['--connect',socket],env}};
   const owner=new Session(root,{cancel(){}},options);let observer,lateObserver,unrelated;
   try {
-    let ready=false;
-    await until(()=>{if(!ready){const probe=net.connect(port,'127.0.0.1');probe.on('connect',()=>{ready=true;probe.destroy();});probe.on('error',()=>{});}return ready;});
+    await until(()=>require('node:fs').existsSync(socket));
+    const missing=new Session(root,{cancel(){}},{...options,transport:{args:['--connect',path.join(home,'missing.sock')],env}});
+    try {await assert.rejects(missing.connect(),/disconnected/);}finally{missing.dispose();}
+    assert.equal(require('node:fs').existsSync(path.join(home,'missing.sock')),false);
     await owner.connect();
     provider.actions.push(message('INITIAL_REPLY'));
     await Promise.all([once(owner,'completed',{signal:AbortSignal.timeout(10000)}),owner.send('Initialize shared history')]);
@@ -64,6 +70,7 @@ test('two clients observe the same running turn and the observer can interrupt i
     await Promise.all([once(observer,'completed',{signal:AbortSignal.timeout(10000)}),observer.send('IDE follow-up')]);
     assert.deepEqual(ownMessages,['IDE follow-up'],'local send must not echo twice');
     assert.equal(provider.requests.length,3);
+    owner.dispose();
     unrelated=new Session(root,{cancel(){}},options);
     provider.actions.push(message('OTHER_THREAD_REPLY'));
     await Promise.all([once(unrelated,'completed',{signal:AbortSignal.timeout(10000)}),unrelated.send('Other conversation')]);

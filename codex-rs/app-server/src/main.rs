@@ -12,6 +12,8 @@ use codex_protocol::protocol::SessionSource;
 use codex_utils_cli::CliConfigOverrides;
 use std::path::PathBuf;
 
+mod local_connection;
+
 // Debug-only test hook: lets integration tests point the server at a temporary
 // managed config file without writing to /etc.
 const MANAGED_CONFIG_PATH_ENV_VAR: &str = "CODEX_APP_SERVER_MANAGED_CONFIG_PATH";
@@ -20,6 +22,9 @@ const DISABLE_MANAGED_CONFIG_ENV_VAR: &str = "CODEX_APP_SERVER_DISABLE_MANAGED_C
 #[derive(Debug, Parser)]
 #[command(version)]
 struct AppServerArgs {
+    /// Connect this JSON-lines client to an existing local app-server socket.
+    #[arg(long, value_name = "SOCKET", conflicts_with_all = ["listen", "strict_config", "remote_control"])]
+    connect: Option<PathBuf>,
     #[command(flatten)]
     config_overrides: CliConfigOverrides,
 
@@ -63,6 +68,7 @@ fn main() -> anyhow::Result<()> {
     let remote_control_disabled = codex_app_server::take_remote_control_disabled_env();
     arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
         let AppServerArgs {
+            connect,
             config_overrides,
             listen,
             session_source,
@@ -72,6 +78,13 @@ fn main() -> anyhow::Result<()> {
             disable_plugin_startup_tasks_for_tests,
             remote_control,
         } = AppServerArgs::parse();
+        if let Some(socket_path) = connect {
+            anyhow::ensure!(
+                config_overrides.raw_overrides.is_empty(),
+                "--connect cannot change the running server's launch configuration"
+            );
+            return local_connection::run(&socket_path).await;
+        }
         let loader_overrides = if disable_managed_config_from_debug_env() {
             LoaderOverrides::without_managed_config_for_tests()
         } else {
