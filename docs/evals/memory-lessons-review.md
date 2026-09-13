@@ -82,3 +82,30 @@ guidance; the one-call replay still recommended Copper Orchard's command for
 Silver Meadow despite the guidance reaching the actual request. Scope remains
 failed; no further inference retries were run. This
 result establishes neither reliable project scoping nor general coding benefit.
+
+## Storage boundary review, September 13
+
+Read-only follow-up confirmed that saving and admission both use the shared
+`memories/MEMORY.md`. A workspace context directory already exists for ES/GOAL.
+The smallest proposed storage correction is to save automatic project lessons
+there, separately from explicitly reviewed global preferences. This is a proposal,
+not an installed change or a solution to the failed same-directory probe.
+
+Preserve the existing mixed memory file unchanged. Do not infer its scopes with
+regexes, relabel all its contents as global, or silently copy it into each workspace.
+If retained as an explicitly admitted legacy source, disclose that it can still
+bring another project's lessons into context.
+
+Before installation, require these controls:
+
+- [ ] A saved workspace A lesson reaches a fresh A request and is absent from B's
+  actual outgoing context, with ES excluded in both controls.
+- [ ] An explicitly approved global preference reaches both A and B.
+- [ ] Withdrawal removes each source; correction replaces obsolete content.
+- [ ] Legacy notes and concurrent manual edits survive migration unchanged.
+- [ ] Ledger rows accurately identify the admitted source and scope.
+- [ ] Re-run the original same-directory unrelated-project probe separately;
+  directory isolation must not be substituted for this semantic test.
+
+Global promotion policy and explicit project selection need a coherent user flow.
+Avoid adding hidden classification calls or another prompt-only scope claim.

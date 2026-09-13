@@ -1,6 +1,8 @@
 # Elpis Context Sovereignty
 
-Elpis enforces **Context Sovereignty**: the principle that context is a strictly budgeted working set, not a dumped chat transcript. The user maintains live visibility and explicit control over every byte admitted to the agent's context window.
+Elpis exposes controls for admitting project notes and continuity files, pruning
+tool output, and compacting conversation history. The Context Ledger shows these
+sources and their budgets; it is not a complete inspector of every provider-request byte.
 ---
 
 ![Elpis context control pipeline](assets/elpis-context-control.svg)
@@ -108,6 +110,18 @@ You do not have to go looking for these: `prune_report.md` renders `ace.json` an
 
 The memory loop has three human-readable files and one admission control. It does
 not require an embedding service, vector database, or autonomous memory agent.
+
+In plain terms: **GOAL says what to achieve; ES says where work stands; MEMORY
+says what should help next time.** Luna proposes shorter notes after a response
+and before compaction. Elpis validates their format and saves them. The Ledger
+then decides whether later requests receive them. Format validation cannot prove
+that a lesson is true or that the model will apply it to the correct project.
+
+For example, “use Luna for saving” is a reusable preference; “this project's
+generic test skips parser fixtures” is a project lesson; “the build is running”
+is temporary ES state. A verified correction should replace the obsolete lesson.
+An agent's untested guess should not become a fact. These are the saving policy,
+not guarantees established by the current implementation.
 
 ```mermaid
 flowchart LR
