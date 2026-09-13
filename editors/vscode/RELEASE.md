@@ -1,4 +1,11 @@
-# Local candidate 0.1.23
+# Local candidate 0.1.24
+
+The bundled memory saver rejects unsupported UUID-based evidence citations before
+overwriting notes. This preserves memory, checkpoint and provenance when a model
+alters a source identifier. It does not establish reliable fact selection or
+project scoping; those remain open. See `../../docs/evals/memory-lessons-review.md`.
+
+## Local candidate 0.1.23
 
 Ordinary Unix CLI and IDE launches now share a runtime. IDE History can attach to
 the CLI conversation while it remains open, show its active response, interrupt

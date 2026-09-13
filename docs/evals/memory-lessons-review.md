@@ -166,3 +166,70 @@ Further prompt-only tuning on this passing fixture would provide weak evidence;
 the next retention reproduction needs the original full consolidation input or a
 new captured failure, while project isolation remains a separate implementation
 task.
+
+## Captured ordinary-session failure, September 14
+
+The installed 0.1.23 runtime passes the isolated persistence controls again
+(`.tmp/final-candidate/installed-shared-memory-runtime.log`). This does not prove
+semantic selection. The actual latest save receipt, `3568eeff-1485-409f-af32-11132b7de03e`,
+added installed versions and test totals to MEMORY. It also reported a TASKS edit
+as failed in ES, although both the failed attempt (evidence112) and later successful
+retry (evidence114/115) were present. This is a model consolidation error, not proof
+that the successful tool result was missing from its input.
+
+One Luna-low replay used that exact receipt's input and the previously proposed
+retention paragraph from the comparison above. It requested the same strict
+two-string output shape, exposed no tools, and had a hard one-request gate with no
+fallback. Original notes were not modified. The recorded original response is the
+baseline; it was not regenerated, so this is not a replicated paired evaluation.
+Driver and raw output remain in `.tmp/final-candidate/memory-lessons-live.cjs` and
+`memory-retention-captured-result.json` (captured-receipt mode).
+
+The revision omitted the new installation-status bullet and the stale failed-patch
+task, but retained older release/test-status bullets and corrupted an existing
+evidence ID. It therefore fails the intended retention/provenance outcome. The
+prompt revision was **not applied**. It used 25,337 reported tokens (23,773 input,
+1,564 output), taking 38.113s. The original recorded save used 25,420 tokens and
+33.917s in its request phase. These observations establish neither lower cost nor
+lower latency. The last three real receipt request phases took 26.947s, 27.454s,
+and 33.917s; enabled pre-compaction saving can add such a wait before compaction.
+
+The malformed citation exposed a separate deterministic persistence defect:
+unsupported UUID-based references were accepted and could become credible-looking
+numeric references. The installed runtime fails the new adversarial check in
+`scripts/memory-runtime.test.cjs` (`memory-citation-integrity-before.log`): an
+invented source changes saved `[1]` to `[2]`. The candidate checks new UUID-like
+citations against supplied evidence, previous notes, or retained provenance before
+writing either file. It also recognizes the damaged UUID form from the real replay.
+This does not validate a cited claim, classify project scope, or prove that a
+model-selected lesson is useful. Candidate build/verification results follow.
+
+The optimized candidate passed in 232.701s, peaking at 71°C. The first build was
+stopped after read-only review found undashed UUIDs could bypass the initial guard;
+validation and shortening now share one parser. Runtime checks pass for fabricated
+canonical, undashed and braced IDs, the captured malformed ID, and checkpoint
+citations, preserving both notes, provenance and receipt count. Existing save,
+restart, concurrent-edit and disabled controls also pass. The stripped packaged
+runtime passes the same checks. Logs: `memory-citation-integrity-after-retry.log`,
+`memory-guard-packaged-runtime-retry.log`. All 55 extension checks pass without
+skips (`memory-guard-editor-regression.log`); these checks use a localhost fixture.
+Formatting and diff checks pass. Full Rust unit suites and native VS Code visual
+checks were not rerun for this persistence-only change.
+
+Two harness invocation errors were corrected: a relative executable path was
+resolved against the test workspace, and Python ZIP extraction omitted executable
+permissions. The harness now resolves its binary argument; extracted permissions
+were restored from the VSIX metadata, which correctly records mode0755. Neither
+failed invocation was counted as a successful runtime check.
+
+### Observed saver overhead
+
+A read-only accounting of the 19 retained Elpis-workspace receipts found 19
+committed saves and 489,841 reported tokens: 465,739 input and 24,102 output, with
+zero reported cached input tokens. All 19 receipts include usage; ten include
+phase timings, totalling 247.728s in model-request time. This excludes rejected or
+timed-out calls without receipts and separately run evaluations, including the
+25,337-token replay above. It is not total account spend or a measurement of memory
+benefit. Raw aggregate: `.tmp/final-candidate/memory-receipt-accounting-20260914.json`.
+The current full-tail consolidation cost needs evaluation alongside recall quality;
+using a cheap model alone does not establish an efficient memory system.

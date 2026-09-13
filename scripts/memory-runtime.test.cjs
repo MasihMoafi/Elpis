@@ -12,7 +12,7 @@ const cwd = path.join(root, "project");
 const workspace = path.join(home, "context/workspaces",
   "project-" + crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 12));
 const memoryFile = path.join(home, "memories/MEMORY.md");
-const sourceId = "01a08a44-2bba-7213-bce0-4a7e5f0423aa:01a09a84-d7e2-7f03-bee4-0a9b3ea4c785:565";
+let sourceId;
 const checkpointFile = path.join(workspace, "ES.md");
 const settingsFile = path.join(workspace, "memory-autosave.json");
 for (const directory of [cwd, workspace, path.dirname(memoryFile)]) {
@@ -25,6 +25,8 @@ fs.writeFileSync(path.join(workspace, "GOAL.md"), "# Goal\nVerify the Cedar rele
 let rpc;
 let luna = 0;
 let malformed = false;
+let alteredCitation = null;
+let alteredCheckpointCitation = null;
 let editDuringSave = false;
 let holdMemory = false;
 let memoryReached;
@@ -50,6 +52,11 @@ const server = http.createServer(async (request, response) => {
     assert.equal(body.text?.format?.type, "json_schema", "memory call omitted its schema");
     assert.equal(body.text.format.strict, true, "memory schema was not strict");
     assert.deepEqual(body.text.format.schema.required, ["checkpoint", "memory"]);
+    const consolidation = body.input.flatMap(item => item.content || [])
+      .map(item => item.text).filter(text => text?.startsWith("{"))
+      .map(text => JSON.parse(text)).find(input => Array.isArray(input.evidence));
+    assert(consolidation, "memory call omitted its evidence");
+    sourceId ||= consolidation.evidence[0].id;
     if (holdMemory) {
       await new Promise(resolve => {
         releaseMemory = resolve;
@@ -58,8 +65,8 @@ const server = http.createServer(async (request, response) => {
     }
     if (editDuringSave) fs.writeFileSync(memoryFile, "Manual correction: Cedar port 7713.");
     text = malformed ? "INVALID JSON" : JSON.stringify({
-      checkpoint: "- [ ] Verify Cedar release [u1].",
-      memory: `- Project Cedar uses port 5823; user prefers Celsius [${sourceId}].`,
+      checkpoint: `- [ ] Verify Cedar release [${alteredCheckpointCitation || sourceId}].`,
+      memory: `- Project Cedar uses port 5823; user prefers Celsius [${alteredCitation || sourceId}]. See [deadbeef-topic:detail](./guide.md).`,
     });
   }
   const id = "r" + requests.length;
@@ -98,7 +105,7 @@ const server = http.createServer(async (request, response) => {
 });
 
 async function start() {
-  const binary = process.argv[2] ||
+  const binary = process.argv[2] ? path.resolve(process.argv[2]) :
     path.resolve(__dirname, "../codex-rs/target/local-release/codex-app-server");
   rpc = new AppServer(binary, cwd, {
     env: { ...process.env, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home },
@@ -196,6 +203,32 @@ async function run() {
     "failure was silent");
 
   malformed = false;
+  for (const [destination, citation] of [
+    ["memory", sourceId.replace(/:\d+$/, ":9999999")],
+    ["memory", sourceId.replaceAll("-", "").replace(/:\d+$/, ":9999999")],
+    ["memory", sourceId.replace(/([a-f0-9-]{36})/g, "{$1}").replace(/:\d+$/, ":9999999")],
+    ["memory", "01a08a44-2bba-7213-bce0-4a7e-811e-a4be39343ca8:424"],
+    ["checkpoint", sourceId.replace(/:\d+$/, ":9999999")],
+  ]) {
+    alteredCitation = destination === "memory" ? citation : null;
+    alteredCheckpointCitation = destination === "checkpoint" ? citation : null;
+    const before = {
+      checkpoint: fs.readFileSync(checkpointFile, "utf8"),
+      sources: fs.readFileSync(path.join(home, "memories/memory-references/sources.md"), "utf8"),
+      receipts: fs.readdirSync(receiptDirectory).length,
+      events: events.length,
+    };
+    await compact(thread);
+    assert.equal(fs.readFileSync(memoryFile, "utf8"), saved,
+      "altered evidence citation changed memory");
+    assert.equal(fs.readFileSync(checkpointFile, "utf8"), before.checkpoint);
+    assert.equal(fs.readFileSync(path.join(home, "memories/memory-references/sources.md"), "utf8"), before.sources);
+    assert.equal(fs.readdirSync(receiptDirectory).length, before.receipts);
+    assert(events.slice(before.events).some(event => JSON.stringify(event).includes("unsupported evidence citation")),
+      "altered citation failure was silent");
+  }
+  alteredCitation = null;
+  alteredCheckpointCitation = null;
   const sourcesPath = path.join(home, "memories/memory-references/sources.md");
   fs.renameSync(sourcesPath, sourcesPath + ".backup");
   fs.mkdirSync(sourcesPath);
@@ -251,6 +284,7 @@ async function run() {
   console.log(JSON.stringify({ passed: true, luna, requests: requests.length, checks: [
     "save on completed response", "committed receipts retain evidence",
     "short stable citations with separate provenance", "source failure preserves notes",
+    "invented and malformed evidence IDs preserve memory, checkpoint and provenance",
     "tool-free save before compaction", "fresh process admits saved memory",
     "invalid output preserves notes and warns", "concurrent manual edits preserved",
     "input arriving during memory saving retains reasoning in the same turn",

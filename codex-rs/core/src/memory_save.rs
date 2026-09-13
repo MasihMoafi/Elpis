@@ -178,6 +178,29 @@ impl MemorySnapshot {
         );
         let references_path = self.root.join("memory-references/sources.md");
         let references = read_optional(&references_path)?;
+        let parsed_evidence: Option<serde_json::Value> =
+            evidence.map(serde_json::from_str).transpose()?;
+        let evidence_ids: std::collections::HashSet<&str> = parsed_evidence
+            .as_ref()
+            .and_then(|value| value.get("evidence"))
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|item| item.get("id").and_then(serde_json::Value::as_str))
+            .collect();
+        let previous_ids: std::collections::HashSet<&str> = evidence_citations(&self.memory)
+            .chain(evidence_citations(&self.checkpoint))
+            .collect();
+        for citation in
+            evidence_citations(&decision.memory).chain(evidence_citations(&decision.checkpoint))
+        {
+            anyhow::ensure!(
+                evidence_ids.contains(citation)
+                    || previous_ids.contains(citation)
+                    || references.contains(&format!("`{citation}`")),
+                "unsupported evidence citation; previous notes preserved"
+            );
+        }
         let (memory, updated_references) = shorten_memory_references(&decision.memory, &references);
         // Save recovery evidence before replacing either human-readable file.
         let mut receipt = serde_json::json!({
@@ -213,6 +236,37 @@ impl MemorySnapshot {
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
         Ok(())
     }
+}
+
+fn evidence_citations(text: &str) -> impl Iterator<Item = &str> {
+    text.split('[')
+        .skip(1)
+        .filter_map(|part| part.split_once(']').map(|(citation, _)| citation))
+        .flat_map(|citation| citation.split(','))
+        .map(str::trim)
+        .filter(|citation| {
+            // Include damaged UUID-based IDs as well as every format we shorten.
+            is_evidence_id(citation)
+                || citation.split_once(':').is_some_and(|(source, _)| {
+                    source.len() >= 32
+                        && source.as_bytes().get(8) == Some(&b'-')
+                        && source
+                            .bytes()
+                            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+                })
+        })
+}
+
+fn is_evidence_id(value: &str) -> bool {
+    let components: Vec<_> = value.split(':').collect();
+    (2..=3).contains(&components.len())
+        && components
+            .last()
+            .and_then(|s| s.parse::<usize>().ok())
+            .is_some()
+        && components[..components.len() - 1]
+            .iter()
+            .all(|s| uuid::Uuid::parse_str(s).is_ok())
 }
 
 fn shorten_memory_references(memory: &str, references: &str) -> (String, String) {
@@ -251,16 +305,7 @@ fn shorten_memory_references(memory: &str, references: &str) -> (String, String)
         let mut rewritten = Vec::new();
         for part in citation.split(',') {
             let value = part.trim();
-            let components: Vec<_> = value.split(':').collect();
-            if !(2..=3).contains(&components.len())
-                || components
-                    .last()
-                    .and_then(|s| s.parse::<usize>().ok())
-                    .is_none()
-                || !components[..components.len() - 1]
-                    .iter()
-                    .all(|s| uuid::Uuid::parse_str(s).is_ok())
-            {
+            if !is_evidence_id(value) {
                 rewritten.push(part.to_owned());
                 continue;
             }

@@ -192,6 +192,12 @@ save can leave unused references but cannot publish a new reference before its
 source. This formats citations; it does not verify the cited claim or fix semantic
 retention and project scoping.
 
+Before saving, UUID-based citations must match supplied conversation evidence,
+previous notes, or retained provenance. An unsupported or damaged identifier
+rejects the update before notes or provenance are written. Existing provenance is
+trusted rather than retroactively repaired; numeric references and the truth of
+the associated claim are not verified by this guard.
+
 ES can dilute attention: length limits bound context use, not truth or relevance.
 The shared workspace checkpoint also remains subject to the last thread writer.
 Model summaries can omit facts or preserve bad assumptions. Receipts support
