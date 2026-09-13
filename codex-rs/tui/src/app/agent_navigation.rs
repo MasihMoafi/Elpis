@@ -257,8 +257,8 @@ impl AgentNavigationState {
 
     /// Derives the contextual footer label for the currently displayed thread.
     ///
-    /// This intentionally returns `None` until there is more than one tracked thread so
-    /// single-thread sessions do not waste footer space restating the obvious. When metadata for
+    /// This returns `None` until a subagent is known, so single-thread sessions
+    /// do not waste footer space restating the obvious. When metadata for
     /// the displayed thread is missing, the label falls back to the same generic naming rules used
     /// by the picker.
     pub(crate) fn active_agent_label(
@@ -266,12 +266,25 @@ impl AgentNavigationState {
         current_displayed_thread_id: Option<ThreadId>,
         primary_thread_id: Option<ThreadId>,
     ) -> Option<String> {
-        if self.threads.len() <= 1 {
+        let subagent_count = self
+            .threads
+            .keys()
+            .filter(|thread_id| Some(**thread_id) != primary_thread_id)
+            .count();
+        if primary_thread_id.is_none() || subagent_count == 0 {
             return None;
         }
 
         let thread_id = current_displayed_thread_id?;
         let is_primary = primary_thread_id == Some(thread_id);
+        if is_primary {
+            let noun = if subagent_count == 1 {
+                "subagent"
+            } else {
+                "subagents"
+            };
+            return Some(format!("Main · {subagent_count} {noun} · /agent"));
+        }
         Some(
             self.threads
                 .get(&thread_id)
@@ -406,6 +419,17 @@ mod tests {
     }
 
     #[test]
+    fn primary_footer_exposes_subagent_before_primary_is_cached() {
+        let mut state = AgentNavigationState::default();
+        let main = ThreadId::new();
+        state.upsert(ThreadId::new(), None, None, false);
+        assert_eq!(
+            state.active_agent_label(Some(main), Some(main)),
+            Some("Main · 1 subagent · /agent".to_string())
+        );
+    }
+
+    #[test]
     fn active_agent_label_tracks_current_thread() {
         let (state, main_thread_id, first_agent_id, _) = populated_state();
 
@@ -415,7 +439,7 @@ mod tests {
         );
         assert_eq!(
             state.active_agent_label(Some(main_thread_id), Some(main_thread_id)),
-            Some("Main [default]".to_string())
+            Some("Main · 2 subagents · /agent".to_string())
         );
     }
 }

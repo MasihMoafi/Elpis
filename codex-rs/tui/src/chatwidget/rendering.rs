@@ -358,7 +358,11 @@ impl ChatWidget {
         }
         let model = self.current_model();
         let location = format_directory_display(self.status_line_cwd(), /*max_width*/ None);
-        let mut spans = crate::elpis_motion::animated_text(" Elpis ", self.config.animations);
+        let mut spans = if self.config.animations && !self.bottom_pane.is_task_running() {
+            crate::motion::shimmer_text(" Elpis ", crate::motion::MotionMode::Animated)
+        } else {
+            crate::elpis_motion::animated_text(" Elpis ", self.config.animations)
+        };
         for span in &mut spans {
             span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
         }

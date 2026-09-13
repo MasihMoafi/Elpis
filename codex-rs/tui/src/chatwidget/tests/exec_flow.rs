@@ -5,6 +5,7 @@ use pretty_assertions::assert_eq;
 #[tokio::test]
 async fn exec_approval_emits_proposed_command_and_decision_history() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.animations = false;
 
     // Trigger an exec approval request with a short, single-line command
     let ev = ExecApprovalRequestEvent {

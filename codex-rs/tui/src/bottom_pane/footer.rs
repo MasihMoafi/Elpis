@@ -778,9 +778,9 @@ pub(crate) fn passive_footer_status_line(props: &FooterProps) -> Option<Line<'st
     if let Some(active_agent_label) = props.active_agent_label.as_ref() {
         if let Some(existing) = line.as_mut() {
             existing.spans.push(" · ".dim());
-            existing.spans.push(active_agent_label.clone().dim());
+            existing.spans.push(active_agent_label.clone().bold());
         } else {
-            line = Some(Line::from(active_agent_label.clone()).dim());
+            line = Some(Line::from(active_agent_label.clone()).bold());
         }
     }
 
