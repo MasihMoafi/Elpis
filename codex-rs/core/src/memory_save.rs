@@ -176,18 +176,32 @@ impl MemorySnapshot {
             "# Elpis Session Checkpoint\n\n- Thread: `{thread}`\n- Turn: `{turn}`\n\n## Consolidated State\n\n{}\n",
             decision.checkpoint
         );
+        let references_path = self.root.join("memory-references/sources.md");
+        let references = read_optional(&references_path)?;
+        let (memory, updated_references) = shorten_memory_references(&decision.memory, &references);
         // Save recovery evidence before replacing either human-readable file.
         let mut receipt = serde_json::json!({
             "status": "prepared", "evidence": evidence,
             "model": "gpt-5.6-luna", "thread": thread, "turn": turn,
             "previous_checkpoint": self.checkpoint, "previous_memory": self.memory,
-            "checkpoint": decision.checkpoint, "memory": decision.memory, "usage": usage,
+            "checkpoint": decision.checkpoint, "memory": memory,
+            "model_memory": decision.memory, "usage": usage,
         });
         let receipt_dir = self.workspace.join("memory-saves");
         std::fs::create_dir_all(&receipt_dir)?;
         let receipt_path = receipt_dir.join(format!("{}.json", uuid::Uuid::new_v4()));
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
-        atomic_write(&memory_path, &decision.memory)?;
+        if updated_references != references {
+            std::fs::create_dir_all(
+                references_path
+                    .parent()
+                    .context("missing reference directory")?,
+            )?;
+            // Publish provenance first. An interrupted save may leave unused references,
+            // but never a saved citation whose source was not written.
+            atomic_write(&references_path, &updated_references)?;
+        }
+        atomic_write(&memory_path, &memory)?;
         if let Err(error) = atomic_write(&checkpoint_path, &checkpoint) {
             atomic_write(&memory_path, &self.memory)
                 .context("restore memory after checkpoint write failure")?;
@@ -199,6 +213,84 @@ impl MemorySnapshot {
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
         Ok(())
     }
+}
+
+fn shorten_memory_references(memory: &str, references: &str) -> (String, String) {
+    let mut sources = std::collections::BTreeMap::new();
+    let mut highest = 0_u64;
+    for line in references.lines() {
+        let columns: Vec<_> = line.split('|').map(str::trim).collect();
+        if columns.len() == 4
+            && let Ok(number) = columns[1].parse::<u64>()
+        {
+            highest = highest.max(number);
+            sources.insert(columns[2].trim_matches('`').to_owned(), number);
+        }
+    }
+    // Reserve existing short citations even when their provenance is external.
+    for part in memory.split('[').skip(1) {
+        if let Some((citation, _)) = part.split_once(']') {
+            for value in citation.split(',') {
+                if let Ok(number) = value.trim().parse::<u64>() {
+                    highest = highest.max(number);
+                }
+            }
+        }
+    }
+    let mut updated = references.to_owned();
+    let mut output = String::new();
+    let mut remaining = memory;
+    while let Some((before, after)) = remaining.split_once('[') {
+        output.push_str(before);
+        output.push('[');
+        let Some((citation, rest)) = after.split_once(']') else {
+            output.push_str(after);
+            remaining = "";
+            break;
+        };
+        let mut rewritten = Vec::new();
+        for part in citation.split(',') {
+            let value = part.trim();
+            let components: Vec<_> = value.split(':').collect();
+            if !(2..=3).contains(&components.len())
+                || components
+                    .last()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .is_none()
+                || !components[..components.len() - 1]
+                    .iter()
+                    .all(|s| uuid::Uuid::parse_str(s).is_ok())
+            {
+                rewritten.push(part.to_owned());
+                continue;
+            }
+            let number = if let Some(number) = sources.get(value) {
+                *number
+            } else {
+                let Some(next) = highest.checked_add(1) else {
+                    rewritten.push(part.to_owned());
+                    continue;
+                };
+                highest = next;
+                sources.insert(value.to_owned(), next);
+                if updated.is_empty() {
+                    updated.push_str(
+                        "# Memory sources\n\n| Reference | Original evidence ID |\n| --- | --- |\n",
+                    );
+                } else if !updated.ends_with('\n') {
+                    updated.push('\n');
+                }
+                updated.push_str(&format!("| {next} | `{value}` |\n"));
+                next
+            };
+            rewritten.push(part.replacen(value, &number.to_string(), 1));
+        }
+        output.push_str(&rewritten.join(","));
+        output.push(']');
+        remaining = rest;
+    }
+    output.push_str(remaining);
+    (output, updated)
 }
 
 fn atomic_write(path: &Path, text: &str) -> anyhow::Result<()> {

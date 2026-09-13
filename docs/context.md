@@ -183,6 +183,15 @@ prepared/committed state in a unique recovery receipt. Individual file replaceme
 are atomic; the two-file update is not a crash-atomic transaction. Failures warn
 the user. Existing manual edits are not replaced by a stale model snapshot.
 
+Memory persistence converts full session/turn evidence citations into stable
+numeric references. Their full identifiers are retained in
+`memories/memory-references/sources.md`; receipts retain both the model's original
+memory output and the text actually saved. Existing short citations and unrelated
+text are preserved. Provenance is written before the shortened memory, so a failed
+save can leave unused references but cannot publish a new reference before its
+source. This formats citations; it does not verify the cited claim or fix semantic
+retention and project scoping.
+
 ES can dilute attention: length limits bound context use, not truth or relevance.
 The shared workspace checkpoint also remains subject to the last thread writer.
 Model summaries can omit facts or preserve bad assumptions. Receipts support

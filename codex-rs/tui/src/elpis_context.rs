@@ -355,6 +355,46 @@ mod tests {
     use tempfile::tempdir;
 
     #[tokio::test]
+    async fn memory_commit_keeps_short_citations_and_separate_provenance() -> Result<()> {
+        use crate::legacy_core::memory_save::{MemoryDecision, MemorySaveTiming, MemorySnapshot};
+        let dir = tempfile::tempdir()?;
+        let root = dir.path().join("memories");
+        let cwd = dir.path().join("project");
+        let workspace = crate::legacy_core::elpis_context::workspace_context_dir(Some(&root), &cwd)
+            .context("workspace")?;
+        std::fs::create_dir_all(&workspace)?;
+        std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
+        let id = "01a08a44-2bba-7213-bce0-4a7e5f0423aa";
+        let original = format!(
+            "- Existing [8].\n- Lesson [{id}:1, {id}:10].\n- Repeat [{id}:1].\n- Keep [docs](guide.md), [unknown], and {id} outside citations."
+        );
+        let expected = format!(
+            "- Existing [8].\n- Lesson [9, 10].\n- Repeat [9].\n- Keep [docs](guide.md), [unknown], and {id} outside citations."
+        );
+        for _ in 0..2 {
+            let snapshot = MemorySnapshot::open(&root, &cwd)?.context("enabled saver")?;
+            snapshot.commit(
+                &MemoryDecision {
+                    checkpoint: "Work remains".into(),
+                    memory: original.clone(),
+                },
+                "thread",
+                "turn",
+                None,
+                None,
+                MemorySaveTiming::default(),
+            )?;
+            assert_eq!(std::fs::read_to_string(root.join("MEMORY.md"))?, expected);
+        }
+        let references = std::fs::read_to_string(root.join("memory-references/sources.md"))?;
+        assert_eq!(references.matches(&format!("`{id}:1`")).count(), 1);
+        assert_eq!(references.matches(&format!("`{id}:10`")).count(), 1);
+        assert!(references.contains(&format!("| 9 | `{id}:1` |")));
+        assert!(references.contains(&format!("| 10 | `{id}:10` |")));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn tui_checkpoint_does_not_race_enabled_memory_consolidation() -> Result<()> {
         use crate::legacy_core::memory_save::{MemoryDecision, MemorySaveTiming, MemorySnapshot};
 

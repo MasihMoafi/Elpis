@@ -12,6 +12,7 @@ const cwd = path.join(root, "project");
 const workspace = path.join(home, "context/workspaces",
   "project-" + crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 12));
 const memoryFile = path.join(home, "memories/MEMORY.md");
+const sourceId = "01a08a44-2bba-7213-bce0-4a7e5f0423aa:01a09a84-d7e2-7f03-bee4-0a9b3ea4c785:565";
 const checkpointFile = path.join(workspace, "ES.md");
 const settingsFile = path.join(workspace, "memory-autosave.json");
 for (const directory of [cwd, workspace, path.dirname(memoryFile)]) {
@@ -58,7 +59,7 @@ const server = http.createServer(async (request, response) => {
     if (editDuringSave) fs.writeFileSync(memoryFile, "Manual correction: Cedar port 7713.");
     text = malformed ? "INVALID JSON" : JSON.stringify({
       checkpoint: "- [ ] Verify Cedar release [u1].",
-      memory: "- Project Cedar uses port 5823; user prefers Celsius [u1].",
+      memory: `- Project Cedar uses port 5823; user prefers Celsius [${sourceId}].`,
     });
   }
   const id = "r" + requests.length;
@@ -173,6 +174,12 @@ async function run() {
   assert.equal(fs.readFileSync(path.join(workspace, "GOAL.md"), "utf8"),
     "# Goal\nVerify the Cedar release.\n", "memory saving rewrote the goal");
   const saved = fs.readFileSync(memoryFile, "utf8");
+  assert(saved.includes("[1]") && !saved.includes(sourceId), "memory retained long citation IDs");
+  const sources = fs.readFileSync(path.join(home, "memories/memory-references/sources.md"), "utf8");
+  assert(sources.includes(`| 1 | \`${sourceId}\` |`), "short citation lost its provenance");
+  assert.equal(sources.split(sourceId).length - 1, 1, "repeat saving duplicated a reference");
+  assert(receipts.every(receipt => receipt.memory === saved && receipt.model_memory.includes(sourceId)),
+    "receipt did not distinguish original output from saved memory");
   assert(saved.includes("5823"));
 
   rpc.dispose();
@@ -189,6 +196,22 @@ async function run() {
     "failure was silent");
 
   malformed = false;
+  const sourcesPath = path.join(home, "memories/memory-references/sources.md");
+  fs.renameSync(sourcesPath, sourcesPath + ".backup");
+  fs.mkdirSync(sourcesPath);
+  const beforeSourceFailure = fs.readFileSync(checkpointFile, "utf8");
+  const beforeSourceEvents = events.length;
+  try {
+    await compact(thread);
+    assert.equal(fs.readFileSync(memoryFile, "utf8"), saved, "source failure changed memory");
+    assert.equal(fs.readFileSync(checkpointFile, "utf8"), beforeSourceFailure,
+      "source failure changed checkpoint");
+    assert(events.slice(beforeSourceEvents).some(event => JSON.stringify(event).includes("Memory save failed")),
+      "source failure was silent");
+  } finally {
+    fs.rmdirSync(sourcesPath);
+    fs.renameSync(sourcesPath + ".backup", sourcesPath);
+  }
   editDuringSave = true;
   const checkpointBefore = fs.readFileSync(checkpointFile, "utf8");
   await compact(thread);
@@ -227,6 +250,7 @@ async function run() {
   assert.equal(luna, beforeDisabled, "disabled saver called Luna");
   console.log(JSON.stringify({ passed: true, luna, requests: requests.length, checks: [
     "save on completed response", "committed receipts retain evidence",
+    "short stable citations with separate provenance", "source failure preserves notes",
     "tool-free save before compaction", "fresh process admits saved memory",
     "invalid output preserves notes and warns", "concurrent manual edits preserved",
     "input arriving during memory saving retains reasoning in the same turn",
