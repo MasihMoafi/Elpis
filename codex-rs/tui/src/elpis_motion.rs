@@ -55,7 +55,7 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
             let distance = ((center - position).abs() / half_width).min(1.0);
             let intensity = 0.425 * (1.0 + (std::f64::consts::PI * distance).cos());
             let base = pigment(center / width * 0.75, time.as_secs_f64(), light);
-            let highlight = if light { (80, 45, 0) } else { (255, 255, 255) };
+            let highlight = (255, 255, 255);
             Span::styled(
                 glyph.to_owned(),
                 Style::default().fg(best_color(blend(highlight, base, intensity as f32))),
@@ -230,11 +230,7 @@ impl TextReveal {
                         rect,
                         symbols,
                         tachyonfx::fx::fade_from_fg(
-                            best_color(if default_bg().is_some_and(is_light) {
-                                (90, 90, 85)
-                            } else {
-                                (180, 180, 175)
-                            }),
+                            best_color((255, 255, 255)),
                             (
                                 REVEAL_DURATION.as_millis() as u32,
                                 tachyonfx::Interpolation::SineOut,

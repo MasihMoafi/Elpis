@@ -36,8 +36,12 @@ pub(crate) fn shimmer_spans(text: &str) -> Vec<Span<'static>> {
     let band_half_width = 5.0;
 
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(chars.len());
-    let highlight_color = default_fg().unwrap_or((255, 255, 255));
-    let base_color = blend(highlight_color, default_bg().unwrap_or((0, 0, 0)), 0.6);
+    let highlight_color = (255, 255, 255);
+    let base_color = blend(
+        default_fg().unwrap_or(highlight_color),
+        default_bg().unwrap_or((0, 0, 0)),
+        0.6,
+    );
     for (i, ch) in chars.iter().enumerate() {
         let i_pos = i as isize + padding as isize;
         let pos = pos as isize;
@@ -52,8 +56,6 @@ pub(crate) fn shimmer_spans(text: &str) -> Vec<Span<'static>> {
         let style = if has_true_color {
             let highlight = t.clamp(0.0, 1.0);
             let (r, g, b) = blend(highlight_color, base_color, highlight * 0.9);
-            // Allow custom RGB colors, as the implementation is thoughtfully
-            // adjusting the level of the default foreground color.
             #[allow(clippy::disallowed_methods)]
             {
                 Style::default()
@@ -75,6 +77,8 @@ fn color_for_level(intensity: f32) -> Style {
     } else if intensity < 0.6 {
         Style::default()
     } else {
-        Style::default().add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
     }
 }

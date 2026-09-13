@@ -437,3 +437,23 @@ Previous binary retained at
 `~/.local/share/elpis/release-recovery/swipe-20260913/elpis-before`.
 Existing processes need restarting to use this change. Physical gesture acceptance
 remains with Masih; no public release or IDE change was made.
+
+## September 13 — white motion and light Ledger contrast
+
+Removed the light-theme brown highlight and gray streaming-reveal color. Animated
+text now blends toward white in either theme; the orange/yellow base is retained.
+The generic shimmer also targets white. Light Ledger secondary text is darker,
+excluded labels no longer use terminal dimming, and unselected filenames have an
+explicit terminal foreground.
+
+Optimized build passed (63,752 ms, peak 70°C). The hidden VTE/Xvfb light-theme check
+used a local fake provider and actual goal/instruction/memory rows. Both frames at
+`.tmp/final-candidate/light-ui-after/goal{,-later}.png` were inspected: the moving
+highlight becomes pale/white and the file names, counts and excluded labels are
+readable on white. This is visual evidence, not acceptance on Masih's terminal.
+
+Installed SHA256: `f65d10fadbadab77d74ca25590caefff88a0f3e3d3ae1d15d4e39e206a649662`.
+Rollback: `~/.local/share/elpis/release-recovery/light-20260913/elpis-before`.
+This artifact also contains the in-progress, disabled-by-default memory saver from
+the working tree; it is not a production release. Its separate local runtime check
+passed save/restart admission, malformed-output preservation and disabled behavior.

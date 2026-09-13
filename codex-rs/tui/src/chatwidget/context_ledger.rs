@@ -367,7 +367,12 @@ impl ChatWidget {
             .sum::<u64>();
         // Labels and values identify categories; the palette follows Elpis appearance.
         let brand = crate::style::brand_style().not_bold();
-        let muted = Style::default().fg(Color::Rgb(133, 134, 128));
+        let light = default_bg().is_some_and(is_light);
+        let muted = Style::default().fg(crate::terminal_palette::best_color(if light {
+            (80, 81, 75)
+        } else {
+            (133, 134, 128)
+        }));
         let context_window = self
             .status_line_context_window_size()
             .map(|window| window as u64);
@@ -749,6 +754,8 @@ impl ChatWidget {
                 };
                 let state_style = if source.admitted {
                     cat_style
+                } else if light {
+                    muted
                 } else {
                     cat_style.dim()
                 };
@@ -793,7 +800,11 @@ impl ChatWidget {
                         if selected {
                             brand.bold().underlined()
                         } else {
-                            Style::default().underlined()
+                            Style::default()
+                                .fg(crate::terminal_palette::default_fg()
+                                    .map(crate::terminal_palette::best_color)
+                                    .unwrap_or(if light { Color::Black } else { Color::Reset }))
+                                .underlined()
                         },
                     ),
                     Span::raw(" ".repeat(pad)),
