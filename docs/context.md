@@ -202,6 +202,11 @@ rejects the update before notes or provenance are written. Existing provenance i
 trusted rather than retroactively repaired; numeric references and the truth of
 the associated claim are not verified by this guard.
 
+For an unchanged line ending in registered numeric references, a separate check
+rejects replacing or removing its existing support. Additional registered support
+is allowed. This check does not validate rewritten prose or interior citations;
+ordinary bracketed values coinciding with registered labels remain ambiguous.
+
 ES can dilute attention: length limits bound context use, not truth or relevance.
 The shared workspace checkpoint also remains subject to the last thread writer.
 Model summaries can omit facts or preserve bad assumptions. Receipts support

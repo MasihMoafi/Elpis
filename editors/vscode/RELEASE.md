@@ -1,4 +1,12 @@
-# Local candidate 0.1.25
+# Local candidate 0.1.26
+
+The memory saver rejects changes to a known short citation when the accompanying
+line is unchanged, preserving the existing notes and provenance. Factual text
+corrections, ordinary numbers outside the source map, and additional known support
+remain allowed. This is a narrow citation check; semantic retention and project
+scoping remain unresolved.
+
+## Local candidate 0.1.25
 
 Memory consolidation reserves space for recent user messages so large responses
 and tool output cannot consume the entire evidence budget first. Evidence remains

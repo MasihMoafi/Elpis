@@ -381,3 +381,37 @@ removal of all obsolete entries from accidental whole-document erasure. The
 fixture's numeric-citation allowance is not sufficient provenance validation, and
 its checkpoint length check does not establish checkpoint fidelity. Explicit
 correction and lossless legacy-document controls are required before integration.
+
+### Prevent short-citation reassignment — September 14
+
+The actual installed 0.1.25 saver reproduced an unchanged fact silently moving
+from citation `[1]` to `[2]` (`memory-numeric-citation-before.log`). The new guard
+checks terminal short citations on identical lines against the existing source
+map and rejects removal or replacement of registered support before any notes,
+checkpoint, receipt, or provenance write. It allows factual text changes, ordinary
+numeric values outside the map, and additional registered supporting citations.
+The source-table parser is shared with local citation shortening.
+
+Review caught ordinary bracketed values being mistaken for references and rejection
+of legitimate extra support; the initial build was stopped and the guard narrowed.
+The revised optimized build completed in 330.697 seconds, peak75°C, three cooling
+pauses totaling2.604 seconds. Actual-runtime checks pass for the reproduced failure
+and the three allowed cases, together with existing saving, restart, budget,
+malformed-output, UUID-citation, manual-edit, queued-input and disabled controls.
+All55 extension checks pass, none skipped. Logs under `.tmp/final-candidate/`:
+`memory-numeric-citation-reviewed-build.log`, `memory-numeric-citation-after.log`,
+and `memory-numeric-editor-regression.log`. These use localhost responses, without
+paid inference. Full Rust unit suites and native visual checks were not rerun.
+
+This is a narrow safeguard, not semantic validation. It does not cover rewritten
+or reflowed prose, missing citations, or interior citations. A bracketed value that
+exactly coincides with registered citation labels remains ambiguous in the existing
+notation; intentional source replacement on unchanged text is rejected. Manual
+edits remain supported. This change does not resolve retention or project scope.
+
+The same runtime controls pass on the stripped binary extracted from extension
+0.1.26 (`memory-numeric-packaged-runtime.log`). Both candidate binaries pass the
+personal-path byte check. CLI SHA256:
+`dd8be96df525054bf79e8f25c516375a3e4247f6f352ac7cdeb49ccad5e57165`;
+packaged runtime SHA256:
+`34fb5726fffaf1f482188fe887f2196435a4ea0ac2e8b886c14da0103923965a`.

@@ -34,6 +34,9 @@ let releaseMemory;
 let includeReasoning = false;
 let largeResponse = true;
 let requiredUserEvidence;
+let renumberUnchangedFact = false;
+let memoryText;
+let latestSourceId;
 const requests = [];
 const events = [];
 
@@ -77,6 +80,7 @@ const server = http.createServer(async (request, response) => {
       largeResponse = false;
     }
     sourceId ||= consolidation.evidence[0].id;
+    latestSourceId = consolidation.evidence.at(-1).id;
     if (holdMemory) {
       await new Promise(resolve => {
         releaseMemory = resolve;
@@ -86,7 +90,7 @@ const server = http.createServer(async (request, response) => {
     if (editDuringSave) fs.writeFileSync(memoryFile, "Manual correction: Cedar port 7713.");
     text = malformed ? "INVALID JSON" : JSON.stringify({
       checkpoint: `- [ ] Verify Cedar release [${alteredCheckpointCitation || sourceId}].`,
-      memory: `- Project Cedar uses port 5823; user prefers Celsius [${alteredCitation || sourceId}]. See [deadbeef-topic:detail](./guide.md).`,
+      memory: memoryText ?? `- Project Cedar uses port 5823; user prefers Celsius [${alteredCitation || sourceId}]. See [deadbeef-topic:detail](./guide.md).\n- Keep memory simple [${renumberUnchangedFact ? "2" : sourceId}].`,
     });
   }
   const id = "r" + requests.length;
@@ -214,7 +218,7 @@ async function run() {
   thread = await start();
   const nextRequest = requests.length;
   await turn(thread, "What is the Cedar port?");
-  assert(JSON.stringify(requests[nextRequest].input).includes(saved),
+  assert(JSON.stringify(requests[nextRequest].input).includes(JSON.stringify(saved).slice(1, -1)),
     "restart did not admit saved memory");
 
   requiredUserEvidence = "LONG_USER_CORRECTION";
@@ -269,6 +273,41 @@ async function run() {
     fs.rmdirSync(sourcesPath);
     fs.renameSync(sourcesPath + ".backup", sourcesPath);
   }
+  const beforeRenumber = {
+    checkpoint: fs.readFileSync(checkpointFile, "utf8"),
+    receipts: fs.readdirSync(receiptDirectory).length,
+    sources: fs.readFileSync(sourcesPath, "utf8"),
+    events: events.length,
+  };
+  renumberUnchangedFact = true;
+  await compact(thread);
+  assert.equal(fs.readFileSync(memoryFile, "utf8"), saved,
+    "unchanged memory fact silently acquired a different citation");
+  assert.equal(fs.readFileSync(checkpointFile, "utf8"), beforeRenumber.checkpoint);
+  assert.equal(fs.readdirSync(receiptDirectory).length, beforeRenumber.receipts);
+  assert.equal(fs.readFileSync(sourcesPath, "utf8"), beforeRenumber.sources);
+  assert(events.slice(beforeRenumber.events).some(event =>
+    JSON.stringify(event).includes("memory citation changed for unchanged text")));
+  renumberUnchangedFact = false;
+
+  memoryText = saved.replace("Keep memory simple", "Keep memory concise");
+  await turn(thread, "Correction: the preference is to keep memory concise.");
+  assert.equal(fs.readFileSync(memoryFile, "utf8"), memoryText,
+    "a factual correction was mistaken for citation renumbering");
+  memoryText += "\n- Retry delays [81, 82].";
+  await turn(thread, "Cedar retry delays are 81 and 82.");
+  memoryText = memoryText.replace("[81, 82]", "[81, 83]");
+  await turn(thread, "Correct the second Cedar retry delay to 83.");
+  assert.equal(fs.readFileSync(memoryFile, "utf8"), memoryText,
+    "ordinary numeric values were mistaken for citations");
+  assert.notEqual(latestSourceId, sourceId);
+  fs.appendFileSync(sourcesPath, `| 2 | \`${latestSourceId}\` |\n`);
+  memoryText = memoryText.replace("Keep memory concise [1]", "Keep memory concise [1, 2]");
+  await turn(thread, "The existing preference has additional supporting evidence.");
+  assert.equal(fs.readFileSync(memoryFile, "utf8"), memoryText,
+    "adding a known supporting citation was rejected");
+  memoryText = undefined;
+
   editDuringSave = true;
   const checkpointBefore = fs.readFileSync(checkpointFile, "utf8");
   await compact(thread);
@@ -310,6 +349,8 @@ async function run() {
     "user corrections survive large responses within the same evidence budget",
     "spare evidence capacity admits user messages above the reserved portion",
     "short stable citations with separate provenance", "source failure preserves notes",
+    "renumbered unchanged facts preserve notes and provenance",
+    "factual corrections, ordinary numbers and additional known support remain allowed",
     "invented and malformed evidence IDs preserve memory, checkpoint and provenance",
     "tool-free save before compaction", "fresh process admits saved memory",
     "invalid output preserves notes and warns", "concurrent manual edits preserved",

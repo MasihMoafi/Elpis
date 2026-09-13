@@ -191,6 +191,7 @@ impl MemorySnapshot {
         let previous_ids: std::collections::HashSet<&str> = evidence_citations(&self.memory)
             .chain(evidence_citations(&self.checkpoint))
             .collect();
+        validate_unchanged_memory_citations(&self.memory, &decision.memory, &references)?;
         for citation in
             evidence_citations(&decision.memory).chain(evidence_citations(&decision.checkpoint))
         {
@@ -238,6 +239,44 @@ impl MemorySnapshot {
     }
 }
 
+fn validate_unchanged_memory_citations(
+    previous: &str,
+    proposed: &str,
+    references: &str,
+) -> anyhow::Result<()> {
+    let known: std::collections::BTreeSet<_> = reference_rows(references)
+        .map(|(_, number)| number)
+        .collect();
+    let previous: Vec<_> = previous
+        .lines()
+        .filter_map(short_cited_line)
+        .filter(|(_, citations)| citations.is_subset(&known))
+        .collect();
+    for (fact, citations) in proposed.lines().filter_map(short_cited_line) {
+        let mut matching = previous.iter().filter(|(text, _)| *text == fact).peekable();
+        anyhow::ensure!(
+            matching.peek().is_none()
+                || (citations.is_subset(&known)
+                    && matching.any(|(_, original)| original.is_subset(&citations))),
+            "memory citation changed for unchanged text; previous notes preserved"
+        );
+    }
+    Ok(())
+}
+
+fn short_cited_line(line: &str) -> Option<(&str, std::collections::BTreeSet<u64>)> {
+    let line = line.trim_end().strip_suffix('.').unwrap_or(line.trim_end());
+    let (fact, citations) = line.strip_suffix(']')?.rsplit_once('[')?;
+    if !fact.ends_with(char::is_whitespace) {
+        return None;
+    }
+    let citations = citations
+        .split(',')
+        .map(|citation| citation.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    Some((fact.trim_end(), citations))
+}
+
 fn evidence_citations(text: &str) -> impl Iterator<Item = &str> {
     text.split('[')
         .skip(1)
@@ -269,17 +308,22 @@ fn is_evidence_id(value: &str) -> bool {
             .all(|s| uuid::Uuid::parse_str(s).is_ok())
 }
 
+fn reference_rows(references: &str) -> impl Iterator<Item = (&str, u64)> {
+    references.lines().filter_map(|line| {
+        let columns: Vec<_> = line.split('|').map(str::trim).collect();
+        let [_, number, source, _] = columns.as_slice() else {
+            return None;
+        };
+        Some((source.trim_matches('`'), number.parse().ok()?))
+    })
+}
+
 fn shorten_memory_references(memory: &str, references: &str) -> (String, String) {
     let mut sources = std::collections::BTreeMap::new();
     let mut highest = 0_u64;
-    for line in references.lines() {
-        let columns: Vec<_> = line.split('|').map(str::trim).collect();
-        if columns.len() == 4
-            && let Ok(number) = columns[1].parse::<u64>()
-        {
-            highest = highest.max(number);
-            sources.insert(columns[2].trim_matches('`').to_owned(), number);
-        }
+    for (source, number) in reference_rows(references) {
+        highest = highest.max(number);
+        sources.insert(source.to_owned(), number);
     }
     // Reserve existing short citations even when their provenance is external.
     for part in memory.split('[').skip(1) {
