@@ -228,6 +228,13 @@ impl App {
         &mut self,
         notification: &ServerNotification,
     ) {
+        if let Some(primary_thread_id) = self.primary_thread_id
+            && let ServerNotificationThreadTarget::Thread(thread_id) =
+                server_notification_thread_target(notification)
+            && thread_id != primary_thread_id
+        {
+            return;
+        }
         if let ServerNotification::ItemCompleted(notification) = notification {
             self.elpis_turn_items
                 .entry(notification.thread_id.clone())

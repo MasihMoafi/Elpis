@@ -46,12 +46,14 @@ Prefer behavioral evidence over plumbing-only tests: plant something only the fe
 
 ## Durable Memory Status
 
-The automated extraction, consolidation, and promotion pipeline was removed in commit
-`0c105e3` after no real durable-memory promotion was demonstrated. Elpis can still admit a
-user-maintained `MEMORY.md` into context, but it has no automatic promotion pipeline.
+The old promotion pipeline was removed in `0c105e3` after it failed to demonstrate
+durable promotion. Masih subsequently approved a simple Luna-only replacement.
+The opt-in replacement saves ES and MEMORY after normal responses and before
+compaction; Ledger admission independently controls loading. See `docs/context.md`.
 
-Do not restore an automated memory pipeline or change memory defaults without Masih's
-explicit approval. Do not claim automatic durable memory works.
+Do not change other workspaces' memory defaults without explicit approval. Keep
+claims scoped to the observed save, correction, recall and failure-mode evidence;
+general coding-quality benefit remains unproven.
 
 ## Agent Dispatch
 

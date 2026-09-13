@@ -83,9 +83,20 @@ impl SessionTask for RegularTask {
             .instrument(run_turn_span.clone())
             .await?;
             if !sess.input_queue.has_pending_input(&sess.active_turn).await {
-                // Normal Responses requests use `reasoning.context=current_turn`
-                // (the API default), so their encrypted reasoning expires here.
-                // Responses Lite explicitly requests `all_turns` and must retain it.
+                if last_agent_message.is_some() {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            return Err(codex_protocol::error::CodexErr::TurnAborted);
+                        }
+                        _ = crate::session::memory_save::save_continuity(&sess, &ctx) => {}
+                    }
+                    if sess.input_queue.has_pending_input(&sess.active_turn).await {
+                        next_input = Vec::new();
+                        continue;
+                    }
+                }
+                // Expire reasoning only after memory saving and the final queue check.
+                // A message arriving during the save can continue this same turn.
                 if last_agent_message.is_some() && !ctx.model_info.use_responses_lite {
                     sess.expire_reasoning_items_for_turn(&ctx.sub_id).await;
                 }

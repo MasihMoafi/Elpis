@@ -194,19 +194,18 @@ pub(crate) async fn write_session_checkpoint(
     }
 
     let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
+    let previous = match tokio::fs::read_to_string(&checkpoint_path).await {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error).context("read previous checkpoint"),
+    };
     if turn.status == TurnStatus::Interrupted
         && latest_result.is_none()
         && changed_files.is_empty()
         && commands.is_empty()
+        && belongs_to_thread(&previous, thread_id)
     {
-        match tokio::fs::read_to_string(&checkpoint_path).await {
-            // Keep the earlier turn's metadata with its evidence, rather than
-            // attributing that evidence to the interrupted turn.
-            Ok(previous) if belongs_to_thread(&previous, thread_id) => return Ok(None),
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("read Elpis checkpoint before replacing it"),
-        }
+        return Ok(None);
     }
 
     let mut content = format!(
@@ -223,6 +222,17 @@ pub(crate) async fn write_session_checkpoint(
         turn.completed_at.or(turn.started_at).unwrap_or_default(),
     );
     content.push_str("\n## Exact Evidence\n\n- Full turn remains in the provider transcript.\n");
+    if belongs_to_thread(&previous, thread_id)
+        && let Some((_, consolidated)) = previous.split_once("\n## Consolidated State\n\n")
+    {
+        let consolidated = consolidated
+            .split_once("\n## Latest Result\n")
+            .map_or(consolidated, |(state, _)| state)
+            .trim();
+        content.push_str("\n## Consolidated State\n\n");
+        content.push_str(&truncate_chars(consolidated, 6_000));
+        content.push('\n');
+    }
     content.push_str("\n## Latest Result\n\n");
     let result_budget =
         MAX_RESULT_CHARS.min(MAX_CHECKPOINT_CHARS.saturating_sub(content.chars().count() + 128));
@@ -478,12 +488,25 @@ mod tests {
         let path = write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn)
             .await?
             .context("checkpoint path")?;
-        let content = tokio::fs::read_to_string(path).await?;
+        let content = tokio::fs::read_to_string(&path).await?;
 
         assert!(content.contains("Implemented the checkpoint."));
         assert!(content.contains("`src/main.rs` (completed)"));
         assert!(!content.contains("large exact diff stays in transcript"));
         assert!(content.contains("Full turn remains in the provider transcript."));
+        let consolidated = "- [ ] Verify the release; passing tests are not user acceptance.";
+        tokio::fs::write(
+            &path,
+            format!("- Thread: `thread-one`\n\n## Consolidated State\n\n{consolidated}\n"),
+        )
+        .await?;
+        for _ in 0..2 {
+            write_session_checkpoint(Some(&memories_root), cwd, "thread-one", &turn).await?;
+            let updated = tokio::fs::read_to_string(&path).await?;
+            assert_eq!(updated.matches(consolidated).count(), 1);
+            assert_eq!(updated.matches("Implemented the checkpoint.").count(), 1);
+            assert!(updated.chars().count() <= MAX_CHECKPOINT_CHARS);
+        }
         Ok(())
     }
 

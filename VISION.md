@@ -23,7 +23,7 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Truth boundaries
 
-- Manual project memory is user-maintained and admitted through the Context Ledger. Do not imply automatic memory extraction or promotion.
+- Memory admission remains a Context Ledger choice. The opt-in Luna saver now consolidates ES and MEMORY at root-response completion and before compaction. Local runtime checks and a live save/correction/restart/withdrawal control passed on September 13, 2026; general coding-quality benefit is unproven. See `docs/context.md` for architecture, limits, and local activation state.
 - Automatic context pruning and deterministic work graphs are experimental and off by default. Do not present them as everyday guarantees.
 - Historical evaluations may be reported with their original scope and caveats. They do not establish general task-quality improvement.
 - Elpis is a Linux-first early-access project. Do not describe the current candidate as production-ready until daily-driver acceptance is complete.

@@ -369,6 +369,7 @@ pub(crate) async fn run_pre_compact_hooks(
     turn_context: &Arc<TurnContext>,
     trigger: CompactionTrigger,
 ) -> PreCompactHookOutcome {
+    crate::session::memory_save::save_continuity(sess, turn_context).await;
     if let Some(cwd) = turn_context
         .environments
         .primary()

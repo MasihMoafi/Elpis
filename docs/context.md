@@ -102,71 +102,140 @@ You do not have to go looking for these: `prune_report.md` renders `ace.json` an
 
 ## 3. Memory and checkpoints
 
+The memory loop has three human-readable files and one admission control. It does
+not require an embedding service, vector database, or autonomous memory agent.
+
 ```mermaid
 flowchart LR
-    U[User goal] --> G[GOAL.md]
-    T[Completed CLI turn] --> E[Generated ES.md]
-    N[User-maintained notes] --> M[MEMORY.md]
+    U[User objective] --> G[GOAL.md]
+    H[Conversation and tool evidence] --> S[Luna consolidation]
+    B[Completed response or pre-compaction boundary] --> S
+    E[ES: unfinished work] --> S
+    M[MEMORY: durable facts] --> S
+    S --> V{Validate and check concurrent edits}
+    V --> E
+    V --> M
+    V --> R[Recovery receipt and supporting evidence]
     G --> A{Ledger admission}
     E --> A
     M --> A
-    A --> L[Per-source character limits]
-    L --> C[Model working context]
-    H[Conversation and tool results] --> C
-    C --> R[Next agent turn]
-    R --> T
-    C --> P[Pruning or native compaction]
-    P --> C
+    A --> C[Next model context]
+    C --> H
 ```
 
-Admission controls what is supplied; it does not judge whether a remembered claim
-is still true. GOAL is limited to 6,000 characters, generated ES to 8,000, and
-manual MEMORY to 8,000. These are separate limits, not a combined memory budget.
-Overlong admitted sources retain their beginning, followed by an ellipsis;
-there is no relevance ranking or intelligent consolidation at this boundary.
-Stale or repetitive notes can therefore consume attention and reinforce a wrong
-assumption. The limits bound size, not this risk. Check current files and runtime
-evidence before acting on a checkpoint.
+| Source | Purpose and writer | Scope and admission limit |
+| --- | --- | --- |
+| `GOAL.md` | Explicit objective and goal state; the goal runtime owns it. Luna does not rewrite the objective. | Workspace, 6,000 characters |
+| Generated `ES.md` | Current decisions, unfinished work and evidence. The CLI writes turn details; enabled Luna saving consolidates working state. Later same-thread CLI writes retain that consolidated state. | Workspace, 8,000 characters |
+| `MEMORY.md` | Explicit preferences, stable project facts and reusable verified lessons. Users can edit it; enabled Luna saving can consolidate it. | Shared memory directory, 8,000 characters; project facts must name their project |
+| Repository `ES.md` | Ordinary project notes maintained by a person or agent. It is a separate file from the generated checkpoint. | Ordinary file admission, when selected |
 
-On September 12, this workspace admits GOAL and ES but has manual MEMORY off;
-the manual memory file contains only its heading. Continuity here is therefore
-primarily the goal, checkpoint, and conversation, not an automatically learned
-long-term knowledge base. These local settings can change through the Ledger.
+**Saving and loading are independent.** A workspace opts into saving through
+`context/workspaces/<workspace>/memory-autosave.json` containing
+`{"enabled":true}`. The Ledger's Memory row controls whether saved notes enter a
+request. Neither switch implies the other. The implementation remains off unless
+explicitly enabled; Masih authorized enabling the tested Luna path for Elpis.
 
-These files have different writers and purposes:
+When enabled, a root conversation response with a final assistant message and each
+pre-compaction boundary invokes one tool-free `gpt-5.6-luna` call at low reasoning.
+The input contains the workspace goal, previous notes and up to 64,000 characters of whole recent
+history items; reasoning and system/developer messages are excluded. Oversized
+items can be omitted. Internal and subagent sessions do not run the saver: the
+root owns consolidation, using worker evidence returned to its conversation.
+The CLI also excludes child-thread notifications from workspace GOAL/ES mirroring,
+so a child finishing cannot replace the primary conversation's checkpoint.
+Each output is capped at 6,000 characters. The prompt asks for supported facts,
+explicit corrections, retention of unrelated knowledge and unresolved tasks,
+and evidence citations. A 60-second timeout bounds the request; no expensive
+model fallback is allowed. Completed-turn saving is cancellable and newly queued
+input is checked again afterward.
 
-| Source | What actually happens |
-| --- | --- |
-| `GOAL.md` in Elpis workspace state | Records the explicit goal. Admission is a separate Ledger choice. |
-| `ES.md` beside that goal | The CLI replaces it after a completed turn with the latest result, changed-file entries, command entries, and an evidence pointer. It is a checkpoint of that turn, not an accumulated or model-written summary of the whole project. |
-| `ES.md` in a repository | Ordinary project notes written by a person or agent. This is a different file; it is not automatically synchronized with the generated checkpoint. |
-| `MEMORY.md` in the configured memory directory | User-maintained durable notes, explicitly admitted per workspace. See the Manual Memory controls below. |
+The runtime, not Luna, performs file writes. It rejects invalid or oversized JSON,
+empty checkpoints, attempted erasure of existing memory, and changes made by
+another writer while the model was running. An OS lock coordinates automatic
+writers. Each save retains its input, previous notes, proposed notes, usage, and
+prepared/committed state in a unique recovery receipt. Individual file replacements
+are atomic; the two-file update is not a crash-atomic transaction. Failures warn
+the user. Existing manual edits are not replaced by a stale model snapshot.
 
-The generated checkpoint shares one path per workspace, so the last completed
-thread to write it replaces the previous checkpoint. An interrupted turn with no
-result, file changes, or commands preserves the same thread's prior checkpoint,
-including its original turn and status metadata. Busy turns produce longer
-files than short replies. Results are capped at 4,000 characters and each command
-at 240 characters while writing; the admitted ES source is capped at 8,000
-characters. The checkpoint budgeting correction puts the evidence reference first,
-then the latest result, then recent file and command entries that fit. File entries
-have a 1,500-character section budget; commands use the remaining space. Omitted
-entries are explicitly noted. This deterministic selection is not semantic
-consolidation. Earlier installed writers can still leave larger files on disk;
-that does not mean the model receives all of them. Finishing or clearing an owning
-goal also clears its matching checkpoint.
+ES can dilute attention: length limits bound context use, not truth or relevance.
+The shared workspace checkpoint also remains subject to the last thread writer.
+Model summaries can omit facts or preserve bad assumptions. Receipts support
+inspection; they do not prove semantic fidelity. The live memory file previously
+stayed heading-only because automatic promotion had been removed and Memory
+admission was off. Merely creating the file could not make it learn.
 
-Ordinary tool output does not automatically expire after every turn. Native
-compaction and optional pruning change working history through their own paths.
-Persistent files can be loaded again when admitted; their existence does not
-establish that the model used them correctly.
+The repeatable local runtime check is `node scripts/memory-runtime.test.cjs`
+against a built app-server. It covers saving after a response, compaction,
+restart admission, malformed replies, concurrent manual edits, and disabled
+behavior. Live-model recall and correction checks are separate from plumbing
+tests. Neither establishes a general improvement in coding quality, lower total
+cost, or scientific novelty.
 
-We have checks for persistence, admission, and context inclusion, but no completed
-paired study proving the quality benefit of the current memory/checkpoint system.
-The [continuity comparison protocol](evals/context-continuity/README.md) explicitly
-records that its paired provider runs have not been performed. A useful benefit
-test must hold model, task, and budget fixed, compare admission on/off after a
-restart, and score factual recall, task completion, stale-memory errors, and cost.
+OpenClaw documents a pre-compaction memory flush and a separate promotion process.
+Jcode describes embedding turns and retrieving related memories from a graph.
+Elpis takes the smaller file-consolidation approach here; it is not an
+implementation of Jcode's retrieval architecture. Sources:
+[OpenClaw memory](https://docs.openclaw.ai/concepts/memory),
+[Jcode memory description](https://jcode.sh/#a-good-built-in-memory-system).
+
+### Verified memory behavior, September 13
+
+The local fake-provider runtime test passed response-completion saving,
+pre-compaction saving, receipt evidence, restart admission, malformed-output
+preservation, concurrent manual-edit protection, and disabled behavior.
+The previous installed runtime failed the new response-completion assertion,
+demonstrating that the check detects the missing trigger.
+
+A separate Luna-only live test saved a fictional project's port as 44713,
+corrected it to 44719, restarted the app-server, and obtained 44719 from admitted
+memory. With both Memory and ES admission disabled in another fresh thread, the
+same query returned UNKNOWN. Saving turns took 8.47 and 7.83 seconds including
+the main acknowledgement and memory call; recall/control turns took 3.31 and
+3.62 seconds. This is a small factual-recall control, not a general benchmark.
+Evidence: `.tmp/final-candidate/memory-live-runtime-result.json` and
+`.tmp/final-candidate/memory-completion-runtime.log`.
+
+Elpis workspace saving and Memory admission are now enabled locally. Six explicit
+user preferences were consolidated by Luna in an isolated bootstrap, reviewed,
+and copied into the actual MEMORY file; synthetic test facts were not promoted.
+The saved notes cover Luna-only memory, simplicity, literal checklists, user-led
+launching, queue editing, and usage-window dismissal. Bootstrap source and recovery
+records are under `~/.elpis/memory-bootstrap/1789282684322/`.
+
+Installed CLI SHA256:
+`6d630f77f038e443fe8954c22a808ecc88c92f6f2b0aa2af317bcc31627058cd`.
+The running process must restart to acquire the response-completion trigger.
+Other workspaces remain opt-in. The installed IDE extension 0.1.20's bundled
+app-server was updated locally; stripped runtime SHA256:
+`e3d9f9e86298b10ca17e765f696d47f4174f73588e411685ecaaf22320d78a85`.
+The runtime memory fixture passed on that artifact. Recovery binaries are in
+`~/.local/share/elpis/release-recovery/scroll-memory-20260913/`.
+The final TUI suite passed 3,195 tests with five ignored, including root checkpoint
+ownership and Usage dismissal; `.tmp/final-candidate/wheel-memory-tui-tests.log`.
+General memory benefit and final user acceptance remain open.
+
+### Testing useful lessons
+
+Masih's September 13 clarification emphasizes verified, reusable lessons that
+prevent repeated mistakes. The current categories remain provisional while he
+decides which information should persist. Automatic saving is a timing mechanism,
+not permission to retain every conversation detail.
+
+A useful evaluation tests behavior, not just file population:
+
+- Establish a concrete lesson with a verified outcome; inspect the saved note for
+  the triggering situation, mistake and corrective action, with its evidence.
+- Start a fresh chat and present a related task without repeating the lesson.
+  Check the resulting action, not merely whether the assistant can quote the note.
+- Repeat in an isolated home with memory and checkpoint admission disabled;
+  compare the same task and model. Avoid contaminating the control with ES.
+- Correct the lesson and restart again. Require the corrected behavior and no
+  conflicting obsolete rule. Check an unrelated task for inappropriate application.
+- Verify transient progress, guesses and untrusted instructions are not promoted.
+
+The port-recall control above proves limited persistence and correction. It does
+not yet establish this behavioral benefit for reusable lessons.
 
 ### Observed checkpoint pressure, September 12
 
@@ -186,7 +255,7 @@ The active task checklist was consolidated similarly. This is maintenance of
 agent-written project notes, not an automatic semantic-memory capability or a
 measured improvement in model decisions.
 
-Intelligent checkpoint saving remains unfinished. Its acceptance criteria are to
+Semantic checkpoint saving still requires evidence of fidelity. Its acceptance criteria are to
 retain the current goal, constraints, unresolved work and evidence locations within
 the admission budget, replace superseded facts, and preserve detailed evidence
 outside that budget. A comparison must include long command-heavy turns, empty
@@ -279,9 +348,9 @@ render.
 - The dashboard receives only phase, admission state, counts, cap, truncation, pending state, and
   a fixed failure code. It never receives the memory path, body, file metadata, or raw I/O error.
 
-After optional template creation, Elpis does not modify or infer the contents of this file. The
-user owns the text; Elpis owns only template creation, the explicit admission bit, and the safe
-status projection.
+Without automatic saving enabled, only explicit user edits change the notes after template
+creation. With saving enabled, the Luna path described above may consolidate them. The Ledger
+admission switch controls loading and does not disable saving.
 
 ### Development rules and curated skills
 
@@ -346,5 +415,5 @@ Elpis exposes **one single source of truth** for context measurement:
 ## 5. Systemic Inter-Dependencies
 
 - **Integration with Sessions:** the admitted `GOAL.md` and `ES.md` sources are exactly what lean continuation carries into a fresh thread; see [Sessions](sessions.md).
-- **Integration with Memory:** durable memory is user-managed. Elpis can admit the user's `~/.elpis/memories/MEMORY.md` into context, but it does not automatically extract, consolidate, or promote memories from completed rollouts. A `PreCompact` hook event is available if you want to run your own work at that moment.
+- **Integration with Memory:** the opt-in Luna path consolidates ES and MEMORY at response completion and before compaction. Ledger admission separately controls whether those files enter later requests; see section 3.
 - **Integration with Providers:** admitted context is normalized across provider wire formats while evidence pointers are preserved; see [Providers](providers.md).

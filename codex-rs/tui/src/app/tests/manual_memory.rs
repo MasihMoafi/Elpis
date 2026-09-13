@@ -9,6 +9,38 @@ fn configured_app_ids(app: &mut App) -> ThreadId {
     thread_id
 }
 
+#[tokio::test]
+async fn child_completion_preserves_primary_workspace_checkpoint() -> anyhow::Result<()> {
+    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let primary = configured_app_ids(&mut app);
+    let workspace = crate::legacy_core::elpis_context::workspace_context_dir(
+        Some(app.config.memory_dir.as_path()),
+        app.config.cwd.as_path(),
+    )
+    .expect("workspace context directory");
+    std::fs::create_dir_all(&workspace)?;
+    let checkpoint = workspace.join("ES.md");
+    std::fs::write(&checkpoint, "Primary unfinished work")?;
+    app.mirror_elpis_context_notification(&turn_completed_notification(
+        ThreadId::new(),
+        "child-turn",
+        TurnStatus::Completed,
+    ))
+    .await;
+    assert_eq!(
+        std::fs::read_to_string(&checkpoint)?,
+        "Primary unfinished work"
+    );
+    app.mirror_elpis_context_notification(&turn_completed_notification(
+        primary,
+        "primary-turn",
+        TurnStatus::Completed,
+    ))
+    .await;
+    assert!(std::fs::read_to_string(&checkpoint)?.contains("primary-turn"));
+    Ok(())
+}
+
 fn assert_no_turn_submission(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {
     while let Ok(op) = op_rx.try_recv() {
         assert!(
