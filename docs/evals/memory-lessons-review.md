@@ -346,3 +346,38 @@ contract, not a performance benchmark. Neither candidate was applied to producti
 or to real memory. The installed version remains unchanged. Further work must
 resolve mixed durable/status entries and checkpoint fidelity, and separately the
 global/project boundary; another passing serialization test cannot close them.
+
+### Mixed entries and interpretation rules — September 14 continuation
+
+Explicit mixed-entry instructions now make Luna drop the temporary verification
+entries and re-add their stable feature facts without test counts. However, that
+run also dropped the existing rule explaining what a committed save receipt does
+and does not prove. It therefore failed the unchanged retention criteria:
+`memory-retention-mixed-result.json`, 24,948 reported tokens, 26.702 seconds.
+An initial socket failure for this run returned no response or usage and its
+automatic retry was blocked; one explicit fresh request produced that result.
+
+Clarifying that evidence-interpretation rules are durable retained that rule but
+also retained the old distilled experiment result. This also failed:
+`memory-retention-interpretation-result.json`, 24,849 tokens, 23.922 seconds.
+A final clarification gave the mixed-entry rule explicit precedence: extract only
+the reusable interpretation rule rather than keeping the experimental result.
+That request timed out at the driver's 90-second limit and produced no completed
+decision. Its result is `memory-retention-precedence-timeout.json`; no token usage
+was reported. The current draft is `memory-retention-decisions.md`. These are all
+under `.tmp/final-candidate/`; raw requests retain each exact prompt version.
+
+This continuation reports 49,797 tokens for the two completed requests, excluding
+the socket failure and timeout whose usage is unknown. No candidate passed and no
+production code or real notes changed. Further repeated wording trials alone are
+not a demonstrated solution.
+
+Independent review identified integration requirements beyond this bullet fixture:
+preserve complete legacy paragraphs, preambles, and multiline/nested bullets;
+validate exactly one decision per snapshot entry; keep original entry order and
+bytes; resolve additions against real source records; preserve locks, concurrent
+manual edits, receipts and final size limits; and distinguish validated intentional
+removal of all obsolete entries from accidental whole-document erasure. The
+fixture's numeric-citation allowance is not sufficient provenance validation, and
+its checkpoint length check does not establish checkpoint fidelity. Explicit
+correction and lossless legacy-document controls are required before integration.
