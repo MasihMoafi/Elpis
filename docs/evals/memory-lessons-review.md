@@ -424,3 +424,16 @@ Rollback copies are at
 The default shared socket was absent before installation. No running user session
 was stopped, visible app opened, or remote release published. One main worktree
 remains, preserving unrelated `docs/USER_REQUESTS.md` edits.
+# September 14: bounded Terra comparison
+
+The previously authorized Terra alternative was run once on the captured
+whole-document replacement fixture, using the same old runtime and low effort.
+The response removed transient memory entries, but rewrote existing numeric
+citations and emitted literal `\\n` sequences inside the returned strings. This
+is not an acceptable durable-memory replacement and no production default or
+prompt was changed. It does not establish project isolation or general retention
+quality. The completed request reported 25,257 tokens (23,760 input, 1,497 output,
+including 447 reasoning), no cached input, and 35.988 seconds. Raw result and log:
+`.tmp/final-candidate/memory-retention-terra-result.json` and
+`memory-retention-terra.log`. No further paid comparison was started in the
+subsequent footer/IDE investigation.
