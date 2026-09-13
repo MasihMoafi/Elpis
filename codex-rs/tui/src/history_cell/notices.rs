@@ -83,7 +83,12 @@ impl HistoryCell for UpdateAvailableHistoryCell {
 }
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn new_warning_event(message: String) -> PrefixedWrappedHistoryCell {
-    PrefixedWrappedHistoryCell::new(message.cyan(), "⚠ ".cyan(), "  ")
+    let color = if crate::terminal_palette::default_bg().is_some_and(crate::color::is_light) {
+        crate::terminal_palette::best_color((0, 102, 112))
+    } else {
+        Color::Cyan
+    };
+    PrefixedWrappedHistoryCell::new(message.fg(color), "⚠ ".fg(color), "  ")
 }
 
 #[derive(Debug)]

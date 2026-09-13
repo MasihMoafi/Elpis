@@ -506,3 +506,15 @@ oldest fixture row, scroll back to the latest, close history with q, and preserv
 the active provider response. Evidence: `.tmp/final-candidate/wheel-after-routing/`
 and `wheel-after-routing-altscreen/`. Installed CLI SHA256:
 `6d630f77f038e443fe8954c22a808ecc88c92f6f2b0aa2af317bcc31627058cd`.
+
+### Light-theme warnings, September 13
+
+Warnings previously used ANSI cyan directly, producing faint text on white.
+The light-background branch now uses darker cyan (0,102,112); the dark-background
+branch retains ANSI cyan. The rebuilt native VTE capture was inspected: the full
+startup warning is readable. Usage dismissal and continued response text also
+passed in that run. Evidence: `.tmp/final-candidate/light-warning-visible/`.
+Optimized build passed in66,913ms, peak66C. Installed CLI SHA256:
+`6d47e53a1012c26cdff54438d369be7f2f8f3dfe0d1fb556287248f9f749ebd7`.
+Rollback: `~/.local/share/elpis/release-recovery/light-warning-20260913/elpis-before`.
+The previous3,195-test suite predates this color-only edit; it was not rerun.

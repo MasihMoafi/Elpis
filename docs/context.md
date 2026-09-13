@@ -204,7 +204,7 @@ launching, queue editing, and usage-window dismissal. Bootstrap source and recov
 records are under `~/.elpis/memory-bootstrap/1789282684322/`.
 
 Installed CLI SHA256:
-`6d630f77f038e443fe8954c22a808ecc88c92f6f2b0aa2af317bcc31627058cd`.
+`6d47e53a1012c26cdff54438d369be7f2f8f3dfe0d1fb556287248f9f749ebd7`.
 The running process must restart to acquire the response-completion trigger.
 Other workspaces remain opt-in. The installed IDE extension 0.1.20's bundled
 app-server was updated locally; stripped runtime SHA256:
