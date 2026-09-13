@@ -32,6 +32,8 @@ let holdMemory = false;
 let memoryReached;
 let releaseMemory;
 let includeReasoning = false;
+let largeResponse = true;
+let requiredUserEvidence;
 const requests = [];
 const events = [];
 
@@ -45,7 +47,7 @@ const server = http.createServer(async (request, response) => {
   for await (const chunk of request) raw += chunk;
   const body = JSON.parse(raw);
   requests.push(body);
-  let text = "Acknowledged.";
+  let text = largeResponse ? "Acknowledged. " + ".".repeat(63_500) : "Acknowledged.";
   if (body.model === "gpt-5.6-luna") {
     luna++;
     assert.equal(body.tools?.length || 0, 0, "memory call exposed tools");
@@ -56,6 +58,24 @@ const server = http.createServer(async (request, response) => {
       .map(item => item.text).filter(text => text?.startsWith("{"))
       .map(text => JSON.parse(text)).find(input => Array.isArray(input.evidence));
     assert(consolidation, "memory call omitted its evidence");
+    const indexes = consolidation.evidence.map(row => Number(row.id.split(":").at(-1)));
+    assert.deepEqual(indexes, [...new Set(indexes)].sort((a, b) => a - b),
+      "memory evidence was duplicated or reordered");
+    assert(consolidation.evidence.reduce((sum, row) =>
+      sum + [...JSON.stringify(row.item)].length, 0) <= 64_000,
+    "memory evidence exceeded its existing character budget");
+    if (requiredUserEvidence) {
+      assert(consolidation.evidence.some(row => row.item.role === "user" &&
+        JSON.stringify(row.item).includes(requiredUserEvidence)),
+      "unused evidence capacity did not admit the larger user message");
+      requiredUserEvidence = null;
+    }
+    if (largeResponse) {
+      assert(consolidation.evidence.some(row => row.item.role === "user" &&
+        JSON.stringify(row.item).includes("Cedar uses port 5823")),
+      "large response crowded the user's correction out of memory evidence");
+      largeResponse = false;
+    }
     sourceId ||= consolidation.evidence[0].id;
     if (holdMemory) {
       await new Promise(resolve => {
@@ -162,7 +182,8 @@ async function run() {
   ].join("\n"));
   fs.writeFileSync(path.join(home, "hooks.json"), "{}");
   let thread = await start();
-  await turn(thread, "Remember: project Cedar uses port 5823 and I prefer Celsius. Release verification remains unfinished.");
+  await turn(thread, "Remember: project Cedar uses port 5823 and I prefer Celsius. Release verification remains unfinished. " +
+    "Keep this correction despite a long response. ".repeat(30));
   assert.equal(luna, 1, "completed response did not save memory");
   await compact(thread);
   assert.equal(luna, 2, "compaction did not add exactly one Luna request");
@@ -195,6 +216,9 @@ async function run() {
   await turn(thread, "What is the Cedar port?");
   assert(JSON.stringify(requests[nextRequest].input).includes(saved),
     "restart did not admit saved memory");
+
+  requiredUserEvidence = "LONG_USER_CORRECTION";
+  await turn(thread, "LONG_USER_CORRECTION: Cedar still uses port 5823. " + "x".repeat(34_000));
 
   malformed = true;
   await compact(thread);
@@ -283,6 +307,8 @@ async function run() {
   assert.equal(luna, beforeDisabled, "disabled saver called Luna");
   console.log(JSON.stringify({ passed: true, luna, requests: requests.length, checks: [
     "save on completed response", "committed receipts retain evidence",
+    "user corrections survive large responses within the same evidence budget",
+    "spare evidence capacity admits user messages above the reserved portion",
     "short stable citations with separate provenance", "source failure preserves notes",
     "invented and malformed evidence IDs preserve memory, checkpoint and provenance",
     "tool-free save before compaction", "fresh process admits saved memory",

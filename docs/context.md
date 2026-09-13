@@ -165,7 +165,11 @@ When enabled, a root conversation response with a final assistant message and ea
 pre-compaction boundary invokes one tool-free `gpt-5.6-luna` call at low reasoning.
 The input contains the workspace goal, previous notes and up to 64,000 characters of whole recent
 history items; reasoning and system/developer messages are excluded. Oversized
-items can be omitted. Internal and subagent sessions do not run the saver: the
+items can be omitted. Up to half of that evidence budget is reserved for recent
+user messages before filling unused capacity from the remaining history. This
+prevents large responses from taking the entire budget before user corrections
+are considered. Selected items retain their original order; oversized messages
+still may not fit. Internal and subagent sessions do not run the saver: the
 root owns consolidation, using worker evidence returned to its conversation.
 The CLI also excludes child-thread notifications from workspace GOAL/ES mirroring,
 so a child finishing cannot replace the primary conversation's checkpoint.

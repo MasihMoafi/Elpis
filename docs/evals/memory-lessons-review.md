@@ -244,3 +244,52 @@ timed-out calls without receipts and separately run evaluations, including the
 benefit. Raw aggregate: `.tmp/final-candidate/memory-receipt-accounting-20260914.json`.
 The current full-tail consolidation cost needs evaluation alongside recall quality;
 using a cheap model alone does not establish an efficient memory system.
+
+## User corrections crowded out of evidence — September 14
+
+Exact item-content comparison across 20 retained receipts found 70,226 of
+1,278,535 selected characters repeated the immediately preceding save (about5.5%).
+IDs assigned by the saver were excluded from that comparison; original item data
+was compared unchanged. This does not support repeated identical history as the
+main explanation for this sample's cost. Raw aggregate:
+`.tmp/final-candidate/memory-evidence-overlap-20260914.json`.
+
+Several recent receipts contain no user messages; another contains only an
+environment message. The current reverse-order selection can fill its64k budget
+with tool/assistant output before reaching the user's correction. The installed
+0.1.24 runtime reproduces this in `memory-user-evidence-before.log`: a63.5k assistant
+response displaces a smaller explicit user correction from the actual saver input.
+
+The candidate reserves up to32k for recent whole user messages, then fills the
+remaining portion of the same64k cap with eligible unselected items. Unused reserved
+capacity is available to other evidence, and larger users can use spare capacity
+in the second pass. Original chronology, identifiers and whole-item boundaries
+are preserved. Runtime controls also assert unique ordered indices and the original
+character cap. This improves evidence availability, not semantic fidelity; it
+cannot guarantee every message fits or that Luna saves the correct lesson.
+
+Separately, one capped Luna-low replay of the earlier captured input tests the
+existing retention revision plus explicit review of old entries. Required outcomes
+remain: remove temporary release/test status, retain supported durable preferences
+and lessons, keep unfinished work in ES, and preserve valid citations. The prompt
+remains unchanged in production until the replay is assessed. Raw result:
+`memory-retention-existing-result.json`; no real memory is edited by this replay.
+
+That replay failed: it again saved installed versions and test totals, retained
+per-run evaluation status, and renumbered existing short citations even where the
+associated facts were unchanged. It also retained the stale `runtime-query.js`
+follow-up. The candidate prompt is **not applied**. One request completed in47.107s
+using25,977 reported tokens (23,815 input;2,162 output), without fallback or retry.
+Together with the earlier captured replay, this is evidence against declaring
+the prompt-only retention revisions reliable. The user-evidence selection change
+is evaluated separately and does not claim to resolve these semantic failures.
+
+The selection candidate built successfully in379.043s, peaking at73°C with one
+0.523s thermal pause. The new failure passes on the built and stripped packaged
+runtime, together with order/uniqueness/budget, large-user spare-capacity, saving,
+restart, citation, concurrent-edit, queued-input and disabled controls. Logs:
+`memory-user-evidence-after.log`, `memory-user-packaged-runtime.log`. All55 extension
+checks pass with none skipped (`memory-user-editor-regression.log`). These runtime
+checks use controlled localhost responses; only the separate failed retention
+replay uses live Luna. Formatting and diff checks pass. Full Rust unit suites and
+native visual checks were not rerun for this evidence-selection change.

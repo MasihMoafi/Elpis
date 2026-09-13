@@ -1,4 +1,11 @@
-# Local candidate 0.1.24
+# Local candidate 0.1.25
+
+Memory consolidation reserves space for recent user messages so large responses
+and tool output cannot consume the entire evidence budget first. Evidence remains
+bounded, whole and chronological. This improves correction availability; semantic
+retention and project scoping remain under evaluation.
+
+## Local candidate 0.1.24
 
 The bundled memory saver rejects unsupported UUID-based evidence citations before
 overwriting notes. This preserves memory, checkpoint and provenance when a model

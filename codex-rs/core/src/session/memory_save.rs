@@ -56,29 +56,44 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         return Ok(());
     };
     let history = sess.clone_history().await;
-    let mut evidence = Vec::new();
+    let mut evidence = std::collections::BTreeMap::new();
     let mut remaining = INPUT_CHARS;
-    // Whole items only: the model must not mistake an incomplete tool result for
-    // complete evidence. Older state remains available through the previous notes.
-    for (index, item) in history.raw_items().iter().enumerate().rev() {
-        if matches!(item, ResponseItem::Reasoning { .. }) {
-            continue;
+    // Reserve up to half for recent user instructions and corrections. Large tool
+    // output must not crowd them out. Keep whole items and restore chronology below.
+    for user_pass in [true, false] {
+        let mut allowance = if user_pass {
+            INPUT_CHARS / 2
+        } else {
+            remaining
+        };
+        for (index, item) in history.raw_items().iter().enumerate().rev() {
+            if matches!(item, ResponseItem::Reasoning { .. }) {
+                continue;
+            }
+            if matches!(item, ResponseItem::Message { role, .. } if role != "user" && role != "assistant")
+            {
+                continue;
+            }
+            let is_user = matches!(item, ResponseItem::Message { role, .. } if role == "user");
+            if (user_pass && !is_user) || evidence.contains_key(&index) {
+                continue;
+            }
+            let size = serde_json::to_string(item)?.chars().count();
+            if size > allowance {
+                continue;
+            }
+            allowance -= size;
+            remaining -= size;
+            evidence.insert(
+                index,
+                serde_json::json!({
+                    "id": format!("{}:{}:{index}", sess.session_id(), turn.sub_id),
+                    "item": item,
+                }),
+            );
         }
-        if matches!(item, ResponseItem::Message { role, .. } if role != "user" && role != "assistant")
-        {
-            continue;
-        }
-        let text = serde_json::to_string(item)?;
-        if text.chars().count() > remaining {
-            continue;
-        }
-        remaining -= text.chars().count();
-        evidence.push(serde_json::json!({
-            "id": format!("{}:{}:{index}", sess.session_id(), turn.sub_id),
-            "item": item,
-        }));
     }
-    evidence.reverse();
+    let evidence: Vec<_> = evidence.into_values().collect();
     if evidence.is_empty() {
         return Ok(());
     }
