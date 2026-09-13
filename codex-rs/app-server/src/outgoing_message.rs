@@ -109,12 +109,14 @@ pub(crate) struct ThreadScopedOutgoingMessageSender {
     outgoing: Arc<OutgoingMessageSender>,
     connection_ids: Arc<Vec<ConnectionId>>,
     thread_id: ThreadId,
+    dynamic_tool_owner: Option<ConnectionId>,
 }
 
 struct PendingCallbackEntry {
     callback: oneshot::Sender<ClientRequestResult>,
     thread_id: Option<ThreadId>,
     request: ServerRequest,
+    dynamic_tool_owner: Option<ConnectionId>,
 }
 
 impl ThreadScopedOutgoingMessageSender {
@@ -125,15 +127,32 @@ impl ThreadScopedOutgoingMessageSender {
     ) -> Self {
         Self {
             outgoing,
+            dynamic_tool_owner: connection_ids.first().copied(),
             connection_ids: Arc::new(connection_ids),
             thread_id,
         }
+    }
+
+    pub(crate) fn with_dynamic_tool_owner(mut self, owner: Option<ConnectionId>) -> Self {
+        self.dynamic_tool_owner = owner;
+        self
     }
 
     pub(crate) async fn send_request(
         &self,
         payload: ServerRequestPayload,
     ) -> (RequestId, oneshot::Receiver<ClientRequestResult>) {
+        if matches!(&payload, ServerRequestPayload::DynamicToolCall(_)) {
+            let Some(owner) = self.dynamic_tool_owner else {
+                let (tx, rx) = oneshot::channel();
+                let _ = tx.send(Ok(serde_json::json!({"success":false,"contentItems":[{"type":"inputText","text":"No connected client owns this conversation's editor tools. Reconnect its IDE before using them."}]})));
+                return (self.outgoing.next_request_id(), rx);
+            };
+            return self
+                .outgoing
+                .send_request_to_connections(Some(&[owner]), payload, Some(self.thread_id))
+                .await;
+        }
         self.outgoing
             .send_request_to_connections(
                 Some(self.connection_ids.as_slice()),
@@ -212,6 +231,11 @@ impl OutgoingMessageSender {
     pub(crate) async fn connection_closed(&self, connection_id: ConnectionId) {
         let mut request_contexts = self.request_contexts.lock().await;
         request_contexts.retain(|request_id, _| request_id.connection_id != connection_id);
+        drop(request_contexts);
+        self.request_id_to_callback
+            .lock()
+            .await
+            .retain(|_, entry| entry.dynamic_tool_owner != Some(connection_id));
     }
 
     pub(crate) async fn request_trace_context(
@@ -281,6 +305,12 @@ impl OutgoingMessageSender {
                     callback: tx_approve,
                     thread_id,
                     request: request.clone(),
+                    dynamic_tool_owner: if matches!(&request, ServerRequest::DynamicToolCall { .. })
+                    {
+                        connection_ids.and_then(|ids| ids.first()).copied()
+                    } else {
+                        None
+                    },
                 },
             );
         }
@@ -332,6 +362,16 @@ impl OutgoingMessageSender {
     ) {
         let requests = self.pending_requests_for_thread(thread_id).await;
         for request in requests {
+            if matches!(&request, ServerRequest::DynamicToolCall { .. }) {
+                let pending = self.request_id_to_callback.lock().await;
+                if pending
+                    .get(request.id())
+                    .and_then(|entry| entry.dynamic_tool_owner)
+                    != Some(connection_id)
+                {
+                    continue;
+                }
+            }
             if let Err(err) = self
                 .sender
                 .send(OutgoingEnvelope::ToConnection {

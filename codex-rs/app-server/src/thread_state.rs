@@ -32,6 +32,7 @@ type PendingInterruptQueue = Vec<ConnectionRequestId>;
 
 pub(crate) struct PendingThreadResumeRequest {
     pub(crate) request_id: ConnectionRequestId,
+    pub(crate) provides_dynamic_tools: bool,
     pub(crate) history_items: Vec<RolloutItem>,
     pub(crate) config_snapshot: ThreadConfigSnapshot,
     pub(crate) instruction_sources: Vec<LegacyAppPathString>,
@@ -253,6 +254,7 @@ mod tests {
 struct ThreadEntry {
     state: Arc<Mutex<ThreadState>>,
     connection_ids: HashSet<ConnectionId>,
+    dynamic_tool_connections: Vec<ConnectionId>,
     has_connections_watcher: watch::Sender<bool>,
 }
 
@@ -261,6 +263,7 @@ impl Default for ThreadEntry {
         Self {
             state: Arc::new(Mutex::new(ThreadState::default())),
             connection_ids: HashSet::new(),
+            dynamic_tool_connections: Vec::new(),
             has_connections_watcher: watch::channel(false).0,
         }
     }
@@ -298,6 +301,30 @@ pub(crate) struct ThreadStateManager {
 }
 
 impl ThreadStateManager {
+    pub(crate) async fn register_dynamic_tool_connection(
+        &self,
+        thread_id: ThreadId,
+        connection_id: ConnectionId,
+    ) {
+        let mut state = self.state.lock().await;
+        if let Some(entry) = state.threads.get_mut(&thread_id)
+            && entry.connection_ids.contains(&connection_id)
+            && !entry.dynamic_tool_connections.contains(&connection_id)
+        {
+            entry.dynamic_tool_connections.push(connection_id);
+        }
+    }
+
+    pub(crate) async fn dynamic_tool_owner(&self, thread_id: ThreadId) -> Option<ConnectionId> {
+        self.state
+            .lock()
+            .await
+            .threads
+            .get(&thread_id)?
+            .dynamic_tool_connections
+            .first()
+            .copied()
+    }
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -473,6 +500,9 @@ impl ThreadStateManager {
             }
             if let Some(thread_entry) = state.threads.get_mut(&thread_id) {
                 thread_entry.connection_ids.remove(&connection_id);
+                thread_entry
+                    .dynamic_tool_connections
+                    .retain(|id| *id != connection_id);
                 thread_entry.update_has_connections();
             }
         };
@@ -531,6 +561,9 @@ impl ThreadStateManager {
             for thread_id in &thread_ids {
                 if let Some(thread_entry) = state.threads.get_mut(thread_id) {
                     thread_entry.connection_ids.remove(&connection_id);
+                    thread_entry
+                        .dynamic_tool_connections
+                        .retain(|id| *id != connection_id);
                     thread_entry.update_has_connections();
                 }
             }

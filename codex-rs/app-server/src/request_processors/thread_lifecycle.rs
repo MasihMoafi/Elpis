@@ -430,11 +430,12 @@ pub(super) async fn ensure_listener_task_running(
                     let subscribed_connection_ids = thread_state_manager
                         .subscribed_connection_ids(conversation_id)
                         .await;
+                    let dynamic_tool_owner = thread_state_manager.dynamic_tool_owner(conversation_id).await;
                     let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
                         outgoing_for_task.clone(),
                         subscribed_connection_ids,
                         conversation_id,
-                    );
+                    ).with_dynamic_tool_owner(dynamic_tool_owner);
                     let thread_config = conversation.config().await;
                     let (initial_turn_cost, initial_auth_revision, should_forward) =
                         prepare_turn_cost_event(
@@ -760,6 +761,11 @@ pub(super) async fn handle_pending_thread_resume_request(
         newly_subscribed
     };
 
+    if pending.provides_dynamic_tools {
+        thread_state_manager
+            .register_dynamic_tool_connection(conversation_id, connection_id)
+            .await;
+    }
     let config_snapshot = pending.config_snapshot;
     let sandbox = config_snapshot.sandbox_policy().into();
     let cwd = config_snapshot.cwd().clone();

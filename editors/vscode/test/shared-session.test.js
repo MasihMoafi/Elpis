@@ -6,7 +6,8 @@ const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {once}=require('node:events');
 const {Session}=require('../src/session');
-const {Provider,message}=require('./runtime-eval');
+const {AppServer}=require('../src/rpc');
+const {Provider,message,call}=require('./runtime-eval');
 
 test('local connection rejects an incompatible socket and conflicting server options',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-connect-'));
@@ -38,7 +39,12 @@ test('two clients observe the same running turn and the observer can interrupt i
   const env={...process.env,ELPIS_HOME:home,CODEX_HOME:home};
   const server=spawn(executable,['--listen',`unix://${socket}`,'--session-source','cli'],{cwd:root,env,stdio:'ignore'});
   const options={home,executable,transport:{args:['--connect',socket],env}};
-  const owner=new Session(root,{cancel(){}},options);let observer,lateObserver,unrelated;
+  let ownerReads=0,observerReads=0,disconnectOwner=false;
+  const owner=new Session(root,{cancel(){},async execute(){
+    ownerReads++;
+    if(disconnectOwner){owner.dispose();return new Promise(()=>{});}
+    return {text:'OWNER_ONLY_SENTINEL'};
+  }},options);let observer,lateObserver,unrelated,terminal;
   try {
     await until(()=>require('node:fs').existsSync(socket));
     const missing=new Session(root,{cancel(){}},{...options,transport:{args:['--connect',path.join(home,'missing.sock')],env}});
@@ -47,7 +53,7 @@ test('two clients observe the same running turn and the observer can interrupt i
     await owner.connect();
     provider.actions.push(message('INITIAL_REPLY'));
     await Promise.all([once(owner,'completed',{signal:AbortSignal.timeout(10000)}),owner.send('Initialize shared history')]);
-    observer=new Session(root,{cancel(){}},{...options,resumeThreadId:owner.threadId});
+    observer=new Session(root,{cancel(){},async execute(){observerReads++;return {text:'OBSERVER_SENTINEL'};}},{...options,resumeThreadId:owner.threadId});
     await observer.connect();
     const seen=[];observer.on('user',text=>seen.push(text));
     provider.actions.push({hang:true});
@@ -65,19 +71,43 @@ test('two clients observe the same running turn and the observer can interrupt i
     await observer.cancel();
     await until(()=>!owner.busy&&!observer.busy);
     assert.equal(owner.threadId,observer.threadId);
-    provider.actions.push(message('SHARED_REPLY_SENTINEL'));
+    provider.actions.push(call('owner_only','editor_documents',{}),message('SHARED_REPLY_SENTINEL'));
     const ownMessages=[];observer.on('user',text=>ownMessages.push(text));
     await Promise.all([once(observer,'completed',{signal:AbortSignal.timeout(10000)}),observer.send('IDE follow-up')]);
     assert.deepEqual(ownMessages,['IDE follow-up'],'local send must not echo twice');
-    assert.equal(provider.requests.length,3);
-    owner.dispose();
+    assert.equal(ownerReads,1);
+    assert.equal(observerReads,0,'watching a conversation must not execute its editor tool twice');
+    assert(JSON.stringify(provider.requests.at(-1).body.input).includes('OWNER_ONLY_SENTINEL'));
+    assert.equal(provider.requests.length,4);
+    disconnectOwner=true;
+    provider.actions.push(call('owner_disconnect','editor_documents',{}),message('DISCONNECT_HANDLED'));
+    await Promise.all([once(observer,'completed',{signal:AbortSignal.timeout(10000)}),observer.send('Handle owner disconnect')]);
+    assert.equal(ownerReads,2);
+    assert.equal(observerReads,0,'do not replay a possibly executed tool after its owner disconnects');
+    assert(JSON.stringify(provider.requests.at(-1).body.input).includes('dynamic tool request failed'));
+    provider.actions.push(call('new_owner','editor_documents',{}),message('HANDOFF_REPLY'));
+    await Promise.all([once(observer,'completed',{signal:AbortSignal.timeout(10000)}),observer.send('Use remaining editor')]);
+    assert.equal(observerReads,1,'the remaining registered editor should own subsequent calls');
+    assert(JSON.stringify(provider.requests.at(-1).body.input).includes('OBSERVER_SENTINEL'));
     unrelated=new Session(root,{cancel(){}},options);
     provider.actions.push(message('OTHER_THREAD_REPLY'));
     await Promise.all([once(unrelated,'completed',{signal:AbortSignal.timeout(10000)}),unrelated.send('Other conversation')]);
-    assert.deepEqual(ownMessages,['IDE follow-up'],'unrelated conversations must not leak into the observer');
+    assert.deepEqual(ownMessages,['IDE follow-up','Handle owner disconnect','Use remaining editor'],'unrelated conversations must not leak into the observer');
     assert.equal(observer.busy,false);
+    terminal=new AppServer(executable,root,options.transport);
+    await terminal.request('initialize',{clientInfo:{name:'terminal_observer',version:'1'},capabilities:{experimentalApi:true}});
+    terminal.send({method:'initialized'});
+    await terminal.request('thread/resume',{threadId:observer.threadId});
+    for(const editor of [observer,lateObserver])await editor.rpc.request('thread/unsubscribe',{threadId:editor.threadId});
+    let terminalCompleted=false;
+    terminal.on('notification',event=>{if(event.method==='turn/completed')terminalCompleted=true;});
+    provider.actions.push(call('no_owner','editor_documents',{}),message('NO_OWNER_HANDLED'));
+    await terminal.request('turn/start',{threadId:observer.threadId,input:[{type:'text',text:'Handle absent editor'}]});
+    await until(()=>terminalCompleted);
+    assert(JSON.stringify(provider.requests.at(-1).body.input).includes('No connected client owns'));
+    assert.equal(observerReads,1,'a detached editor must not execute new tool calls');
   } finally {
-    owner.dispose();observer?.dispose();lateObserver?.dispose();unrelated?.dispose();
+    owner.dispose();observer?.dispose();lateObserver?.dispose();unrelated?.dispose();terminal?.dispose();
     if(server.exitCode===null&&server.signalCode===null){const exited=once(server,'exit');server.kill('SIGKILL');await exited;}
     await provider.close();
     await fs.rm(root,{recursive:true,force:true});

@@ -1428,6 +1428,13 @@ impl ThreadRequestProcessor {
             "thread",
         );
 
+        if dynamic_tool_count > 0 {
+            listener_task_context
+                .thread_state_manager
+                .register_dynamic_tool_connection(thread_id, request_id.connection_id)
+                .await;
+        }
+
         listener_task_context
             .thread_watch_manager
             .upsert_thread_silently(thread.clone())
@@ -2921,6 +2928,10 @@ impl ThreadRequestProcessor {
             }
         };
 
+        let provides_dynamic_tools = params
+            .dynamic_tools
+            .as_ref()
+            .is_some_and(|tools| !tools.is_empty());
         let ThreadResumeParams {
             thread_id,
             dynamic_tools,
@@ -3150,6 +3161,11 @@ impl ThreadRequestProcessor {
                 };
 
                 let connection_id = request_id.connection_id;
+                if provides_dynamic_tools {
+                    self.thread_state_manager
+                        .register_dynamic_tool_connection(thread_id, connection_id)
+                        .await;
+                }
                 self.outgoing.send_response(request_id, response).await;
                 // `excludeTurns` is explicitly the cheap resume path, so avoid
                 // rebuilding history only to attribute a replayed usage update.
@@ -3383,6 +3399,10 @@ impl ThreadRequestProcessor {
             let command = crate::thread_state::ThreadListenerCommand::SendThreadResumeResponse(
                 Box::new(crate::thread_state::PendingThreadResumeRequest {
                     request_id: request_id.clone(),
+                    provides_dynamic_tools: params
+                        .dynamic_tools
+                        .as_ref()
+                        .is_some_and(|tools| !tools.is_empty()),
                     history_items,
                     config_snapshot,
                     instruction_sources,
