@@ -222,6 +222,17 @@ permissions. The harness now resolves its binary argument; extracted permissions
 were restored from the VSIX metadata, which correctly records mode0755. Neither
 failed invocation was counted as a successful runtime check.
 
+Committed as `10976e69` and installed locally. CLI SHA-256:
+`e05a0c309dbc9e03a86c7b8fc51ec2af751cd3e71b0d060975ed7ac30b725df0`.
+IDE extension0.1.24 runtime SHA-256:
+`9fb6cbddb6593758cb20dbe19a71875fb32cf6637c77dab3af7ec0f02f8d405b`.
+All 42 installed runtime files match the package byte-for-byte; its manifest matches
+apart from VS Code installation metadata. The CLI still reports0.2.0. Recovery is
+at `~/.local/share/elpis/release-recovery/memory-provenance-20260914/`.
+No user process was restarted, real memory rewritten, or remote release published.
+One worktree remains. A fresh process is required to load this code; already-running
+shared daemons retain their earlier runtime until stopped normally.
+
 ### Observed saver overhead
 
 A read-only accounting of the 19 retained Elpis-workspace receipts found 19
