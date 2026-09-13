@@ -2450,6 +2450,17 @@ async fn slash_mcp_verbose_requests_full_inventory_via_app_server() {
 }
 
 #[tokio::test]
+async fn slash_mcp_reset_requests_reload_without_submitting_a_message() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    submit_composer_text(&mut chat, "/mcp reset");
+    assert_matches!(rx.try_recv(), Ok(AppEvent::ResetMcpServers));
+    assert!(
+        op_rx.try_recv().is_err(),
+        "reset must not submit a model turn"
+    );
+}
+
+#[tokio::test]
 async fn slash_mcp_invalid_args_show_usage() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -2462,7 +2473,7 @@ async fn slash_mcp_invalid_args_show_usage() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        rendered.contains("Usage: /mcp [verbose]"),
+        rendered.contains("Usage: /mcp [verbose|reset]"),
         "expected usage message, got: {rendered:?}"
     );
     assert_eq!(recall_latest_after_clearing(&mut chat), "/mcp full");

@@ -373,6 +373,12 @@ impl ChatWidget {
         } else {
             (133, 134, 128)
         }));
+        let detail = if light { muted } else { Style::default().dim() };
+        let warning = if light {
+            crate::elpis_motion::accent_style().bold()
+        } else {
+            Style::default().fg(Color::Yellow).bold()
+        };
         let context_window = self
             .status_line_context_window_size()
             .map(|window| window as u64);
@@ -443,7 +449,8 @@ impl ChatWidget {
         } else {
             "Tab controls · Alt+C hide · Ctrl+click open file"
         };
-        let mut lines = vec![
+        let mut lines = self.agent_ledger_lines(content_width);
+        lines.extend(vec![
             Line::from(vec![
                 Span::styled("CONTEXT LEDGER", brand.bold()),
                 Span::raw("  "),
@@ -451,7 +458,7 @@ impl ChatWidget {
             ]),
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
-        ];
+        ]);
         // A pending request is shown immediately, then reconciled with the next
         // authoritative core snapshot after persistence.
         let pending_smart_prune_enabled = self.context_ledger.pending_smart_prune_enabled;
@@ -524,7 +531,7 @@ impl ChatWidget {
                     "{} optimizer {plural} failed · originals preserved",
                     self.smart_prune.failed_batches
                 ),
-                Style::default().fg(Color::Yellow).bold(),
+                warning,
             )));
         }
         if self.smart_prune_synced && self.smart_prune.optimizer_requests > 0 {
@@ -557,7 +564,7 @@ impl ChatWidget {
             let status_style = match attempt.status.as_str() {
                 "admitted" => crate::elpis_motion::accent_style(),
                 "unchanged" => muted,
-                _ => Style::default().fg(Color::Yellow).bold(),
+                _ => warning,
             };
             lines.push(Line::from(vec![
                 Span::styled("Last attempt: ", muted),
@@ -712,7 +719,10 @@ impl ChatWidget {
         lines.push(Line::from(""));
 
         if sources.is_empty() {
-            lines.push(Line::from("No portable context is available.".dim()));
+            lines.push(Line::from(Span::styled(
+                "No portable context is available.",
+                detail,
+            )));
         }
         let mut source_line_ranges = vec![0..0; sources.len()];
         for group in LedgerSourceGroup::ALL {
@@ -826,22 +836,29 @@ impl ChatWidget {
                     };
                     lines.push(Line::from(Span::styled("WHY INCLUDED", brand.bold())));
                     lines.push(Line::from(Span::styled(source.name.clone(), brand)));
-                    lines.push(Line::from(
-                        format!("{inclusion} because {}.", source.reason).dim(),
-                    ));
-                    lines.push(Line::from(format!("Lifetime: {}", source.lifetime).dim()));
-                    lines.push(Line::from(format!("Origin: {}", source.origin).dim()));
-                    lines.push(Line::from(
+                    lines.push(Line::from(Span::styled(
+                        format!("{inclusion} because {}.", source.reason),
+                        detail,
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        format!("Lifetime: {}", source.lifetime),
+                        detail,
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        format!("Origin: {}", source.origin),
+                        detail,
+                    )));
+                    lines.push(Line::from(Span::styled(
                         format!(
                             "Size: {} bytes · Estimate: ≈{} tokens (trimmed characters ÷ 4, capped)",
                             format_source_count(source.bytes),
                             format_source_count(source.estimated_tokens),
-                        )
-                        .dim(),
-                    ));
-                    lines.push(Line::from(
-                        format!("Source: {}", source.path.display()).dim(),
-                    ));
+                        ), detail,
+                    )));
+                    lines.push(Line::from(Span::styled(
+                        format!("Source: {}", source.path.display()),
+                        detail,
+                    )));
                     // Only the expanded block needs separating from the next row;
                     // rows sit adjacent so the categories do not dominate the panel.
                     lines.push(Line::from(""));
@@ -1738,7 +1755,11 @@ fn smart_prune_on_colors(
         color_level,
         StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown
     ) {
-        return [Color::Yellow; 4];
+        return [if terminal_bg.is_some_and(is_light) {
+            Color::Black
+        } else {
+            Color::Yellow
+        }; 4];
     }
 
     let palette = if terminal_bg.is_some_and(is_light) {
@@ -1838,6 +1859,10 @@ mod tests {
                 crate::terminal_palette::StdoutColorLevel::Ansi16,
             ),
             [Color::Yellow; 4]
+        );
+        assert_eq!(
+            smart_prune_on_colors(Some((255, 255, 255)), StdoutColorLevel::Ansi16),
+            [Color::Black; 4]
         );
     }
 

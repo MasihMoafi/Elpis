@@ -958,7 +958,12 @@ impl ChatComposer {
                 }
             }
         }
-        let handled = self.draft.textarea.is_mouse_selecting()
+        let selection_motion = matches!(
+            event.kind,
+            crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left)
+                | crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left)
+        );
+        let handled = (selection_motion && self.draft.textarea.is_mouse_selecting())
             || (left_down && area.contains((event.column, event.row).into()));
         let copied = self.draft.textarea.handle_mouse_selection(
             event,

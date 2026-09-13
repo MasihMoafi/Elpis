@@ -14,6 +14,20 @@ use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::WarningNotification;
 
 impl App {
+    pub(super) fn remember_replayed_subagents<'a>(
+        &mut self,
+        items: impl IntoIterator<Item = &'a ThreadItem>,
+    ) {
+        for item in items {
+            if let Some(mut activity) = sub_agent_activity_display(item) {
+                // Historical activity establishes identity, not current liveness.
+                activity.is_running_hint = None;
+                self.agent_navigation.record_sub_agent_activity(activity);
+            }
+        }
+        self.sync_active_agent_label();
+    }
+
     pub(super) async fn shutdown_current_thread(&mut self, app_server: &mut AppServerSession) {
         if let Some(thread_id) = self.chat_widget.thread_id() {
             if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
@@ -191,6 +205,61 @@ impl App {
             .agent_navigation
             .active_agent_label(self.current_displayed_thread_id(), self.primary_thread_id);
         self.chat_widget.set_active_agent_label(label);
+        let entries = self
+            .agent_navigation
+            .ordered_threads()
+            .into_iter()
+            .filter(|(id, _)| Some(*id) != self.primary_thread_id)
+            .map(|(id, entry)| {
+                let task = entry
+                    .agent_path
+                    .clone()
+                    .or_else(|| entry.agent_nickname.clone())
+                    .unwrap_or_else(|| id.to_string());
+                let mut running = entry.is_running;
+                let activity = self
+                    .thread_event_channels
+                    .get(&id)
+                    .and_then(|channel| channel.store.try_lock().ok().map(|store| (channel, store)))
+                    .and_then(|(channel, store)| {
+                        if channel.attachment() == ThreadEventAttachment::Live {
+                            if store.active_turn_id().is_some() {
+                                running = true;
+                            } else if !store.turns.is_empty()
+                                || store.buffer.iter().any(|event| {
+                                    matches!(
+                                        event,
+                                        ThreadBufferedEvent::Notification(
+                                            ServerNotification::TurnCompleted(_)
+                                        )
+                                    )
+                                })
+                            {
+                                running = false;
+                            }
+                        }
+                        super::agent_status_feed::AgentStatusThreadPreview::from_store(
+                            task.clone(),
+                            &store,
+                        )
+                        .latest_activity()
+                    });
+                crate::chatwidget::agent_ledger::AgentLedgerEntry {
+                    task,
+                    status: if entry.is_closed {
+                        "Closed"
+                    } else if running {
+                        "Running"
+                    } else if !self.thread_event_channels.contains_key(&id) {
+                        "History"
+                    } else {
+                        "Idle"
+                    },
+                    activity,
+                }
+            })
+            .collect();
+        self.chat_widget.set_agent_ledger(entries);
         self.sync_side_thread_ui();
     }
 
@@ -960,6 +1029,7 @@ impl App {
         } else if let Some(change) = notification_status_change {
             self.apply_side_parent_status_change(thread_id, change);
         }
+        self.sync_active_agent_label();
         self.refresh_pending_thread_approvals().await;
         Ok(())
     }
@@ -1186,6 +1256,7 @@ impl App {
             self.app_event_tx
                 .send(AppEvent::BeginInitialHistoryReplayBuffer);
         }
+        self.remember_replayed_subagents(turns.iter().flat_map(|turn| turn.items.iter()));
         self.chat_widget
             .replay_thread_turns(turns, ReplayKind::ResumeInitialMessages);
         if should_buffer_initial_replay {
@@ -1255,7 +1326,12 @@ impl App {
         }
 
         match app_server
-            .resume_thread(self.config.clone(), thread_id, self.resume_model_settings())
+            .resume_thread(
+                self.config.clone(),
+                thread_id,
+                self.resume_model_settings(),
+                self.resume_has_permission_overrides(),
+            )
             .await
         {
             Ok(started) => {
@@ -1404,6 +1480,9 @@ impl App {
             },
         );
         if !snapshot.turns.is_empty() {
+            self.remember_replayed_subagents(
+                snapshot.turns.iter().flat_map(|turn| turn.items.iter()),
+            );
             self.chat_widget
                 .replay_thread_turns(snapshot.turns, ReplayKind::ThreadSnapshot);
         }
@@ -1527,9 +1606,11 @@ impl App {
 
     pub(super) fn handle_thread_event_replay(&mut self, event: ThreadBufferedEvent) {
         match event {
-            ThreadBufferedEvent::Notification(notification) => self
-                .chat_widget
-                .handle_server_notification(notification, Some(ReplayKind::ThreadSnapshot)),
+            ThreadBufferedEvent::Notification(notification) => {
+                self.remember_replayed_subagents(sub_agent_activity_item(&notification));
+                self.chat_widget
+                    .handle_server_notification(notification, Some(ReplayKind::ThreadSnapshot));
+            }
             ThreadBufferedEvent::Request(request) => self
                 .chat_widget
                 .handle_server_request(request, Some(ReplayKind::ThreadSnapshot)),

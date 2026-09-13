@@ -120,7 +120,9 @@ impl AgentNavigationState {
                     is_closed: false,
                 });
         entry.agent_path = Some(activity.agent_path);
-        entry.is_running = activity.is_running_hint;
+        if let Some(is_running) = activity.is_running_hint {
+            entry.is_running = is_running;
+        }
         entry.is_closed = false;
     }
 
@@ -341,6 +343,35 @@ impl AgentNavigationState {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn contacting_an_agent_preserves_its_known_liveness() {
+        use codex_app_server_protocol::SubAgentActivityKind;
+        use codex_app_server_protocol::ThreadItem;
+
+        let mut state = AgentNavigationState::default();
+        let thread_id = ThreadId::new();
+        let activity = |kind| {
+            crate::multi_agents::sub_agent_activity_display(&ThreadItem::SubAgentActivity {
+                id: "contact".to_string(),
+                kind,
+                agent_thread_id: thread_id.to_string(),
+                agent_path: "/root/reviewer".to_string(),
+            })
+            .unwrap()
+        };
+        state.record_sub_agent_activity(activity(SubAgentActivityKind::Interacted));
+        assert!(!state.get(&thread_id).unwrap().is_running);
+        state.record_sub_agent_activity(activity(SubAgentActivityKind::Started));
+        state.record_sub_agent_activity(activity(SubAgentActivityKind::Interacted));
+        assert!(state.get(&thread_id).unwrap().is_running);
+        state.set_running(thread_id, false);
+        state.record_sub_agent_activity(activity(SubAgentActivityKind::Interacted));
+        assert!(!state.get(&thread_id).unwrap().is_running);
+        state.record_sub_agent_activity(activity(SubAgentActivityKind::Started));
+        state.record_sub_agent_activity(activity(SubAgentActivityKind::Interrupted));
+        assert!(!state.get(&thread_id).unwrap().is_running);
+    }
 
     fn populated_state() -> (AgentNavigationState, ThreadId, ThreadId, ThreadId) {
         let mut state = AgentNavigationState::default();

@@ -10,6 +10,7 @@ use super::*;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::config_update::format_config_error;
 use crate::external_agent_config_migration_flow::ExternalAgentConfigMigrationFlowOutcome;
+use codex_app_server_protocol::RequestId;
 #[cfg(target_os = "windows")]
 use codex_config::types::WindowsSandboxModeToml;
 
@@ -1075,6 +1076,36 @@ impl App {
                         .on_plugin_enabled_set(cwd, plugin_id, enabled, result);
                 }
             }
+            AppEvent::ResetMcpServers => {
+                let request_handle = app_server.request_handle();
+                let app_event_tx = self.app_event_tx.clone();
+                tokio::spawn(async move {
+                    let result = request_handle
+                        .request_typed::<codex_app_server_protocol::McpServerRefreshResponse>(
+                            ClientRequest::McpServerRefresh {
+                                request_id: RequestId::String(format!(
+                                    "mcp-reset-{}",
+                                    Uuid::new_v4()
+                                )),
+                                params: None,
+                            },
+                        )
+                        .await
+                        .map(|_| ())
+                        .map_err(|error| error.to_string());
+                    app_event_tx.send(AppEvent::McpServersReset { result });
+                });
+            }
+            AppEvent::McpServersReset { result } => match result {
+                Ok(()) => self.chat_widget.add_info_message(
+                    "MCP reload queued. Connections use the latest settings on the next turn."
+                        .to_string(),
+                    None,
+                ),
+                Err(error) => self
+                    .chat_widget
+                    .add_error_message(format!("MCP reset failed: {error}")),
+            },
             AppEvent::FetchMcpInventory { detail, thread_id } => {
                 self.fetch_mcp_inventory(app_server, detail, thread_id);
             }

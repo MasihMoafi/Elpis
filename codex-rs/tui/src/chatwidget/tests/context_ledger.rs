@@ -1,6 +1,31 @@
 use super::*;
 
 #[tokio::test]
+async fn composer_drag_does_not_swallow_history_wheel_events() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_task_running(true);
+    chat.bottom_pane
+        .set_composer_text("draft text".into(), Vec::new(), Vec::new());
+    let area = Rect::new(0, 0, 120, 40);
+    Renderable::render(&chat, area, &mut ratatui::buffer::Buffer::empty(area));
+    let (x, y) = Renderable::cursor_pos(&chat, area).expect("composer cursor");
+    let mouse = |kind| MouseEvent {
+        kind,
+        column: x,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    };
+    assert!(chat.handle_composer_mouse_selection(mouse(MouseEventKind::Down(MouseButton::Left))));
+    assert!(!chat.handle_composer_mouse_selection(mouse(MouseEventKind::ScrollUp)));
+    assert!(!chat.handle_composer_mouse_selection(mouse(MouseEventKind::ScrollDown)));
+    assert!(chat.handle_composer_mouse_selection(mouse(MouseEventKind::Up(MouseButton::Left))));
+    assert_eq!(chat.bottom_pane.composer_text(), "draft text");
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn composer_drag_releases_ledger_focus_without_submitting() {
     use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
@@ -341,6 +366,88 @@ fn render_ledger_buffer(chat: &ChatWidget, height: u16) -> ratatui::buffer::Buff
     let mut buf = ratatui::buffer::Buffer::empty(area);
     chat.render_context_ledger(area, &mut buf);
     buf
+}
+
+#[tokio::test]
+async fn light_ledger_failures_and_expanded_sources_remain_readable() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    chat.smart_prune_synced = true;
+    chat.smart_prune.failed_batches = 1;
+    chat.smart_prune.latest_attempt =
+        Some(codex_app_server_protocol::ThreadSmartPruneAttemptSnapshot {
+            attempt_id: "contrast-check".into(),
+            audit_path: None,
+            status: "malformed_response".into(),
+            model_slug: "gpt-5.6-luna".into(),
+            reasoning_effort: "low".into(),
+            candidate_outputs: 1,
+            admitted_outputs: 0,
+            approx_saved_tokens: 0,
+            latency_ms: 100,
+            usage: None,
+        });
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
+
+    crate::terminal_palette::with_test_default_colors(
+        crate::terminal_probe::DefaultColors {
+            fg: (24, 24, 24),
+            bg: (255, 255, 255),
+        },
+        || {
+            let text = render_ledger(&chat, 200);
+            for expected in [
+                "malformed response",
+                "optimizer batch failed",
+                "WHY INCLUDED",
+                "Lifetime:",
+                "Origin:",
+                "Source:",
+            ] {
+                assert!(
+                    text.contains(expected),
+                    "missing rendered state: {expected}"
+                );
+            }
+            let buffer = render_ledger_buffer(&chat, 200);
+            for cell in buffer
+                .content()
+                .iter()
+                .filter(|cell| !cell.symbol().trim().is_empty())
+            {
+                assert!(
+                    !cell.modifier.contains(ratatui::style::Modifier::DIM),
+                    "faint light-ledger cell: {:?}",
+                    cell.symbol()
+                );
+                let (r, g, b) = match cell.fg {
+                    Color::Rgb(r, g, b) => (r, g, b),
+                    Color::Reset => (24, 24, 24),
+                    Color::Black => (0, 0, 0),
+                    other => panic!("unexpected light-ledger color: {other:?}"),
+                };
+                let linear = |v: u8| {
+                    let v = f64::from(v) / 255.0;
+                    if v <= 0.04045 {
+                        v / 12.92
+                    } else {
+                        ((v + 0.055) / 1.055).powf(2.4)
+                    }
+                };
+                let luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+                assert!(
+                    1.05 / (luminance + 0.05) >= 4.5,
+                    "low contrast {:?} for {:?}",
+                    cell.fg,
+                    cell.symbol()
+                );
+            }
+        },
+    );
+    Ok(())
 }
 
 #[tokio::test]

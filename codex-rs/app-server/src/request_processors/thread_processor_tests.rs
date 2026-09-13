@@ -810,6 +810,145 @@ mod thread_processor_behavior_tests {
         Ok(metadata)
     }
 
+    fn permission_resume_history() -> InitialHistory {
+        let context = serde_json::from_value(serde_json::json!({
+            "cwd": if cfg!(windows) { "C:\\workspace" } else { "/workspace" },
+            "approval_policy": "never",
+            "sandbox_policy": {"type": "danger-full-access"},
+            "model": "test-model",
+            "summary": "auto"
+        }))
+        .unwrap();
+        InitialHistory::Resumed(codex_protocol::protocol::ResumedHistory {
+            conversation_id: ThreadId::new(),
+            history: std::sync::Arc::new(vec![RolloutItem::TurnContext(context)]),
+            rollout_path: None,
+        })
+    }
+
+    #[test]
+    fn resume_permissions_restore_saved_policy_without_state_database() {
+        let mut overrides = ConfigOverrides::default();
+        merge_persisted_permissions(&permission_resume_history(), None, &mut overrides);
+        assert_eq!(
+            overrides.approval_policy,
+            Some(codex_protocol::protocol::AskForApproval::Never)
+        );
+        assert_eq!(
+            overrides.permission_profile,
+            Some(PermissionProfile::Disabled)
+        );
+    }
+
+    #[test]
+    fn resume_permissions_preserve_explicit_restrictions() {
+        let mut overrides = ConfigOverrides {
+            approval_policy: Some(codex_protocol::protocol::AskForApproval::OnRequest),
+            permission_profile: Some(PermissionProfile::read_only()),
+            ..Default::default()
+        };
+        merge_persisted_permissions(&permission_resume_history(), None, &mut overrides);
+        assert_eq!(
+            overrides.approval_policy,
+            Some(codex_protocol::protocol::AskForApproval::OnRequest)
+        );
+        assert_eq!(
+            overrides.permission_profile,
+            Some(PermissionProfile::read_only())
+        );
+
+        let mut overrides = ConfigOverrides::default();
+        let request = HashMap::from([
+            (
+                "approval_policy".to_string(),
+                serde_json::json!("on-request"),
+            ),
+            ("sandbox_mode".to_string(), serde_json::json!("read-only")),
+        ]);
+        merge_persisted_permissions(&permission_resume_history(), Some(&request), &mut overrides);
+        assert!(overrides.approval_policy.is_none());
+        assert!(overrides.permission_profile.is_none());
+    }
+
+    #[test]
+    fn resume_permissions_use_latest_saved_restrictions() {
+        let InitialHistory::Resumed(mut resumed) = permission_resume_history() else {
+            unreachable!()
+        };
+        let RolloutItem::TurnContext(mut context) = resumed.history[0].clone() else {
+            unreachable!()
+        };
+        context.approval_policy = codex_protocol::protocol::AskForApproval::OnRequest;
+        context.permission_profile = Some(PermissionProfile::read_only());
+        std::sync::Arc::make_mut(&mut resumed.history).push(RolloutItem::TurnContext(context));
+        let mut overrides = ConfigOverrides::default();
+        merge_persisted_permissions(&InitialHistory::Resumed(resumed), None, &mut overrides);
+        assert_eq!(
+            overrides.approval_policy,
+            Some(codex_protocol::protocol::AskForApproval::OnRequest)
+        );
+        assert_eq!(
+            overrides.permission_profile,
+            Some(PermissionProfile::read_only())
+        );
+    }
+
+    #[test]
+    fn resume_permissions_preserve_dotted_config_overrides() {
+        for (key, value) in [
+            (
+                "sandbox_workspace_write.network_access",
+                serde_json::json!(false),
+            ),
+            (
+                "permissions.restricted.network.enabled",
+                serde_json::json!(false),
+            ),
+        ] {
+            let mut overrides = ConfigOverrides::default();
+            let request = HashMap::from([(key.to_string(), value)]);
+            merge_persisted_permissions(
+                &permission_resume_history(),
+                Some(&request),
+                &mut overrides,
+            );
+            assert!(
+                overrides.permission_profile.is_none(),
+                "saved profile overrode {key}"
+            );
+        }
+        let mut overrides = ConfigOverrides::default();
+        let unrelated = HashMap::from([(
+            "permissions_unrelated".to_string(),
+            serde_json::json!(false),
+        )]);
+        merge_persisted_permissions(
+            &permission_resume_history(),
+            Some(&unrelated),
+            &mut overrides,
+        );
+        assert_eq!(
+            overrides.permission_profile,
+            Some(PermissionProfile::Disabled)
+        );
+    }
+
+    #[test]
+    fn resume_permissions_do_not_inherit_into_new_or_forked_threads() {
+        let InitialHistory::Resumed(resumed) = permission_resume_history() else {
+            unreachable!()
+        };
+        for history in [
+            InitialHistory::New,
+            InitialHistory::Forked((*resumed.history).clone()),
+        ] {
+            let mut overrides = ConfigOverrides::default();
+            merge_persisted_permissions(&history, None, &mut overrides);
+            assert!(overrides.approval_policy.is_none());
+            assert!(overrides.permission_profile.is_none());
+        }
+    }
+
     #[test]
     fn summary_from_thread_metadata_formats_protocol_timestamps_as_seconds() -> Result<()> {
         let mut metadata =

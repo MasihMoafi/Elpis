@@ -117,6 +117,10 @@ impl AgentStatusThreadPreview {
         vec!["  • ".dim(), format!("`{}`", self.agent_path).cyan()].into()
     }
 
+    pub(super) fn latest_activity(&self) -> Option<String> {
+        self.activity.last().cloned()
+    }
+
     fn preview_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines = self
             .activity

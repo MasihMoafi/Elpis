@@ -57,7 +57,47 @@ pub(super) fn resume_model_settings_for_overrides(
     }
 }
 
+pub(super) fn resume_has_permission_overrides(
+    config: &Config,
+    overrides: &ConfigOverrides,
+) -> bool {
+    overrides.approval_policy.is_some()
+        || overrides.approvals_reviewer.is_some()
+        || overrides.sandbox_mode.is_some()
+        || overrides.permission_profile.is_some()
+        || overrides.default_permissions.is_some()
+        || overrides.workspace_roots.is_some()
+        || !overrides.additional_writable_roots.is_empty()
+        || config
+            .config_layer_stack
+            .layers_high_to_low()
+            .into_iter()
+            .any(|layer| {
+                matches!(
+                    &layer.name,
+                    ConfigLayerSource::SessionFlags
+                        | ConfigLayerSource::User {
+                            profile: Some(_),
+                            ..
+                        }
+                ) && [
+                    "approval_policy",
+                    "approvals_reviewer",
+                    "sandbox_mode",
+                    "sandbox_workspace_write",
+                    "default_permissions",
+                    "permissions",
+                ]
+                .iter()
+                .any(|key| layer.config.get(*key).is_some())
+            })
+}
+
 impl App {
+    pub(super) fn resume_has_permission_overrides(&self) -> bool {
+        resume_has_permission_overrides(&self.config, &self.harness_overrides)
+    }
+
     pub(super) async fn enable_yolo(&mut self) -> bool {
         use crate::legacy_core::config::edit::ConfigEdit;
         use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
@@ -1353,6 +1393,36 @@ mod tests {
             app.resume_model_settings(),
             crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig
         );
+    }
+
+    #[tokio::test]
+    async fn resume_permissions_only_override_for_explicit_launch_settings() {
+        let mut app = make_test_app().await;
+        app.harness_overrides = ConfigOverrides::default();
+        app.config.config_layer_stack = ConfigLayerStack::default();
+        assert!(!app.resume_has_permission_overrides());
+        let path = test_path_buf("/tmp/config.toml").abs();
+        let value = TomlValue::Table(toml::map::Map::from_iter([(
+            "sandbox_mode".to_string(),
+            TomlValue::String("read-only".to_string()),
+        )]));
+        app.config.config_layer_stack =
+            ConfigLayerStack::default().with_user_config(&path, value.clone());
+        assert!(!app.resume_has_permission_overrides());
+        app.config.config_layer_stack = ConfigLayerStack::new(
+            vec![ConfigLayerEntry::new(
+                ConfigLayerSource::SessionFlags,
+                value,
+            )],
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        assert!(app.resume_has_permission_overrides());
+        app.config.config_layer_stack = ConfigLayerStack::default();
+        app.harness_overrides.approval_policy =
+            Some(codex_protocol::protocol::AskForApproval::OnRequest);
+        assert!(app.resume_has_permission_overrides());
     }
 
     #[tokio::test]

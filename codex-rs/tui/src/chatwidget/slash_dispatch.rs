@@ -724,7 +724,8 @@ impl ChatWidget {
             },
             SlashCommand::Mcp => match trimmed.to_ascii_lowercase().as_str() {
                 "verbose" => self.add_mcp_output(McpServerStatusDetail::Full),
-                _ => self.add_error_message("Usage: /mcp [verbose]".to_string()),
+                "reset" => self.app_event_tx.send(AppEvent::ResetMcpServers),
+                _ => self.add_error_message("Usage: /mcp [verbose|reset]".to_string()),
             },
             SlashCommand::Keymap => match trimmed.to_ascii_lowercase().as_str() {
                 "" => self.open_keymap_picker(),

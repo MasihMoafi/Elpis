@@ -50,7 +50,7 @@ pub(crate) struct AgentPickerThreadEntry {
 pub(crate) struct SubAgentActivityDisplay {
     pub(crate) thread_id: ThreadId,
     pub(crate) agent_path: String,
-    pub(crate) is_running_hint: bool,
+    pub(crate) is_running_hint: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -395,7 +395,11 @@ pub(crate) fn sub_agent_activity_display(item: &ThreadItem) -> Option<SubAgentAc
     Some(SubAgentActivityDisplay {
         thread_id: parse_thread_id(agent_thread_id)?,
         agent_path: agent_path.clone(),
-        is_running_hint: !matches!(kind, SubAgentActivityKind::Interrupted),
+        is_running_hint: match kind {
+            SubAgentActivityKind::Started => Some(true),
+            SubAgentActivityKind::Interrupted => Some(false),
+            SubAgentActivityKind::Interacted => None,
+        },
     })
 }
 

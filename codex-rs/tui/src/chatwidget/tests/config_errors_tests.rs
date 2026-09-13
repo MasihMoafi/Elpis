@@ -12,7 +12,7 @@ async fn chained_config_error_wraps_in_history_snapshot() {
     let height = 8;
     let backend = VT100Backend::new(width, height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
-    term.set_viewport_area(ratatui::layout::Rect::new(0, 0, width, height));
+    term.set_viewport_area(ratatui::layout::Rect::new(0, 0, width, 1));
     for lines in drain_insert_history(&mut rx) {
         crate::insert_history::insert_history_lines(&mut term, lines)
             .expect("insert history lines");

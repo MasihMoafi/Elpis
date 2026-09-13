@@ -1098,6 +1098,7 @@ impl StaticOverlay {
             },
             TuiEvent::Mouse(mouse_event) => {
                 self.view.scroll_by_wheel(mouse_event.kind);
+                tui.frame_requester().schedule_frame();
                 Ok(())
             }
             TuiEvent::Paste(_) => Ok(()),

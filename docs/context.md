@@ -77,8 +77,12 @@ Automatic Ace pruning is **off by default**. `/settings` labels it `Automatic pr
 pruning is off. `/force-prune` records `pressure` in its audit to name the targeted selection
 strategy; that value does not establish automatic invocation.
 
-`/compact N` saves a pressure threshold for subsequent user turns. Native compaction
-runs before a user turn when remaining usable context is at or below N percent.
+`/compact N` saves a pressure threshold checked before user turns and between
+model/tool iterations during ongoing work. When remaining usable context is at
+or below N percent, native compaction runs before the next continuing model request.
+It respects the automatic-compaction toggle. If a compaction cannot get below the
+custom target, that ongoing turn suppresses repeated pressure compactions until
+context falls below the target; native context-limit protection remains active.
 N may be any finite positive number below 70, including decimals. Settings live
 in `compaction.json` in the runtime home; absence preserves the native policy.
 The local runtime threshold was changed from 25 to 30 at Masih's request.
@@ -129,6 +133,13 @@ flowchart LR
 | Generated `ES.md` | Current decisions, unfinished work and evidence. The CLI writes turn details; enabled Luna saving consolidates working state. Later same-thread CLI writes retain that consolidated state. | Workspace, 8,000 characters |
 | `MEMORY.md` | Explicit preferences, stable project facts and reusable verified lessons. Users can edit it; enabled Luna saving can consolidate it. | Shared memory directory, 8,000 characters; project facts must name their project |
 | Repository `ES.md` | Ordinary project notes maintained by a person or agent. It is a separate file from the generated checkpoint. | Ordinary file admission, when selected |
+
+A correction belongs in memory when it teaches a reusable lesson: what was
+misunderstood, the correction, and when it applies. Current progress and unfinished
+tasks belong in ES; the objective belongs in GOAL. There is one shared memory file,
+not a separate memory database per project. Project lessons must explicitly name
+their project; global preferences can apply across projects. These labels and the
+admission prompt guide the model, so scope still needs behavioral testing.
 
 **Saving and loading are independent.** A workspace opts into saving through
 `context/workspaces/<workspace>/memory-autosave.json` containing
@@ -215,6 +226,30 @@ The final TUI suite passed 3,195 tests with five ignored, including root checkpo
 ownership and Usage dismissal; `.tmp/final-candidate/wheel-memory-tui-tests.log`.
 General memory benefit and final user acceptance remain open.
 
+The resumed primary conversation subsequently produced a committed Luna save
+receipt on September 13. This establishes that the installed response-completion
+trigger runs in the actual workspace, beyond the isolated tests. It does not mean
+every response should add a new memory: unchanged durable notes are an explicit
+valid result, while temporary work belongs in ES.
+
+### Memory search and automatic saving are separate
+
+The configured RAG MCP can search `MEMORY.md` using API embeddings and its local
+index. This does not change the saver or Ledger admission: Luna still consolidates
+the files, and admitting Memory still supplies the file rather than automatically
+selecting passages with RAG. Retrieved passages become context when the agent
+calls the search tool. Vectors help locate text; they do not expand the context
+window or establish that a saved claim is true.
+
+A September 13 local comparison used the same two queries over the memory file
+and 32 RAG Python source files (389 source passages), excluding generated book
+indexes. API `qwen/qwen3-embedding-4b` and local MiniLM both retrieved relevant
+index-lifecycle safeguards, with unrelated passages also returned. No clear API
+quality improvement was demonstrated. Both returned almost the entire small
+memory file, so this case showed no memory-context saving. Raw inputs, source
+hashes and results are in `.tmp/rag-api-eval/`; this is a small diagnostic, not a
+general RAG benchmark.
+
 ### Testing useful lessons
 
 Masih's September 13 clarification emphasizes verified, reusable lessons that
@@ -234,11 +269,37 @@ A useful evaluation tests behavior, not just file population:
   conflicting obsolete rule. Check an unrelated task for inappropriate application.
 - Verify transient progress, guesses and untrusted instructions are not promoted.
 
-The port-recall control above proves limited persistence and correction. It does
-not yet establish this behavioral benefit for reusable lessons.
-The [lesson acceptance draft](evals/memory-lessons-review.md) makes the proposed
-seed, fresh-chat prompts, correction, scope control and request cap reviewable.
-It has not been executed and is not evidence of a behavioral improvement.
+The September 13 execution of the
+[lesson acceptance draft](evals/memory-lessons-review.md) saved a project lesson,
+kept temporary progress in ES, changed the recommended action with admission
+enabled, and followed a corrected recommendation. However, it also applied Copper
+Orchard's project-specific lesson to unrelated Silver Meadow. That scope control
+failed: populated memory and successful recall do not establish reliable judgment.
+Raw results are in `.tmp/final-candidate/memory-lessons-live-result.json`.
+The candidate adds explicit scope guidance and an admission regression test.
+The one-request replay still failed: Luna recommended Copper Orchard's command
+for Silver Meadow, despite receiving the guidance in the actual developer context.
+Saving is verified; reliable semantic project scoping is not. The isolated probe
+asks about another project within the same working directory, so separating files
+by workspace alone would not establish that this particular error is fixed.
+
+### Memory and compaction timing, September 13
+
+Three actual workspace responses took another 24.276, 26.092 and 25.924 seconds
+after their final text before the turn completed. Their committed memory receipts
+were written 3–4 milliseconds before completion. This measures the combined
+post-answer saving delay; it does not isolate Luna inference from local work.
+The older receipts have no duration fields, and the last recorded compaction
+predates those saves, so these observations cannot explain earlier multi-minute
+compactions.
+
+The candidate adds preparation, request and commit milliseconds to future memory
+receipts. Commit timing ends before the final receipt write. Existing logs also
+record remote compaction's pre-hooks, preparation, request, history application
+and post-hooks as scalar durations. Request timing includes the client/network
+lifecycle, not just provider inference. This instrumentation supplies evidence
+for diagnosis; it is not a speed fix. The saved pressure threshold remains
+30% context remaining.
 
 ### Observed checkpoint pressure, September 12
 

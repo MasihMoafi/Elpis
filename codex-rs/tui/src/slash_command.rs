@@ -144,7 +144,7 @@ impl SlashCommand {
             SlashCommand::Experimental => "configure Elpis settings",
             SlashCommand::AutoReview => "approve one retry of a recent auto-review denial",
             SlashCommand::Add => "add a file to the Context Ledger: /add <path>",
-            SlashCommand::Mcp => "list configured MCP tools; use /mcp verbose for details",
+            SlashCommand::Mcp => "list MCP tools; verbose for details, reset to reload connections",
             SlashCommand::Apps => "manage apps",
             SlashCommand::Plugins => "browse plugins",
             SlashCommand::Logout => "log out",

@@ -985,7 +985,12 @@ impl App {
                     &harness_overrides,
                 );
                 let resumed = app_server
-                    .resume_thread(config.clone(), target_session.thread_id, model_settings)
+                    .resume_thread(
+                        config.clone(),
+                        target_session.thread_id,
+                        model_settings,
+                        config_persistence::resume_has_permission_overrides(&config, &harness_overrides),
+                    )
                     .await
                     .map_err(|err| session_start_error("resume", &target_session, err))?;
                 let init = crate::chatwidget::ChatWidgetInit {

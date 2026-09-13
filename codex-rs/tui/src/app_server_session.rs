@@ -478,6 +478,7 @@ impl AppServerSession {
         config: Config,
         thread_id: ThreadId,
         model_settings: ResumeModelSettings,
+        override_permissions: bool,
     ) -> Result<AppServerStartedThread> {
         let request_id = self.next_request_id();
         let session_config = if model_settings == ResumeModelSettings::RestoreFromThread {
@@ -495,6 +496,7 @@ impl AppServerSession {
                     self.thread_params_mode(),
                     self.remote_cwd_override.as_deref(),
                     model_settings,
+                    override_permissions,
                 ),
             })
             .await
@@ -1447,6 +1449,7 @@ fn thread_resume_params_from_config(
     thread_params_mode: ThreadParamsMode,
     remote_cwd_override: Option<&std::path::Path>,
     model_settings: ResumeModelSettings,
+    override_permissions: bool,
 ) -> ThreadResumeParams {
     let permissions = permissions_selection_from_config(&config, thread_params_mode);
     let sandbox = permissions
@@ -1480,11 +1483,14 @@ fn thread_resume_params_from_config(
         model_provider,
         service_tier: service_tier_override_from_config(&config),
         cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
-        runtime_workspace_roots: Some(config.workspace_roots.clone()),
-        approval_policy: Some(config.permissions.approval_policy.value().into()),
-        approvals_reviewer: approvals_reviewer_override_from_config(&config),
-        sandbox,
-        permissions,
+        runtime_workspace_roots: override_permissions.then(|| config.workspace_roots.clone()),
+        approval_policy: override_permissions
+            .then(|| config.permissions.approval_policy.value().into()),
+        approvals_reviewer: override_permissions
+            .then(|| approvals_reviewer_override_from_config(&config))
+            .flatten(),
+        sandbox: override_permissions.then_some(sandbox).flatten(),
+        permissions: override_permissions.then_some(permissions).flatten(),
         config: config_overrides,
         developer_instructions: with_terminal_visualization_instructions(
             &config, /*control_instructions*/ None,
@@ -2053,6 +2059,7 @@ mod tests {
             ThreadParamsMode::Remote,
             /*remote_cwd_override*/ None,
             ResumeModelSettings::OverrideFromCurrentConfig,
+            /*override_permissions*/ true,
         );
         let fork = thread_fork_params_from_config(
             config,
@@ -2171,6 +2178,7 @@ mod tests {
             ThreadParamsMode::Remote,
             Some(remote_cwd.as_path()),
             ResumeModelSettings::OverrideFromCurrentConfig,
+            /*override_permissions*/ true,
         );
         let fork = thread_fork_params_from_config(
             config,
@@ -2223,6 +2231,7 @@ mod tests {
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
             ResumeModelSettings::OverrideFromCurrentConfig,
+            /*override_permissions*/ true,
         );
         let fork = thread_fork_params_from_config(
             config,
@@ -2264,10 +2273,15 @@ mod tests {
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
             ResumeModelSettings::RestoreFromThread,
+            /*override_permissions*/ false,
         );
 
         assert_eq!(params.model, None);
         assert_eq!(params.model_provider, None);
+        assert_eq!(params.approval_policy, None);
+        assert_eq!(params.approvals_reviewer, None);
+        assert_eq!(params.sandbox, None);
+        assert_eq!(params.permissions, None);
         assert_eq!(
             params.config,
             Some(HashMap::from([
@@ -2323,7 +2337,12 @@ mod tests {
         app_server.available_models = vec![preset];
 
         let resumed = app_server
-            .resume_thread(config, thread_id, ResumeModelSettings::RestoreFromThread)
+            .resume_thread(
+                config,
+                thread_id,
+                ResumeModelSettings::RestoreFromThread,
+                false,
+            )
             .await?;
 
         assert_eq!(resumed.session.service_tier, None);
@@ -2350,6 +2369,67 @@ mod tests {
             explicit_overrides.get("personality"),
             Some(&serde_json::Value::String("none".to_string()))
         );
+    }
+
+    #[tokio::test]
+    async fn persisted_resume_restores_permissions_unless_explicitly_overridden() -> Result<()> {
+        for override_permissions in [false, true] {
+            let codex_home = tempfile::tempdir()?;
+            let config = build_config(&codex_home).await;
+            let configured_profile = config.permissions.effective_permission_profile();
+            assert_ne!(configured_profile, PermissionProfile::Disabled);
+            let id = create_fake_rollout(
+                codex_home.path(),
+                "2025-01-05T12-00-00",
+                "2025-01-05T12:00:00Z",
+                "Saved user message",
+                Some(config.model_provider_id.as_str()),
+                None,
+            )
+            .expect("create saved permission rollout");
+            let path = codex_rollout::find_thread_path_by_id_str(codex_home.path(), &id, None)
+                .await?
+                .expect("saved rollout");
+            let context = serde_json::from_value(serde_json::json!({
+                "cwd": config.cwd,
+                "approval_policy": "never",
+                "sandbox_policy": {"type": "danger-full-access"},
+                "model": "gpt-5.4",
+                "summary": "auto"
+            }))?;
+            codex_rollout::append_rollout_item_to_path(
+                &path,
+                &codex_protocol::protocol::RolloutItem::TurnContext(context),
+            )
+            .await?;
+            let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
+            let resumed = app_server
+                .resume_thread(
+                    config.clone(),
+                    ThreadId::from_string(&id)?,
+                    ResumeModelSettings::RestoreFromThread,
+                    override_permissions,
+                )
+                .await?;
+            if override_permissions {
+                assert_eq!(resumed.session.permission_profile, configured_profile);
+                assert_eq!(
+                    resumed.session.approval_policy,
+                    config.permissions.approval_policy.value().into()
+                );
+            } else {
+                assert_eq!(
+                    resumed.session.permission_profile,
+                    PermissionProfile::Disabled
+                );
+                assert_eq!(
+                    resumed.session.approval_policy,
+                    codex_app_server_protocol::AskForApproval::Never
+                );
+            }
+            app_server.shutdown().await?;
+        }
+        Ok(())
     }
 
     #[tokio::test]
@@ -2393,6 +2473,7 @@ mod tests {
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
             ResumeModelSettings::OverrideFromCurrentConfig,
+            /*override_permissions*/ true,
         );
         let control_fork = thread_fork_params_from_config(
             config.clone(),
@@ -2423,6 +2504,7 @@ mod tests {
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
             ResumeModelSettings::OverrideFromCurrentConfig,
+            /*override_permissions*/ true,
         );
         let treatment_fork = thread_fork_params_from_config(
             config,

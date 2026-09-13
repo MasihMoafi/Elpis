@@ -162,8 +162,10 @@ where
         wrapped.extend(line_wrapped);
     }
     let wrapped_lines = wrapped_rows.min(usize::from(u16::MAX)) as u16;
-    match mode {
-        InsertHistoryMode::ZellijRaw => {
+    match (mode, area.top()) {
+        // DECSTBM needs at least two rows. With less history space, append
+        // through the terminal and reserve the viewport again below the history.
+        (InsertHistoryMode::ZellijRaw, _) | (InsertHistoryMode::Standard, 0 | 1) => {
             // The existing viewport is immediately replaced in the same draw pass. Clear it
             // before terminal scrolling can move composer contents into scrollback.
             terminal.clear_after_position(area.as_position())?;
@@ -193,7 +195,7 @@ where
                 should_update_area = true;
             }
         }
-        InsertHistoryMode::Standard => {
+        (InsertHistoryMode::Standard, _) => {
             let writer = terminal.backend_mut();
             let cursor_top = if area.bottom() < screen_size.height {
                 // If the viewport is not at the bottom of the screen, scroll it down to make room.
@@ -252,6 +254,11 @@ where
         terminal.set_viewport_area(area);
     }
     if wrapped_lines > 0 {
+        // DECSTBM cannot isolate a zero/one-row history region. Raw insertion
+        // can touch the viewport when a tall ledger occupies the whole screen.
+        if area.top() <= 1 {
+            terminal.invalidate_viewport();
+        }
         terminal.note_history_rows_inserted(wrapped_lines);
         terminal.record_history_rows(
             wrapped
@@ -538,6 +545,7 @@ mod tests {
     use crate::test_backend::VT100Backend;
     use ratatui::layout::Rect;
     use ratatui::style::Color;
+    use ratatui::style::Style;
 
     #[test]
     fn writes_bold_then_regular_spans() {
@@ -578,6 +586,40 @@ mod tests {
         let output = String::from_utf8(actual).expect("UTF-8 terminal output");
         assert!(output.contains("\x1b]8;;https://example.com/long/path\x07"));
         assert_eq!(line.line.spans[0].content, destination);
+    }
+
+    #[test]
+    fn one_row_history_keeps_latest_warning_above_repainted_viewport() {
+        let backend = VT100Backend::new(50, 10);
+        let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
+        term.set_viewport_area(Rect::new(0, 0, 50, 9));
+        insert_history_lines(&mut term, vec![Line::from("Earlier startup warning")])
+            .expect("first history line");
+        insert_history_lines(
+            &mut term,
+            vec![Line::from("MCP startup incomplete (failed: alpha)")],
+        )
+        .expect("latest warning");
+        term.draw(|frame| {
+            let area = frame.area();
+            frame
+                .buffer_mut()
+                .set_string(area.x, area.y + 1, "Elpis composer", Style::default());
+        })
+        .expect("repaint viewport");
+        let rows = term
+            .backend()
+            .vt100()
+            .screen()
+            .rows(0, 50)
+            .collect::<Vec<_>>();
+        assert_eq!(term.viewport_area.top(), 1);
+        assert_eq!(rows[0].trim_end(), "MCP startup incomplete (failed: alpha)");
+        assert!(
+            rows[1].trim().is_empty(),
+            "history must not leak into viewport spaces"
+        );
+        assert_eq!(rows[2].trim_end(), "Elpis composer");
     }
 
     #[test]

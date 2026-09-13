@@ -194,6 +194,65 @@ fn merge_persisted_approvals_reviewer(
             });
 }
 
+fn merge_persisted_permissions(
+    thread_history: &InitialHistory,
+    request_overrides: Option<&HashMap<String, serde_json::Value>>,
+    typesafe_overrides: &mut ConfigOverrides,
+) {
+    let InitialHistory::Resumed(resumed) = thread_history else {
+        return;
+    };
+    let Some((approval_policy, permission_profile)) =
+        resumed.history.iter().rev().find_map(|item| match item {
+            RolloutItem::TurnContext(context) => {
+                Some((context.approval_policy, context.permission_profile()))
+            }
+            RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(event)) => Some((
+                event.thread_settings.approval_policy,
+                event.thread_settings.permission_profile.clone(),
+            )),
+            _ => None,
+        })
+    else {
+        return;
+    };
+    let explicitly_configured = |keys: &[&str]| {
+        request_overrides.is_some_and(|overrides| {
+            overrides.keys().any(|configured| {
+                keys.iter().any(|key| {
+                    configured.as_str() == *key
+                        || configured
+                            .strip_prefix(*key)
+                            .is_some_and(|suffix| suffix.starts_with('.'))
+                })
+            })
+        })
+    };
+    if typesafe_overrides.approval_policy.is_none() && !explicitly_configured(&["approval_policy"])
+    {
+        typesafe_overrides.approval_policy = Some(approval_policy);
+    }
+    if typesafe_overrides.sandbox_mode.is_none()
+        && typesafe_overrides.permission_profile.is_none()
+        && typesafe_overrides.default_permissions.is_none()
+        && !explicitly_configured(&[
+            "sandbox_mode",
+            "sandbox_workspace_write",
+            "default_permissions",
+            "permissions",
+        ])
+    {
+        typesafe_overrides.permission_profile = Some(permission_profile);
+        if typesafe_overrides.workspace_roots.is_none() {
+            typesafe_overrides.workspace_roots =
+                resumed.history.iter().rev().find_map(|item| match item {
+                    RolloutItem::TurnContext(context) => context.workspace_roots.clone(),
+                    _ => None,
+                });
+        }
+    }
+}
+
 fn normalize_thread_list_cwd_filters(
     cwd: Option<ThreadListCwdFilter>,
 ) -> Result<Option<Vec<PathBuf>>, JSONRPCErrorError> {
@@ -3112,6 +3171,11 @@ impl ThreadRequestProcessor {
         request_overrides: &mut Option<HashMap<String, serde_json::Value>>,
         typesafe_overrides: &mut ConfigOverrides,
     ) -> Option<ThreadMetadata> {
+        merge_persisted_permissions(
+            thread_history,
+            request_overrides.as_ref(),
+            typesafe_overrides,
+        );
         merge_persisted_approvals_reviewer(
             thread_history,
             request_overrides.as_ref(),

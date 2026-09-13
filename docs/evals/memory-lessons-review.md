@@ -1,7 +1,8 @@
-# Memory lessons: behavioral acceptance draft
+# Memory lessons: behavioral acceptance protocol
 
-September 13, 2026. Review draft; no new paid inference has been run for this
-protocol. The existing port-recall result is separate evidence.
+September 13, 2026. Executed under Masih's authorization to finish the outstanding
+tasks. The fixture below is preserved as specified; results follow at the end.
+The earlier port-recall result remains separate evidence.
 
 ## Decision
 
@@ -29,7 +30,7 @@ The runtime must save the scoped lesson in MEMORY and retain unfinished work in
 ES. Inspect both files and the save receipt. A model repeating the lesson in its
 reply is not evidence that saving happened.
 
-## Proposed probes
+## Probes
 
 1. Fresh process, Memory admitted: “In Copper Orchard I changed
    src/parsers/date.rs and the generic check passed. Which checks remain before
@@ -52,7 +53,7 @@ This is six main Luna turns plus two saving calls, eight requests in total if
 there are no retries. Disable saving for the fresh-chat probes. Set an overall
 request cap of eight and stop on unexpected extra requests or unavailable Luna.
 The runtime may otherwise retry transport requests, so the driver must enforce
-the cap at the request boundary before a paid run is approved.
+the cap at the request boundary. The executed driver enforced this limit.
 
 ## Evidence and interpretation
 
@@ -63,5 +64,21 @@ the cap at the request boundary before a paid run is approved.
 - This tool-free fixture tests action selection, not successful command execution
   or measured reduction of real coding errors. A later task evaluation needs an
   executable repository and independent verification of the resulting changes.
-- Masih reviews the categories and fixture before execution. One synthetic lesson
-  cannot establish general benefit, a useful average effect, or research novelty.
+- One synthetic lesson cannot establish general benefit, a useful average effect,
+  or research novelty. Passing automated grades is separate from Masih's acceptance.
+
+## Execution result, September 13
+
+The baseline completed six main turns and two saving calls: eight forwarded
+requests and two receipts. The request-cap self-test passed. Saving the project
+lesson, keeping temporary state in ES, changing the admitted-versus-disabled
+recommendation, and following the corrected recommendation passed their grades.
+The unrelated-project control failed: Copper Orchard's lesson was incorrectly
+applied to Silver Meadow. The overall behavioral acceptance therefore did not pass.
+
+Inputs, outputs, receipts, usage, grades and binary hash are recorded in
+`.tmp/final-candidate/memory-lessons-live-result.json`. The candidate adds scope
+guidance; the one-call replay still recommended Copper Orchard's command for
+Silver Meadow despite the guidance reaching the actual request. Scope remains
+failed; no further inference retries were run. This
+result establishes neither reliable project scoping nor general coding benefit.

@@ -323,6 +323,7 @@ use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
 use crate::status_indicator_widget::StatusDetailsCapitalization;
 use crate::text_formatting::truncate_text;
 use crate::tui::FrameRequester;
+pub(crate) mod agent_ledger;
 mod command_lifecycle;
 mod context_ledger;
 use self::context_ledger::ContextLedgerState;
@@ -553,6 +554,7 @@ pub(crate) struct ChatWidget {
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
     context_ledger: ContextLedgerState,
+    agent_ledger: Vec<agent_ledger::AgentLedgerEntry>,
     manual_memory_cache: ManualMemoryCache,
     transcript: TranscriptState,
     config: Config,

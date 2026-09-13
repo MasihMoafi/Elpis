@@ -521,11 +521,16 @@ where
         Ok(())
     }
 
-    /// Force the next draw pass to repaint the entire viewport by resetting the
-    /// diff buffer. Call this after raw terminal operations that move screen
+    /// Force the next draw pass to repaint the entire viewport, including spaces.
+    /// Call this after raw terminal operations that move screen
     /// content outside ratatui's knowledge.
     pub fn invalidate_viewport(&mut self) {
         self.previous_buffer_mut().reset();
+        // A blank previous cell would falsely suppress painting a current space
+        // over a glyph written outside the buffer. This sentinel is never drawn.
+        for cell in &mut self.previous_buffer_mut().content {
+            cell.set_symbol("\0");
+        }
     }
 
     /// Clear terminal scrollback (if supported) and force a full redraw.
@@ -969,6 +974,34 @@ mod tests {
         let mut buffer = Buffer::empty(Rect::new(0, 0, 80, 2));
         buffer.set_string(0, 0, "Keep this selected transcript", Style::default());
         assert!(diff_buffers(&buffer, &buffer).is_empty());
+    }
+
+    #[test]
+    fn invalidated_viewport_repaints_spaces_over_raw_history_glyphs() {
+        let area = Rect::new(0, 0, 8, 1);
+        let mut terminal = Terminal::with_screen_size_and_cursor_position(
+            CaptureBackend::new(8, 1),
+            Size::new(8, 1),
+            Position::new(0, 0),
+        );
+        terminal.set_viewport_area(area);
+        terminal
+            .current_buffer_mut()
+            .set_string(0, 0, "A B", Style::default());
+        terminal.invalidate_viewport();
+        let commands = diff_buffers(terminal.previous_buffer(), terminal.current_buffer());
+        assert!(
+            commands.iter().any(|command| matches!(command,
+                DrawCommand::Put { x: 1, y: 0, cell } if cell.symbol() == " "
+            )),
+            "a blank between labels must overwrite stale box-drawing glyphs"
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| matches!(command, DrawCommand::ClearToEnd { x: 3, y: 0, .. })),
+            "the blank tail must overwrite stale history too"
+        );
     }
 
     #[test]
