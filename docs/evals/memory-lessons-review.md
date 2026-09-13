@@ -109,3 +109,18 @@ Before installation, require these controls:
 
 Global promotion policy and explicit project selection need a coherent user flow.
 Avoid adding hidden classification calls or another prompt-only scope claim.
+
+## Actual-file retention review, September 13
+
+A later inspection of the real `~/.elpis/memories/MEMORY.md` found a saved entry
+describing the current installed commit and pending user acceptance. That is
+temporary release status, despite the prompt already excluding transient status.
+The earlier synthetic temporary-state control passing therefore does not establish
+that the retention policy is reliable in ordinary sessions.
+
+The entry was manually replaced with the verified project lesson: the terminal
+checkpoint writer and saver must coordinate through a workspace checkpoint lock,
+preserve manual edits, and allow unrelated workspaces to keep writing. Installation
+state remains in ES and the dated release evidence. This was a manual correction,
+not a runtime fix or a successful automatic-repair test. Future retention checks
+must include real release-status examples as well as the synthetic fixture.
