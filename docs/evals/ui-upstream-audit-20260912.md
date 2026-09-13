@@ -38,6 +38,27 @@ Installed and built hashes match; rollback is
 This supersedes earlier installed CLI hashes below. No public release; the
 unresolved selection/compaction verification still prevents a production-ready claim.
 
+### Full Access recheck, September 13
+
+The current installed CLI SHA256 is
+`ba9d7704efb737e729c0ff414d1e282bbcdc302e077d734f23da25572fddba62`.
+Five focused `yolo_` tests passed, including reload in a fresh project.
+The installed binary also passed two isolated headless native-terminal controls:
+successful future-default persistence, and an unwritable config directory that
+preserved the original config and visibly reported that saving failed. Neither
+control sent a model request or changed Masih's real permission settings.
+
+Evidence: `.tmp/final-candidate/yolo-current-candidate-tests.log`, and
+`yolo-current-native-final/` plus `yolo-current-save-failure-final/` under the same
+directory. Each native directory contains `result.json` and an inspected
+`yolo.png`. Earlier screenshot attempts captured the completion menu too soon;
+reusing their directories also caused a fixture startup failure from stale screen
+output. The final controls used fresh directories and a settled screenshot.
+
+This verifies the implementation and its save-failure behavior. It does not
+override managed restrictions, explicit profiles, IDE selections, or a resumed
+chat's saved permissions, and does not establish overall production acceptance.
+
 ### Subsequent light-terminal correction
 
 Masih reported unreadable colors when the terminal follows a light desktop theme.
