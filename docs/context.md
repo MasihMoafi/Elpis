@@ -236,6 +236,9 @@ A useful evaluation tests behavior, not just file population:
 
 The port-recall control above proves limited persistence and correction. It does
 not yet establish this behavioral benefit for reusable lessons.
+The [lesson acceptance draft](evals/memory-lessons-review.md) makes the proposed
+seed, fresh-chat prompts, correction, scope control and request cap reviewable.
+It has not been executed and is not evidence of a behavioral improvement.
 
 ### Observed checkpoint pressure, September 12
 

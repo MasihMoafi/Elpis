@@ -269,6 +269,16 @@ it does not separate provider time from local history preparation and applicatio
 These numbers cannot establish a renderer defect or the root cause of the delay.
 Raw scalar evidence: `.tmp/final-candidate/live-activity-timings.json`.
 
+September 13 code review: enabled memory saving is now awaited inside
+`run_pre_compact_hooks` before the remote compaction request. Its Luna request has
+a 60-second timeout, so memory can add provider latency before compaction itself.
+The earlier controlled timing comparisons predate this enabled saver and cannot
+describe current end-to-end latency with memory on. This new serial call cannot
+explain the historical multi-minute observations, which predate its activation.
+Existing scalar evidence does not isolate the old delay; a diagnosis needs timing
+at the pre-hook, request/response and history-application boundaries. No historical
+provider/local split can be recovered from those aggregate values alone.
+
 The same conversation's live pruning summary reported:
 
 | Measure | Reported value |
