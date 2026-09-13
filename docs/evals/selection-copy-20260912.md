@@ -414,3 +414,26 @@ Normal capture, scrolling, active-cell selection, and final installation remain 
 The final source test build passed in 251,056 ms (peak 70°C); its complete TUI
 suite passed 3,189 tests, with five ignored, in 14.74 seconds. Logs:
 `inline-restored-test-build.log` and `inline-restored-full-tests.log`.
+
+## September 13 — swipes must not open the transcript
+
+Masih rejected the automatic wheel-to-transcript transition. Removed that branch
+from the main chat mouse handler; double Escape and explicit transcript controls
+remain available. Earlier wheel-opening checks above describe superseded behavior.
+
+The native VTE/Xvfb regression sends two wheel events in each direction, while a
+fake-provider response is streaming and after completion. It checks that chat stays
+open and the stream is not interrupted, then checks double Escape opens the
+transcript. The previous installed binary fails with `swipe opened transcript`;
+the candidate passes all checks. Its double-Escape screenshot was inspected and
+shows the previous message selected. This tests terminal wheel events, not a
+physical touchpad gesture. Evidence in `.tmp/final-candidate/`:
+`swipe-regression.cjs`, `swipe-before/result.json`, `swipe-after/result.json`, and
+`swipe-after/double-escape.png`.
+
+Optimized build passed in 45,675 ms, peak 66°C. Installed CLI matches the tested
+artifact, SHA256 `c2ff33c9fbb41ddae246ca01b4253a86aaa95528ffefc2a126274b7b7b7c4681`.
+Previous binary retained at
+`~/.local/share/elpis/release-recovery/swipe-20260913/elpis-before`.
+Existing processes need restarting to use this change. Physical gesture acceptance
+remains with Masih; no public release or IDE change was made.
