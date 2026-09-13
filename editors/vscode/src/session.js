@@ -21,6 +21,8 @@ class Session extends EventEmitter {
     this.hasTurns = !!options.resumeThreadId;
     this.generation = 0;
     this.messageText = new Map();
+    this.userItemIds = new Set();
+    this.pendingUserEchoes = [];
     this.approvalItems = new Map();
     this.approvalEpoch = 0;
     this.queued=[];this.nextQueuedId=1;this.queuePaused=false;
@@ -37,6 +39,7 @@ class Session extends EventEmitter {
   async startConnection() {
     const generation = this.generation;
     this.threadId=null;this.contextUsage=undefined;this.smartPrune=undefined;
+    this.pendingUserEchoes=[];this.userItemIds.clear();this.messageText.clear();
     const home = runtimeHome(this.options);
     if (!this.options.transport) await fs.mkdir(home, { recursive: true });
     if (generation !== this.generation) throw new Error('Connection cancelled.');
@@ -75,7 +78,17 @@ class Session extends EventEmitter {
         if (text.startsWith(streamed) && text.length > streamed.length) this.emit('delta', text.slice(streamed.length));
         this.messageText.set(p.item.id, text);
       }
-      if (message.method === 'turn/started') {this.turnId = p.turn.id;this.hasTurns=true;}
+      if (message.method === 'item/completed' && p.item?.type === 'userMessage' && !this.userItemIds.has(p.item.id)) {
+        this.userItemIds.add(p.item.id);
+        const text=(p.item.content || []).filter(part=>part.type==='text').map(part=>part.text).join('\n');
+        const echo=this.pendingUserEchoes.findIndex(pending=>pending.text===text);
+        if(echo>=0)this.pendingUserEchoes.splice(echo,1);
+        else this.emit('user',text);
+      }
+      if (message.method === 'turn/started') {
+        this.turnId = p.turn.id;this.hasTurns=true;this.busy=true;
+        this.messageText.clear();this.userItemIds.clear();
+      }
       if (message.method === 'turn/completed') {
         this.busy = false; this.turnId = null;
         this.status(`Turn ${p.turn.status}${p.turn.error ? ': ' + errorText(p.turn.error.message) : ''}`);
@@ -108,6 +121,14 @@ class Session extends EventEmitter {
       });
       this.threadId = thread.thread.id;
       this.hasTurns = (thread.thread.turns?.length || 0) > 0;
+      const activeTurn=thread.thread.turns?.find(turn=>turn.status==='inProgress');
+      if(activeTurn){
+        this.turnId=activeTurn.id;this.busy=true;
+        for(const item of activeTurn.items || []){
+          if(item.type==='agentMessage')this.messageText.set(item.id,item.text || '');
+          if(item.type==='userMessage')this.userItemIds.add(item.id);
+        }
+      }
       for(const message of pendingLedger){
         if(message.params.threadId!==this.threadId)continue;
         if(message.method==='thread/tokenUsage/updated'){this.contextUsage=message.params.tokenUsage;this.smartPrune=message.params.tokenUsage.smartPrune??this.smartPrune;}
@@ -170,14 +191,19 @@ class Session extends EventEmitter {
     this.messageText.clear();
     this.approvalItems.clear();
     this.busy = true;
+    const echo={text};
     try {
       await this.connect();
+      this.pendingUserEchoes.push(echo);
       this.emit('user', text);
       this.status('Elpis is working…');
       const result = await this.rpc.request('turn/start', { threadId: this.threadId, input: [{ type: 'text', text }], ...(this.options.model ? {model:this.options.model} : {}), ...(this.options.reasoningEffort ? {effort:this.options.reasoningEffort} : {}) });
       if (this.busy) this.turnId = result.turn.id;
       this.hasTurns=true;
-    } catch (error) { this.busy = false; this.status(error.message); throw error; }
+    } catch (error) {
+      this.pendingUserEchoes=this.pendingUserEchoes.filter(pending=>pending!==echo);
+      this.busy = false; this.status(error.message); throw error;
+    }
   }
   async cancel() {
     if(this.queued.length){this.queuePaused=true;this.emitQueue();}
@@ -236,7 +262,9 @@ class Session extends EventEmitter {
   async steer(text) {
     if(!this.busy || !this.turnId || this.rpc?.closed)throw new Error('There is no active turn to steer yet.');
     if(typeof text!=='string' || !text.trim())throw new Error('Enter a follow-up message.');
-    await this.rpc.request('turn/steer',{threadId:this.threadId,expectedTurnId:this.turnId,input:[{type:'text',text}]});
+    const echo={text};this.pendingUserEchoes.push(echo);
+    try {await this.rpc.request('turn/steer',{threadId:this.threadId,expectedTurnId:this.turnId,input:[{type:'text',text}]});}
+    catch(error){this.pendingUserEchoes=this.pendingUserEchoes.filter(pending=>pending!==echo);throw error;}
     this.emit('user',text);
   }
   dispose() { this.generation++; this.identity = null; this.bridge.cancel(); this.rpc?.dispose(); this.busy = false; this.threadId = null;this.contextUsage=undefined;this.smartPrune=undefined; }
