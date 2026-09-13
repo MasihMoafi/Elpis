@@ -129,11 +129,12 @@ impl App {
                     Ok(true)
                 }
             }
-        } else if let TuiEvent::Key(KeyEvent {
-            code: KeyCode::Esc,
-            kind: KeyEventKind::Press | KeyEventKind::Repeat,
-            ..
-        }) = event
+        } else if matches!(self.overlay, Some(Overlay::Transcript(_)))
+            && let TuiEvent::Key(KeyEvent {
+                code: KeyCode::Esc,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }) = event
         {
             // First Esc in transcript overlay: begin backtrack preview at latest user message.
             self.begin_overlay_backtrack_preview(tui);

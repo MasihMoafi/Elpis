@@ -467,13 +467,18 @@ live rate-limit handle. Closing the pager consumes Escape and restores chat.
 The app-level regression opens usage during an active turn and routes Escape
 through the normal TUI event handler. It verifies the pager closes, the turn
 stays active, and no agent operation or goal status change is emitted. Passed.
-The initial test wrongly rejected unrelated UI events; its corrected assertion
-checks agent and goal operations specifically. The other TUI tests passed:
+The first unit setup had no prior user message. Native testing later showed its
+extra info event was a symptom of the wrong Escape route, not harmless noise:
+the shared overlay handler invoked transcript backtracking for static pagers.
+With real history, usage stayed open. The corrected regression includes a prior
+user message and a q-only pager binding, requires no chat events, and rejects
+backtrack activation. Usage now explicitly binds Escape, and transcript editing
+only intercepts Escape for transcript overlays. The earlier other TUI tests passed:
 3,193 passed, five ignored. Formatting and diff checks passed. Logs are in
 `.tmp/final-candidate/usage-{test-build,tui-tests,build}.log`.
 
 This is local regression evidence; user acceptance and overall production
-readiness remain open. The memory saver is still disabled for this workspace.
+readiness remain open. Memory activation has since changed; see `docs/context.md`.
 
 Installed CLI SHA256:
 `1095305f9c16f25480d79f53293ddb2c563c26139e01f8dcdf49db723c958553`.
@@ -482,3 +487,11 @@ Optimized build: 263,536 ms, peak 68°C. Rollback executable:
 This working-tree build also includes the pending subagent footer and disabled
 memory changes. The isolated memory runtime probe passed again on this artifact
 (`.tmp/final-candidate/memory-runtime-usage.log`). No public release or IDE update.
+
+The subsequent routing fix was verified in native VTE sessions in both themes.
+Escape closed Usage, left the provider stream connected, and newly streamed text
+appeared afterward. The light capture was also inspected visually, including the
+Usage pager and `CONTINUED_AFTER_USAGE` in the restored chat. Evidence is under
+`.tmp/final-candidate/usage-native-{dark,light}-installed-candidate/` and
+`.tmp/final-candidate/usage-native-light-visible/`. Candidate CLI SHA256:
+`440768541e562df01f83fec50cda6ff5d76d193e5f6370f287881051f7619fea`.

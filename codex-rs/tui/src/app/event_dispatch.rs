@@ -610,10 +610,14 @@ impl App {
             AppEvent::OpenUsage(cell) => {
                 tui.enter_alt_screen()?;
                 self.reset_backtrack_state();
+                let mut keymap = self.keymap.pager.clone();
+                let escape = crate::key_hint::plain(KeyCode::Esc);
+                keymap.close.retain(|binding| binding != &escape);
+                keymap.close.insert(0, escape);
                 self.overlay = Some(Overlay::new_static_with_renderables(
                     vec![Box::new(cell)],
                     "Usage".to_string(),
-                    self.keymap.pager.clone(),
+                    keymap,
                 ));
                 tui.frame_requester().schedule_frame();
             }

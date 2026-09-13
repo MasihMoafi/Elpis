@@ -104,6 +104,13 @@ fn deliver_usage_limit_error(app: &mut App) {
 #[tokio::test]
 async fn usage_escape_closes_pager_without_interrupting_active_turn() -> Result<()> {
     let (mut app, mut events, mut ops) = make_test_app_with_channels().await;
+    app.keymap.pager.close = vec![crate::key_hint::plain(KeyCode::Char('q'))];
+    app.transcript_cells = vec![Arc::new(UserHistoryCell {
+        message: "Keep working on this request.".to_string(),
+        text_elements: Vec::new(),
+        local_image_paths: Vec::new(),
+        remote_image_urls: Vec::new(),
+    }) as Arc<dyn HistoryCell>];
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let mut server = Box::pin(crate::start_embedded_app_server_for_picker(
         app.chat_widget.config_ref(),
@@ -134,17 +141,13 @@ async fn usage_escape_closes_pager_without_interrupting_active_turn() -> Result<
 
     assert!(app.overlay.is_none());
     assert!(app.chat_widget.is_task_running_for_test());
-    for event in std::iter::from_fn(|| events.try_recv().ok()) {
-        assert!(
-            !matches!(
-                event,
-                AppEvent::CodexOp(_)
-                    | AppEvent::SetThreadGoalStatus { .. }
-                    | AppEvent::ClearThreadGoal { .. }
-            ),
-            "closing usage sent an agent or goal operation: {event:?}"
-        );
-    }
+    let remaining: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).collect();
+    assert!(
+        remaining.is_empty(),
+        "closing usage changed the chat: {remaining:?}"
+    );
+    assert!(!app.backtrack.primed);
+    assert!(!app.backtrack.overlay_preview_active);
     assert!(
         ops.try_recv().is_err(),
         "closing usage must not submit an agent operation"
