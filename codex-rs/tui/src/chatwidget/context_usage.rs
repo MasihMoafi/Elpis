@@ -35,10 +35,13 @@ pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(166, 252, 24);
 
 /// Shared by the Ledger and `/context`; lighten on charcoal, deepen on paper.
 pub(super) fn context_display_color(color: Color) -> Color {
+    let Some(background) = crate::terminal_palette::default_bg() else {
+        return Color::Reset;
+    };
     let Color::Rgb(r, g, b) = color else {
         return color;
     };
-    let rgb = if crate::terminal_palette::default_bg().is_some_and(crate::color::is_light) {
+    let rgb = if crate::color::is_light(background) {
         let deepen = |v: u8| (u16::from(v) * 45 / 100) as u8;
         (deepen(r), deepen(g), deepen(b))
     } else {
@@ -48,13 +51,11 @@ pub(super) fn context_display_color(color: Color) -> Color {
 }
 
 pub(super) fn context_free_style() -> Style {
-    let light = crate::terminal_palette::default_bg().is_some_and(crate::color::is_light);
-    let rgb = if light {
-        (105, 107, 116)
-    } else {
-        (145, 147, 156)
-    };
-    Style::default().fg(crate::terminal_palette::best_color(rgb))
+    Style::default().fg(crate::style::adaptive_palette_color(
+        crate::terminal_palette::default_bg(),
+        (105, 107, 116),
+        (145, 147, 156),
+    ))
 }
 
 #[derive(Clone, Debug)]
@@ -1680,6 +1681,13 @@ mod tests {
             MINIMUM_RGB_DISTANCE
         ));
         assert!(contrast_ratio(Color::Rgb(36, 36, 36), terminal_background) < MINIMUM_CONTRAST);
+    }
+
+    #[test]
+    fn context_categories_follow_terminal_foreground_when_palette_is_unknown() {
+        assert_eq!(crate::terminal_palette::default_bg(), None);
+        assert_eq!(context_display_color(REASONING_COLOR), Color::Reset);
+        assert_eq!(context_free_style().fg, Some(Color::Reset));
     }
 
     #[test]

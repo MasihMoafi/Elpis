@@ -65,6 +65,12 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
             let distance = ((center - position).abs() / half_width).min(1.0);
             let intensity = 0.425 * (1.0 + (std::f64::consts::PI * distance).cos());
             let base = pigment(center / width * 0.75, time.as_secs_f64(), light);
+            // A white sweep must not erase the label against the light composer wash.
+            let (base, intensity) = if light {
+                (blend(base, (0, 0, 0), 0.8), intensity.min(0.1))
+            } else {
+                (base, intensity)
+            };
             let highlight = (255, 255, 255);
             Span::styled(
                 glyph.to_owned(),
@@ -329,6 +335,47 @@ mod tests {
             if initial[(x, 3)].symbol() != " " {
                 assert_eq!(moved[(x, 1)].symbol(), initial[(x, 3)].symbol());
             }
+        }
+    }
+
+    #[test]
+    fn light_activity_labels_remain_readable_through_the_white_sweep() {
+        fn luminance(rgb: (u8, u8, u8)) -> f64 {
+            let linear = |v: u8| {
+                let v = f64::from(v) / 255.0;
+                if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
+        }
+        for bg in [(255, 255, 255), (245, 243, 237), (238, 232, 216)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (18, 18, 18),
+                    bg,
+                },
+                || {
+                    for millis in (0..2500).step_by(40) {
+                        for span in gradient_text_at(
+                            "Elpis Full Access Elpising",
+                            Duration::from_millis(millis),
+                        ) {
+                            let Some(ratatui::style::Color::Rgb(r, g, b)) = span.style.fg else {
+                                panic!("expected truecolor");
+                            };
+                            let contrast = (luminance(bg) + 0.05) / (luminance((r, g, b)) + 0.05);
+                            assert!(
+                                contrast >= 4.5,
+                                "{} at {millis}ms has contrast {contrast}",
+                                span.content
+                            );
+                        }
+                    }
+                },
+            );
         }
     }
 

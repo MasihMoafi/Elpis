@@ -29,6 +29,12 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) async fn save_continuity(sess: &Arc<Session>, turn: &Arc<TurnContext>) {
     let result = save(sess, turn).await;
     if let Err(error) = result {
+        tracing::warn!(
+            thread_id = %sess.session_id(),
+            turn_id = %turn.sub_id,
+            error = %format!("{error:#}"),
+            "memory save failed"
+        );
         sess.send_event(
             turn,
             EventMsg::Warning(WarningEvent {

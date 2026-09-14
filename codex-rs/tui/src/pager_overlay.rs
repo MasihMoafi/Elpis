@@ -265,6 +265,13 @@ impl PagerView {
     /// Mouse-wheel scroll: one notch moves 3 lines, matching typical terminal convention.
     fn scroll_by_wheel(&mut self, kind: MouseEventKind) {
         const WHEEL_LINES: usize = 3;
+        if !matches!(kind, MouseEventKind::ScrollUp | MouseEventKind::ScrollDown) {
+            return;
+        }
+        if let (Some(total), Some(height)) = (self.last_rendered_height, self.last_content_height) {
+            // Scroll from the visible frame even when new output is waiting for a draw.
+            self.scroll_offset = self.scroll_offset.min(total.saturating_sub(height));
+        }
         match kind {
             MouseEventKind::ScrollUp => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(WHEEL_LINES);
@@ -1565,6 +1572,54 @@ mod tests {
         }));
 
         assert_eq!(overlay.view.scroll_offset, usize::MAX);
+    }
+
+    #[test]
+    fn wheel_scroll_up_survives_output_arriving_before_draw() {
+        let mut overlay = transcript_overlay(
+            (0..20)
+                .map(|i| {
+                    Arc::new(TestCell {
+                        lines: vec![Line::from(format!("line{i}"))],
+                    }) as Arc<dyn HistoryCell>
+                })
+                .collect(),
+        );
+        let area = Rect::new(0, 0, 40, 12);
+        let mut buf = Buffer::empty(area);
+        overlay.render(area, &mut buf);
+        let displayed_offset = overlay.view.scroll_offset;
+
+        overlay.insert_cell(Arc::new(TestCell {
+            lines: vec!["new output".into()],
+        }));
+        overlay.view.scroll_by_wheel(MouseEventKind::ScrollUp);
+        overlay.render(area, &mut buf);
+
+        assert_eq!(overlay.view.scroll_offset, displayed_offset - 3);
+        assert!(!overlay.is_scrolled_to_bottom());
+        overlay.insert_cell(Arc::new(TestCell {
+            lines: vec!["more output".into()],
+        }));
+        overlay.render(area, &mut buf);
+        assert_eq!(overlay.view.scroll_offset, displayed_offset - 3);
+    }
+
+    #[test]
+    fn wheel_direction_change_at_bottom_moves_up_before_next_draw() {
+        let mut view = pager_view(vec![paragraph_block("line", 40)], "history", usize::MAX);
+        let area = Rect::new(0, 0, 40, 12);
+        let mut buf = Buffer::empty(area);
+        view.render(area, &mut buf);
+        let displayed_offset = view.scroll_offset;
+
+        for _ in 0..10 {
+            view.scroll_by_wheel(MouseEventKind::ScrollDown);
+        }
+        view.scroll_by_wheel(MouseEventKind::ScrollUp);
+        view.render(area, &mut buf);
+
+        assert_eq!(view.scroll_offset, displayed_offset - 3);
     }
 
     #[test]
