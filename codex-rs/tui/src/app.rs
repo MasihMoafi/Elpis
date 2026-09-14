@@ -1342,8 +1342,9 @@ See the Elpis keymap documentation for supported actions and examples."
                 TuiEvent::Mouse(mouse_event) => match mouse_event.kind {
                     crossterm::event::MouseEventKind::ScrollUp => {
                         self.inline_history_selection = None;
+                        self.reset_backtrack_state();
                         tui.enter_alt_screen()?;
-                        self.overlay = Some(Overlay::new_transcript(
+                        self.overlay = Some(Overlay::new_history_browser(
                             self.transcript_cells.clone(),
                             self.keymap.pager.clone(),
                         ));

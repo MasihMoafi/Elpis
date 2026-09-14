@@ -65,6 +65,15 @@ impl Overlay {
         Self::Transcript(TranscriptOverlay::new(cells, keymap))
     }
 
+    pub(crate) fn new_history_browser(
+        cells: Vec<Arc<dyn HistoryCell>>,
+        keymap: PagerKeymap,
+    ) -> Self {
+        let mut overlay = TranscriptOverlay::new(cells, keymap);
+        overlay.allow_backtrack = false;
+        Self::Transcript(overlay)
+    }
+
     pub(crate) fn new_static_with_lines(
         lines: Vec<Line<'static>>,
         title: String,
@@ -466,6 +475,7 @@ impl Renderable for HyperlinkLinesRenderable {
 }
 
 pub(crate) struct TranscriptOverlay {
+    pub(crate) allow_backtrack: bool,
     /// Pager UI state and the renderables currently displayed.
     ///
     /// The invariant is that `view.renderables` is `render_cells(cells)` plus an optional trailing
@@ -523,6 +533,7 @@ impl TranscriptOverlay {
                 keymap,
             ),
             cells: transcript_cells,
+            allow_backtrack: true,
             highlight_cell: None,
             live_tail_key: None,
             live_tail_lines: Arc::default(),
@@ -814,7 +825,9 @@ impl TranscriptOverlay {
 
         let mut pairs: Vec<(Vec<KeyBinding>, &str)> =
             vec![(first_or_empty(&self.view.keymap.close), "to quit")];
-        if self.highlight_cell.is_some() {
+        if !self.allow_backtrack {
+            pairs.push((vec![key_hint::plain(KeyCode::Esc)], "back to chat"));
+        } else if self.highlight_cell.is_some() {
             pairs.push((
                 vec![
                     key_hint::plain(KeyCode::Esc),
@@ -947,7 +960,8 @@ impl TranscriptOverlay {
                     Ok(())
                 }
                 e if self.view.keymap.close.is_pressed(e)
-                    || self.view.keymap.close_transcript.is_pressed(e) =>
+                    || self.view.keymap.close_transcript.is_pressed(e)
+                    || (!self.allow_backtrack && key_hint::plain(KeyCode::Esc).is_press(e)) =>
                 {
                     self.is_done = true;
                     Ok(())

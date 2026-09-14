@@ -129,7 +129,7 @@ impl App {
                     Ok(true)
                 }
             }
-        } else if matches!(self.overlay, Some(Overlay::Transcript(_)))
+        } else if matches!(&self.overlay, Some(Overlay::Transcript(overlay)) if overlay.allow_backtrack)
             && let TuiEvent::Key(KeyEvent {
                 code: KeyCode::Esc,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
