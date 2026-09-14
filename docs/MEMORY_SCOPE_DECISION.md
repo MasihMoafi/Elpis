@@ -1,6 +1,9 @@
 # Memory scope decision
 
-September 14, 2026. Proposed behavior; not implemented or installed.
+September 14, 2026. Resolved by Masih: keep user-controlled activation of saved
+memories through the Context Ledger, including automatically saved memories.
+Add guidance explaining this control. The proposed split below is not selected
+and is not a blocker; no store migration or explicit-only global saving is planned.
 
 The current saver rewrites one shared `memories/MEMORY.md`. Its contents mix
 global preferences and project lessons. Admission therefore exposes another
@@ -42,7 +45,7 @@ same-directory unrelated-project probe remains a separate requirement. Nor does
 this design establish that Luna selects useful lessons or preserves every valid
 fact; retention and correction controls remain required.
 
-## Decision required
+## Earlier question — superseded by user clarification
 
 Should global preferences require an explicit cross-project request, while
 project lessons continue saving automatically? If global promotion must remain

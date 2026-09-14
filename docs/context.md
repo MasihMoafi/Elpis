@@ -277,6 +277,11 @@ valid result, while temporary work belongs in ES.
 
 ### Memory search and automatic saving are separate
 
+Automatically saved memories are activated by the user clicking or toggling
+`MEMORY.md` in the Context Ledger. Saving and activation are separate: the
+Ledger controls whether the saved file is supplied to later requests. Turning
+it off does not erase the saved file or remove text from previous requests.
+
 The configured RAG MCP can search `MEMORY.md` using API embeddings and its local
 index. This does not change the saver or Ledger admission: Luna still consolidates
 the files, and admitting Memory still supplies the file rather than automatically

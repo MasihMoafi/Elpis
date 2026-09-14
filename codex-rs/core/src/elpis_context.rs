@@ -19,7 +19,10 @@ pub const ELPIS_CONTINUITY_PROMPT_PREFIX: &str = "## Elpis Admitted Context\n\n\
     message when it changes the task.\n\n";
 const ADMISSION_FILE: &str = "admission.toml";
 const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
-const MEMORY_SCOPE_GUIDANCE: &str = "Shared memory can contain global preferences and lessons from different projects. \
+const MEMORY_SCOPE_GUIDANCE: &str = "The user activates saved memories, including automatically saved memories, \
+    by clicking or toggling MEMORY.md in the Context Ledger. Saving a memory does not activate it; \
+    this section is included because the user admitted it. \
+    Shared memory can contain global preferences and lessons from different projects. \
     Apply global preferences across projects. Apply a project-specific lesson only to its named project; \
     admission does not make it a requirement for other projects. When asked about another project, \
     inspect that project's evidence or say its requirement is unknown instead of borrowing a remembered command or setting.";

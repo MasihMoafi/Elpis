@@ -478,11 +478,15 @@ const ELPIS_TIPS: &[(&str, &str)] = &[
     ),
     (
         "/auto",
-        "let the cheap model route the work to the right one",
+        "let Elpis choose the right model for the given task",
     ),
     ("/model", "switch between luna, terra and sol"),
     ("/dev", "load the development rules for this repository"),
     ("/goal", "set an objective Elpis carries across sessions"),
+    (
+        "memory",
+        "activate saved memories by clicking or toggling MEMORY.md in the Context Ledger",
+    ),
     (
         "ES.md",
         "the session checkpoint Elpis writes after every turn",
