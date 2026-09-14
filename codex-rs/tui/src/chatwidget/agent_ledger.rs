@@ -24,12 +24,10 @@ impl ChatWidget {
         if self.agent_ledger.is_empty() {
             return Vec::new();
         }
-        let muted = Style::default().fg(crate::terminal_palette::best_color(
-            if crate::terminal_palette::default_bg().is_some_and(crate::color::is_light) {
-                (80, 81, 75)
-            } else {
-                (160, 162, 155)
-            },
+        let muted = Style::default().fg(crate::style::adaptive_palette_color(
+            crate::terminal_palette::default_bg(),
+            (80, 81, 75),
+            (160, 162, 155),
         ));
         let mut lines = vec![Line::from(Span::styled(
             format!("SUBAGENT LEDGER · {}", self.agent_ledger.len()),

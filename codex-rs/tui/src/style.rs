@@ -92,40 +92,38 @@ pub(crate) fn accent_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
 
 fn primary_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
     Style::default()
-        .fg(best_color(adaptive_palette_color(
+        .fg(adaptive_palette_color(
             terminal_bg,
             LIGHT_BG_PRIMARY_RGB,
             DARK_BG_PRIMARY_RGB,
-        )))
+        ))
         .bold()
 }
 
 fn secondary_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
-    Style::default().fg(best_color(adaptive_palette_color(
+    Style::default().fg(adaptive_palette_color(
         terminal_bg,
         LIGHT_BG_SECONDARY_RGB,
         DARK_BG_SECONDARY_RGB,
-    )))
+    ))
 }
 
 fn status_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
-    Style::default().fg(best_color(adaptive_palette_color(
+    Style::default().fg(adaptive_palette_color(
         terminal_bg,
         LIGHT_BG_STATUS_RGB,
         DARK_BG_STATUS_RGB,
-    )))
+    ))
 }
 
-fn adaptive_palette_color(
+pub(crate) fn adaptive_palette_color(
     terminal_bg: Option<(u8, u8, u8)>,
     light_bg: (u8, u8, u8),
     dark_bg: (u8, u8, u8),
-) -> (u8, u8, u8) {
-    if terminal_bg.is_some_and(is_light) {
-        light_bg
-    } else {
-        dark_bg
-    }
+) -> Color {
+    terminal_bg.map_or(Color::Reset, |bg| {
+        best_color(if is_light(bg) { light_bg } else { dark_bg })
+    })
 }
 
 fn table_separator_style_for(
@@ -177,7 +175,7 @@ mod tests {
                 LIGHT_BG_PRIMARY_RGB,
                 DARK_BG_PRIMARY_RGB
             ),
-            (150, 100, 0),
+            best_color((150, 100, 0)),
         );
         let style = accent_style_for(Some((255, 255, 255)));
 
@@ -186,17 +184,22 @@ mod tests {
     }
 
     #[test]
-    fn accent_style_uses_bright_orange_on_dark_or_unknown_backgrounds() {
-        for background in [Some((0, 0, 0)), None] {
-            assert_eq!(
-                adaptive_palette_color(background, LIGHT_BG_PRIMARY_RGB, DARK_BG_PRIMARY_RGB),
-                (220, 151, 32),
-            );
-        }
+    fn accent_style_uses_bright_orange_on_dark_backgrounds() {
         let expected = Style::default().fg(best_color((220, 151, 32))).bold();
 
         assert_eq!(accent_style_for(Some((0, 0, 0))), expected);
-        assert_eq!(accent_style_for(/*terminal_bg*/ None), expected);
+    }
+
+    #[test]
+    fn unknown_background_preserves_terminal_text_colors() {
+        for style in [
+            accent_style_for(None),
+            secondary_style_for(None),
+            status_style_for(None),
+        ] {
+            assert_eq!(style.fg, Some(Color::Reset));
+            assert_eq!(style.bg, None);
+        }
     }
 
     #[test]

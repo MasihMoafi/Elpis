@@ -367,14 +367,19 @@ impl ChatWidget {
             .sum::<u64>();
         // Labels and values identify categories; the palette follows Elpis appearance.
         let brand = crate::style::brand_style().not_bold();
-        let light = default_bg().is_some_and(is_light);
-        let muted = Style::default().fg(crate::terminal_palette::best_color(if light {
-            (80, 81, 75)
+        let background = default_bg();
+        let light = background.is_some_and(is_light);
+        let muted = Style::default().fg(crate::style::adaptive_palette_color(
+            background,
+            (80, 81, 75),
+            (133, 134, 128),
+        ));
+        let detail = if light || background.is_none() {
+            muted
         } else {
-            (133, 134, 128)
-        }));
-        let detail = if light { muted } else { Style::default().dim() };
-        let warning = if light {
+            Style::default().dim()
+        };
+        let warning = if light || background.is_none() {
             crate::elpis_motion::accent_style().bold()
         } else {
             Style::default().fg(Color::Yellow).bold()
@@ -1751,6 +1756,9 @@ fn smart_prune_on_colors(
     terminal_bg: Option<(u8, u8, u8)>,
     color_level: StdoutColorLevel,
 ) -> [Color; 4] {
+    if terminal_bg.is_none() {
+        return [Color::Reset; 4];
+    }
     if matches!(
         color_level,
         StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown
@@ -1842,17 +1850,36 @@ mod tests {
 
     #[test]
     fn ledger_source_palette_stays_in_the_gold_family() {
-        for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
-            match color {
-                Color::Rgb(r, g, b) => assert!(r >= g && g > b),
-                Color::Yellow | Color::Indexed(_) => {}
-                other => panic!("unexpected ledger accent: {other:?}"),
-            }
+        for bg in [(255, 255, 255), (17, 18, 20)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (120, 120, 120),
+                    bg,
+                },
+                || {
+                    for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
+                        match color {
+                            Color::Rgb(r, g, b) => assert!(r >= g && g > b),
+                            Color::Black if is_light(bg) => {}
+                            Color::Yellow | Color::Indexed(_) => {}
+                            other => panic!("unexpected ledger accent: {other:?}"),
+                        }
+                    }
+                },
+            );
         }
     }
 
     #[test]
     fn smart_prune_palette_uses_a_readable_low_color_fallback() {
+        for level in [
+            StdoutColorLevel::TrueColor,
+            StdoutColorLevel::Ansi256,
+            StdoutColorLevel::Ansi16,
+            StdoutColorLevel::Unknown,
+        ] {
+            assert_eq!(smart_prune_on_colors(None, level), [Color::Reset; 4]);
+        }
         assert_eq!(
             smart_prune_on_colors(
                 Some((0, 0, 0)),

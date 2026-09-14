@@ -27,11 +27,10 @@ pub(crate) fn pigment(position: f64, seconds: f64, light: bool) -> (u8, u8, u8) 
 }
 
 pub(crate) fn accent_style() -> Style {
-    Style::default().fg(best_color(pigment(
-        0.35,
-        0.0,
-        default_bg().is_some_and(is_light),
-    )))
+    let Some(background) = default_bg() else {
+        return Style::default().fg(ratatui::style::Color::Reset);
+    };
+    Style::default().fg(best_color(pigment(0.35, 0.0, is_light(background))))
 }
 
 pub(crate) fn text(text: &str) -> Vec<Span<'static>> {
@@ -43,8 +42,19 @@ pub(crate) fn animated_text(text: &str, animated: bool) -> Vec<Span<'static>> {
 }
 
 fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
+    let Some(background) = default_bg() else {
+        return text
+            .graphemes(true)
+            .map(|glyph| {
+                Span::styled(
+                    glyph.to_owned(),
+                    Style::default().fg(ratatui::style::Color::Reset),
+                )
+            })
+            .collect();
+    };
     let width = text.width().max(1) as f64;
-    let light = default_bg().is_some_and(is_light);
+    let light = is_light(background);
     let half_width = (width * 0.1).max(3.0);
     let position = (time.as_secs_f64() % 2.5) / 2.5 * (width + 2.0 * half_width) - half_width;
     let mut column = 0.0;
@@ -369,6 +379,46 @@ mod tests {
             },
         );
     }
+    #[test]
+    fn unknown_background_keeps_terminal_foreground_without_a_white_highlight() {
+        assert_eq!(default_bg(), None);
+        let fallback = Style::default().fg(ratatui::style::Color::Reset);
+        assert_eq!(accent_style(), fallback);
+        for millis in (0..2500).step_by(40) {
+            for span in gradient_text_at("Elpising… 文", Duration::from_millis(millis)) {
+                assert_eq!(span.style, fallback);
+            }
+        }
+        let area = Rect::new(0, 0, 20, 1);
+        let mut buffer = Buffer::empty(area);
+        let line =
+            ratatui::text::Line::from(gradient_text_at("Full Access", Duration::from_secs(1)))
+                .style(Style::default().fg(ratatui::style::Color::Yellow));
+        ratatui::widgets::Widget::render(ratatui::widgets::Paragraph::new(line), area, &mut buffer);
+        for cell in buffer
+            .content
+            .iter()
+            .filter(|cell| !cell.symbol().trim().is_empty())
+        {
+            assert_eq!(cell.fg, ratatui::style::Color::Reset);
+        }
+        for bg in [(255, 255, 255), (17, 18, 20)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (120, 120, 120),
+                    bg,
+                },
+                || {
+                    assert!(
+                        gradient_text_at("Elpis", Duration::from_secs(1))
+                            .iter()
+                            .all(|span| span.style.fg.is_some())
+                    )
+                },
+            );
+        }
+    }
+
     #[test]
     fn animated_labels_change_color_without_changing_text() {
         let first = gradient_text_at("Read Search Full access", Duration::ZERO);
