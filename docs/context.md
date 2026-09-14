@@ -517,6 +517,15 @@ Elpis exposes **one single source of truth** for context measurement:
   tokenizer measurements. They make the admitted-file cost inspectable without assigning a
   measured token value to the skills catalog.
 
+The **Reasoning + compaction** segment estimates retained reasoning and compaction
+items in the latest built request. It is not the selected low/medium/high effort,
+and it is not a measurement of time spent thinking. Local category proportions
+are scaled to the active-context total; percentages use the full context window.
+Thus an 18% segment means approximately 18% of that window is attributed to those
+retained items, not that the effort setting is 18%. The original reported 18%
+cannot be validated without its matching request snapshot. Provider-reported
+reasoning output tokens in `/usage` are a separate quantity.
+
 ---
 
 ## 5. Systemic Inter-Dependencies
