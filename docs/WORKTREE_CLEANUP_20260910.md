@@ -1,5 +1,22 @@
 # Worktree cleanup — 2026-09-10
 
+## Current preservation accounting — September 14
+
+A read-only check at `e90cde82` reconciles the original 79 registrations: one
+remaining main checkout, 74 distinct removed checkout records (50 + 4 + 20),
+and four directories already absent in the initial audit. All 74 recorded
+archive paths exist, and every recorded original commit still exists and is
+reachable from a local branch. The four initially missing directories also
+retain reachable original commits. Evidence:
+`.tmp/final-candidate/worktree-preservation-current.json` and the original
+`.git/worktree-recovery-20260910/initial-audit.json`.
+
+This is an existence/reachability check, not a new archive checksum or restoration
+test. It does not prove every original dirty file was captured or every feature
+was integrated. The integration dispositions and historical archive verification
+below remain the applicable evidence; there was no new source integration or
+worktree deletion in this check.
+
 ## September 14 targeted preservation review
 
 At `e236dcf5`, one main worktree remains. The additional
