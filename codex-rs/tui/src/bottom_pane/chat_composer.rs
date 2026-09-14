@@ -1267,7 +1267,7 @@ impl ChatComposer {
             .vim_mode_label()
             .map(|label| match label {
                 "Normal" => Span::from("Vim: Normal").style(crate::elpis_motion::accent_style()),
-                "Insert" => "Vim: Insert".green(),
+                "Insert" => Span::from("Vim: Insert").style(crate::elpis_motion::accent_style()),
                 _ => unreachable!(),
             })
     }
@@ -5865,7 +5865,7 @@ mod tests {
         assert!(composer.is_empty());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(Span::from("Vim: Insert").style(crate::elpis_motion::accent_style()))
         );
 
         let (result, needs_redraw) =
@@ -5909,7 +5909,7 @@ mod tests {
         assert!(matches!(composer.popups.active, ActivePopup::Command(_)));
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(Span::from("Vim: Insert").style(crate::elpis_motion::accent_style()))
         );
     }
 
@@ -6014,7 +6014,7 @@ mod tests {
         assert_eq!(composer.draft.textarea.text(), "");
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(Span::from("Vim: Insert").style(crate::elpis_motion::accent_style()))
         );
     }
 
@@ -6296,7 +6296,7 @@ mod tests {
         assert_eq!(composer.draft.textarea.text(), "/not-a-command");
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(Span::from("Vim: Insert").style(crate::elpis_motion::accent_style()))
         );
     }
 
@@ -6325,7 +6325,7 @@ mod tests {
             .set_cursor(composer.draft.textarea.text().len());
         assert_eq!(
             composer.vim_mode_indicator_span(),
-            Some("Vim: Insert".green())
+            Some(Span::from("Vim: Insert").style(crate::elpis_motion::accent_style()))
         );
         assert_eq!(composer.draft.textarea.cursor(), "hey".len());
 
