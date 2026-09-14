@@ -2,8 +2,8 @@
 
 If saving a loaded agent's closed state fails, closing now returns the error and
 keeps that agent available for retry. Failure injection reproduced the former
-false success; all 51 agent-control checks pass with the correction. This does
-not yet correct the close-tool event's displayed completion status on failure.
+false success; all 51 agent-control checks pass with the correction. The close-tool
+event also reports failure when the close operation fails.
 
 ## Local candidate 0.1.26
 
