@@ -162,7 +162,12 @@ request. Neither switch implies the other. The implementation remains off unless
 explicitly enabled; Masih authorized enabling the tested Luna path for Elpis.
 
 When enabled, a root conversation response with a final assistant message and each
-pre-compaction boundary invokes one tool-free `gpt-5.6-luna` call at low reasoning.
+pre-compaction boundary checks whether saving is needed. A successful save can be
+reused within that session only when selected evidence, workspace, memory root,
+goal and the persisted MEMORY/ES contents are unchanged. Otherwise it invokes one
+tool-free `gpt-5.6-luna` call at low reasoning. Failed saves remain retryable;
+resumed sessions start without this optimization state. Skipping a duplicate call
+does not create another receipt or refresh the checkpoint metadata.
 The input contains the workspace goal, previous notes and up to 64,000 characters of whole recent
 history items; reasoning and system/developer messages are excluded. Oversized
 items can be omitted. Up to half of that evidence budget is reserved for recent

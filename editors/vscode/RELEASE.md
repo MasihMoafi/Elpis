@@ -1,4 +1,11 @@
-# Local candidate 0.1.28
+# Local candidate 0.1.29
+
+Compaction skips a duplicate memory request when the same session has already
+saved identical evidence and its workspace, goal, memory and checkpoint are
+unchanged. New evidence, edits and failed saves still trigger saving. This reduces
+redundant provider work without changing what memory saves or its global scope.
+
+## Local candidate 0.1.28
 
 Spawning or resuming a durable subagent now reports an error when saving its
 Open state fails. The new runtime is shut down before it can receive work, and

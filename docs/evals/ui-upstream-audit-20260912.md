@@ -273,3 +273,49 @@ volume, not a tool-heavy multi-day transcript or real provider inference.
 Evidence: `.tmp/final-candidate/compaction-latency-large-sep12.log` and
 `/tmp/elpis-compact-timing-Tfaurm/result.json`,
 `/tmp/elpis-compact-timing-XeZWsW/result.json`.
+
+### Actual memory-save tail — September 14
+
+Among the latest25 retained workspace save receipts,20 include phase timings.
+Those completed provider requests take18,379–44,147ms, median34,824ms; preparation
+plus local commit takes at most14ms. The compact hook awaits this saver before
+compaction starts, and regular turns also await it after the final response.
+This identifies a potentially substantial serial cost when saving is enabled;
+it is not a measurement of every slow compaction or of failed/unrecorded calls.
+It must not be combined with the earlier saver-disabled fixture as if both were
+one experiment. Source: `core/src/hook_runtime.rs` and `tasks/regular.rs`.
+
+The privacy-preserving local receipt manifest and measurements are saved in
+`.tmp/final-candidate/memory-save-latency-receipts.json`. No new provider calls
+were made for this measurement. The actual installed0.1.28 runtime then reproduced
+an immediate pre-compaction request with exactly the same evidence items as the
+successful response-completion save, differing only in outer citation IDs.
+Six of seven controls passed; the duplicate-save check failed. Raw evidence:
+`/tmp/elpis-memory-repeat-PSbLDn/`.
+
+The candidate caches only a successful same-session save, comparing selected
+evidence content/order, workspace, memory root, goal and actual persisted memory
+and checkpoint. Failures do not populate it; changes invalidate it. A skipped
+save creates no receipt or checkpoint refresh. This does not eliminate new-evidence
+cost or improve semantic selection. Terminal checkpoint mirroring can invalidate
+the key, so do not generalize the fixture's savings to every terminal compaction.
+The permanent regression also covers new evidence, failed-save retry and manual
+MEMORY/ES/GOAL edits. All ten controls passed on the built, packaged and installed
+runtime. The existing memory runtime regression also passed on the built and
+packaged runtime, retaining malformed-output, manual-edit and provenance checks.
+All 58 packaged extension checks and four installed shared-start/lifecycle checks
+passed, with no skips. These use isolated local providers, not paid inference.
+
+The optimized build completed in 454.957 seconds with two jobs, one frontend
+thread and the 75°C guard (observed peak 73°C). Installed CLI SHA-256 is
+`20157b67d318eca0ea59c3ff767f48409f710574d5b75f96e1a32cea3386cbff`;
+extension 0.1.29 runtime SHA-256 is
+`2c09ca6339cf04e1a93ee5c5b596e2877f3cacc49410ee92c21e0f6400896309`.
+All 42 installed nonmanifest files and the normalized manifest match the package.
+Previous binaries are retained in
+`~/.local/share/elpis/release-recovery/memory-repeat-20260914/`.
+Evidence: `.tmp/final-candidate/memory-repeat-{build,extension-tests,packaged,
+packaged-regressions,installed-tests,installed-memory}.log`; installed ten-control
+raw evidence: `/tmp/elpis-memory-repeat-jGTzwf/`. Native visual acceptance and
+general memory quality remain unproven; this change does not upgrade running
+processes in place.

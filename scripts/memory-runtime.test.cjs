@@ -190,12 +190,12 @@ async function run() {
     "Keep this correction despite a long response. ".repeat(30));
   assert.equal(luna, 1, "completed response did not save memory");
   await compact(thread);
-  assert.equal(luna, 2, "compaction did not add exactly one Luna request");
+  assert.equal(luna, 1, "compaction repeated saving unchanged evidence");
 
   const receiptDirectory = path.join(workspace, "memory-saves");
   const receipts = fs.readdirSync(receiptDirectory).map(file =>
     JSON.parse(fs.readFileSync(path.join(receiptDirectory, file), "utf8")));
-  assert.equal(receipts.length, 2);
+  assert.equal(receipts.length, 1);
   assert(receipts.every(receipt => ["preparation_ms", "request_ms", "commit_ms"]
     .every(field => Number.isSafeInteger(receipt.timing?.[field]) && receipt.timing[field] >= 0)),
   "committed receipts lack phase timings");
@@ -220,11 +220,14 @@ async function run() {
   await turn(thread, "What is the Cedar port?");
   assert(JSON.stringify(requests[nextRequest].input).includes(JSON.stringify(saved).slice(1, -1)),
     "restart did not admit saved memory");
+  assert.equal(fs.readFileSync(path.join(home, "memories/memory-references/sources.md"), "utf8")
+    .split(sourceId).length - 1, 1, "saving a new turn duplicated an existing reference");
 
   requiredUserEvidence = "LONG_USER_CORRECTION";
   await turn(thread, "LONG_USER_CORRECTION: Cedar still uses port 5823. " + "x".repeat(34_000));
 
   malformed = true;
+  fs.appendFileSync(path.join(workspace, "GOAL.md"), "\nCheck malformed saver output.\n");
   await compact(thread);
   assert.equal(fs.readFileSync(memoryFile, "utf8"), saved, "invalid response changed memory");
   assert(events.some(event => JSON.stringify(event).includes("Memory save failed")),
@@ -309,6 +312,7 @@ async function run() {
   memoryText = undefined;
 
   editDuringSave = true;
+  fs.appendFileSync(path.join(workspace, "GOAL.md"), "\nCheck concurrent note edits.\n");
   const checkpointBefore = fs.readFileSync(checkpointFile, "utf8");
   await compact(thread);
   assert.equal(fs.readFileSync(memoryFile, "utf8"), "Manual correction: Cedar port 7713.",

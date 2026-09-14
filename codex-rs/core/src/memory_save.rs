@@ -151,7 +151,7 @@ impl MemorySnapshot {
         usage: Option<&codex_protocol::protocol::TokenUsage>,
         evidence: Option<&str>,
         mut timing: MemorySaveTiming,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<(String, String)> {
         let commit_started = std::time::Instant::now();
         let memory_path = self.root.join("MEMORY.md");
         let checkpoint_path = self.workspace.join("ES.md");
@@ -235,7 +235,7 @@ impl MemorySnapshot {
         timing.commit_ms = commit_started.elapsed().as_millis() as u64;
         receipt["timing"] = serde_json::to_value(timing)?;
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
-        Ok(())
+        Ok((memory, checkpoint))
     }
 }
 

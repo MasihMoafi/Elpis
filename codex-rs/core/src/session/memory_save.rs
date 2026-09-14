@@ -12,6 +12,8 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::WarningEvent;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
+use sha2::Digest;
+use sha2::Sha256;
 
 use super::session::Session;
 use super::turn_context::TurnContext;
@@ -95,6 +97,18 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
     }
     let evidence: Vec<_> = evidence.into_values().collect();
     if evidence.is_empty() {
+        return Ok(());
+    }
+    // Citation IDs change between turns even when the evidence does not.
+    let evidence_hash: [u8; 32] = Sha256::digest(serde_json::to_vec(&(
+        &config.memory_dir,
+        &cwd,
+        &snapshot.goal,
+        evidence.iter().map(|row| &row["item"]).collect::<Vec<_>>(),
+    ))?)
+    .into();
+    let save_key = memory_save_key(&evidence_hash, &snapshot.memory, &snapshot.checkpoint)?;
+    if sess.state.lock().await.last_successful_memory_save == Some(save_key) {
         return Ok(());
     }
     let input = serde_json::to_string(&serde_json::json!({
@@ -192,7 +206,7 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
     );
     let response = response.context("Luna exceeded the 60-second memory limit")??;
     let decision = crate::memory_save::parse_decision(&response.0)?;
-    snapshot.commit(
+    let (memory, checkpoint) = snapshot.commit(
         &decision,
         &sess.session_id().to_string(),
         &turn.sub_id,
@@ -204,5 +218,15 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
             commit_ms: 0,
         },
     )?;
+    sess.state.lock().await.last_successful_memory_save =
+        Some(memory_save_key(&evidence_hash, &memory, &checkpoint)?);
     Ok(())
+}
+
+fn memory_save_key(
+    evidence_hash: &[u8; 32],
+    memory: &str,
+    checkpoint: &str,
+) -> anyhow::Result<[u8; 32]> {
+    Ok(Sha256::digest(serde_json::to_vec(&(evidence_hash, memory, checkpoint))?).into())
 }
