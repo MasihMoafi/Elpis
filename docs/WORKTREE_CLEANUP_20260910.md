@@ -37,7 +37,7 @@ did not establish that its features were integrated.
 | `ace-inactivity-180` | `core/src/session/smart_prune.rs` has both 180-second timeouts, provider timeout adjustment and completion-event collection, with tests. | Core behavior present in main; no need to reapply the old patch. |
 | `ace-fact-preservation` | The default prompt in `core/src/pruner_settings.rs` preserves distinct facts and uncertainty; optimizer effort is Low in `smart_prune.rs`. | These behaviors are present. The archived `smart_prune_reasoning_effort` configuration override is absent; do not claim complete patch integration. |
 | `manual-memory-resume-test` | Restored the archived restart/resume case in `app-server/tests/suite/v2/memory_recall.rs`, adding an assertion that the first request has no admitted memory. | Integrated and passed through the full verifier: the first resumed request contains the newly admitted marker exactly once. This tests delivery, not model quality. |
-| `daily-driver-readiness` | Recovery retains `cd088885` agent-control protocol types, `e0f4f48c` graph ownership work and unfinished authority/readback edits. Current source lacks the new authority snapshot and exact-edge helpers. | Partially recovered by behavior: `af026a24` prevents loaded-child teardown after a failed Closed write; candidate0.1.28 rolls back spawn/resume on failed Open writes. Actual-handler failure/retry controls pass. Broader authority/readback and missing-edge work remains unintegrated. |
+| `daily-driver-readiness` | Recovery retains `cd088885` agent-control protocol types, `e0f4f48c` graph ownership work and unfinished authority/readback edits. | Confirmed persistence failures recovered in0.1.28: close preserves a loaded child on failed Closed writes; spawn/resume roll back failed Open writes. Actual-handler failure/retry controls pass. Strict authority/readback remains a preserved alternate bridge protocol, not a demonstrated missing feature in ordinary agent handling. |
 | `ci-linux-v4` | Main contains `TurnActivityUpdatedNotification`, terminal activity sequencing, and the public-submission manual-memory test helper from the historical work. | Relevant timing and test behavior present; reapplying the old commits is unnecessary. |
 | `elpis-ide-reference-controls` | Current source differs in four UI files; the archived extension writes settings only to `WorkspaceFolder`, while main supports empty/file windows and protects startup submission. | Keep the newer implementation. The current packaged runtime passed empty/file/folder startup checks. |
 | `elpis-ide-default-model` | The archived installer/workflow patch additionally auto-installs VS Code from the CLI installer; current installer does not. Current extension retains model selection and conversation history. | Do not claim the automatic installer integration shipped. Local IDE installation is separately verified; automatic cross-product installation is not necessary for the requested chat/startup fix. |
@@ -233,3 +233,22 @@ integrated, and their compatibility review remains open. Missing helper names
 alone must not be interpreted as proof that all agent reload behavior is absent.
 
 Do not equate one worktree with all experiments having been integrated or accepted.
+
+### Missing-edge contract review — September 14
+
+Correction to the earlier repair backlog: `agent-graph-store/src/store.rs`
+explicitly defines a missing child's status update as a successful no-op. The
+archived version retains that same contract. Its separate exact-update/readback
+wrapper belongs to strict bridge shutdown with authority snapshots and subtree
+witnesses. Neither the user's requested outcomes nor a reproduced ordinary-agent
+failure establishes a need to replace the base contract. Root and ephemeral
+threads can legitimately have no incoming durable edge. Keep the experimental
+protocol archived; require a concrete use case before integrating it. This does
+not weaken the verified Open-write and Closed-write failure fixes in0.1.28.
+
+Two extracted package binaries created during the latest checks were removed
+after SHA256 equality checks against retained rollback/installed copies, reclaiming
+407,740,544 bytes. Source files, transcripts, test logs, installed artifacts,
+rollback versions and original worktree archives remain. The local removal
+manifest is `.tmp/final-candidate/duplicate-package-cleanup.json`; tests needing
+those extracted binaries can use the recorded identical retained paths.
