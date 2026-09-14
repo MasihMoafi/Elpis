@@ -399,6 +399,24 @@ impl AgentControl {
             }
             (None, _, _) => Box::pin(state.spawn_new_thread(config.clone(), self.clone())).await?,
         };
+        if let Err(error) = self
+            .persist_thread_spawn_edge_for_source(
+                new_thread.thread.as_ref(),
+                new_thread.thread_id,
+                notification_source.as_ref(),
+            )
+            .await
+        {
+            new_thread
+                .thread
+                .shutdown_and_wait()
+                .await
+                .map_err(|rollback| {
+                    CodexErr::Fatal(format!("{error}; failed to unload spawned agent: {rollback}"))
+                })?;
+            state.remove_thread(&new_thread.thread_id).await;
+            return Err(error);
+        }
         agent_metadata.agent_id = Some(new_thread.thread_id);
         reservation.commit(agent_metadata.clone());
         if let Some(residency_slot) = residency_slot {
@@ -409,13 +427,6 @@ impl AgentControl {
         // to subscribe or drain this newly created thread.
         // TODO(jif) add helper for drain
         state.notify_thread_created(new_thread.thread_id);
-
-        self.persist_thread_spawn_edge_for_source(
-            new_thread.thread.as_ref(),
-            new_thread.thread_id,
-            notification_source.as_ref(),
-        )
-        .await;
 
         match initial_input {
             SpawnInitialInput::UserInput(input) => {
@@ -765,6 +776,24 @@ impl AgentControl {
                 inherited_exec_policy,
             })
             .await?;
+        if let Err(error) = self
+            .persist_thread_spawn_edge_for_source(
+                resumed_thread.thread.as_ref(),
+                resumed_thread.thread_id,
+                Some(&notification_source),
+            )
+            .await
+        {
+            resumed_thread
+                .thread
+                .shutdown_and_wait()
+                .await
+                .map_err(|rollback| {
+                    CodexErr::Fatal(format!("{error}; failed to unload resumed agent: {rollback}"))
+                })?;
+            state.remove_thread(&resumed_thread.thread_id).await;
+            return Err(error);
+        }
         let mut agent_metadata = agent_metadata;
         agent_metadata.agent_id = Some(resumed_thread.thread_id);
         reservation.commit(agent_metadata.clone());
@@ -784,13 +813,6 @@ impl AgentControl {
                 agent_metadata.agent_path.clone(),
             );
         }
-        self.persist_thread_spawn_edge_for_source(
-            resumed_thread.thread.as_ref(),
-            resumed_thread.thread_id,
-            Some(&notification_source),
-        )
-        .await;
-
         Ok((resumed_thread.thread_id, multi_agent_version))
     }
 }

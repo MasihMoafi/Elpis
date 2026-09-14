@@ -1,4 +1,11 @@
-# Local candidate 0.1.27
+# Local candidate 0.1.28
+
+Spawning or resuming a durable subagent now reports an error when saving its
+Open state fails. The new runtime is shut down before it can receive work, and
+the reserved capacity is released for retry. Existing rollout evidence remains
+available. Root and ephemeral agents keep their existing behavior.
+
+## Local candidate 0.1.27
 
 If saving a loaded agent's closed state fails, closing now returns the error and
 keeps that agent available for retry. Failure injection reproduced the former

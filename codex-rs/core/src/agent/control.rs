@@ -671,30 +671,26 @@ impl AgentControl {
         child_thread: &crate::CodexThread,
         child_thread_id: ThreadId,
         session_source: Option<&SessionSource>,
-    ) {
+    ) -> CodexResult<()> {
         let Some(parent_thread_id) = session_source.and_then(SessionSource::parent_thread_id)
         else {
-            return;
+            return Ok(());
         };
         if child_thread.config_snapshot().await.ephemeral {
-            return;
+            return Ok(());
         }
-        let Ok(state) = self.upgrade() else {
-            return;
-        };
+        let state = self.upgrade()?;
         let Some(agent_graph_store) = state.agent_graph_store() else {
-            return;
+            return Ok(());
         };
-        if let Err(err) = agent_graph_store
+        agent_graph_store
             .upsert_thread_spawn_edge(
                 parent_thread_id,
                 child_thread_id,
                 codex_agent_graph_store::ThreadSpawnEdgeStatus::Open,
             )
             .await
-        {
-            warn!("failed to persist thread-spawn edge: {err}");
-        }
+            .map_err(|err| CodexErr::Fatal(format!("failed to persist thread-spawn edge: {err}")))
     }
 
     async fn live_thread_spawn_descendants(
