@@ -4,14 +4,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use codex_protocol::models::{BaseInstructions, ContentItem, ResponseItem};
+use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
 
 use super::session::Session;
 use super::turn_context::TurnContext;
-use crate::client_common::{Prompt, ResponseEvent};
+use crate::client_common::Prompt;
+use crate::client_common::ResponseEvent;
 use crate::responses_metadata::CodexResponsesRequestKind;
 
 const MODEL: &str = "gpt-5.6-luna";

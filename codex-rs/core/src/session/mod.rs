@@ -205,13 +205,13 @@ mod input_queue;
 mod mcp;
 mod mcp_runtime;
 pub(crate) mod memory_save;
-pub(crate) mod session_title;
 pub(crate) mod multi_agents;
 mod review;
 mod rollout_budget;
 mod rollout_reconstruction;
 #[allow(clippy::module_inception)]
 pub(crate) mod session;
+pub(crate) mod session_title;
 mod smart_prune;
 mod smart_prune_audit;
 pub(crate) mod step_context;
