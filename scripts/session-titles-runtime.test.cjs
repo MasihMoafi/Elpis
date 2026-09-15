@@ -57,7 +57,7 @@ async function start() { return (await rpc.request('thread/start', { cwd: home, 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.6-terra"\nmodel_provider="fixture"\n[model_providers.fixture]\nname="Fixture"\nbase_url="http://127.0.0.1:${server.address().port}/v1"\nwire_api="responses"\nrequires_openai_auth=false\n`);
   fs.writeFileSync(path.join(home, 'hooks.json'), '{}');
-  rpc = new AppServer(path.resolve(process.argv[2] || 'codex-rs/target/local-release/codex-app-server'), home, { env: { ...process.env, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home } });
+  rpc = new AppServer(path.resolve(process.argv[2] || path.resolve(__dirname, '../codex-rs/target/local-release/codex-app-server')), home, { env: { ...process.env, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home } });
   rpc.on('disconnect', () => {});
   await rpc.request('initialize', { clientInfo: { name: 'session_title_test', version: '1' }, capabilities: { experimentalApi: true } });
   rpc.send({ method: 'initialized' });
