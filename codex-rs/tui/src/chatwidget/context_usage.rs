@@ -674,7 +674,10 @@ impl ChatWidget {
         );
     }
 
-    pub(crate) fn add_context_usage_output(&mut self, totals: ContextUsageTranscriptTotals) {
+    fn build_context_usage_cell(
+        &mut self,
+        totals: ContextUsageTranscriptTotals,
+    ) -> ContextUsageHistoryCell {
         let snapshot = self.context_usage_snapshot(&totals);
         let used = snapshot.used_tokens.unwrap_or(0);
         let window = snapshot.window_tokens;
@@ -810,18 +813,31 @@ impl ChatWidget {
             after_chart.push(Line::default());
             after_chart.extend(evidence_lines);
         }
-        let cell = ContextUsageHistoryCell {
+        ContextUsageHistoryCell {
             before_chart,
             has_request_snapshot: snapshot.has_request_snapshot,
             categories,
             used,
             window,
             after_chart,
-        };
+        }
+    }
+
+    pub(crate) fn add_context_usage_output(&mut self, totals: ContextUsageTranscriptTotals) {
+        let cell = self.build_context_usage_cell(totals);
         self.flush_active_cell();
         self.transcript.active_cell = Some(Box::new(cell));
         self.bump_active_cell_revision();
         self.request_redraw();
+    }
+
+    /// The same report as [`Self::add_context_usage_output`], handed back instead
+    /// of appended, so an explicit `/context` can open it as a dismissible pager.
+    pub(crate) fn context_usage_cell(
+        &mut self,
+        totals: ContextUsageTranscriptTotals,
+    ) -> Box<dyn HistoryCell> {
+        Box::new(self.build_context_usage_cell(totals))
     }
 }
 

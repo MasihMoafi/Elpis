@@ -16,6 +16,18 @@ use codex_config::types::WindowsSandboxModeToml;
 
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
+/// A pager keymap whose close binding starts with Escape.
+///
+/// The configured default closes on `q`/`Ctrl+C` only, so a report shown without
+/// this would leave Escape to prime backtrack when idle or interrupt a running turn.
+fn escape_first_pager_keymap(pager: &crate::keymap::PagerKeymap) -> crate::keymap::PagerKeymap {
+    let mut keymap = pager.clone();
+    let escape = crate::key_hint::plain(KeyCode::Esc);
+    keymap.close.retain(|binding| binding != &escape);
+    keymap.close.insert(0, escape);
+    keymap
+}
+
 fn manual_memory_same_view_ignoring_epoch(
     left: &ManualMemoryViewKey,
     right: &ManualMemoryViewKey,
@@ -202,6 +214,28 @@ impl App {
         Some(self.chat_widget.take_pending_context_report())
     }
 
+    /// Open a report as a static pager that Escape dismisses.
+    ///
+    /// The pager's default close keys are `q`/`Ctrl+C`, so Escape is prepended;
+    /// without an overlay to consume it, Escape would instead prime backtrack
+    /// when idle or interrupt the turn mid-stream.
+    fn open_escape_closable_pager(
+        &mut self,
+        tui: &mut tui::Tui,
+        cell: Box<dyn HistoryCell>,
+        title: &str,
+    ) -> Result<()> {
+        tui.enter_alt_screen()?;
+        self.reset_backtrack_state();
+        self.overlay = Some(Overlay::new_static_with_renderables(
+            vec![Box::new(cell)],
+            title.to_string(),
+            escape_first_pager_keymap(&self.keymap.pager),
+        ));
+        tui.frame_requester().schedule_frame();
+        Ok(())
+    }
+
     fn present_manual_memory_mutation_completion(
         &mut self,
         mutation: ManualMemoryMutation,
@@ -375,7 +409,16 @@ impl App {
             AppEvent::ManualMemoryStatusLoaded(target, completion) => {
                 if self.finish_manual_memory_status(&target, completion) == Some(true) {
                     let totals = crate::app_backtrack::context_usage_totals(&self.transcript_cells);
-                    self.chat_widget.add_context_usage_output(totals);
+                    // Only an explicit `/context` reaches this branch, so show it the
+                    // way `/usage` does: a pager Escape dismisses, instead of transcript
+                    // content that leaves Escape to prime backtrack or interrupt a turn.
+                    // The report arrives asynchronously, so never displace a live overlay.
+                    if self.overlay.is_none() {
+                        let cell = self.chat_widget.context_usage_cell(totals);
+                        self.open_escape_closable_pager(tui, cell, "Context")?;
+                    } else {
+                        self.chat_widget.add_context_usage_output(totals);
+                    }
                 }
                 tui.frame_requester().schedule_frame();
             }
@@ -609,18 +652,7 @@ impl App {
                 self.begin_thread_switch_history_replay_buffer();
             }
             AppEvent::OpenUsage(cell) => {
-                tui.enter_alt_screen()?;
-                self.reset_backtrack_state();
-                let mut keymap = self.keymap.pager.clone();
-                let escape = crate::key_hint::plain(KeyCode::Esc);
-                keymap.close.retain(|binding| binding != &escape);
-                keymap.close.insert(0, escape);
-                self.overlay = Some(Overlay::new_static_with_renderables(
-                    vec![Box::new(cell)],
-                    "Usage".to_string(),
-                    keymap,
-                ));
-                tui.frame_requester().schedule_frame();
+                self.open_escape_closable_pager(tui, cell, "Usage")?;
             }
             AppEvent::InsertHistoryCell(cell) => {
                 self.insert_history_cell(tui, cell);
@@ -2843,5 +2875,42 @@ impl App {
                 AppRunControl::Continue
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_closes_a_report_pager_without_duplicating_the_binding() {
+        let escape = crate::key_hint::plain(KeyCode::Esc);
+        let default = crate::keymap::RuntimeKeymap::defaults().pager;
+        assert!(
+            !default.close.contains(&escape),
+            "this test only means something while the default pager ignores Escape"
+        );
+
+        let keymap = escape_first_pager_keymap(&default);
+        assert_eq!(keymap.close.first(), Some(&escape));
+        assert_eq!(
+            keymap
+                .close
+                .iter()
+                .filter(|binding| **binding == escape)
+                .count(),
+            1
+        );
+        for binding in &default.close {
+            assert!(
+                keymap.close.contains(binding),
+                "the configured close keys must survive"
+            );
+        }
+        assert_eq!(
+            escape_first_pager_keymap(&keymap).close,
+            keymap.close,
+            "re-applying must not accumulate bindings"
+        );
     }
 }

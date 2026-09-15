@@ -465,9 +465,7 @@ async fn identity_animation_stops_after_agent_turn_even_with_other_tasks_running
                 let mut buf = ratatui::buffer::Buffer::empty(area);
                 Renderable::render(chat, area, &mut buf);
                 let row = (0..area.height)
-                    .find(|y| {
-                        (1..6).map(|x| buf[(x, *y)].symbol()).collect::<String>() == "Elpis"
-                    })
+                    .find(|y| (1..6).map(|x| buf[(x, *y)].symbol()).collect::<String>() == "Elpis")
                     .expect("rendered identity line");
                 (1..6).map(|x| buf[(x, row)].fg).collect::<Vec<_>>()
             },
@@ -482,7 +480,11 @@ async fn identity_animation_stops_after_agent_turn_even_with_other_tasks_running
 
     chat.turn_lifecycle.finish();
     assert!(chat.bottom_pane.is_task_running());
-    assert_eq!(idle, identity_colors(&chat), "idle warm gradient is restored");
+    assert_eq!(
+        idle,
+        identity_colors(&chat),
+        "idle warm gradient is restored"
+    );
     tokio::time::sleep(std::time::Duration::from_millis(350)).await;
     assert_eq!(
         idle,
@@ -655,6 +657,36 @@ async fn active_ledger_uses_one_full_window_category_bar() -> anyhow::Result<()>
     assert!(!rendered.contains("ACTIVE OCCUPANCY"));
     assert!(!rendered.contains("REQUEST COMPOSITION"));
     Ok(())
+}
+
+#[tokio::test]
+async fn context_report_is_identical_whether_it_opens_a_pager_or_appends() {
+    let totals = crate::app_backtrack::ContextUsageTranscriptTotals::default;
+
+    let (mut appended, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    appended.config.animations = false;
+    appended.set_token_info(Some(make_token_info(3_825, 20_000)));
+    seed_run_built_attribution(&mut appended);
+    appended.add_context_usage_output(totals());
+    let inline = lines_to_single_string(
+        &appended
+            .active_cell_transcript_lines(100)
+            .expect("/context output rendered"),
+    );
+
+    let (mut paged, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    paged.config.animations = false;
+    paged.set_token_info(Some(make_token_info(3_825, 20_000)));
+    seed_run_built_attribution(&mut paged);
+    let cell = paged.context_usage_cell(totals());
+    let overlay = lines_to_single_string(&cell.display_lines(100));
+
+    assert_eq!(overlay, inline);
+    assert!(overlay.contains("Context Usage"), "{overlay}");
+    assert!(
+        paged.active_cell_transcript_lines(100).is_none(),
+        "handing the report to a pager must not also append it to the transcript"
+    );
 }
 
 #[tokio::test]
