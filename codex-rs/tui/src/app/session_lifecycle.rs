@@ -292,7 +292,12 @@ impl App {
         }
 
         let (session, turns, live_attached) = match app_server
-            .resume_thread(self.config.clone(), thread_id, self.resume_model_settings(), self.resume_has_permission_overrides())
+            .resume_thread(
+                self.config.clone(),
+                thread_id,
+                self.resume_model_settings(),
+                self.resume_has_permission_overrides(),
+            )
             .await
         {
             Ok(started) => (started.session, started.turns, true),

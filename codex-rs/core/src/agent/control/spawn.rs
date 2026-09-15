@@ -412,7 +412,9 @@ impl AgentControl {
                 .shutdown_and_wait()
                 .await
                 .map_err(|rollback| {
-                    CodexErr::Fatal(format!("{error}; failed to unload spawned agent: {rollback}"))
+                    CodexErr::Fatal(format!(
+                        "{error}; failed to unload spawned agent: {rollback}"
+                    ))
                 })?;
             state.remove_thread(&new_thread.thread_id).await;
             return Err(error);
@@ -789,7 +791,9 @@ impl AgentControl {
                 .shutdown_and_wait()
                 .await
                 .map_err(|rollback| {
-                    CodexErr::Fatal(format!("{error}; failed to unload resumed agent: {rollback}"))
+                    CodexErr::Fatal(format!(
+                        "{error}; failed to unload resumed agent: {rollback}"
+                    ))
                 })?;
             state.remove_thread(&resumed_thread.thread_id).await;
             return Err(error);
