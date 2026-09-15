@@ -1163,6 +1163,100 @@ async fn output_free_ctrl_c_interrupt_keeps_prompt_and_opens_blank_composer() {
 }
 
 #[tokio::test]
+async fn esc_sends_a_queued_message_instead_of_stopping_the_turn() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.turn_lifecycle.agent_turn_running = true;
+    chat.queue_user_message(UserMessage::from("also check downward scrolling"));
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+
+    chat.handle_key_event(esc);
+
+    assert!(
+        chat.input_queue.queued_user_messages.is_empty(),
+        "the queued message must leave the queue"
+    );
+    assert_eq!(
+        chat.input_queue.pending_steers.len(),
+        1,
+        "the queued message must reach the running turn as a steer"
+    );
+    assert!(
+        !chat.input_queue.submit_pending_steers_after_interrupt,
+        "sending a queued message must not arm the interrupt resubmission path"
+    );
+    assert!(
+        chat.turn_lifecycle.agent_turn_running,
+        "the turn must still be running"
+    );
+    assert!(
+        !drained_events_request_interrupt(&mut rx),
+        "Escape must not interrupt the model while a message is queued"
+    );
+}
+
+#[tokio::test]
+async fn esc_still_interrupts_with_an_empty_queue() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.turn_lifecycle.agent_turn_running = true;
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    assert!(
+        drained_events_request_interrupt(&mut rx),
+        "Escape with nothing queued must still interrupt"
+    );
+}
+
+#[tokio::test]
+async fn esc_interrupts_rather_than_running_a_queued_slash_command() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.turn_lifecycle.agent_turn_running = true;
+    chat.queue_user_message_with_options(
+        UserMessage::from("/compact"),
+        QueuedInputAction::ParseSlash,
+        Vec::new(),
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    assert_eq!(
+        chat.input_queue.queued_user_messages.len(),
+        1,
+        "a queued slash command must not be dispatched mid-turn by Escape"
+    );
+    assert!(
+        drained_events_request_interrupt(&mut rx),
+        "a queued slash command must leave the interrupt behaviour alone"
+    );
+}
+
+/// Whether anything queued on the app-event channel asks core to interrupt.
+fn drained_events_request_interrupt(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+) -> bool {
+    let mut interrupted = false;
+    while let Ok(event) = rx.try_recv() {
+        if let AppEvent::CodexOp(command) = &event
+            && format!("{command:?}").contains("Interrupt")
+        {
+            interrupted = true;
+        }
+    }
+    interrupted
+}
+
+#[tokio::test]
 async fn pending_steer_esc_does_not_steal_vim_insert_escape() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);

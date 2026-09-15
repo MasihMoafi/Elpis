@@ -219,6 +219,27 @@ impl ChatWidget {
             return;
         }
 
+        // A queued follow-up should reach the running turn, not cancel it: the
+        // interrupt binding delivers it as a steer and leaves the turn running.
+        // Restricted to a plain head entry on a live agent turn so a queued
+        // slash/shell command, a review turn, or a shell-only turn still falls
+        // through to the interrupt below.
+        if self.chat_keymap.interrupt_turn.is_pressed(key_event)
+            && self.input_queue.pending_steers.is_empty()
+            && self.input_queue.rejected_steers_queue.is_empty()
+            && self.next_queued_input_is_plain()
+            && self.turn_lifecycle.agent_turn_running
+            && !self.review.is_review_mode
+            && !self.only_user_shell_commands_running()
+            && self.bottom_pane.no_modal_or_popup_active()
+            && !self.manual_memory_submission_blocked()
+            && !self.input_queue.suppress_queue_autosend
+            && !self.should_handle_vim_insert_escape(key_event)
+        {
+            self.steer_next_queued_input();
+            return;
+        }
+
         if self.chat_keymap.interrupt_turn.is_pressed(key_event)
             && !self.input_queue.pending_steers.is_empty()
             && self.bottom_pane.is_task_running()

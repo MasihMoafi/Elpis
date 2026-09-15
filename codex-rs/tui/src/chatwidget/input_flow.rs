@@ -164,6 +164,32 @@ impl ChatWidget {
         submitted_follow_up
     }
 
+    /// Whether the next queued input is an ordinary message rather than a
+    /// queued slash command or shell invocation.
+    pub(super) fn next_queued_input_is_plain(&self) -> bool {
+        self.input_queue
+            .queued_user_messages
+            .front()
+            .is_some_and(|queued| queued.action == QueuedInputAction::Plain)
+    }
+
+    /// Hand exactly one queued message to the turn that is already running.
+    ///
+    /// Submitting while the agent turn is live records it as a pending steer, so
+    /// the model receives it at the next tool/result boundary without the turn
+    /// being cancelled first.
+    pub(super) fn steer_next_queued_input(&mut self) -> bool {
+        let Some((queued_message, history_record)) = self.pop_next_queued_user_message() else {
+            return false;
+        };
+        let steered = self.submit_user_message_with_history_record(
+            queued_message.into_user_message(),
+            history_record,
+        );
+        self.refresh_pending_input_preview();
+        steered
+    }
+
     pub(super) fn is_user_turn_pending_or_running(&self) -> bool {
         self.input_queue.user_turn_pending_start || self.bottom_pane.is_task_running()
     }
