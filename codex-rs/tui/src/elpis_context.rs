@@ -379,6 +379,11 @@ mod tests {
         let expected = format!(
             "- Existing [8].\n- Lesson [9, 10].\n- Repeat [9].\n- Keep [docs](guide.md), [unknown], and {id} outside citations."
         );
+        // A citation is only accepted when the turn's evidence declares it, so the
+        // saver cannot invent provenance. Supply the two cited items.
+        let evidence = format!(
+            r#"{{"evidence":[{{"id":"{id}:1","item":{{"role":"user"}}}},{{"id":"{id}:10","item":{{"role":"user"}}}}]}}"#
+        );
         for _ in 0..2 {
             let snapshot = MemorySnapshot::open(&root, &cwd)?.context("enabled saver")?;
             snapshot.commit(
@@ -389,7 +394,7 @@ mod tests {
                 "thread",
                 "turn",
                 None,
-                None,
+                Some(evidence.as_str()),
                 MemorySaveTiming::default(),
             )?;
             assert_eq!(std::fs::read_to_string(root.join("MEMORY.md"))?, expected);
