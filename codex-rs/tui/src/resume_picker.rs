@@ -892,13 +892,22 @@ impl Row {
     }
 
     fn summary(&self, width: usize) -> String {
-        if self.is_disposable_evaluation() {
-            let reason = " [Review deletion: disposable evaluation]";
-            let title = truncate_text(self.display_preview(), width.saturating_sub(reason.len()));
-            truncate_text(&format!("{title}{reason}"), width)
-        } else {
-            truncate_text(self.display_preview(), width)
+        if !self.is_disposable_evaluation() {
+            return truncate_text(self.display_preview(), width);
         }
+        // Narrow terminals must not lose the title or show a clipped reason, so
+        // append the widest reason that still leaves the title readable.
+        const MIN_TITLE_WIDTH: usize = 12;
+        for reason in [
+            " [Review deletion: disposable evaluation]",
+            " [review deletion]",
+        ] {
+            if width >= reason.len() + MIN_TITLE_WIDTH {
+                let title = truncate_text(self.display_preview(), width - reason.len());
+                return format!("{title}{reason}");
+            }
+        }
+        truncate_text(self.display_preview(), width)
     }
 
     fn matches_query(&self, query: &str) -> bool {
@@ -3526,6 +3535,41 @@ mod tests {
         assert!(
             row.summary(70)
                 .contains("Review deletion: disposable evaluation")
+        );
+    }
+
+    #[test]
+    fn narrow_widths_keep_the_title_and_never_clip_the_reason() {
+        let mut row = make_row("/tmp/eval.jsonl", "2026-04-28T18:00:00Z", "");
+        row.preview =
+            String::from("You are working in a disposable evaluation workspace. Fix the bug.");
+        row.thread_name = Some(String::from("Repair terminal scrolling"));
+        for width in 1..=120usize {
+            let summary = row.summary(width);
+            assert!(
+                summary.chars().count() <= width,
+                "width {width} overflowed: {summary}"
+            );
+            let title = summary.split(" [").next().unwrap_or_default();
+            assert!(
+                !title.trim().is_empty(),
+                "width {width} lost the title: {summary}"
+            );
+            if summary.contains(" [") {
+                assert!(
+                    summary.ends_with(']'),
+                    "width {width} clipped the reason: {summary}"
+                );
+                assert!(
+                    title.chars().count() >= 9,
+                    "width {width} left an unreadable title: {summary}"
+                );
+            }
+        }
+        assert!(row.summary(45).ends_with(" [review deletion]"));
+        assert!(
+            row.summary(100)
+                .ends_with(" [Review deletion: disposable evaluation]")
         );
     }
 
