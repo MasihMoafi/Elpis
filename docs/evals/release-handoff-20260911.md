@@ -60,7 +60,7 @@ Evidence paths and rollback locations are recorded in
 - Motion captures: `/tmp/elpis-ide-startup-lOFyXd/folder/motion-{0,1,2}.png`;
   final terminal capture shows all three restored messages in the composer.
 - Rollback executable:
-  `/home/masih/.local/share/elpis/release-recovery/ui-correction-20260911/elpis-before`.
+  `~/.local/share/elpis/release-recovery/ui-correction-20260911/elpis-before`.
 
 Steering and deferred-command lifecycle tests now submit explicitly through the
 composer's existing submission path; Enter behavior is tested separately through

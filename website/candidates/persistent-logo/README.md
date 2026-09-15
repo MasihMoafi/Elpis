@@ -29,7 +29,7 @@ cache benchmark, or evidence that the installed runtime behaves as illustrated.
 workstation from the repository root, using the existing installed dependencies:
 
 ```sh
-node /home/masih/Desktop/p/Elpis/website/node_modules/@tailwindcss/cli/dist/index.mjs -i website/candidates/persistent-logo/source.css -o website/candidates/persistent-logo/styles.css --minify
+node ~/Desktop/p/Elpis/website/node_modules/@tailwindcss/cli/dist/index.mjs -i website/candidates/persistent-logo/source.css -o website/candidates/persistent-logo/styles.css --minify
 ```
 
 The source CSS points to those local dependencies; update the three package paths

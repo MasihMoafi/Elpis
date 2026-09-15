@@ -44,7 +44,7 @@ unrelated baseline test failures remain outside these focused checks.
 Evidence: `/tmp/elpis-readable-checks.json`, `/tmp/elpis-readable-final-motion.log`
 (supersedes initial movement assertions), `/tmp/elpis-readable-frame-audit.json`,
 and `/tmp/elpis-readable-visual-export.log`. Native replay and screenshots are in
-`/home/masih/Desktop/tmp/elpis-design-playground/actual/`. The replay strips OSC 8
+`~/Desktop/tmp/elpis-design-playground/actual/`. The replay strips OSC 8
 hyperlink control sequences as a terminal would; raw captured cells retain them.
 No claim that every previously reported terminal glitch is diagnosed.
 

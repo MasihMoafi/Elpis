@@ -84,7 +84,7 @@ Acceptance:
 - Register the template as an image with the `product-design` gallery kind.
 - Verify the generated manifest, skill metadata, retained assets, and absence of staging leftovers.
 
-Status: complete. Template Creator generated `/home/masih/.codex/skills/artifact-template-elpis-tui` as an image template in the Product Design gallery. Its retained reference and preview are byte-identical to `.visual-review/final-demo-done.png`; the required manifest and agent metadata are present, the PNGs validate at 1600×1000, and no staging or backup files remain.
+Status: complete. Template Creator generated `~/.codex/skills/artifact-template-elpis-tui` as an image template in the Product Design gallery. Its retained reference and preview are byte-identical to `.visual-review/final-demo-done.png`; the required manifest and agent metadata are present, the PNGs validate at 1600×1000, and no staging or backup files remain.
 
 ## 2026-09-04 — Elpis TUI design directions
 

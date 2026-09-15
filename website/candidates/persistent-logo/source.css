@@ -1,8 +1,8 @@
-@import "/home/masih/Desktop/p/Elpis/website/node_modules/tailwindcss";
+@import "~/Desktop/p/Elpis/website/node_modules/tailwindcss";
 @source "./index.html";
 @source "./demo.mjs";
-@plugin "/home/masih/Desktop/p/Elpis/website/node_modules/daisyui" { themes: false; logs: false; }
-@plugin "/home/masih/Desktop/p/Elpis/website/node_modules/daisyui/theme" {
+@plugin "~/Desktop/p/Elpis/website/node_modules/daisyui" { themes: false; logs: false; }
+@plugin "~/Desktop/p/Elpis/website/node_modules/daisyui/theme" {
   name: "elpis-candidate"; default: true; prefersdark: true; color-scheme: dark;
   --color-base-100: #0c0e0d; --color-base-200: #111411; --color-base-300: #2c322e; --color-base-content: #eeeae1;
   --color-primary: #df9b63; --color-primary-content: #241207;

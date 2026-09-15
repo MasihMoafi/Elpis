@@ -5,7 +5,7 @@ verification are tracked in [the terminal and release investigation](terminal-se
 The current pressure threshold is 30; the historical value below was 25. The newer
 source candidate has not yet been installed or published as the final release.
 
-Installed for Masih's acceptance. One checkout remains: `/home/masih/Desktop/p/Elpis`
+Installed for Masih's acceptance. One checkout remains: `~/Desktop/p/Elpis`
 on `main`. No public release or additional research campaign was performed.
 
 ## Included changes

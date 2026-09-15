@@ -96,7 +96,7 @@ The installed and built executables match. Rollback:
 Restart `elpis` to use it. This supersedes the earlier CLI hash below; it is a
 local correction, not a public release or a claim about the remaining blockers.
 
-Updated the clean `/home/masih/Desktop/p/codex` reference with
+Updated the clean `~/Desktop/p/codex` reference with
 `gh repo sync --source openai/codex --branch main`, without force or local edits.
 It moved from `a9519cbc` (August 31) to
 [`c4017a87`](https://github.com/openai/codex/commit/c4017a87aacc7558002b7cb510025e967c1d765e)

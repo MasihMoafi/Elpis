@@ -68,7 +68,7 @@ Below is a complete, trace-verified reconstruction of an actual local pruning pa
     {
       "type": "custom_tool_call_output",
       "call_id": "call_TbHce21wNbChXVsEd7pN9JED",
-      "output": "Script completed\nWall time 0.2 seconds\nOutput:\n/home/masih/Desktop/p/elpis-dash-bench-elpis\n## HEAD (no branch)\n M docs/evals/dashboard/benchmark_dashboard.html\n..."
+      "output": "Script completed\nWall time 0.2 seconds\nOutput:\n~/Desktop/p/elpis-dash-bench-elpis\n## HEAD (no branch)\n M docs/evals/dashboard/benchmark_dashboard.html\n..."
     }
   ]
 }
@@ -79,7 +79,7 @@ Below is a complete, trace-verified reconstruction of an actual local pruning pa
 * **Kept Item (`call_TbHce21wNbChXVsEd7pN9JED`)**:
   * **Observed `model_visible_after`**:
 ```json
-"output": "[ELPIS CONTEXT UPDATE]\nkept=Repository is `/home/masih/Desktop/p/elpis-dash-bench-elpis`; worktree is `HEAD (no branch)` with `M docs/evals/dashboard/benchmark_dashboard.html` — `git status --short --branch` — establishes the inspection baseline and existing modification.\nevidence=rollout://tool-call/call_TbHce21wNbChXVsEd7pN9JED\noriginal_chars=7313"
+"output": "[ELPIS CONTEXT UPDATE]\nkept=Repository is `~/Desktop/p/elpis-dash-bench-elpis`; worktree is `HEAD (no branch)` with `M docs/evals/dashboard/benchmark_dashboard.html` — `git status --short --branch` — establishes the inspection baseline and existing modification.\nevidence=rollout://tool-call/call_TbHce21wNbChXVsEd7pN9JED\noriginal_chars=7313"
 ```
 * **Deleted Item (`call_C5wIa0aKMeJ5JFRhpbaWQ6dQ`)**:
   * **Artifact**: `items/001-call_C5wIa0aKMeJ5JFRhpbaWQ6dQ.json`

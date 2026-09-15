@@ -114,7 +114,7 @@ same-named installed file cannot shadow the user's source. Canonical paths and
 file names are deduplicated deterministically.
 
 For Masih's candidate configuration, the sole root is
-`/home/masih/Desktop/p/skills/dev`. The exact two files currently in that root,
+`~/Desktop/p/skills/dev`. The exact two files currently in that root,
 `AGENTS.md` and `CODING_GUIDELINES.md`, are the development-rule rows. They are
 instructions, not `SKILL.md` skills, and their source files remain owner-managed
 outside the repository.

@@ -1,7 +1,7 @@
 # Elpis website and TUI visuals — session handoff
 
 Updated: 2026-09-04, Asia/Tehran  
-Workspace: `/home/masih/Desktop/p/Elpis`  
+Workspace: `~/Desktop/p/Elpis`  
 Status: **implementation complete and locally verified; awaiting Masih's visual acceptance; not committed or deployed**
 
 ## Outcome
@@ -108,7 +108,7 @@ Locations:
 
 - `docs/assets/diagram_ace_lifecycle.svg`
 - `website/assets/diagram_ace_lifecycle.svg`
-- `/home/masih/Desktop/p/masih-website/public/elpis/diagram_ace_lifecycle.svg`
+- `~/Desktop/p/masih-website/public/elpis/diagram_ace_lifecycle.svg`
 
 The Elpis README and standalone site embed it. The portfolio maps the asset on the Elpis project
 page and `src/pages/Index.tsx` uses it as the third item in `elpisSlides`.
@@ -177,7 +177,7 @@ rewrite. `website/source.css` is 208 lines / 12,920 bytes. The compiled styleshe
 
 ### Separate portfolio repository
 
-`/home/masih/Desktop/p/masih-website` is independently dirty with extensive user work. This
+`~/Desktop/p/masih-website` is independently dirty with extensive user work. This
 session did not rewrite or clean those unrelated changes. The existing diagram mapping and third
 homepage slide were inspected and its full production build was run, but no portfolio files were
 edited during the final completion pass.
@@ -208,7 +208,7 @@ checks catch the regressions they are intended to catch.
 Final focused tests:
 
 ```text
-cd /home/masih/Desktop/p/Elpis/website
+cd ~/Desktop/p/Elpis/website
 npm test
 9 passed, 0 failed
 ```
@@ -256,7 +256,7 @@ Verified outcomes:
 ### Portfolio verification
 
 ```text
-cd /home/masih/Desktop/p/masih-website
+cd ~/Desktop/p/masih-website
 npm run build
 ```
 

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Do not hard-code `/home/masih` or any personal absolute path in shipped source; Masih's source path belongs only in the final local candidate configuration.
+- Do not hard-code `~` or any personal absolute path in shipped source; Masih's source path belongs only in the final local candidate configuration.
 - During implementation, do not run local `cargo`, Rust tests, builds, the Elpis binary, or tmux. The latest handoff also forbids pushing, so execution is deferred until the full functional issue set is closed.
 - Preserve Codex's default behavior when `skills.default_enabled` is absent; only the Elpis executable prepends `false` as its product default, and a later explicit user override may replace it.
 - Bundled Codex skills are off by default in Elpis, but the product must retain the configuration path that deliberately enables them.
