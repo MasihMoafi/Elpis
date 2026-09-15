@@ -1843,6 +1843,11 @@ async fn run_ratatui_app(
     terminal_restore_guard.restore_silently();
     // Mark the end of the recorded session.
     session_log::log_session_end();
+    // The log layer batches on an interval, so without this the records that
+    // explain a slow exit are dropped when the process goes away.
+    if let Some(log_db) = log_db.as_ref() {
+        log_db.flush().await;
+    }
     // ignore error when collecting usage – report underlying error instead
     app_result
 }

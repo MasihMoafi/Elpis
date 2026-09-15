@@ -989,7 +989,10 @@ impl App {
                         config.clone(),
                         target_session.thread_id,
                         model_settings,
-                        config_persistence::resume_has_permission_overrides(&config, &harness_overrides),
+                        config_persistence::resume_has_permission_overrides(
+                            &config,
+                            &harness_overrides,
+                        ),
                     )
                     .await
                     .map_err(|err| session_start_error("resume", &target_session, err))?;
@@ -1284,9 +1287,16 @@ See the Elpis keymap documentation for supported actions and examples."
                 }
             }
         };
+        // Exit latency has no other record: the log layer batches on an interval
+        // and the process is gone before the next tick, so time this explicitly.
+        let shutdown_started = std::time::Instant::now();
         if let Err(err) = app_server.shutdown().await {
             tracing::warn!(error = %err, "failed to shut down embedded app server");
         }
+        tracing::info!(
+            elapsed_ms = shutdown_started.elapsed().as_millis(),
+            "exit: app-server shutdown"
+        );
         let clear_result = tui.terminal.clear();
         let exit_reason = match exit_reason_result {
             Ok(exit_reason) => {
