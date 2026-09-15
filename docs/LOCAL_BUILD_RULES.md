@@ -39,6 +39,33 @@ Prefix every cargo command with `CODEX_SKIP_BWRAP_BUILD=1`. A cargo failure with
 that variable set is an environment problem, not a code problem — do not "fix" code in
 response to it.
 
+## 2b. The `v8` crate downloads, and the proxy breaks that download
+
+`code-mode` depends on `v8`, whose build script fetches a ~38 MB prebuilt archive from
+GitHub releases. `--offline` does not cover build scripts, and `target/` caches the
+archive, so the fetch returns whenever `target/` has been cleared.
+
+Observed 2026-09-15: with the workstation proxy exported, the fetch died after 15
+minutes with `URLError: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING]>` and the
+whole build failed at `v8-149.2.0/build.rs:732`. The proxy handles small API calls but
+dropped the large asset.
+
+Fetch it once with the proxy unset and park it where the build script looks first:
+
+```bash
+url=https://github.com/denoland/rusty_v8/releases/download/v149.2.0/librusty_v8_release_x86_64-unknown-linux-gnu.a.gz
+mkdir -p ~/.cargo/.rusty_v8
+env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
+  curl -fL -o ~/.cargo/.rusty_v8/"$(python3 -c "
+import sys
+print(''.join(c if c.isalnum() and c.isascii() else '_' for c in sys.argv[1]))" "$url")" "$url"
+```
+
+`build.rs` checks `$CARGO_HOME/.rusty_v8/<url with every non-alphanumeric byte replaced
+by _>` before downloading, so a matching file there makes the build offline again. Only
+the `release` profile with no feature suffix is needed: Elpis enables just v8's default
+`use_custom_libcxx`, not pointer compression, sandbox, or simdutf.
+
 ## 3. Throttle every local Rust build and test
 
 Never let Cargo use the workstation's default all-core parallelism. Unless Masih
