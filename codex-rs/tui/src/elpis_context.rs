@@ -110,6 +110,14 @@ pub(crate) async fn clear_session_checkpoint(
     let Some(workspace_dir) = workspace_dir(memories_root, cwd) else {
         return Ok(None);
     };
+    // Removing the checkpoint under an in-flight save makes the saver's commit
+    // fail with "checkpoint changed during consolidation". The saver rewrites the
+    // checkpoint itself, so skipping the removal is the safe outcome.
+    let Some(_checkpoint_lock) =
+        crate::legacy_core::memory_save::try_lock_checkpoint(&workspace_dir)?
+    else {
+        return Ok(None);
+    };
     let checkpoint_path = workspace_dir.join(SESSION_CHECKPOINT_FILE);
     let content = match tokio::fs::read_to_string(&checkpoint_path).await {
         Ok(content) => content,
@@ -391,6 +399,57 @@ mod tests {
         assert_eq!(references.matches(&format!("`{id}:10`")).count(), 1);
         assert!(references.contains(&format!("| 9 | `{id}:1` |")));
         assert!(references.contains(&format!("| 10 | `{id}:10` |")));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn clearing_a_goal_does_not_invalidate_an_in_flight_memory_save() -> Result<()> {
+        use crate::legacy_core::memory_save::{MemoryDecision, MemorySaveTiming, MemorySnapshot};
+
+        let home = tempdir()?;
+        let root = home.path().join("memories");
+        let cwd = Path::new("/tmp/checkpoint-clear-race");
+        let workspace = workspace_dir(Some(&root), cwd).context("workspace")?;
+        tokio::fs::create_dir_all(&workspace).await?;
+        tokio::fs::write(
+            workspace.join("ES.md"),
+            "- Thread: `thread`\nOriginal checkpoint",
+        )
+        .await?;
+        tokio::fs::write(
+            workspace.join("memory-autosave.json"),
+            r#"{"enabled":true}"#,
+        )
+        .await?;
+        let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
+        assert!(
+            clear_session_checkpoint(Some(&root), cwd, "thread")
+                .await?
+                .is_none(),
+            "clearing must defer to the in-flight save"
+        );
+        assert!(
+            workspace.join("ES.md").exists(),
+            "the saver's snapshot source must survive a concurrent clear"
+        );
+        snapshot.commit(
+            &MemoryDecision {
+                checkpoint: "- Thread: `thread`\nConsolidated plan.".into(),
+                memory: "Retain the verified lesson.".into(),
+            },
+            "thread",
+            "current-turn",
+            None,
+            None,
+            MemorySaveTiming::default(),
+        )?;
+        drop(snapshot);
+        assert!(
+            clear_session_checkpoint(Some(&root), cwd, "thread")
+                .await?
+                .is_some(),
+            "clearing must work once the save released the checkpoint"
+        );
         Ok(())
     }
 
