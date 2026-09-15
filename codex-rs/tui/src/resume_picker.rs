@@ -872,7 +872,33 @@ impl Row {
     }
 
     fn display_preview(&self) -> &str {
-        self.thread_name.as_deref().unwrap_or(&self.preview)
+        self.thread_name.as_deref().unwrap_or_else(|| {
+            if self.preview.trim().is_empty() {
+                "[Review deletion: no message preview]"
+            } else {
+                &self.preview
+            }
+        })
+    }
+
+    fn is_disposable_evaluation(&self) -> bool {
+        [
+            "You are working in a disposable evaluation workspace.",
+            "You are in a disposable Python workspace.",
+            "You are running the `code_scope` evaluation task inside Elpis.",
+        ]
+        .iter()
+        .any(|prefix| self.preview.trim_start().starts_with(prefix))
+    }
+
+    fn summary(&self, width: usize) -> String {
+        if self.is_disposable_evaluation() {
+            let reason = " [Review deletion: disposable evaluation]";
+            let title = truncate_text(self.display_preview(), width.saturating_sub(reason.len()));
+            truncate_text(&format!("{title}{reason}"), width)
+        } else {
+            truncate_text(self.display_preview(), width)
+        }
     }
 
     fn matches_query(&self, query: &str) -> bool {
@@ -1855,11 +1881,7 @@ fn row_from_app_server_thread(thread: Thread) -> Option<Row> {
     let preview = thread.preview.trim();
     Some(Row {
         path: thread.path,
-        preview: if preview.is_empty() {
-            String::from("(no message yet)")
-        } else {
-            preview.to_string()
-        },
+        preview: preview.to_string(),
         thread_id: Some(thread_id),
         thread_name: thread.name,
         created_at: chrono::DateTime::from_timestamp(thread.created_at, 0)
@@ -2620,7 +2642,7 @@ fn render_comfortable_session_lines(
     width: u16,
 ) -> Vec<Line<'static>> {
     let marker = selection_marker(is_selected, is_expanded);
-    let title = truncate_text(row.display_preview(), width.saturating_sub(2) as usize);
+    let title = row.summary(width.saturating_sub(2) as usize);
     let title = if is_selected {
         selected_session_title_span(title)
     } else {
@@ -2707,10 +2729,15 @@ fn render_dense_session_lines(
         ThreadSortKey::CreatedAt => created,
         ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt => updated,
     };
+    let title = row.summary(
+        dense_columns((width as usize).saturating_sub(marker.width()))
+            .title_width
+            .saturating_sub(1),
+    );
     let mut lines = vec![dense_summary_line(DenseSummaryInput {
         marker,
         date: &date,
-        title: row.display_preview(),
+        title: &title,
         is_selected,
         is_zebra,
         width,
@@ -3442,6 +3469,94 @@ mod tests {
             .map(str::trim_end)
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn deletion_candidate_is_visible_in_both_resume_densities() {
+        let row = make_row("/tmp/empty.jsonl", "2026-04-28T18:00:00Z", "   ");
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            page_only_loader(|_| {}),
+            ProviderFilter::MatchDefault(String::from("openai")),
+            true,
+            None,
+            SessionPickerAction::Resume,
+        );
+        for density in [SessionListDensity::Comfortable, SessionListDensity::Dense] {
+            state.density = density;
+            let rendered = render_session_lines(&row, &state, false, false, false, 100)
+                .into_iter()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(rendered.contains("Review deletion: no message preview"));
+        }
+    }
+
+    #[test]
+    fn disposable_evaluation_candidates_keep_titles_in_both_densities() {
+        let mut row = make_row("/tmp/eval.jsonl", "2026-04-28T18:00:00Z", "");
+        row.thread_name = Some(String::from("Fix the fixture"));
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            page_only_loader(|_| {}),
+            ProviderFilter::MatchDefault(String::from("openai")),
+            true,
+            None,
+            SessionPickerAction::Resume,
+        );
+        for preview in [
+            "You are working in a disposable evaluation workspace. Fix the bug.",
+            "You are in a disposable Python workspace. Fix the bug.",
+            "You are running the `code_scope` evaluation task inside Elpis. Fix the bug.",
+        ] {
+            row.preview = preview.to_string();
+            for density in [SessionListDensity::Comfortable, SessionListDensity::Dense] {
+                state.density = density;
+                let rendered = render_session_lines(&row, &state, false, false, false, 100)
+                    .into_iter()
+                    .map(|line| line.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(rendered.contains("Fix the fixture"));
+                assert!(rendered.contains("Review deletion: disposable evaluation"));
+            }
+        }
+        row.thread_name = Some("Long evaluation title ".repeat(10));
+        assert!(
+            row.summary(70)
+                .contains("Review deletion: disposable evaluation")
+        );
+    }
+
+    #[test]
+    fn ordinary_sessions_are_not_disposable_evaluation_candidates() {
+        let mut row = make_row("/tmp/old.jsonl", "2020-01-01T00:00:00Z", "");
+        row.cwd = Some(PathBuf::from("/tmp/project"));
+        for preview in [
+            "Hi",
+            "Pong",
+            "Finished the evaluation framework",
+            "Explain: You are in a disposable Python workspace.",
+        ] {
+            row.preview = preview.to_string();
+            assert!(!row.is_disposable_evaluation());
+            assert_eq!(row.summary(100), preview);
+        }
+    }
+
+    #[test]
+    fn deletion_candidates_preserve_named_and_substantive_sessions() {
+        let mut row = make_row("/tmp/old.jsonl", "2020-01-01T00:00:00Z", "");
+        row.thread_name = Some(String::from("Release investigation"));
+        assert_eq!(row.display_preview(), "Release investigation");
+
+        row.thread_name = None;
+        row.preview = String::from("Finished fixing the test runner");
+        assert_eq!(row.display_preview(), "Finished fixing the test runner");
+
+        row.preview = String::from("(no message yet)");
+        assert_eq!(row.display_preview(), "(no message yet)");
     }
 
     #[test]
