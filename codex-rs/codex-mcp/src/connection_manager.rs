@@ -79,11 +79,15 @@ use serde_json::Value as JsonValue;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
+use tracing::debug;
 use tracing::info_span;
 use tracing::instrument;
 use tracing::trace;
 use tracing::trace_span;
 use tracing::warn;
+
+/// How long one MCP server may take to shut down before exit moves on without it.
+const CLIENT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 const MCP_UI_META_KEY: &str = "ui";
 const MCP_UI_VISIBILITY_META_KEY: &str = "visibility";
@@ -461,11 +465,32 @@ impl McpConnectionManager {
     /// Stop all MCP clients owned by this manager and terminate stdio server processes.
     pub async fn shutdown(&self) {
         self.startup_cancellation_token.cancel();
-        let clients = self.clients.values().cloned().collect::<Vec<_>>();
-        // Keep cleanup alive if an interrupt cancels the refresh that requested it.
+        let clients = self
+            .clients
+            .iter()
+            .map(|(name, client)| (name.clone(), client.clone()))
+            .collect::<Vec<_>>();
+        // Quitting must not queue behind each server in turn. Neither the
+        // per-client shutdown nor the loop around it was bounded, so one slow
+        // server delayed the whole exit and the rest waited behind it.
         let shutdown_task = tokio::spawn(async move {
-            for client in clients {
-                client.shutdown().await;
+            let started = Instant::now();
+            let names =
+                futures::future::join_all(clients.into_iter().map(|(name, client)| async move {
+                    match tokio::time::timeout(CLIENT_SHUTDOWN_TIMEOUT, client.shutdown()).await {
+                        Ok(()) => None,
+                        Err(_) => Some(name),
+                    }
+                }))
+                .await;
+            let abandoned = names.into_iter().flatten().collect::<Vec<_>>();
+            if abandoned.is_empty() {
+                debug!("MCP servers shut down in {:?}", started.elapsed());
+            } else {
+                warn!(
+                    "abandoned MCP servers after {CLIENT_SHUTDOWN_TIMEOUT:?}: {}",
+                    abandoned.join(", ")
+                );
             }
         });
         if let Err(error) = shutdown_task.await {

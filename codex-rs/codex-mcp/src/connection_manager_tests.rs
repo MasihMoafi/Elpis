@@ -969,6 +969,95 @@ async fn cancelling_startup_does_not_disable_a_ready_client() {
     );
 }
 
+fn test_managed_client(
+    client: futures::future::Shared<
+        futures::future::BoxFuture<'static, Result<ManagedClient, StartupOutcomeError>>,
+    >,
+) -> AsyncManagedClient {
+    AsyncManagedClient {
+        client,
+        is_codex_apps_mcp_server: false,
+        cached_server_info: None,
+        codex_apps_tools_cache_context: None,
+        tool_catalog_cache_context: None,
+        tool_filter: ToolFilter::default(),
+        startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        startup_reconnect: None,
+        tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+        cancel_token: CancellationToken::new(),
+    }
+}
+
+fn manager_with_clients(clients: Vec<(String, AsyncManagedClient)>) -> Arc<McpConnectionManager> {
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    for (name, client) in clients {
+        manager.clients.insert(name, client);
+    }
+    Arc::new(manager)
+}
+
+fn slow_client(
+    delay: Duration,
+) -> futures::future::Shared<
+    futures::future::BoxFuture<'static, Result<ManagedClient, StartupOutcomeError>>,
+> {
+    async move {
+        tokio::time::sleep(delay).await;
+        Err(StartupOutcomeError::Cancelled)
+    }
+    .boxed()
+    .shared()
+}
+
+#[tokio::test]
+async fn shutdown_stops_every_server_concurrently() {
+    let delay = Duration::from_millis(300);
+    let manager = manager_with_clients(
+        ["alpha", "beta", "gamma", "delta"]
+            .into_iter()
+            .map(|name| (name.to_string(), test_managed_client(slow_client(delay))))
+            .collect(),
+    );
+
+    let started = std::time::Instant::now();
+    manager.shutdown().await;
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < delay * 3,
+        "four servers took {elapsed:?}; shutting them down in turn would cost about {:?}",
+        delay * 4
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_abandons_a_server_that_never_finishes() {
+    let manager = manager_with_clients(vec![
+        (
+            "wedged".to_string(),
+            test_managed_client(
+                futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
+                    .boxed()
+                    .shared(),
+            ),
+        ),
+        (
+            "healthy".to_string(),
+            test_managed_client(slow_client(Duration::from_millis(1))),
+        ),
+    ]);
+
+    tokio::time::timeout(Duration::from_secs(60), manager.shutdown())
+        .await
+        .expect("a wedged server must not hold the exit open");
+}
+
 #[tokio::test]
 async fn shutdown_cancels_pending_tool_listing() {
     let cancel_token = CancellationToken::new();
