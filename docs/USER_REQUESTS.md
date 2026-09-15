@@ -12,7 +12,8 @@ This file records what Masih asked Elpis to become. It is deliberately separate 
 ## Requested outcomes
 
 September 12 follow-up: record each newly requested change here; cross-project
-requests are indexed in `../USER_REQUESTS.md` from the repository root.
+requests are indexed in `../TASKS.md` from the repository root. Masih's later
+clarification prefers existing TASKS.md files; do not create further request ledgers.
 
 | ID | Masih-requested outcome | Current state | Acceptance belongs to Masih |
 | --- | --- | --- | --- |
