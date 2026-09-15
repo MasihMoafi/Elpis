@@ -24,6 +24,7 @@ fs.writeFileSync(path.join(workspace, "GOAL.md"), "# Goal\nVerify the Cedar rele
 
 let rpc;
 let luna = 0;
+let titles = 0;
 let malformed = false;
 let alteredCitation = null;
 let alteredCheckpointCitation = null;
@@ -51,7 +52,12 @@ const server = http.createServer(async (request, response) => {
   const body = JSON.parse(raw);
   requests.push(body);
   let text = largeResponse ? "Acknowledged. " + ".".repeat(63_500) : "Acknowledged.";
-  if (body.model === "gpt-5.6-luna") {
+  // Session naming shares the saver's model, so route by schema, not by model.
+  const isSessionTitle = body.text?.format?.schema?.required?.includes("title");
+  if (isSessionTitle) {
+    titles++;
+    text = JSON.stringify({ title: "Fixture session task" });
+  } else if (body.model === "gpt-5.6-luna") {
     luna++;
     assert.equal(body.tools?.length || 0, 0, "memory call exposed tools");
     assert.equal(body.text?.format?.type, "json_schema", "memory call omitted its schema");

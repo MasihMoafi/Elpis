@@ -15,7 +15,23 @@ const malformed = '{"items":[]} trailing data';
 const server = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk;
   if (!req.url.includes('/responses')) {res.writeHead(404); res.end(); return;}
-  const body = JSON.parse(raw); requests.push(body);
+  const body = JSON.parse(raw);
+  // Session naming is a separate background call; answer it without consuming a
+  // main-call slot or entering the asserted request sequence.
+  if (body.text?.format?.schema?.required?.includes('title')) {
+    const item = {type:'message', id:'msg_title', role:'assistant', status:'completed',
+      content:[{type:'output_text', text:JSON.stringify({title:'Fixture session task'}), annotations:[]}]};
+    res.writeHead(200, {'content-type':'text/event-stream'});
+    for (const event of [
+      {type:'response.created',response:{id:'resp_title',status:'in_progress',output:[]}},
+      {type:'response.output_item.done',output_index:0,item},
+      {type:'response.completed',response:{id:'resp_title',status:'completed',output:[item],
+        usage:{input_tokens:10,output_tokens:5,total_tokens:15}}},
+    ]) res.write('data: '+JSON.stringify(event)+'\n\n');
+    res.end();
+    return;
+  }
+  requests.push(body);
   const optimizer = body.input?.some(item => item.content?.some(part =>
     typeof part.text === 'string' && part.text.includes('"source_tokens_estimate"')));
   let item;

@@ -22,7 +22,10 @@ const server=http.createServer(async(req,res)=>{
     const body=JSON.parse(raw);requests.push({path:req.url,body});
     if(requests.length>25)throw Error('Provider request cap exceeded');
     let text='Acknowledged.';
-    if(body.model==='gpt-5.6-luna') {
+    // Session naming shares the saver's model, so route by schema, not by model.
+    if(body.text?.format?.schema?.required?.includes('title')) {
+      text=JSON.stringify({title:'Fixture session task'});
+    } else if(body.model==='gpt-5.6-luna') {
       const evidence=body.input.flatMap(i=>i.content||[]).filter(i=>i.text?.startsWith('{')).map(i=>JSON.parse(i.text)).find(i=>Array.isArray(i.evidence));
       if(!evidence)throw Error('Missing saver evidence');
       saves.push({evidence,malformed});
