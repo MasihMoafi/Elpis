@@ -102,6 +102,54 @@ fn deliver_usage_limit_error(app: &mut App) {
 }
 
 #[tokio::test]
+async fn a_wheel_scroll_in_the_chat_does_not_take_over_the_screen() -> Result<()> {
+    let (mut app, _events, _ops) = make_test_app_with_channels().await;
+    app.transcript_cells = vec![Arc::new(UserHistoryCell {
+        message: "Something worth scrolling back to.".to_string(),
+        text_elements: Vec::new(),
+        local_image_paths: Vec::new(),
+        remote_image_urls: Vec::new(),
+    }) as Arc<dyn HistoryCell>];
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(
+        app.chat_widget.config_ref(),
+    ))
+    .await?;
+
+    for kind in [
+        crossterm::event::MouseEventKind::ScrollUp,
+        crossterm::event::MouseEventKind::ScrollDown,
+    ] {
+        app.handle_tui_event(
+            &mut tui,
+            &mut server,
+            TuiEvent::Mouse(crossterm::event::MouseEvent {
+                kind,
+                column: 10,
+                row: 5,
+                modifiers: crossterm::event::KeyModifiers::NONE,
+            }),
+        )
+        .await?;
+
+        // The chat is inline and its history lives in the terminal's own
+        // scrollback, so a wheel event must stay with the terminal instead of
+        // opening the full-screen transcript the way a double Escape does.
+        assert!(
+            app.overlay.is_none(),
+            "{kind:?} opened an overlay over the chat"
+        );
+        assert!(
+            !tui.is_alt_screen_active(),
+            "{kind:?} switched to the alternate screen"
+        );
+        assert!(!app.backtrack.primed);
+        assert!(!app.backtrack.overlay_preview_active);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn usage_escape_closes_pager_without_interrupting_active_turn() -> Result<()> {
     let (mut app, mut events, mut ops) = make_test_app_with_channels().await;
     app.keymap.pager.close = vec![crate::key_hint::plain(KeyCode::Char('q'))];

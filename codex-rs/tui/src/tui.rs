@@ -176,9 +176,11 @@ pub fn set_modes() -> Result<()> {
     ensure_virtual_terminal_processing()?;
 
     execute!(stdout(), EnableBracketedPaste)?;
-    // Report button drags, not every pointer movement during normal typing.
-    stdout().write_all(b"\x1b[?1002h\x1b[?1006h")?;
-    stdout().flush()?;
+    // Deliberately do NOT claim the mouse here. While the inline chat is on the
+    // normal screen its history lives in the terminal's own scrollback, so the
+    // terminal must keep the wheel for a two-finger swipe to scroll anything.
+    // Mouse reporting is turned on only for the alt-screen overlays, which do
+    // their own scrolling. See enter_alt_screen/leave_alt_screen.
 
     enable_raw_mode()?;
     // Enable keyboard enhancement flags so modifiers for keys like Enter are disambiguated.
@@ -796,6 +798,10 @@ impl Tui {
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
         // Enable "alternate scroll" so terminals may translate wheel to arrows
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
+        // Overlays scroll themselves, so take the mouse for as long as one is up.
+        let backend = self.terminal.backend_mut();
+        let _ = std::io::Write::write_all(backend, b"\x1b[?1002h\x1b[?1006h");
+        let _ = std::io::Write::flush(backend);
         if let Ok(size) = self.terminal.size() {
             self.alt_saved_history = Some(SavedHistoryRows {
                 screen: size,
@@ -822,6 +828,10 @@ impl Tui {
         }
         // Disable alternate scroll when leaving alt-screen
         let _ = execute!(self.terminal.backend_mut(), DisableAlternateScroll);
+        // Hand the wheel back so the inline chat scrolls the terminal's scrollback.
+        let backend = self.terminal.backend_mut();
+        let _ = std::io::Write::write_all(backend, b"\x1b[?1002l\x1b[?1006l");
+        let _ = std::io::Write::flush(backend);
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         if let Some(saved) = self.alt_saved_viewport.take() {
             self.terminal.set_viewport_area(saved);
