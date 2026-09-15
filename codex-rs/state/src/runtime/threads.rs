@@ -623,6 +623,22 @@ ON CONFLICT(id) DO NOTHING
         Ok(result.rows_affected() > 0)
     }
 
+    /// Background naming must not replace a title edited while inference was running.
+    pub async fn update_thread_title_if_unchanged(
+        &self,
+        thread_id: ThreadId,
+        expected_title: &str,
+        title: &str,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query("UPDATE threads SET title = ? WHERE id = ? AND title = ?")
+            .bind(title)
+            .bind(thread_id.to_string())
+            .bind(expected_title)
+            .execute(self.pool.as_ref())
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn touch_thread_updated_at(
         &self,
         thread_id: ThreadId,
@@ -814,7 +830,14 @@ ON CONFLICT(id) DO UPDATE SET
     reasoning_effort = excluded.reasoning_effort,
     cwd = excluded.cwd,
     cli_version = excluded.cli_version,
-    title = excluded.title,
+    title = CASE
+        WHEN TRIM(threads.title) != ''
+            AND TRIM(threads.title) != COALESCE(TRIM(threads.first_user_message), '')
+            AND (TRIM(excluded.title) = ''
+                OR TRIM(excluded.title) = COALESCE(TRIM(excluded.first_user_message), TRIM(threads.first_user_message)))
+        THEN threads.title
+        ELSE excluded.title
+    END,
     preview = COALESCE(NULLIF(excluded.preview, ''), threads.preview),
     sandbox_policy = excluded.sandbox_policy,
     approval_mode = excluded.approval_mode,
@@ -2375,6 +2398,50 @@ mod tests {
         assert_eq!(persisted.git_sha, None);
         assert_eq!(persisted.git_branch, None);
         assert_eq!(persisted.git_origin_url, None);
+    }
+
+    #[tokio::test]
+    async fn generated_title_preserves_manual_rename_and_recency() {
+        let home = unique_temp_dir();
+        let runtime = StateRuntime::init(home.clone(), "test-provider".to_string())
+            .await
+            .unwrap();
+        let id = ThreadId::new();
+        let mut metadata = test_thread_metadata(&home, id, home.clone());
+        metadata.title = "Please fix scrolling".into();
+        metadata.first_user_message = Some(metadata.title.clone());
+        runtime.upsert_thread(&metadata).await.unwrap();
+        assert!(
+            runtime
+                .update_thread_title_if_unchanged(id, &metadata.title, "Repair scrolling")
+                .await
+                .unwrap()
+        );
+        let named = runtime.get_thread(id).await.unwrap().unwrap();
+        assert_eq!(named.title, "Repair scrolling");
+        runtime.upsert_thread(&metadata).await.unwrap();
+        assert_eq!(
+            runtime.get_thread(id).await.unwrap().unwrap().title,
+            "Repair scrolling"
+        );
+        assert_eq!(
+            datetime_to_epoch_millis(named.updated_at),
+            datetime_to_epoch_millis(metadata.updated_at)
+        );
+        runtime
+            .update_thread_title(id, "My chosen name")
+            .await
+            .unwrap();
+        assert!(
+            !runtime
+                .update_thread_title_if_unchanged(id, "Repair scrolling", "Generated replacement")
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            runtime.get_thread(id).await.unwrap().unwrap().title,
+            "My chosen name"
+        );
     }
 
     #[tokio::test]

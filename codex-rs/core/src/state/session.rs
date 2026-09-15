@@ -32,6 +32,7 @@ pub(crate) struct SessionState {
     pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,
     pub(crate) server_reasoning_included: bool,
     pub(crate) last_successful_memory_save: Option<[u8; 32]>,
+    pub(crate) session_title_attempted: bool,
     pub(crate) mcp_dependency_prompted: HashSet<String>,
     pub(crate) additional_context: AdditionalContextStore,
     /// Settings used by the latest regular user turn, used for turn-to-turn
@@ -87,6 +88,7 @@ impl SessionState {
             latest_rate_limits: None,
             server_reasoning_included: false,
             last_successful_memory_save: None,
+            session_title_attempted: false,
             mcp_dependency_prompted: HashSet::new(),
             additional_context: AdditionalContextStore::default(),
             previous_turn_settings: None,

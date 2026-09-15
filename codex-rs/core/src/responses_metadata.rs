@@ -113,6 +113,7 @@ pub(crate) enum CodexResponsesRequestKind {
     Prewarm,
     Compaction(CompactionTurnMetadata),
     Memory,
+    SessionTitle,
     /// Layer 2 context-pruning pass (`core/src/session/context_prune.rs`) — a
     /// background, non-turn call, same shape as `Memory`.
     ContextPrune,
@@ -127,6 +128,7 @@ impl CodexResponsesRequestKind {
             CodexResponsesRequestKind::Prewarm => ("prewarm", None),
             CodexResponsesRequestKind::Compaction(metadata) => ("compaction", Some(metadata)),
             CodexResponsesRequestKind::Memory => ("memory", None),
+            CodexResponsesRequestKind::SessionTitle => ("session_title", None),
             CodexResponsesRequestKind::ContextPrune => ("context_prune", None),
             CodexResponsesRequestKind::SmartPrune => ("smart_prune", None),
         }
@@ -136,6 +138,7 @@ impl CodexResponsesRequestKind {
         !matches!(
             self,
             CodexResponsesRequestKind::Memory
+                | CodexResponsesRequestKind::SessionTitle
                 | CodexResponsesRequestKind::ContextPrune
                 | CodexResponsesRequestKind::SmartPrune
         )
@@ -152,6 +155,7 @@ impl CodexResponsesRequestKind {
             | CodexResponsesRequestKind::Prewarm
             | CodexResponsesRequestKind::Compaction(_) => None,
             CodexResponsesRequestKind::Memory => Some("memory"),
+            CodexResponsesRequestKind::SessionTitle => Some("session-title"),
             CodexResponsesRequestKind::ContextPrune => Some("context-prune"),
             CodexResponsesRequestKind::SmartPrune => Some("smart-prune"),
         }

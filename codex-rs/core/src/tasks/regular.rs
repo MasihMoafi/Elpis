@@ -100,6 +100,9 @@ impl SessionTask for RegularTask {
                 if last_agent_message.is_some() && !ctx.model_info.use_responses_lite {
                     sess.expire_reasoning_items_for_turn(&ctx.sub_id).await;
                 }
+                if last_agent_message.is_some() {
+                    crate::session::session_title::start(&sess, &ctx).await;
+                }
                 return Ok(last_agent_message);
             }
             next_input = Vec::new();

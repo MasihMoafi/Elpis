@@ -236,11 +236,23 @@ async fn apply_metadata_update(
             if let Some(preview) = patch.preview {
                 metadata.preview = Some(preview);
             }
+            let preserve_named_title = patch.name.is_none()
+                && !metadata.title.trim().is_empty()
+                && metadata.first_user_message.as_deref().map(str::trim)
+                    != Some(metadata.title.trim());
             if let Some(name) = patch.name {
                 metadata.title = name.unwrap_or_default();
             }
             if let Some(title) = patch.title {
-                metadata.title = title;
+                let is_replayed_first_message = patch
+                    .first_user_message
+                    .as_deref()
+                    .or(metadata.first_user_message.as_deref())
+                    .map(str::trim)
+                    == Some(title.trim());
+                if !(preserve_named_title && is_replayed_first_message) {
+                    metadata.title = title;
+                }
             }
             if let Some(model_provider) = patch.model_provider {
                 metadata.model_provider = model_provider;
@@ -1262,6 +1274,76 @@ mod tests {
             .expect("apply observed metadata");
 
         assert_eq!(thread.name.as_deref(), Some("Derived first message"));
+    }
+
+    #[tokio::test]
+    async fn replayed_first_message_preserves_generated_title() {
+        let home = TempDir::new().unwrap();
+        let config = test_config(home.path());
+        let runtime = codex_state::StateRuntime::init(
+            home.path().to_path_buf(),
+            config.default_model_provider_id.clone(),
+        )
+        .await
+        .unwrap();
+        let store = LocalThreadStore::new(config, Some(runtime.clone()));
+        let uuid = Uuid::from_u128(330);
+        let thread_id = ThreadId::from_string(&uuid.to_string()).unwrap();
+        write_session_file(home.path(), "2025-01-03T19-00-00", uuid).unwrap();
+        let original = "Hello from user";
+        let replay = || UpdateThreadMetadataParams {
+            thread_id,
+            patch: ThreadMetadataPatch {
+                title: Some(original.into()),
+                first_user_message: Some(original.into()),
+                ..Default::default()
+            },
+            include_archived: false,
+        };
+        store.update_thread_metadata(replay()).await.unwrap();
+        assert_eq!(
+            runtime.get_thread(thread_id).await.unwrap().unwrap().title,
+            original
+        );
+        runtime
+            .update_thread_title_if_unchanged(thread_id, original, "Repair session naming")
+            .await
+            .unwrap();
+        store.update_thread_metadata(replay()).await.unwrap();
+        assert_eq!(
+            runtime.get_thread(thread_id).await.unwrap().unwrap().title,
+            "Repair session naming"
+        );
+        store
+            .update_thread_metadata(UpdateThreadMetadataParams {
+                thread_id,
+                patch: ThreadMetadataPatch {
+                    name: Some(Some("My new name".into())),
+                    ..Default::default()
+                },
+                include_archived: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            runtime.get_thread(thread_id).await.unwrap().unwrap().title,
+            "My new name"
+        );
+        store
+            .update_thread_metadata(UpdateThreadMetadataParams {
+                thread_id,
+                patch: ThreadMetadataPatch {
+                    name: Some(Some(original.into())),
+                    ..Default::default()
+                },
+                include_archived: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            runtime.get_thread(thread_id).await.unwrap().unwrap().title,
+            original
+        );
     }
 
     #[tokio::test]
