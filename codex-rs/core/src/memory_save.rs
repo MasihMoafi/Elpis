@@ -283,16 +283,17 @@ fn evidence_citations(text: &str) -> impl Iterator<Item = &str> {
         .filter_map(|part| part.split_once(']').map(|(citation, _)| citation))
         .flat_map(|citation| citation.split(','))
         .map(str::trim)
-        .filter(|citation| {
-            // Include damaged UUID-based IDs as well as every format we shorten.
-            is_evidence_id(citation)
-                || citation.split_once(':').is_some_and(|(source, _)| {
-                    source.len() >= 32
-                        && source.as_bytes().get(8) == Some(&b'-')
-                        && source
-                            .bytes()
-                            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
-                })
+        .filter(|citation| is_evidence_citation(citation))
+}
+
+fn is_evidence_citation(citation: &str) -> bool {
+    is_evidence_id(citation)
+        || citation.split_once(':').is_some_and(|(source, _)| {
+            source.len() >= 32
+                && source.as_bytes().get(8) == Some(&b'-')
+                && source
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
         })
 }
 
@@ -349,7 +350,7 @@ fn shorten_memory_references(memory: &str, references: &str) -> (String, String)
         let mut rewritten = Vec::new();
         for part in citation.split(',') {
             let value = part.trim();
-            if !is_evidence_id(value) {
+            if !is_evidence_citation(value) {
                 rewritten.push(part.to_owned());
                 continue;
             }
@@ -393,6 +394,21 @@ fn atomic_write(path: &Path, text: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_damaged_citations_are_shortened_without_claiming_validity() {
+        let source =
+            "01a08a44-2bba-7213-bce24-4a7e5f0423aa:633f51dc-fc48-4f7e-811e-a4be39343ca8:424";
+        assert!(!is_evidence_id(source));
+        let original = format!("Keep the lesson [{source}]. Ordinary [draft] stays.");
+        let (memory, references) = shorten_memory_references(&original, "");
+        assert_eq!(memory, "Keep the lesson [1]. Ordinary [draft] stays.");
+        assert!(references.contains(source));
+        assert_eq!(
+            shorten_memory_references(&memory, &references),
+            (memory, references)
+        );
+    }
 
     #[tokio::test(start_paused = true)]
     async fn waits_for_short_memory_lock_but_bounds_contention_and_other_errors()
