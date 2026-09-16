@@ -33,21 +33,54 @@ pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(239, 140, 255);
 pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(145, 145, 145);
 pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(166, 252, 24);
 
-/// Shared by the Ledger and `/context`; lighten on charcoal, deepen on paper.
+// The same hues on paper, muted, alternating a lighter and a darker tone so
+// neighbouring bar segments read apart without loud color. Darkening the charcoal
+// palette uniformly had pushed every category into one muddy band. Each color is
+// at least 4.5:1 on paper and white and 25 CIELAB units from every other one.
+const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(70, 110, 170);
+const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(30, 90, 50);
+const LIGHT_REASONING_COLOR: Color = Color::Rgb(40, 120, 125);
+const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(95, 80, 30);
+const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(160, 95, 40);
+const LIGHT_SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(140, 45, 60);
+const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(130, 90, 160);
+const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(80, 80, 80);
+const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(150, 95, 120);
+
+fn light_category_color(color: Color) -> Color {
+    match color {
+        USER_MESSAGES_COLOR => LIGHT_USER_MESSAGES_COLOR,
+        AGENT_RESPONSES_COLOR => LIGHT_AGENT_RESPONSES_COLOR,
+        REASONING_COLOR => LIGHT_REASONING_COLOR,
+        TOOL_CALLS_COLOR => LIGHT_TOOL_CALLS_COLOR,
+        TOOL_RESULTS_COLOR => LIGHT_TOOL_RESULTS_COLOR,
+        SYSTEM_INSTRUCTIONS_COLOR => LIGHT_SYSTEM_INSTRUCTIONS_COLOR,
+        DEVELOPER_MESSAGES_COLOR => LIGHT_DEVELOPER_MESSAGES_COLOR,
+        TOOL_DEFINITIONS_COLOR => LIGHT_TOOL_DEFINITIONS_COLOR,
+        UNRECOGNIZED_ITEMS_COLOR => LIGHT_UNRECOGNIZED_ITEMS_COLOR,
+        Color::Rgb(r, g, b) => {
+            let deepen = |v: u8| (u16::from(v) * 45 / 100) as u8;
+            Color::Rgb(deepen(r), deepen(g), deepen(b))
+        }
+        other => other,
+    }
+}
+
+/// Shared by the Ledger and `/context`; the charcoal palette as-is, its paper
+/// counterpart on a light background.
 pub(super) fn context_display_color(color: Color) -> Color {
     let Some(background) = crate::terminal_palette::default_bg() else {
         return Color::Reset;
     };
+    let color = if crate::color::is_light(background) {
+        light_category_color(color)
+    } else {
+        color
+    };
     let Color::Rgb(r, g, b) = color else {
         return color;
     };
-    let rgb = if crate::color::is_light(background) {
-        let deepen = |v: u8| (u16::from(v) * 45 / 100) as u8;
-        (deepen(r), deepen(g), deepen(b))
-    } else {
-        (r, g, b)
-    };
-    crate::terminal_palette::best_color(rgb)
+    crate::terminal_palette::best_color((r, g, b))
 }
 
 pub(super) fn context_free_style() -> Style {
@@ -1697,6 +1730,81 @@ mod tests {
             MINIMUM_RGB_DISTANCE
         ));
         assert!(contrast_ratio(Color::Rgb(36, 36, 36), terminal_background) < MINIMUM_CONTRAST);
+    }
+
+    fn lab(color: Color) -> (f64, f64, f64) {
+        let linear = |channel: u8| {
+            let channel = f64::from(channel) / 255.0;
+            if channel <= 0.04045 {
+                channel / 12.92
+            } else {
+                ((channel + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let (red, green, blue) = rgb(color);
+        let (red, green, blue) = (linear(red), linear(green), linear(blue));
+        let x = (0.4124 * red + 0.3576 * green + 0.1805 * blue) / 0.95047;
+        let y = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+        let z = (0.0193 * red + 0.1192 * green + 0.9505 * blue) / 1.08883;
+        let f = |t: f64| {
+            if t > 0.008856 {
+                t.cbrt()
+            } else {
+                7.787 * t + 16.0 / 116.0
+            }
+        };
+        let (fx, fy, fz) = (f(x), f(y), f(z));
+        (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
+    }
+
+    fn lab_distance(left: Color, right: Color) -> f64 {
+        let (l1, a1, b1) = lab(left);
+        let (l2, a2, b2) = lab(right);
+        ((l1 - l2).powi(2) + (a1 - a2).powi(2) + (b1 - b2).powi(2)).sqrt()
+    }
+
+    #[test]
+    fn light_category_palette_keeps_every_pair_apart() {
+        const MINIMUM_LAB_DISTANCE: f64 = 25.0;
+        let colors = [
+            USER_MESSAGES_COLOR,
+            AGENT_RESPONSES_COLOR,
+            REASONING_COLOR,
+            TOOL_CALLS_COLOR,
+            TOOL_RESULTS_COLOR,
+            SYSTEM_INSTRUCTIONS_COLOR,
+            DEVELOPER_MESSAGES_COLOR,
+            TOOL_DEFINITIONS_COLOR,
+            UNRECOGNIZED_ITEMS_COLOR,
+        ]
+        .map(light_category_color);
+        for (index, left) in colors.iter().enumerate() {
+            for right in &colors[index + 1..] {
+                let distance = lab_distance(*left, *right);
+                assert!(
+                    distance >= MINIMUM_LAB_DISTANCE,
+                    "{left:?} and {right:?} are only {distance:.1} apart on paper"
+                );
+            }
+            for background in [Color::Rgb(248, 246, 239), Color::Rgb(255, 255, 255)] {
+                assert!(contrast_ratio(*left, background) >= 4.5, "{left:?} on {background:?}");
+            }
+        }
+        for (index, pair) in colors.windows(2).enumerate() {
+            let gap = lab(pair[0]).0 - lab(pair[1]).0;
+            assert!(
+                if index % 2 == 0 { gap >= 8.0 } else { gap <= -8.0 },
+                "categories {index} and {} do not alternate lighter/darker on paper: {gap:.1}",
+                index + 1,
+            );
+        }
+        // The uniform darkening this replaces is what made the bar unreadable.
+        let darkened = [TOOL_CALLS_COLOR, TOOL_RESULTS_COLOR].map(|color| {
+            let (r, g, b) = rgb(color);
+            let deepen = |v: u8| (u16::from(v) * 45 / 100) as u8;
+            Color::Rgb(deepen(r), deepen(g), deepen(b))
+        });
+        assert!(lab_distance(darkened[0], darkened[1]) < MINIMUM_LAB_DISTANCE);
     }
 
     #[test]
