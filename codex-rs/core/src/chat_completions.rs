@@ -1059,6 +1059,21 @@ fn chat_completions_request(request: &ResponsesApiRequest) -> Result<Value, ApiE
         body["tools"] = json!(openai_tools);
     }
 
+    // Structured output was only ever sent on the Responses wire, so a
+    // schema-dependent caller such as the memory saver or the pruner pointed at a
+    // chat-protocol provider got free-form prose back and failed to parse it,
+    // reporting an invalid response rather than a missing request field.
+    if let Some(format) = request.text.as_ref().and_then(|text| text.format.as_ref()) {
+        body["response_format"] = json!({
+            "type": "json_schema",
+            "json_schema": {
+                "name": format.name,
+                "strict": format.strict,
+                "schema": format.schema,
+            },
+        });
+    }
+
     Ok(body)
 }
 
@@ -1426,6 +1441,39 @@ mod tests {
                 .expect("unsigned request")
                 .to_string()
                 .contains("opaque-signed-state")
+        );
+    }
+
+    #[test]
+    fn chat_request_sends_the_structured_output_schema() {
+        let mut request = request();
+        let schema = serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["checkpoint", "memory"],
+            "properties": {"checkpoint": {"type": "string"}, "memory": {"type": "string"}},
+        });
+        assert!(
+            chat_completions_request(&request)
+                .expect("chat request")
+                .get("response_format")
+                .is_none(),
+            "a caller that wants no schema must not get a response_format"
+        );
+
+        request.text = codex_api::create_text_param_for_request(
+            /*verbosity*/ None,
+            &Some(schema.clone()),
+            /*output_schema_strict*/ true,
+        );
+        let body = chat_completions_request(&request).expect("chat request");
+        let format = &body["response_format"];
+        assert_eq!(format["type"], "json_schema");
+        assert_eq!(format["json_schema"]["strict"], true);
+        assert_eq!(format["json_schema"]["schema"], schema);
+        assert!(
+            format["json_schema"]["name"].is_string(),
+            "the schema needs a name: {format}"
         );
     }
 
