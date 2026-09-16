@@ -317,7 +317,55 @@ impl ChatWidget {
     }
 
     pub(crate) fn on_openrouter_models_loaded(&mut self, models: Vec<OpenRouterModel>) {
+        if self.openrouter_models == models {
+            return;
+        }
         self.openrouter_models = models;
+        // Rebuild a picker that is already on screen, so the prices appear on the
+        // first open rather than only the next one.
+        self.refresh_open_model_popup();
+    }
+
+    /// The live OpenRouter catalogue as picker presets.
+    ///
+    /// Built through the same metadata shape as the bundled free-tier entry so
+    /// these flow through every existing picker path rather than needing a
+    /// parallel one.
+    pub(super) fn openrouter_live_presets(&self) -> Vec<ModelPreset> {
+        self.openrouter_models
+            .iter()
+            .enumerate()
+            .filter_map(|(priority, model)| {
+                let info: codex_protocol::openai_models::ModelInfo =
+                    serde_json::from_value(serde_json::json!({
+                        "slug": model.slug,
+                        "display_name": model.slug,
+                        "description": model.description,
+                        "default_reasoning_level": null,
+                        "supported_reasoning_levels": [],
+                        "shell_type": "shell_command",
+                        "visibility": "list",
+                        "supported_in_api": true,
+                        "priority": priority,
+                        "availability_nux": null,
+                        "upgrade": null,
+                        "base_instructions": "",
+                        "supports_reasoning_summary_parameter": false,
+                        "support_verbosity": false,
+                        "default_verbosity": null,
+                        "apply_patch_tool_type": null,
+                        "truncation_policy": {"mode": "bytes", "limit": 10000},
+                        "supports_parallel_tool_calls": true,
+                        "supports_image_detail_original": false,
+                        "context_window": 131_072,
+                        "max_context_window": 131_072,
+                        "experimental_supported_tools": [],
+                        "input_modalities": ["text"]
+                    }))
+                    .ok()?;
+                Some(ModelPreset::from(info))
+            })
+            .collect()
     }
 
     pub(crate) fn on_ollama_models_loaded(&mut self, models: Vec<String>) {

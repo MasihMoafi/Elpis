@@ -1,6 +1,7 @@
 //! Accept current provider-scoped model replies and refresh an open picker in place.
 
 use super::model_popups::ALL_MODELS_SELECTION_VIEW_ID;
+use super::model_popups::BACKGROUND_MODEL_SELECTION_VIEW_ID;
 use super::model_popups::MODEL_SELECTION_VIEW_ID;
 use super::model_popups::PRUNER_MODEL_SELECTION_VIEW_ID;
 use super::*;
@@ -74,13 +75,21 @@ impl ChatWidget {
         true
     }
 
-    fn refresh_open_model_popup(&mut self) {
+    pub(super) fn refresh_open_model_popup(&mut self) {
         if self
             .bottom_pane
             .selected_index_for_active_view(PRUNER_MODEL_SELECTION_VIEW_ID)
             .is_some()
         {
             self.refresh_pruner_model_popup();
+            return;
+        }
+        if self
+            .bottom_pane
+            .selected_index_for_active_view(BACKGROUND_MODEL_SELECTION_VIEW_ID)
+            .is_some()
+        {
+            self.refresh_background_model_popup();
             return;
         }
         if self
@@ -111,6 +120,14 @@ impl ChatWidget {
     /// Picker catalogue for a named provider, which is not always the session's:
     /// background maintenance can be pointed somewhere else entirely.
     pub(super) fn models_for_provider(&self, provider_id: &str) -> Vec<ModelPreset> {
+        // OpenRouter's bundled catalogue is only the free auto-router, so prefer
+        // the live list with prices once it has arrived.
+        if provider_id == codex_model_provider_info::OPENROUTER_PROVIDER_ID {
+            let live = self.openrouter_live_presets();
+            if !live.is_empty() {
+                return live;
+            }
+        }
         self.model_catalog
             .models_for_provider(provider_id)
             .unwrap_or_else(|| self.model_catalog.try_list_models().unwrap_or_default())
