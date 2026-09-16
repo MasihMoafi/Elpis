@@ -472,12 +472,16 @@ async fn run_prune_pass(
     let pass_id = uuid::Uuid::now_v7().to_string();
     let mut attempts = Vec::new();
     let mut debug_records = Vec::new();
-    let primary_slug =
+    let default_slug =
         if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
             context_pruner::PRUNE_MODEL_SLUG
         } else {
             turn_context.model_info.slug.as_str()
         };
+    let primary_slug = context_pruner::background_model_slug(
+        turn_context.config.background_model.as_deref(),
+        default_slug,
+    );
 
     if let Some((record, output, usage)) = try_validated_prune_pass(
         sess,

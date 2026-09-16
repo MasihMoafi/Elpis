@@ -129,14 +129,20 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         "evidence": evidence,
         "evidence_may_omit_older_or_oversized_items": true,
     }))?;
+    let slug = crate::context_pruner::background_model_slug(
+        turn.config.background_model.as_deref(),
+        MODEL,
+    );
     let model = sess
         .services
         .models_manager
-        .get_model_info(MODEL, &turn.config.to_models_manager_config())
+        .get_model_info(slug, &turn.config.to_models_manager_config())
         .await;
+    // Resolving to a different model would quietly spend a larger one on
+    // routine maintenance, so a mismatch stays an error rather than a fallback.
     anyhow::ensure!(
-        model.slug == MODEL,
-        "Luna is unavailable; no model fallback allowed"
+        model.slug == slug,
+        "{slug} is unavailable; no model fallback allowed"
     );
     let prompt = Prompt {
         input: vec![ResponseItem::Message {

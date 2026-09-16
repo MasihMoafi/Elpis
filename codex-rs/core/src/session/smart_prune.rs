@@ -1056,11 +1056,16 @@ async fn run_model_admission(
 }
 
 fn selected_model_slug(turn_context: &TurnContext) -> &str {
-    if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
-        PRUNE_MODEL_SLUG
-    } else {
-        turn_context.model_info.slug.as_str()
-    }
+    let default_slug =
+        if turn_context.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
+            PRUNE_MODEL_SLUG
+        } else {
+            turn_context.model_info.slug.as_str()
+        };
+    crate::context_pruner::background_model_slug(
+        turn_context.config.background_model.as_deref(),
+        default_slug,
+    )
 }
 
 fn response_item_call_id(item: &ResponseItem) -> Option<&str> {

@@ -156,6 +156,11 @@ pub struct ConfigToml {
     pub model: Option<String>,
     /// Review model override used by the `/review` feature.
     pub review_model: Option<String>,
+    /// Model used for background maintenance work - saving memory, pruning
+    /// context and naming sessions - instead of the built-in default. Set this
+    /// to move that work onto a cheaper or non-OpenAI provider without
+    /// affecting the model that answers the user.
+    pub background_model: Option<String>,
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,

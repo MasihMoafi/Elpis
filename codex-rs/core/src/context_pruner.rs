@@ -78,6 +78,19 @@ pub(crate) const MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE: u32 = 2;
 /// spending a larger model on routine context maintenance.
 pub(crate) const PRUNE_MODEL_SLUG: &str = "gpt-5.6-luna";
 
+/// The model background maintenance should use: the configured
+/// `background_model` when set, otherwise the caller's built-in default.
+///
+/// Memory saving, pruning and session naming all route through this so one
+/// setting moves them together onto a cheaper or non-OpenAI provider without
+/// touching the model that answers the user.
+pub(crate) fn background_model_slug<'a>(configured: Option<&'a str>, default: &'a str) -> &'a str {
+    configured
+        .map(str::trim)
+        .filter(|slug| !slug.is_empty())
+        .unwrap_or(default)
+}
+
 /// Effort for the pruning pass. Keep/delete judgement over raw tool output is the
 /// step that decides what the session can still see, so it runs at the model's
 /// maximum rather than inheriting the user's turn setting.
@@ -1091,6 +1104,35 @@ mod tests {
         cycle.close();
         assert!(!cycle.may_run());
         assert_eq!(PruneTrigger::Manual.as_str(), "manual");
+    }
+
+    #[test]
+    fn background_model_setting_overrides_every_default() {
+        assert_eq!(
+            background_model_slug(None, PRUNE_MODEL_SLUG),
+            PRUNE_MODEL_SLUG
+        );
+        assert_eq!(
+            background_model_slug(None, "some-other-default"),
+            "some-other-default"
+        );
+
+        for default in [PRUNE_MODEL_SLUG, "some-other-default"] {
+            assert_eq!(
+                background_model_slug(Some("deepseek/deepseek-v4.1-flash"), default),
+                "deepseek/deepseek-v4.1-flash",
+                "the configured model must win over {default}"
+            );
+        }
+
+        // A blank or whitespace setting is treated as unset rather than as a
+        // model name, so a stray edit cannot break every background caller.
+        for blank in ["", "   "] {
+            assert_eq!(
+                background_model_slug(Some(blank), PRUNE_MODEL_SLUG),
+                PRUNE_MODEL_SLUG
+            );
+        }
     }
 
     #[test]

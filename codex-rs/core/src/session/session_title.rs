@@ -111,12 +111,16 @@ async fn name_session(
     {
         return Ok(());
     }
+    let slug = crate::context_pruner::background_model_slug(
+        turn.config.background_model.as_deref(),
+        MODEL,
+    );
     let model = sess
         .services
         .models_manager
-        .get_model_info(MODEL, &turn.config.to_models_manager_config())
+        .get_model_info(slug, &turn.config.to_models_manager_config())
         .await;
-    anyhow::ensure!(model.slug == MODEL, "Luna unavailable; no naming fallback");
+    anyhow::ensure!(model.slug == slug, "{slug} unavailable; no naming fallback");
     let prompt = Prompt {
         input: vec![ResponseItem::Message {
             id: None,
