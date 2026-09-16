@@ -578,6 +578,8 @@ pub(crate) struct ChatWidget {
     model_popup_model_ids: Vec<String>,
     /// Locally installed Ollama model names, refreshed in the background for the `/model` picker.
     ollama_local_models: Vec<String>,
+    /// OpenRouter's live catalogue with prices, empty until fetched.
+    openrouter_models: Vec<crate::chatwidget::model_popups::OpenRouterModel>,
     session_telemetry: SessionTelemetry,
     session_header: SessionHeader,
     initial_user_message: Option<UserMessage>,

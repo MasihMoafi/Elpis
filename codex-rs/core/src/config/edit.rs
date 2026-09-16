@@ -106,6 +106,21 @@ pub fn background_model_edit(model: Option<&str>) -> ConfigEdit {
     }
 }
 
+/// Produces a config edit that sets the top-level `background_provider`, the
+/// provider background maintenance talks to. `None` clears it so the session's
+/// own provider is used again.
+pub fn background_provider_edit(provider_id: Option<&str>) -> ConfigEdit {
+    match provider_id {
+        Some(provider_id) => ConfigEdit::SetPath {
+            segments: vec!["background_provider".to_string()],
+            value: value(provider_id.to_string()),
+        },
+        None => ConfigEdit::ClearPath {
+            segments: vec!["background_provider".to_string()],
+        },
+    }
+}
+
 /// Produces a config edit that sets [tui].pet = "<name>".
 pub fn tui_pet_edit(name: &str) -> ConfigEdit {
     ConfigEdit::SetPath {

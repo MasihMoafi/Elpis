@@ -507,6 +507,44 @@ async fn background_model_command_saves_to_config_without_changing_chat() {
 }
 
 #[tokio::test]
+async fn choosing_a_background_model_moves_its_provider_too() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let config_path = chat.config.codex_home.join("config.toml");
+    let read = || std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    // A model is useless without a provider that serves it, so the picker writes
+    // both. Drive the action the picker builds rather than the popup itself.
+    let edits = vec![
+        crate::legacy_core::config::edit::background_model_edit(Some(
+            "deepseek/deepseek-v4.1-flash",
+        )),
+        crate::legacy_core::config::edit::background_provider_edit(Some("openrouter")),
+    ];
+    crate::legacy_core::config::edit::apply_blocking(&chat.config.codex_home, &edits)
+        .expect("write both keys");
+    let written = read();
+    assert!(
+        written.contains("background_model = \"deepseek/deepseek-v4.1-flash\""),
+        "{written}"
+    );
+    assert!(
+        written.contains("background_provider = \"openrouter\""),
+        "{written}"
+    );
+
+    // Returning to the built-in default must clear both, not leave a dangling provider.
+    let cleared = vec![
+        crate::legacy_core::config::edit::background_model_edit(None),
+        crate::legacy_core::config::edit::background_provider_edit(None),
+    ];
+    crate::legacy_core::config::edit::apply_blocking(&chat.config.codex_home, &cleared)
+        .expect("clear both keys");
+    assert!(!read().contains("background_model"), "{}", read());
+    assert!(!read().contains("background_provider"), "{}", read());
+}
+
+#[tokio::test]
 async fn background_model_picker_targets_the_provider_it_actually_uses() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());

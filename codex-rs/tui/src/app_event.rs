@@ -470,6 +470,10 @@ pub(crate) enum AppEvent {
     OllamaModelsLoaded {
         models: Vec<String>,
     },
+    /// OpenRouter's live catalogue with prices finished loading.
+    OpenRouterModelsLoaded {
+        models: Vec<crate::chatwidget::model_popups::OpenRouterModel>,
+    },
 
     /// Result of computing a `/diff` command.
     DiffResult(String),

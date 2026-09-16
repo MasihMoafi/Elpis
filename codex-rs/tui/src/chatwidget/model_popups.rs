@@ -8,10 +8,27 @@ use super::*;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_model_provider_info::OPENROUTER_BASE_URL;
+use codex_model_provider_info::OPENROUTER_PROVIDER_ID;
 use ratatui::text::Span;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 const OLLAMA_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
+/// OpenRouter is a remote service, so it gets a longer budget than local Ollama.
+const OPENROUTER_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
+/// Families worth offering in the picker. OpenRouter lists hundreds of models and
+/// its API carries no quality signal, so the alternative to naming the families is
+/// inventing a ranking. Price and context window still come from the live response.
+const OPENROUTER_TOP_TIER_FAMILIES: &[&str] = &[
+    "anthropic/",
+    "openai/",
+    "google/",
+    "deepseek/",
+    "x-ai/",
+    "qwen/",
+    "moonshotai/",
+    "mistralai/",
+    "meta-llama/",
+];
 pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
 pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
 pub(super) const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
@@ -29,6 +46,7 @@ impl ChatWidget {
     /// pruner alone, this one moves all background maintenance together.
     pub(crate) fn open_background_model_popup(&mut self) {
         self.request_model_catalog(Some(self.background_provider_id().to_string()));
+        self.refresh_openrouter_models();
         self.refresh_background_model_popup();
     }
 
@@ -47,32 +65,52 @@ impl ChatWidget {
     pub(super) fn refresh_background_model_popup(&mut self) {
         let current = self.config.background_model.clone();
         let provider_id = self.background_provider_id().to_string();
-        let mut choices = vec![(
+        // Each choice carries the provider that serves it, so picking a model
+        // moves the provider with it instead of leaving a model the background
+        // provider cannot serve.
+        let mut choices: Vec<(Option<String>, Option<String>, String, String)> = vec![(
+            None,
             None,
             "Built-in default".to_string(),
             "Follow the session's provider for background work".to_string(),
         )];
+        choices.extend(self.openrouter_models.iter().map(|model| {
+            (
+                Some(model.slug.clone()),
+                Some(OPENROUTER_PROVIDER_ID.to_string()),
+                model.slug.clone(),
+                model.description.clone(),
+            )
+        }));
         choices.extend(
             self.models_for_provider(&provider_id)
                 .into_iter()
                 .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
-                .map(|preset| (Some(preset.model.clone()), preset.model, preset.description)),
+                .map(|preset| {
+                    (
+                        Some(preset.model.clone()),
+                        Some(provider_id.clone()),
+                        preset.model,
+                        preset.description,
+                    )
+                }),
         );
         // A model already set by hand may not be in the catalogue - a provider
         // whose list Elpis cannot enumerate, for instance - so keep it selectable.
         if let Some(model) = current.clone()
             && !choices
                 .iter()
-                .any(|(choice, _, _)| choice.as_ref() == Some(&model))
+                .any(|(choice, _, _, _)| choice.as_ref() == Some(&model))
         {
             choices.push((
                 Some(model.clone()),
+                self.config.background_provider.clone(),
                 model,
                 "Currently configured".to_string(),
             ));
         }
         let mut seen = std::collections::HashSet::new();
-        choices.retain(|(model, _, _)| seen.insert(model.clone()));
+        choices.retain(|(model, _, _, _)| seen.insert(model.clone()));
         let footer_note = (choices.len() == 1).then(|| {
             Line::from(if self.model_popup_request_is_pending(&provider_id) {
                 "Loading available models…"
@@ -82,7 +120,7 @@ impl ChatWidget {
         });
         let items: Vec<SelectionItem> = choices
             .into_iter()
-            .map(|(model, name, description)| {
+            .map(|(model, provider, name, description)| {
                 let home = self.config.codex_home.clone();
                 let is_current = current == model;
                 SelectionItem {
@@ -90,24 +128,27 @@ impl ChatWidget {
                     description: Some(description),
                     is_current,
                     actions: vec![Box::new(move |tx| {
-                        let edit = crate::legacy_core::config::edit::background_model_edit(
-                            model.as_deref(),
-                        );
-                        let cell = match crate::legacy_core::config::edit::apply_blocking(
-                            &home,
-                            std::slice::from_ref(&edit),
-                        ) {
-                            Ok(()) => history_cell::new_info_event(
-                                format!(
-                                    "Memory and pruning model saved: {}. Chat model unchanged.",
-                                    model.as_deref().unwrap_or("built-in default")
-                                ),
-                                None,
+                        let edits = vec![
+                            crate::legacy_core::config::edit::background_model_edit(
+                                model.as_deref(),
                             ),
-                            Err(error) => history_cell::new_error_event(format!(
-                                "Cannot save background model: {error}"
-                            )),
-                        };
+                            crate::legacy_core::config::edit::background_provider_edit(
+                                provider.as_deref(),
+                            ),
+                        ];
+                        let cell =
+                            match crate::legacy_core::config::edit::apply_blocking(&home, &edits) {
+                                Ok(()) => history_cell::new_info_event(
+                                    format!(
+                                        "Memory and pruning model saved: {}. Chat model unchanged.",
+                                        model.as_deref().unwrap_or("built-in default")
+                                    ),
+                                    None,
+                                ),
+                                Err(error) => history_cell::new_error_event(format!(
+                                    "Cannot save background model: {error}"
+                                )),
+                            };
                         tx.send(AppEvent::InsertHistoryCell(Box::new(cell)));
                     })],
                     dismiss_on_select: true,
@@ -230,6 +271,7 @@ impl ChatWidget {
         let active_provider_id = self.active_model_provider_id().to_string();
         let presets = self.models_for_active_provider();
         self.refresh_ollama_models();
+        self.refresh_openrouter_models();
         self.request_model_catalog(Some(active_provider_id.clone()));
         if active_provider_id != OPENAI_PROVIDER_ID {
             self.request_model_catalog(Some(OPENAI_PROVIDER_ID.to_string()));
@@ -255,6 +297,27 @@ impl ChatWidget {
             let models = fetch_ollama_model_names(base_url).await;
             tx.send(AppEvent::OllamaModelsLoaded { models });
         });
+    }
+
+    /// Fire-and-forget refresh of OpenRouter's catalogue with live prices.
+    ///
+    /// Elpis otherwise knows only the `openrouter/free` auto-router, which is
+    /// useless for choosing a specific paid model. Like the Ollama refresh, the
+    /// result affects the *next* time a picker opens rather than rebuilding one
+    /// already on screen.
+    pub(super) fn refresh_openrouter_models(&self) {
+        let Some(base_url) = self.model_provider_base_url(OPENROUTER_PROVIDER_ID) else {
+            return;
+        };
+        let tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let models = fetch_openrouter_top_models(base_url).await;
+            tx.send(AppEvent::OpenRouterModelsLoaded { models });
+        });
+    }
+
+    pub(crate) fn on_openrouter_models_loaded(&mut self, models: Vec<OpenRouterModel>) {
+        self.openrouter_models = models;
     }
 
     pub(crate) fn on_ollama_models_loaded(&mut self, models: Vec<String>) {
@@ -368,6 +431,22 @@ impl ChatWidget {
             is_disabled: true,
             ..Default::default()
         });
+        for model in &self.openrouter_models {
+            let slug = model.slug.clone();
+            items.push(SelectionItem {
+                name: slug.clone(),
+                description: Some(model.description.clone()),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::UpdateModel(slug.clone()));
+                    tx.send(AppEvent::PersistModelSelection {
+                        model: slug.clone(),
+                        effort: None,
+                    });
+                })],
+                dismiss_on_select: true,
+                ..Default::default()
+            });
+        }
         for preset in codex_model_provider::openrouter_free_model_catalog().models {
             let preset: ModelPreset = preset.into();
             let model = preset.model.clone();
@@ -1401,4 +1480,102 @@ mod tests {
             assert!(!is_embedding_model_name(name), "{name} should be offered");
         }
     }
+}
+
+/// One OpenRouter model as offered in the picker, with its live price.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpenRouterModel {
+    pub(crate) slug: String,
+    pub(crate) description: String,
+}
+
+/// Top-tier OpenRouter models with their current prices, newest first.
+///
+/// Returns empty on any failure: an empty picker group is honest, whereas
+/// invented models or stale hardcoded prices are not.
+async fn fetch_openrouter_top_models(base_url: String) -> Vec<OpenRouterModel> {
+    let root = base_url.trim_end_matches('/');
+    let Ok(client) = reqwest::Client::builder()
+        .connect_timeout(OPENROUTER_MODELS_FETCH_TIMEOUT)
+        .timeout(OPENROUTER_MODELS_FETCH_TIMEOUT)
+        .build()
+    else {
+        return Vec::new();
+    };
+    let Ok(response) = client.get(format!("{root}/models")).send().await else {
+        return Vec::new();
+    };
+    let Ok(body) = response.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+    openrouter_models_from_response(&body)
+}
+
+pub(crate) fn openrouter_models_from_response(body: &serde_json::Value) -> Vec<OpenRouterModel> {
+    let Some(entries) = body.get("data").and_then(|data| data.as_array()) else {
+        return Vec::new();
+    };
+    let price_per_million = |pricing: Option<&serde_json::Value>, key: &str| {
+        pricing
+            .and_then(|pricing| pricing.get(key))
+            .and_then(|value| value.as_str())
+            .and_then(|value| value.parse::<f64>().ok())
+            .map(|value| value * 1_000_000.0)
+    };
+    let mut models: Vec<(i64, OpenRouterModel)> = entries
+        .iter()
+        .filter_map(|entry| {
+            let slug = entry.get("id")?.as_str()?;
+            // `~`-prefixed ids are moving aliases and `:free`/`:batch` variants are
+            // not what "top tier" means; both would misreport what a turn will cost.
+            if slug.starts_with('~') || slug.contains(":free") || slug.contains(":batch") {
+                return None;
+            }
+            if !OPENROUTER_TOP_TIER_FAMILIES
+                .iter()
+                .any(|family| slug.starts_with(family))
+            {
+                return None;
+            }
+            let context = entry
+                .get("context_length")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            if context < 100_000 {
+                return None;
+            }
+            let pricing = entry.get("pricing");
+            let input = price_per_million(pricing, "prompt")?;
+            let output = price_per_million(pricing, "completion")?;
+            if input <= 0.0 && output <= 0.0 {
+                return None;
+            }
+            let created = entry
+                .get("created")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            Some((
+                created,
+                OpenRouterModel {
+                    slug: slug.to_string(),
+                    description: format!(
+                        "${input:.2}/M in · ${output:.2}/M out · {}k context",
+                        context / 1_000
+                    ),
+                },
+            ))
+        })
+        .collect();
+    models.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.slug.cmp(&right.1.slug))
+    });
+    let mut seen = std::collections::HashSet::new();
+    models
+        .into_iter()
+        .filter(|(_, model)| seen.insert(model.slug.clone()))
+        .map(|(_, model)| model)
+        .collect()
 }

@@ -4187,3 +4187,49 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     assert!(after_escape.contains("Choose a mind"));
     assert!(!after_escape.contains("Select Reasoning Level"));
 }
+
+#[test]
+fn openrouter_catalogue_keeps_top_tier_models_with_live_prices() {
+    use crate::chatwidget::model_popups::openrouter_models_from_response;
+
+    let body = serde_json::json!({"data": [
+        {"id": "deepseek/deepseek-v4.1-flash", "context_length": 1_048_576, "created": 300,
+         "pricing": {"prompt": "0.0000003", "completion": "0.0000012"}},
+        {"id": "anthropic/claude-opus-5", "context_length": 200_000, "created": 200,
+         "pricing": {"prompt": "0.000015", "completion": "0.000075"}},
+        // Excluded: a moving alias, a free tier, a batch variant, a tiny context
+        // window, a zero price, and a family we do not offer.
+        {"id": "~deepseek/deepseek-flash-latest", "context_length": 1_048_576, "created": 400,
+         "pricing": {"prompt": "0.00000015", "completion": "0.0000006"}},
+        {"id": "deepseek/deepseek-chat:free", "context_length": 163_840, "created": 350,
+         "pricing": {"prompt": "0", "completion": "0"}},
+        {"id": "openai/gpt-5.6:batch", "context_length": 400_000, "created": 360,
+         "pricing": {"prompt": "0.0000005", "completion": "0.000002"}},
+        {"id": "openai/tiny-context", "context_length": 8_192, "created": 370,
+         "pricing": {"prompt": "0.0000005", "completion": "0.000002"}},
+        {"id": "google/gemini-free-thing", "context_length": 1_000_000, "created": 380,
+         "pricing": {"prompt": "0", "completion": "0"}},
+        {"id": "someone-else/whatever", "context_length": 200_000, "created": 390,
+         "pricing": {"prompt": "0.000001", "completion": "0.000002"}},
+    ]});
+
+    let models = openrouter_models_from_response(&body);
+    let slugs = models.iter().map(|m| m.slug.as_str()).collect::<Vec<_>>();
+    assert_eq!(
+        slugs,
+        vec!["deepseek/deepseek-v4.1-flash", "anthropic/claude-opus-5"],
+        "newest first, aliases and free/batch/small/zero-price entries dropped"
+    );
+    // The price has to come from the response, not a hardcoded table that goes stale.
+    assert_eq!(
+        models[0].description,
+        "$0.30/M in · $1.20/M out · 1048k context"
+    );
+    assert_eq!(
+        models[1].description,
+        "$15.00/M in · $75.00/M out · 200k context"
+    );
+
+    assert!(openrouter_models_from_response(&serde_json::json!({})).is_empty());
+    assert!(openrouter_models_from_response(&serde_json::json!({"data": []})).is_empty());
+}

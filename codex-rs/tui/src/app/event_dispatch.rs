@@ -1264,6 +1264,10 @@ impl App {
             AppEvent::OllamaModelsLoaded { models } => {
                 self.chat_widget.on_ollama_models_loaded(models);
             }
+
+            AppEvent::OpenRouterModelsLoaded { models } => {
+                self.chat_widget.on_openrouter_models_loaded(models);
+            }
             AppEvent::FetchModels {
                 request_id,
                 provider_id,
