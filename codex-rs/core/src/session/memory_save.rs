@@ -230,6 +230,7 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
     let decision = crate::memory_save::parse_decision(&response.0)?;
     let (memory, checkpoint) = snapshot.commit(
         &decision,
+        slug,
         &sess.session_id().to_string(),
         &turn.sub_id,
         response.1.as_ref(),

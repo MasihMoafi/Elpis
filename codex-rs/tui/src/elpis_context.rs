@@ -391,6 +391,7 @@ mod tests {
                     checkpoint: "Work remains".into(),
                     memory: original.clone(),
                 },
+                "gpt-5.6-luna",
                 "thread",
                 "turn",
                 None,
@@ -442,6 +443,7 @@ mod tests {
                 checkpoint: "- Thread: `thread`\nConsolidated plan.".into(),
                 memory: "Retain the verified lesson.".into(),
             },
+            "gpt-5.6-luna",
             "thread",
             "current-turn",
             None,
@@ -506,6 +508,7 @@ mod tests {
         };
         snapshot.commit(
             &decision,
+            "gpt-5.6-luna",
             "thread",
             "current-turn",
             None,
@@ -581,6 +584,7 @@ mod tests {
                     checkpoint: "Stale proposed checkpoint".into(),
                     memory: "Lesson".into(),
                 },
+                "gpt-5.6-luna",
                 "thread",
                 "turn",
                 None,

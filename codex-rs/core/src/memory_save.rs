@@ -146,6 +146,7 @@ impl MemorySnapshot {
     pub fn commit(
         &self,
         decision: &MemoryDecision,
+        model: &str,
         thread: &str,
         turn: &str,
         usage: Option<&codex_protocol::protocol::TokenUsage>,
@@ -206,7 +207,7 @@ impl MemorySnapshot {
         // Save recovery evidence before replacing either human-readable file.
         let mut receipt = serde_json::json!({
             "status": "prepared", "evidence": evidence,
-            "model": "gpt-5.6-luna", "thread": thread, "turn": turn,
+            "model": model, "thread": thread, "turn": turn,
             "previous_checkpoint": self.checkpoint, "previous_memory": self.memory,
             "checkpoint": decision.checkpoint, "memory": memory,
             "model_memory": decision.memory, "usage": usage,
@@ -483,6 +484,7 @@ mod tests {
                 checkpoint: "- [ ] Verify release".into(),
                 memory: "- Cedar port 4812 [u1]".into(),
             },
+            "gpt-5.6-luna",
             "thread",
             "turn1",
             None,
@@ -509,6 +511,7 @@ mod tests {
                 checkpoint: "- [ ] Verify release".into(),
                 memory: "- Cedar port 5823 [u2]".into(),
             },
+            "gpt-5.6-luna",
             "thread",
             "turn2",
             None,
@@ -530,6 +533,7 @@ mod tests {
                         checkpoint: "pending".into(),
                         memory: "replacement".into()
                     },
+                    "gpt-5.6-luna",
                     "thread",
                     "turn3",
                     None,

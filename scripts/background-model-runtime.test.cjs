@@ -178,6 +178,18 @@ async function until(check, message) {
   await until(() => fs.existsSync(memoryFile), "memory was never written");
   assert.match(fs.readFileSync(memoryFile, "utf8"), /5823/);
 
+  // The receipt is the audit trail for what actually ran, so it must name the
+  // model that did the work rather than a hardcoded default.
+  const receiptDir = path.join(workspace, "memory-saves");
+  await until(
+    () => fs.existsSync(receiptDir) && fs.readdirSync(receiptDir).length > 0,
+    "no save receipt was written",
+  );
+  const receipt = JSON.parse(
+    fs.readFileSync(path.join(receiptDir, fs.readdirSync(receiptDir).sort().at(-1)), "utf8"),
+  );
+  assert.equal(receipt.model, BACKGROUND_MODEL, "the receipt misreports the model");
+
   console.log(
     JSON.stringify(
       {
@@ -189,6 +201,7 @@ async function until(check, message) {
           "session naming uses background_model on a chat provider",
           "both carry a strict json schema on the chat wire",
           "the saved memory reaches MEMORY.md",
+          "the save receipt names the model that ran",
         ],
       },
       null,
