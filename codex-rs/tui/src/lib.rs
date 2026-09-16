@@ -1079,7 +1079,16 @@ pub async fn run_main(
 
     if let Some(model) = &cli.pruner_model {
         let mut settings = legacy_core::pruner_settings::PrunerSettings::load(&config.codex_home)?;
-        settings.model = (model != "default").then(|| model.clone());
+        // `provider:id` pins both; a bare id follows background maintenance again
+        // rather than keeping a provider chosen for some earlier model.
+        let (provider, model) = match model.split_once(':') {
+            Some((provider, id)) if !id.is_empty() && config.model_providers.contains_key(provider) => {
+                (Some(provider.to_string()), id)
+            }
+            _ => (None, model.as_str()),
+        };
+        settings.model = (model != "default").then(|| model.to_string());
+        settings.provider = settings.model.as_ref().and(provider);
         settings.save(&config.codex_home)?;
     }
     remove_legacy_tui_log_file(config.codex_home.as_path());

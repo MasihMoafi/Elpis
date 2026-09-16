@@ -13,7 +13,8 @@ pub struct Cli {
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
 
-    /// Save the Smart Prune model ID without changing the chat model. Use "default" to reset.
+    /// Save the Smart Prune model ID without changing the chat model. `provider:id` pins the
+    /// provider too; use "default" to reset.
     #[arg(long)]
     pub pruner_model: Option<String>,
 

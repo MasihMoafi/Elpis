@@ -509,6 +509,9 @@ async function refreshEvidence() {
 }
 
 let defaultPrunerPrompt = null;
+// The provider that serves the loaded model; it only travels with that model.
+let loadedPrunerModel = null;
+let loadedPrunerProvider = null;
 function prunerSettingsUrl() {
   const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
   return /^[a-f0-9]{32}$/.test(token || '') ? `/pruner-settings/${token}` : null;
@@ -524,6 +527,8 @@ async function loadPrunerSettings() {
     const payload = await response.json();
     defaultPrunerPrompt = payload.default_system_prompt;
     byId('pruner-model').value = payload.settings.model ?? '';
+    loadedPrunerModel = payload.settings.model ?? null;
+    loadedPrunerProvider = payload.settings.provider ?? null;
     byId('pruner-prompt').value = payload.settings.system_prompt ?? defaultPrunerPrompt;
     byId('pruner-fields').disabled = false;
     setText('pruner-feedback', 'Loaded saved settings. Edits are not applied until you save.');
@@ -542,9 +547,16 @@ async function savePrunerSettings() {
   try {
     const response = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: model || null, system_prompt: prompt === defaultPrunerPrompt ? null : prompt }),
+      // A changed model follows background maintenance again; the dashboard has no catalogue to pair a provider with it.
+      body: JSON.stringify({
+        model: model || null,
+        provider: (model || null) === loadedPrunerModel ? loadedPrunerProvider : null,
+        system_prompt: prompt === defaultPrunerPrompt ? null : prompt,
+      }),
     });
     if (!response.ok) throw new Error(await response.text());
+    loadedPrunerModel = model || null;
+    if (loadedPrunerModel === null || (model || null) !== loadedPrunerModel) loadedPrunerProvider = null;
     setText('pruner-feedback', 'Saved. Applies to the next optimizer request; chat model unchanged.');
   } catch (error) {
     setText('pruner-feedback', `Not saved: ${error.message}`);
