@@ -111,9 +111,18 @@ async fn name_session(
     {
         return Ok(());
     }
+    // Without an explicit setting, follow the provider the session is on: the
+    // built-in default only exists on OpenAI, so a workspace pointed elsewhere
+    // would otherwise fail with "unavailable" on every background attempt.
+    let default_slug =
+        if turn.config.model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID {
+            MODEL
+        } else {
+            turn.model_info.slug.as_str()
+        };
     let slug = crate::context_pruner::background_model_slug(
         turn.config.background_model.as_deref(),
-        MODEL,
+        default_slug,
     );
     let model = sess
         .services
