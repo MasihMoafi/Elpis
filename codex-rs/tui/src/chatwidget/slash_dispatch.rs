@@ -559,15 +559,15 @@ impl ChatWidget {
             return;
         }
         if cmd == SlashCommand::BackgroundModel && !trimmed.is_empty() {
-            let model = (trimmed != "default").then_some(trimmed);
-            match crate::legacy_core::config::edit::apply_blocking(
-                &self.config.codex_home,
-                &[crate::legacy_core::config::edit::background_model_edit(model)],
-            ) {
-                Ok(()) => self.add_info_message(
+            let result = self.background_model_edits(trimmed).and_then(|(edits, chosen)| {
+                crate::legacy_core::config::edit::apply_blocking(&self.config.codex_home, &edits)
+                    .map(|()| chosen)
+                    .map_err(|error| error.to_string())
+            });
+            match result {
+                Ok(chosen) => self.add_info_message(
                     format!(
-                        "Memory and pruning model saved: {}. Applies to the next background request; chat model unchanged.",
-                        model.unwrap_or("built-in default")
+                        "Memory and pruning model saved: {chosen}. Applies to the next background request; chat model unchanged."
                     ),
                     None,
                 ),

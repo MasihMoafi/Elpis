@@ -62,6 +62,50 @@ impl ChatWidget {
             .unwrap_or_else(|| self.active_model_provider_id())
     }
 
+    /// Edits for `/background-model <id>` typed by hand. `default` clears the
+    /// model and the provider together, as the picker's first row does;
+    /// `<provider>:<id>` sets both; a bare id keeps the provider background work
+    /// already uses. The typed path is refused only where the pair is certainly
+    /// unservable: OpenRouter ids are `vendor/model`, OpenAI's are not.
+    pub(super) fn background_model_edits(
+        &self,
+        input: &str,
+    ) -> Result<(Vec<crate::legacy_core::config::edit::ConfigEdit>, String), String> {
+        use crate::legacy_core::config::edit::background_model_edit;
+        use crate::legacy_core::config::edit::background_provider_edit;
+        if input == "default" {
+            return Ok((
+                vec![background_model_edit(None), background_provider_edit(None)],
+                "built-in default".to_string(),
+            ));
+        }
+        let qualified = input
+            .split_once(':')
+            .filter(|(provider, model)| {
+                !model.is_empty() && self.config.model_providers.contains_key(*provider)
+            });
+        let (provider, model) = match qualified {
+            Some((provider, model)) => (provider, model),
+            None => (self.background_provider_id(), input),
+        };
+        let vendor_prefixed = model.contains('/');
+        if provider == OPENROUTER_PROVIDER_ID && !vendor_prefixed {
+            return Err(format!(
+                "OpenRouter model ids look like vendor/model, and `{model}` does not."
+            ));
+        }
+        if provider == OPENAI_PROVIDER_ID && vendor_prefixed {
+            return Err(format!(
+                "`{model}` is an OpenRouter-style id but background work talks to openai. Use `/background-model openrouter:{model}` or pick from the list."
+            ));
+        }
+        let mut edits = vec![background_model_edit(Some(model))];
+        if qualified.is_some() {
+            edits.push(background_provider_edit(Some(provider)));
+        }
+        Ok((edits, format!("{model} on {provider}")))
+    }
+
     pub(super) fn refresh_background_model_popup(&mut self) {
         let current = self.config.background_model.clone();
         let provider_id = self.background_provider_id().to_string();

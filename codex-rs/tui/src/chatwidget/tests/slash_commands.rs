@@ -481,14 +481,16 @@ async fn background_model_command_saves_to_config_without_changing_chat() {
     let config_path = chat.config.codex_home.join("config.toml");
     let read = || std::fs::read_to_string(&config_path).unwrap_or_default();
 
+    // A qualified id moves the provider with the model, exactly as the picker does.
     chat.dispatch_command_with_args(
         SlashCommand::BackgroundModel,
-        "deepseek/deepseek-v4.1-flash".into(),
+        "openrouter:deepseek/deepseek-v4.1-flash".into(),
         Vec::new(),
     );
     assert!(
-        read().contains("background_model = \"deepseek/deepseek-v4.1-flash\""),
-        "config.toml did not record the background model:\n{}",
+        read().contains("background_model = \"deepseek/deepseek-v4.1-flash\"")
+            && read().contains("background_provider = \"openrouter\""),
+        "config.toml did not record the background model and its provider:\n{}",
         read()
     );
     assert_eq!(
@@ -499,11 +501,40 @@ async fn background_model_command_saves_to_config_without_changing_chat() {
 
     chat.dispatch_command_with_args(SlashCommand::BackgroundModel, "default".into(), Vec::new());
     assert!(
-        !read().contains("background_model"),
-        "\"default\" must clear the setting:\n{}",
+        !read().contains("background_model") && !read().contains("background_provider"),
+        "\"default\" must clear the model and the provider together:\n{}",
         read()
     );
     assert_eq!(chat.current_model(), main_model);
+}
+
+#[tokio::test]
+async fn typed_background_model_cannot_leave_an_unservable_pair() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let config_path = chat.config.codex_home.join("config.toml");
+    let read = || std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    // Background work follows the session's provider, openai, which cannot serve
+    // a vendor/model id; writing the model alone was the bug.
+    chat.dispatch_command_with_args(
+        SlashCommand::BackgroundModel,
+        "deepseek/deepseek-v4.1-flash".into(),
+        Vec::new(),
+    );
+    assert!(
+        !read().contains("background_model"),
+        "an OpenRouter id on openai must be refused, not saved:\n{}",
+        read()
+    );
+
+    // A bare id the current provider can serve keeps that provider untouched.
+    chat.dispatch_command_with_args(SlashCommand::BackgroundModel, "gpt-5.6-luna".into(), Vec::new());
+    assert!(
+        read().contains("background_model = \"gpt-5.6-luna\"") && !read().contains("background_provider"),
+        "a bare id must save the model without pinning a provider:\n{}",
+        read()
+    );
 }
 
 #[tokio::test]

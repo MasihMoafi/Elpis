@@ -129,7 +129,7 @@ impl SlashCommand {
                 "view or set the Smart Prune model: /pruner-model <id|default>"
             }
             SlashCommand::BackgroundModel => {
-                "view or set the memory and pruning model: /background-model <id|default>"
+                "view or set the memory and pruning model: /background-model <id|provider:id|default>"
             }
             SlashCommand::Personality => "choose a communication style for Elpis",
             SlashCommand::Plan => "switch to Plan mode",
