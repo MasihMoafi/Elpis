@@ -105,8 +105,14 @@ impl ChatWidget {
     }
 
     pub(super) fn models_for_active_provider(&self) -> Vec<ModelPreset> {
+        self.models_for_provider(self.active_model_provider_id())
+    }
+
+    /// Picker catalogue for a named provider, which is not always the session's:
+    /// background maintenance can be pointed somewhere else entirely.
+    pub(super) fn models_for_provider(&self, provider_id: &str) -> Vec<ModelPreset> {
         self.model_catalog
-            .models_for_provider(self.active_model_provider_id())
+            .models_for_provider(provider_id)
             .unwrap_or_else(|| self.model_catalog.try_list_models().unwrap_or_default())
     }
 

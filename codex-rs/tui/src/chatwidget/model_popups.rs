@@ -28,33 +28,57 @@ impl ChatWidget {
     /// Sibling of [`Self::open_pruner_model_popup`]: that one overrides the
     /// pruner alone, this one moves all background maintenance together.
     pub(crate) fn open_background_model_popup(&mut self) {
-        self.request_model_catalog(Some(self.active_model_provider_id().to_string()));
+        self.request_model_catalog(Some(self.background_provider_id().to_string()));
         self.refresh_background_model_popup();
+    }
+
+    /// The provider background maintenance actually talks to, which is not the
+    /// session's when `background_provider` is set. Showing the session's here
+    /// would advertise a catalogue the background work never uses.
+    pub(crate) fn background_provider_id(&self) -> &str {
+        self.config
+            .background_provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .unwrap_or_else(|| self.active_model_provider_id())
     }
 
     pub(super) fn refresh_background_model_popup(&mut self) {
         let current = self.config.background_model.clone();
+        let provider_id = self.background_provider_id().to_string();
         let mut choices = vec![(
             None,
             "Built-in default".to_string(),
             "Follow the session's provider for background work".to_string(),
         )];
         choices.extend(
-            self.models_for_active_provider()
+            self.models_for_provider(&provider_id)
                 .into_iter()
                 .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
                 .map(|preset| (Some(preset.model.clone()), preset.model, preset.description)),
         );
+        // A model already set by hand may not be in the catalogue - a provider
+        // whose list Elpis cannot enumerate, for instance - so keep it selectable.
+        if let Some(model) = current.clone()
+            && !choices
+                .iter()
+                .any(|(choice, _, _)| choice.as_ref() == Some(&model))
+        {
+            choices.push((
+                Some(model.clone()),
+                model,
+                "Currently configured".to_string(),
+            ));
+        }
         let mut seen = std::collections::HashSet::new();
         choices.retain(|(model, _, _)| seen.insert(model.clone()));
         let footer_note = (choices.len() == 1).then(|| {
-            Line::from(
-                if self.model_popup_request_is_pending(self.active_model_provider_id()) {
-                    "Loading available models…"
-                } else {
-                    "No models available. Reopen /background-model to retry."
-                },
-            )
+            Line::from(if self.model_popup_request_is_pending(&provider_id) {
+                "Loading available models…"
+            } else {
+                "No models listed for this provider. Use /background-model <id>."
+            })
         });
         let items: Vec<SelectionItem> = choices
             .into_iter()
@@ -97,8 +121,7 @@ impl ChatWidget {
             initial_selected_idx,
             title: Some("Choose memory and pruning model".into()),
             subtitle: Some(format!(
-                "Provider: {} · Current: {} · Chat model unchanged",
-                self.active_model_provider_id(),
+                "Provider: {provider_id} · Current: {} · Chat model unchanged",
                 current.as_deref().unwrap_or("built-in default")
             )),
             items,

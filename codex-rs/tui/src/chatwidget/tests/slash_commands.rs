@@ -506,6 +506,37 @@ async fn background_model_command_saves_to_config_without_changing_chat() {
     assert_eq!(chat.current_model(), main_model);
 }
 
+#[tokio::test]
+async fn background_model_picker_targets_the_provider_it_actually_uses() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let session_provider = chat.active_model_provider_id().to_string();
+    assert_eq!(
+        chat.background_provider_id(),
+        session_provider,
+        "with nothing configured, background work uses the session's provider"
+    );
+
+    // Once maintenance is pointed elsewhere the picker must follow it, or it
+    // advertises a catalogue the background work never touches.
+    chat.config.background_provider = Some("openrouter".to_string());
+    assert_eq!(chat.background_provider_id(), "openrouter");
+    for blank in ["", "   "] {
+        chat.config.background_provider = Some(blank.to_string());
+        assert_eq!(
+            chat.background_provider_id(),
+            session_provider,
+            "a blank setting must not name a provider"
+        );
+    }
+
+    // Opening it must not panic when the catalogue has nothing for that provider.
+    chat.config.background_provider = Some("openrouter".to_string());
+    chat.config.background_model = Some("deepseek/deepseek-v4.1-flash".to_string());
+    chat.refresh_background_model_popup();
+    assert!(chat.bottom_pane.has_active_view());
+}
+
 #[test]
 fn background_model_is_a_visible_command_with_inline_args() {
     // It has to be discoverable next to /pruner-model, and usable as
