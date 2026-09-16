@@ -111,6 +111,27 @@ pub(crate) fn background_client(
     }
 }
 
+/// The provider a pruning request should go to, or `None` when the session's
+/// own should be used.
+///
+/// `pruner_provider` is `/pruner-model`'s own pin, which wins because it is the
+/// narrower choice; without it the pruner follows the rest of background
+/// maintenance. An unknown id is an error rather than a silent fall back to the
+/// session's provider, which would spend the user's main quota on a model it
+/// cannot serve.
+pub fn pruner_provider_info(
+    pruner_provider: Option<&str>,
+    config: &crate::config::Config,
+) -> anyhow::Result<Option<codex_model_provider_info::ModelProviderInfo>> {
+    match resolve_background_provider(pruner_provider, &config.model_providers)? {
+        Some(provider) => Ok(Some(provider)),
+        None => resolve_background_provider(
+            config.background_provider.as_deref(),
+            &config.model_providers,
+        ),
+    }
+}
+
 /// The configured background provider, or `None` when the session's own should
 /// be used. An unknown id is an error so the setting cannot silently no-op.
 fn resolve_background_provider(

@@ -224,6 +224,7 @@ async fn saved_pruner_settings_reach_only_optimizer_and_its_audit() -> Result<()
         let settings = if custom {
             codex_core::pruner_settings::PrunerSettings {
                 model: Some(MAIN_MODEL.to_string()),
+                provider: None,
                 system_prompt: Some(marker.to_string()),
             }
         } else {

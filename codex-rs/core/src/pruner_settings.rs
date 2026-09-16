@@ -24,20 +24,27 @@ Use "compact" only when this factual coverage can be preserved with a materially
 #[serde(deny_unknown_fields)]
 pub struct PrunerSettings {
     pub model: Option<String>,
+    /// Provider that serves `model`. A model is unreachable without one, so the
+    /// picker writes both together; `None` follows background maintenance.
+    // Older `pruner.json` files predate this key, so a missing one has to load
+    // as "unset" rather than fail and take Smart Prune down with it.
+    #[serde(default)]
+    pub provider: Option<String>,
     pub system_prompt: Option<String>,
 }
 
 impl PrunerSettings {
     pub fn validate(&self) -> io::Result<()> {
-        if let Some(model) = &self.model {
-            if model.is_empty()
-                || model.len() > 200
-                || model.chars().any(char::is_whitespace)
-                || model.chars().any(char::is_control)
+        for value in [&self.model, &self.provider] {
+            let Some(value) = value else { continue };
+            if value.is_empty()
+                || value.len() > 200
+                || value.chars().any(char::is_whitespace)
+                || value.chars().any(char::is_control)
             {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "Use a nonempty model ID without whitespace (maximum 200 bytes).",
+                    "Use nonempty model and provider IDs without whitespace (maximum 200 bytes).",
                 ));
             }
         }
@@ -107,6 +114,7 @@ mod tests {
         std::fs::write(dir.path().join("config.toml"), "model = 'chat-model'\n")?;
         let settings = PrunerSettings {
             model: Some("pruner-model".into()),
+            provider: Some("openrouter".into()),
             system_prompt: Some("Keep the planted fact.".into()),
         };
         settings.save(dir.path())?;
@@ -125,21 +133,26 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let saved = PrunerSettings {
             model: Some("valid-model".into()),
+            provider: Some("openai".into()),
             system_prompt: None,
         };
         saved.save(dir.path())?;
         for bad in [
             PrunerSettings {
                 model: Some("not a model".into()),
-                system_prompt: None,
+                ..Default::default()
             },
             PrunerSettings {
-                model: None,
+                provider: Some("two providers".into()),
+                ..Default::default()
+            },
+            PrunerSettings {
                 system_prompt: Some("   ".into()),
+                ..Default::default()
             },
             PrunerSettings {
-                model: None,
                 system_prompt: Some("x".repeat(65_537)),
+                ..Default::default()
             },
         ] {
             assert!(bad.save(dir.path()).is_err());

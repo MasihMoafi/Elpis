@@ -539,6 +539,7 @@ async fn run_optimizer_attempt(
             turn_context,
             input.to_string(),
             model_slug,
+            settings.provider.as_deref(),
             instructions,
             route,
             inactivity_timeout,
@@ -963,6 +964,7 @@ async fn run_model_admission(
     turn_context: &Arc<TurnContext>,
     input: String,
     primary_model: &str,
+    primary_provider: Option<&str>,
     instructions: &str,
     route: OptimizerRoute,
     inactivity_timeout: Duration,
@@ -1009,7 +1011,13 @@ async fn run_model_admission(
     );
     let model_client = sess.services.model_client.load();
     let provider = match route {
-        OptimizerRoute::Primary => model_client.provider_info(),
+        // The pruner's model is chosen separately from the chat model, so the
+        // provider that serves it has to travel with it instead of defaulting
+        // to the one this session happens to be talking to.
+        OptimizerRoute::Primary => {
+            crate::context_pruner::pruner_provider_info(primary_provider, &turn_context.config)?
+                .unwrap_or_else(|| model_client.provider_info())
+        }
         OptimizerRoute::OpenRouter => turn_context
             .config
             .model_providers

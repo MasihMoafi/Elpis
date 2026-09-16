@@ -90,6 +90,7 @@ pub mod legacy_core {
 
     pub mod context_pruner {
         pub use codex_core::context_pruner::pass_count;
+        pub use codex_core::context_pruner::pruner_provider_info;
         pub use codex_core::context_pruner::saved_chars;
     }
 

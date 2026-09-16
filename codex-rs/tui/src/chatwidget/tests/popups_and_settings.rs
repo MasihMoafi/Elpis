@@ -3224,6 +3224,7 @@ async fn pruner_model_popup_selects_without_changing_chat_and_cancel_preserves_s
     chat.model_catalog = Arc::new(ModelCatalog::new(vec![preset]));
     let original = crate::legacy_core::pruner_settings::PrunerSettings {
         model: None,
+        provider: None,
         system_prompt: Some("Keep this prompt unchanged.".into()),
     };
     original.save(&chat.config.codex_home).unwrap();
