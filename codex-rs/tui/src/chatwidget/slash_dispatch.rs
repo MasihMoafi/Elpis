@@ -577,15 +577,29 @@ impl ChatWidget {
             return;
         }
         if cmd == SlashCommand::PrunerModel && !trimmed.is_empty() {
-            let result = (|| -> std::io::Result<()> {
-                let mut settings = crate::legacy_core::pruner_settings::PrunerSettings::load(
-                    &self.config.codex_home,
-                )?;
-                settings.model = (trimmed != "default").then(|| trimmed.to_string());
-                settings.save(&self.config.codex_home)
+            let result = (|| -> Result<String, String> {
+                let home = &self.config.codex_home;
+                let mut settings =
+                    crate::legacy_core::pruner_settings::PrunerSettings::load(home)
+                        .map_err(|error| error.to_string())?;
+                // A bare id is measured against the provider the pruner already
+                // talks to, so it cannot leave a model that provider cannot serve.
+                let role_provider = settings
+                    .provider
+                    .clone()
+                    .unwrap_or_else(|| self.background_provider_id().to_string());
+                let choice = self.typed_model_choice(trimmed, &role_provider)?;
+                if choice.replaces_provider() {
+                    settings.provider = choice.provider;
+                }
+                settings.model = choice.model;
+                settings
+                    .save(home)
+                    .map(|()| choice.label)
+                    .map_err(|error| error.to_string())
             })();
             match result {
-                Ok(()) => self.add_info_message(format!("Smart Prune model saved: {trimmed}. Applies to the next optimizer request; chat model unchanged."), None),
+                Ok(chosen) => self.add_info_message(format!("Smart Prune model saved: {chosen}. Applies to the next optimizer request; chat model unchanged."), None),
                 Err(error) => self.add_error_message(format!("Pruner model was not changed: {error}")),
             }
             return;

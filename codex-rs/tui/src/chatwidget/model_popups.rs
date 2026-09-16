@@ -37,6 +37,7 @@ pub(super) const BACKGROUND_MODEL_SELECTION_VIEW_ID: &str = "background-model-se
 impl ChatWidget {
     pub(crate) fn open_pruner_model_popup(&mut self) {
         self.request_model_catalog(Some(self.active_model_provider_id().to_string()));
+        self.refresh_openrouter_models();
         self.refresh_pruner_model_popup();
     }
 
@@ -62,22 +63,19 @@ impl ChatWidget {
             .unwrap_or_else(|| self.active_model_provider_id())
     }
 
-    /// Edits for `/background-model <id>` typed by hand. `default` clears the
-    /// model and the provider together, as the picker's first row does;
-    /// `<provider>:<id>` sets both; a bare id keeps the provider background work
-    /// already uses. The typed path is refused only where the pair is certainly
-    /// unservable: OpenRouter ids are `vendor/model`, OpenAI's are not.
-    pub(super) fn background_model_edits(
+    /// A model id typed by hand for one of the roles that is chosen apart from
+    /// the chat model, split into the model and the provider that serves it.
+    pub(super) fn typed_model_choice(
         &self,
         input: &str,
-    ) -> Result<(Vec<crate::legacy_core::config::edit::ConfigEdit>, String), String> {
-        use crate::legacy_core::config::edit::background_model_edit;
-        use crate::legacy_core::config::edit::background_provider_edit;
+        role_provider: &str,
+    ) -> Result<TypedModelChoice, String> {
         if input == "default" {
-            return Ok((
-                vec![background_model_edit(None), background_provider_edit(None)],
-                "built-in default".to_string(),
-            ));
+            return Ok(TypedModelChoice {
+                model: None,
+                provider: None,
+                label: "built-in default".to_string(),
+            });
         }
         let qualified = input
             .split_once(':')
@@ -86,7 +84,7 @@ impl ChatWidget {
             });
         let (provider, model) = match qualified {
             Some((provider, model)) => (provider, model),
-            None => (self.background_provider_id(), input),
+            None => (role_provider, input),
         };
         let vendor_prefixed = model.contains('/');
         if provider == OPENROUTER_PROVIDER_ID && !vendor_prefixed {
@@ -96,14 +94,32 @@ impl ChatWidget {
         }
         if provider == OPENAI_PROVIDER_ID && vendor_prefixed {
             return Err(format!(
-                "`{model}` is an OpenRouter-style id but background work talks to openai. Use `/background-model openrouter:{model}` or pick from the list."
+                "`{model}` is an OpenRouter-style id but this runs on openai. Use `openrouter:{model}` or pick from the list."
             ));
         }
-        let mut edits = vec![background_model_edit(Some(model))];
-        if qualified.is_some() {
-            edits.push(background_provider_edit(Some(provider)));
+        Ok(TypedModelChoice {
+            model: Some(model.to_string()),
+            provider: qualified.is_some().then(|| provider.to_string()),
+            label: format!("{model} on {provider}"),
+        })
+    }
+
+    /// Edits for `/background-model <id>` typed by hand. `default` clears the
+    /// model and the provider together, as the picker's first row does;
+    /// `<provider>:<id>` sets both; a bare id keeps the provider background work
+    /// already uses.
+    pub(super) fn background_model_edits(
+        &self,
+        input: &str,
+    ) -> Result<(Vec<crate::legacy_core::config::edit::ConfigEdit>, String), String> {
+        use crate::legacy_core::config::edit::background_model_edit;
+        use crate::legacy_core::config::edit::background_provider_edit;
+        let choice = self.typed_model_choice(input, self.background_provider_id())?;
+        let mut edits = vec![background_model_edit(choice.model.as_deref())];
+        if choice.replaces_provider() {
+            edits.push(background_provider_edit(choice.provider.as_deref()));
         }
-        Ok((edits, format!("{model} on {provider}")))
+        Ok((edits, choice.label))
     }
 
     pub(super) fn refresh_background_model_popup(&mut self) {
@@ -227,19 +243,53 @@ impl ChatWidget {
                 return;
             }
         };
-        let mut choices = vec![(
+        let provider_id = self.active_model_provider_id().to_string();
+        // Each choice carries the provider that serves it, so picking a model
+        // moves the provider with it instead of leaving the pruner pointed at a
+        // model its provider cannot serve.
+        let mut choices: Vec<(Option<String>, Option<String>, String, String)> = vec![(
+            None,
             None,
             "Provider default".to_string(),
             "Restore automatic pruner model selection".to_string(),
         )];
+        choices.extend(self.openrouter_models.iter().map(|model| {
+            (
+                Some(model.slug.clone()),
+                Some(OPENROUTER_PROVIDER_ID.to_string()),
+                model.slug.clone(),
+                model.description.clone(),
+            )
+        }));
         choices.extend(
             self.models_for_active_provider()
                 .into_iter()
                 .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
-                .map(|preset| (Some(preset.model.clone()), preset.model, preset.description)),
+                .map(|preset| {
+                    (
+                        Some(preset.model.clone()),
+                        Some(provider_id.clone()),
+                        preset.model,
+                        preset.description,
+                    )
+                }),
         );
+        // A model set by hand may be absent from every catalogue, so keep it
+        // selectable rather than dropping the owner's current choice.
+        if let Some(model) = settings.model.clone()
+            && !choices
+                .iter()
+                .any(|(choice, _, _, _)| choice.as_ref() == Some(&model))
+        {
+            choices.push((
+                Some(model.clone()),
+                settings.provider.clone(),
+                model,
+                "Currently configured".to_string(),
+            ));
+        }
         let mut seen = std::collections::HashSet::new();
-        choices.retain(|(model, _, _)| seen.insert(model.clone()));
+        choices.retain(|(model, _, _, _)| seen.insert(model.clone()));
         let footer_note = (choices.len() == 1).then(|| {
             Line::from(
                 if self.model_popup_request_is_pending(self.active_model_provider_id()) {
@@ -251,7 +301,7 @@ impl ChatWidget {
         });
         let items: Vec<SelectionItem> = choices
             .into_iter()
-            .map(|(model, name, description)| {
+            .map(|(model, provider, name, description)| {
                 let home = self.config.codex_home.clone();
                 let is_current = settings.model == model;
                 SelectionItem {
@@ -261,6 +311,7 @@ impl ChatWidget {
                     actions: vec![Box::new(move |tx| {
                         let result = PrunerSettings::load(&home).and_then(|mut settings| {
                             settings.model = model.clone();
+                            settings.provider = provider.clone();
                             settings.save(&home)
                         });
                         let cell = match result {
@@ -289,7 +340,10 @@ impl ChatWidget {
             title: Some("Choose pruner model".into()),
             subtitle: Some(format!(
                 "Provider: {} · Current: {} · Chat model unchanged",
-                self.active_model_provider_id(),
+                settings
+                    .provider
+                    .as_deref()
+                    .unwrap_or_else(|| self.background_provider_id()),
                 settings.model.as_deref().unwrap_or("provider default")
             )),
             items,
@@ -508,12 +562,13 @@ impl ChatWidget {
         self.config.model_provider.base_url.as_deref() == Some(OPENROUTER_BASE_URL)
     }
 
-    /// Appends an always-visible "OPENROUTER" group and its free models below whatever
-    /// the active provider's models are, mirroring how OPENAI's models are grouped.
-    /// Selecting one while a different provider is active can't take effect immediately --
-    /// provider selection is a launch-time choice (`--provider`), and switching providers
-    /// mid-session isn't wired at the protocol layer -- so the action tells the user how to
-    /// actually use it instead of silently no-op'ing.
+    /// Appends an always-visible "OPENROUTER" group below whatever the active
+    /// provider's models are, mirroring how OPENAI's models are grouped: the
+    /// live catalogue with its prices first, then the bundled free tier.
+    ///
+    /// Selecting one moves the thread's provider along with its model, the same
+    /// atomic switch the OLLAMA group performs, so the choice takes effect on
+    /// the next turn instead of waiting for a relaunch with `--provider`.
     fn push_openrouter_free_model_group(&self, items: &mut Vec<SelectionItem>) {
         if self.is_openrouter_active() {
             return;
@@ -523,32 +578,26 @@ impl ChatWidget {
             is_disabled: true,
             ..Default::default()
         });
-        for model in &self.openrouter_models {
-            let slug = model.slug.clone();
-            items.push(SelectionItem {
-                name: slug.clone(),
-                description: Some(model.description.clone()),
-                actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::UpdateModel(slug.clone()));
-                    tx.send(AppEvent::PersistModelSelection {
-                        model: slug.clone(),
-                        effort: None,
-                    });
-                })],
-                dismiss_on_select: true,
-                ..Default::default()
+        let live = self
+            .openrouter_models
+            .iter()
+            .map(|model| (model.slug.clone(), model.description.clone()));
+        let free = codex_model_provider::openrouter_free_model_catalog()
+            .models
+            .into_iter()
+            .map(|preset| {
+                let preset: ModelPreset = preset.into();
+                (preset.model, preset.description)
             });
-        }
-        for preset in codex_model_provider::openrouter_free_model_catalog().models {
-            let preset: ModelPreset = preset.into();
-            let model = preset.model.clone();
+        for (model, description) in live.chain(free) {
+            let model_for_action = model.clone();
             items.push(SelectionItem {
-                name: model.clone(),
-                description: Some(preset.description.clone()),
+                name: model,
+                description: Some(description),
                 actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::UpdateModel(model.clone()));
-                    tx.send(AppEvent::PersistModelSelection {
-                        model: model.clone(),
+                    tx.send(AppEvent::ApplyProviderModelSelection {
+                        model: model_for_action.clone(),
+                        provider_id: OPENROUTER_PROVIDER_ID.to_string(),
                         effort: None,
                     });
                 })],
@@ -1571,6 +1620,25 @@ mod tests {
         for name in ["qwen3.5:latest", "glm-5.2:cloud", "minimax-m2:cloud"] {
             assert!(!is_embedding_model_name(name), "{name} should be offered");
         }
+    }
+}
+
+/// A model id typed for a role chosen apart from the chat model, split into the
+/// model and the provider that serves it.
+pub(super) struct TypedModelChoice {
+    /// `None` restores the built-in default and clears the provider with it.
+    pub(super) model: Option<String>,
+    /// `Some` only when the input named a provider; otherwise the role keeps
+    /// whichever provider it already uses.
+    pub(super) provider: Option<String>,
+    pub(super) label: String,
+}
+
+impl TypedModelChoice {
+    /// Whether this choice decides the role's provider. A bare id leaves the
+    /// current one alone; naming one, or restoring the default, replaces it.
+    pub(super) fn replaces_provider(&self) -> bool {
+        self.provider.is_some() || self.model.is_none()
     }
 }
 

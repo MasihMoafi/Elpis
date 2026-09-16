@@ -648,6 +648,184 @@ async fn pruner_model_command_saves_valid_ids_without_changing_chat() {
     assert_eq!(chat.current_model(), main_model);
 }
 
+/// Highlights `row` in a picker the way arrow keys would, accepts it, and
+/// returns what the picker looked like at the moment of the choice.
+fn choose_picker_row(chat: &mut ChatWidget, view_id: &'static str, row: &str) -> String {
+    for _ in 0..chat.model_popup_model_ids.len() {
+        let selected = chat
+            .bottom_pane
+            .selected_index_for_active_view(view_id)
+            .and_then(|index| chat.model_popup_model_ids.get(index));
+        if selected.is_some_and(|name| name == row) {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    assert_eq!(
+        chat.bottom_pane
+            .selected_index_for_active_view(view_id)
+            .and_then(|index| chat.model_popup_model_ids.get(index))
+            .map(String::as_str),
+        Some(row),
+        "picker never highlighted {row}; rows: {:?}",
+        chat.model_popup_model_ids
+    );
+    let popup = render_bottom_popup(chat, /*width*/ 120);
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    popup
+}
+
+fn live_openrouter_model() -> crate::chatwidget::model_popups::OpenRouterModel {
+    crate::chatwidget::model_popups::OpenRouterModel {
+        slug: "deepseek/deepseek-v4.1-flash".to_string(),
+        description: "$0.30/M in \u{b7} $1.20/M out \u{b7} 1048k context".to_string(),
+    }
+}
+
+fn first_provider_preset(chat: &ChatWidget) -> String {
+    chat.models_for_active_provider()
+        .into_iter()
+        .find(|preset| preset.show_in_picker && !ChatWidget::is_auto_model(&preset.model))
+        .map(|preset| preset.model)
+        .expect("the test provider offers at least one preset")
+}
+
+#[tokio::test]
+async fn pruner_model_picker_lists_openrouter_models_with_prices() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let model = live_openrouter_model();
+    chat.on_openrouter_models_loaded(vec![model.clone()]);
+
+    chat.open_pruner_model_popup();
+
+    let rows = chat.model_popup_model_ids.clone();
+    assert_eq!(
+        rows.first().map(String::as_str),
+        Some("Provider default"),
+        "rows: {rows:?}"
+    );
+    assert_eq!(
+        rows.get(1).map(String::as_str),
+        Some(model.slug.as_str()),
+        "the live OpenRouter list belongs above the provider's presets; rows: {rows:?}"
+    );
+    let preset_row = rows
+        .iter()
+        .position(|row| *row == first_provider_preset(&chat))
+        .expect("the provider's own presets stay in the list");
+    assert!(preset_row > 1, "rows: {rows:?}");
+    // The price has to be visible here exactly as it is in /background-model.
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(popup.contains("$0.30/M in"), "{popup}");
+}
+
+#[tokio::test]
+async fn choosing_a_pruner_model_moves_its_provider_too() {
+    use crate::legacy_core::pruner_settings::PrunerSettings;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let model = live_openrouter_model();
+    chat.on_openrouter_models_loaded(vec![model.clone()]);
+    chat.open_pruner_model_popup();
+
+    choose_picker_row(
+        &mut chat,
+        crate::chatwidget::model_popups::PRUNER_MODEL_SELECTION_VIEW_ID,
+        &model.slug,
+    );
+
+    let settings = PrunerSettings::load(&chat.config.codex_home).expect("pruner settings");
+    assert_eq!(settings.model.as_deref(), Some(model.slug.as_str()));
+    assert_eq!(
+        settings.provider.as_deref(),
+        Some(codex_model_provider_info::OPENROUTER_PROVIDER_ID),
+        "a model is useless without the provider that serves it"
+    );
+    // The next pruning request must leave the session's provider behind.
+    let resolved = crate::legacy_core::context_pruner::pruner_provider_info(
+        settings.provider.as_deref(),
+        &chat.config,
+    )
+    .expect("the pinned provider is configured");
+    assert_eq!(
+        resolved.as_ref(),
+        chat.config
+            .model_providers
+            .get(codex_model_provider_info::OPENROUTER_PROVIDER_ID)
+    );
+    assert_ne!(resolved.as_ref(), Some(&chat.config.model_provider));
+}
+
+#[tokio::test]
+async fn choosing_a_pruner_preset_keeps_the_active_provider() {
+    use crate::legacy_core::pruner_settings::PrunerSettings;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.open_pruner_model_popup();
+    let active_provider = chat.active_model_provider_id().to_string();
+    let preset = first_provider_preset(&chat);
+
+    choose_picker_row(
+        &mut chat,
+        crate::chatwidget::model_popups::PRUNER_MODEL_SELECTION_VIEW_ID,
+        &preset,
+    );
+
+    let settings = PrunerSettings::load(&chat.config.codex_home).expect("pruner settings");
+    assert_eq!(settings.model.as_deref(), Some(preset.as_str()));
+    assert_eq!(settings.provider.as_deref(), Some(active_provider.as_str()));
+    let resolved = crate::legacy_core::context_pruner::pruner_provider_info(
+        settings.provider.as_deref(),
+        &chat.config,
+    )
+    .expect("the active provider is configured");
+    assert_eq!(resolved.as_ref(), Some(&chat.config.model_provider));
+}
+
+#[tokio::test]
+async fn choosing_an_openrouter_chat_model_switches_the_session_provider() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    let model = live_openrouter_model();
+    chat.on_openrouter_models_loaded(vec![model.clone()]);
+    let presets = chat.models_for_active_provider();
+    chat.open_model_popup_with_presets(presets);
+    while rx.try_recv().is_ok() {}
+
+    let popup = choose_picker_row(
+        &mut chat,
+        crate::chatwidget::model_popups::MODEL_SELECTION_VIEW_ID,
+        &model.slug,
+    );
+    assert!(popup.contains("$0.30/M in"), "{popup}");
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    let selections = events
+        .iter()
+        .filter(|event| matches!(event, AppEvent::ApplyProviderModelSelection { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(selections.len(), 1, "events: {events:?}");
+    assert!(matches!(
+        selections[0],
+        AppEvent::ApplyProviderModelSelection {
+            model: chosen,
+            provider_id,
+            effort: None,
+        } if *chosen == model.slug
+            && provider_id == codex_model_provider_info::OPENROUTER_PROVIDER_ID
+    ));
+    // The old two-event path moved the model locally even when the server
+    // refused the provider switch.
+    assert!(
+        events.iter().all(|event| !matches!(
+            event,
+            AppEvent::UpdateModel(_) | AppEvent::PersistModelSelection { .. }
+        )),
+        "events: {events:?}"
+    );
+}
+
 #[tokio::test]
 async fn queued_slash_review_with_args_dispatches_after_active_turn() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
