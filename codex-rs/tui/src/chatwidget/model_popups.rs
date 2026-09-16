@@ -15,11 +15,99 @@ const OLLAMA_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::fr
 pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
 pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
 pub(super) const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
+pub(super) const BACKGROUND_MODEL_SELECTION_VIEW_ID: &str = "background-model-selection";
 
 impl ChatWidget {
     pub(crate) fn open_pruner_model_popup(&mut self) {
         self.request_model_catalog(Some(self.active_model_provider_id().to_string()));
         self.refresh_pruner_model_popup();
+    }
+
+    /// Choose the model used for memory saving, pruning and session naming.
+    ///
+    /// Sibling of [`Self::open_pruner_model_popup`]: that one overrides the
+    /// pruner alone, this one moves all background maintenance together.
+    pub(crate) fn open_background_model_popup(&mut self) {
+        self.request_model_catalog(Some(self.active_model_provider_id().to_string()));
+        self.refresh_background_model_popup();
+    }
+
+    pub(super) fn refresh_background_model_popup(&mut self) {
+        let current = self.config.background_model.clone();
+        let mut choices = vec![(
+            None,
+            "Built-in default".to_string(),
+            "Follow the session's provider for background work".to_string(),
+        )];
+        choices.extend(
+            self.models_for_active_provider()
+                .into_iter()
+                .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
+                .map(|preset| (Some(preset.model.clone()), preset.model, preset.description)),
+        );
+        let mut seen = std::collections::HashSet::new();
+        choices.retain(|(model, _, _)| seen.insert(model.clone()));
+        let footer_note = (choices.len() == 1).then(|| {
+            Line::from(
+                if self.model_popup_request_is_pending(self.active_model_provider_id()) {
+                    "Loading available models…"
+                } else {
+                    "No models available. Reopen /background-model to retry."
+                },
+            )
+        });
+        let items: Vec<SelectionItem> = choices
+            .into_iter()
+            .map(|(model, name, description)| {
+                let home = self.config.codex_home.clone();
+                let is_current = current == model;
+                SelectionItem {
+                    name,
+                    description: Some(description),
+                    is_current,
+                    actions: vec![Box::new(move |tx| {
+                        let edit = crate::legacy_core::config::edit::background_model_edit(
+                            model.as_deref(),
+                        );
+                        let cell = match crate::legacy_core::config::edit::apply_blocking(
+                            &home,
+                            std::slice::from_ref(&edit),
+                        ) {
+                            Ok(()) => history_cell::new_info_event(
+                                format!(
+                                    "Memory and pruning model saved: {}. Chat model unchanged.",
+                                    model.as_deref().unwrap_or("built-in default")
+                                ),
+                                None,
+                            ),
+                            Err(error) => history_cell::new_error_event(format!(
+                                "Cannot save background model: {error}"
+                            )),
+                        };
+                        tx.send(AppEvent::InsertHistoryCell(Box::new(cell)));
+                    })],
+                    dismiss_on_select: true,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        let initial_selected_idx = items.iter().position(|item| item.is_current);
+        self.show_model_selection_view(SelectionViewParams {
+            view_id: Some(BACKGROUND_MODEL_SELECTION_VIEW_ID),
+            initial_selected_idx,
+            title: Some("Choose memory and pruning model".into()),
+            subtitle: Some(format!(
+                "Provider: {} · Current: {} · Chat model unchanged",
+                self.active_model_provider_id(),
+                current.as_deref().unwrap_or("built-in default")
+            )),
+            items,
+            is_searchable: true,
+            search_placeholder: Some("Search models".into()),
+            footer_note,
+            footer_hint: Some(standard_popup_hint_line()),
+            ..Default::default()
+        });
     }
 
     pub(super) fn refresh_pruner_model_popup(&mut self) {

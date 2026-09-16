@@ -15,6 +15,7 @@ pub enum SlashCommand {
     // more frequently used commands should be listed first.
     Model,
     PrunerModel,
+    BackgroundModel,
     Permissions,
     Yolo,
     #[strum(serialize = "hotkeys", serialize = "keymap")]
@@ -127,6 +128,9 @@ impl SlashCommand {
             SlashCommand::PrunerModel => {
                 "view or set the Smart Prune model: /pruner-model <id|default>"
             }
+            SlashCommand::BackgroundModel => {
+                "view or set the memory and pruning model: /background-model <id|default>"
+            }
             SlashCommand::Personality => "choose a communication style for Elpis",
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Goal => "set or view the goal for a long-running task",
@@ -166,6 +170,7 @@ impl SlashCommand {
             SlashCommand::SmartPrune
                 | SlashCommand::Compact
                 | SlashCommand::PrunerModel
+                | SlashCommand::BackgroundModel
                 | SlashCommand::ForcePrune
                 | SlashCommand::Review
                 | SlashCommand::Add
@@ -224,6 +229,7 @@ impl SlashCommand {
             | SlashCommand::Resume
             | SlashCommand::Model
             | SlashCommand::PrunerModel
+            | SlashCommand::BackgroundModel
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Yolo
@@ -263,6 +269,7 @@ impl SlashCommand {
             // part of the public Elpis command contract.
             SlashCommand::Model
             | SlashCommand::PrunerModel
+            | SlashCommand::BackgroundModel
             | SlashCommand::Permissions
             | SlashCommand::Yolo
             | SlashCommand::Add

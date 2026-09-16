@@ -91,6 +91,21 @@ pub fn syntax_theme_edit(name: &str) -> ConfigEdit {
     }
 }
 
+/// Produces a config edit that sets the top-level `background_model`, the model
+/// used for memory saving, pruning and session naming. `None` clears it so the
+/// built-in selection applies again.
+pub fn background_model_edit(model: Option<&str>) -> ConfigEdit {
+    match model {
+        Some(model) => ConfigEdit::SetPath {
+            segments: vec!["background_model".to_string()],
+            value: value(model.to_string()),
+        },
+        None => ConfigEdit::ClearPath {
+            segments: vec!["background_model".to_string()],
+        },
+    }
+}
+
 /// Produces a config edit that sets [tui].pet = "<name>".
 pub fn tui_pet_edit(name: &str) -> ConfigEdit {
     ConfigEdit::SetPath {

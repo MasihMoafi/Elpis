@@ -291,6 +291,9 @@ impl ChatWidget {
             SlashCommand::PrunerModel => {
                 self.open_pruner_model_popup();
             }
+            SlashCommand::BackgroundModel => {
+                self.open_background_model_popup();
+            }
             SlashCommand::Model => {
                 self.open_model_popup();
                 self.defer_input_until_settings_applied();
@@ -552,6 +555,24 @@ impl ChatWidget {
                     None,
                 ),
                 Err(error) => self.add_error_message(format!("Compaction setting was not changed: {error}")),
+            }
+            return;
+        }
+        if cmd == SlashCommand::BackgroundModel && !trimmed.is_empty() {
+            let model = (trimmed != "default").then_some(trimmed);
+            match crate::legacy_core::config::edit::apply_blocking(
+                &self.config.codex_home,
+                &[crate::legacy_core::config::edit::background_model_edit(model)],
+            ) {
+                Ok(()) => self.add_info_message(
+                    format!(
+                        "Memory and pruning model saved: {}. Applies to the next background request; chat model unchanged.",
+                        model.unwrap_or("built-in default")
+                    ),
+                    None,
+                ),
+                Err(error) => self
+                    .add_error_message(format!("Background model was not changed: {error}")),
             }
             return;
         }
@@ -1089,6 +1110,7 @@ impl ChatWidget {
         match cmd {
             SlashCommand::Usage
             | SlashCommand::PrunerModel
+            | SlashCommand::BackgroundModel
             | SlashCommand::Context
             | SlashCommand::Dashboard
             | SlashCommand::DebugConfig

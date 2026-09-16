@@ -474,6 +474,55 @@ async fn queued_slash_compact_dispatches_after_active_turn() {
 }
 
 #[tokio::test]
+async fn background_model_command_saves_to_config_without_changing_chat() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    let main_model = chat.current_model().to_string();
+    let config_path = chat.config.codex_home.join("config.toml");
+    let read = || std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    chat.dispatch_command_with_args(
+        SlashCommand::BackgroundModel,
+        "deepseek/deepseek-v4.1-flash".into(),
+        Vec::new(),
+    );
+    assert!(
+        read().contains("background_model = \"deepseek/deepseek-v4.1-flash\""),
+        "config.toml did not record the background model:\n{}",
+        read()
+    );
+    assert_eq!(
+        chat.current_model(),
+        main_model,
+        "choosing a background model must not move the chat model"
+    );
+
+    chat.dispatch_command_with_args(SlashCommand::BackgroundModel, "default".into(), Vec::new());
+    assert!(
+        !read().contains("background_model"),
+        "\"default\" must clear the setting:\n{}",
+        read()
+    );
+    assert_eq!(chat.current_model(), main_model);
+}
+
+#[test]
+fn background_model_is_a_visible_command_with_inline_args() {
+    // It has to be discoverable next to /pruner-model, and usable as
+    // `/background-model <id>` rather than only through its picker.
+    let visible = crate::slash_command::built_in_slash_commands();
+    assert!(
+        visible
+            .iter()
+            .any(|(_, command)| *command == SlashCommand::BackgroundModel),
+        "the command is hidden: {:?}",
+        visible.iter().map(|(name, _)| *name).collect::<Vec<_>>()
+    );
+    assert!(SlashCommand::BackgroundModel.supports_inline_args());
+    assert_eq!(SlashCommand::BackgroundModel.command(), "background-model");
+}
+
+#[tokio::test]
 async fn pruner_model_command_saves_valid_ids_without_changing_chat() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
