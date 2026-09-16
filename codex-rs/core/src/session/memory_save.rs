@@ -174,7 +174,8 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         "memory-save".into(),
         CodexResponsesRequestKind::Memory,
     );
-    let client = sess.services.model_client.load();
+    let client =
+        crate::context_pruner::background_client(&sess.services.model_client.load(), &turn.config)?;
     let mut client_session = client.new_session();
     let preparation_ms = preparation_started.elapsed().as_millis() as u64;
     let request_started = std::time::Instant::now();

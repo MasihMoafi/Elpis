@@ -142,7 +142,8 @@ async fn name_session(
         "session-title".into(),
         CodexResponsesRequestKind::SessionTitle,
     );
-    let client = sess.services.model_client.load();
+    let client =
+        crate::context_pruner::background_client(&sess.services.model_client.load(), &turn.config)?;
     let mut client_session = client.new_session();
     let title = tokio::time::timeout(Duration::from_secs(20), async {
         let mut stream = client_session

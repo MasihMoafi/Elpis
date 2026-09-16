@@ -4657,6 +4657,10 @@
       "description": "Model used for background maintenance work - saving memory, pruning context and naming sessions - instead of the built-in default. Set this to move that work onto a cheaper or non-OpenAI provider without affecting the model that answers the user.",
       "type": "string"
     },
+    "background_provider": {
+      "description": "Provider id from `model_providers` that background maintenance work should talk to, when it differs from the provider answering the user. Requires `background_model` to name a model that provider serves.",
+      "type": "string"
+    },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
       "format": "uint64",

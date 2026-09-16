@@ -91,6 +91,44 @@ pub(crate) fn background_model_slug<'a>(configured: Option<&'a str>, default: &'
         .unwrap_or(default)
 }
 
+/// The client background maintenance should talk to.
+///
+/// Returns the session's own client unless `background_provider` names a
+/// configured provider, so a workspace whose main model lives on one provider
+/// can still run its maintenance on a cheaper one. An unknown provider id is an
+/// error rather than a silent fall back to the user's provider, which would
+/// spend their main quota on background work.
+pub(crate) fn background_client(
+    client: &crate::client::ModelClient,
+    config: &crate::config::Config,
+) -> anyhow::Result<crate::client::ModelClient> {
+    match resolve_background_provider(
+        config.background_provider.as_deref(),
+        &config.model_providers,
+    )? {
+        Some(provider) => Ok(client.with_provider(provider)),
+        None => Ok(client.clone()),
+    }
+}
+
+/// The configured background provider, or `None` when the session's own should
+/// be used. An unknown id is an error so the setting cannot silently no-op.
+fn resolve_background_provider(
+    configured: Option<&str>,
+    providers: &std::collections::HashMap<String, codex_model_provider_info::ModelProviderInfo>,
+) -> anyhow::Result<Option<codex_model_provider_info::ModelProviderInfo>> {
+    let Some(provider_id) = configured.map(str::trim).filter(|id| !id.is_empty()) else {
+        return Ok(None);
+    };
+    providers
+        .get(provider_id)
+        .cloned()
+        .map(Some)
+        .ok_or_else(|| {
+            anyhow::anyhow!("background_provider {provider_id} is not in model_providers")
+        })
+}
+
 /// Effort for the pruning pass. Keep/delete judgement over raw tool output is the
 /// step that decides what the session can still see, so it runs at the model's
 /// maximum rather than inheriting the user's turn setting.
@@ -1104,6 +1142,40 @@ mod tests {
         cycle.close();
         assert!(!cycle.may_run());
         assert_eq!(PruneTrigger::Manual.as_str(), "manual");
+    }
+
+    #[test]
+    fn unknown_background_provider_is_an_error_not_the_users_provider() {
+        // Falling back to the session provider would spend the user's own quota
+        // on background work, which is the opposite of why this setting exists.
+        let message = format!(
+            "{:#}",
+            resolve_background_provider(Some("typo-provider"), &std::collections::HashMap::new())
+                .expect_err("an unknown provider id must fail")
+        );
+        assert!(message.contains("typo-provider"), "{message}");
+        assert!(message.contains("model_providers"), "{message}");
+    }
+
+    #[test]
+    fn background_provider_is_only_resolved_when_configured() {
+        let providers = std::collections::HashMap::from([(
+            "deepseek".to_string(),
+            codex_model_provider_info::ModelProviderInfo::default(),
+        )]);
+        for unset in [None, Some(""), Some("   ")] {
+            assert!(
+                resolve_background_provider(unset, &providers)
+                    .expect("unset is not an error")
+                    .is_none(),
+                "{unset:?} should leave the session provider in place"
+            );
+        }
+        assert!(
+            resolve_background_provider(Some("deepseek"), &providers)
+                .expect("configured provider resolves")
+                .is_some()
+        );
     }
 
     #[test]
