@@ -25,7 +25,9 @@ const server=http.createServer(async(req,res)=>{
     // Session naming shares the saver's model, so route by schema, not by model.
     if(body.text?.format?.schema?.required?.includes('title')) {
       text=JSON.stringify({title:'Fixture session task'});
-    } else if(body.model==='gpt-5.6-luna') {
+    } else if(body.text?.format?.schema?.required?.includes('checkpoint')) {
+      // Identify the saver by schema, not model: the background model follows
+      // the session's provider.
       const evidence=body.input.flatMap(i=>i.content||[]).filter(i=>i.text?.startsWith('{')).map(i=>JSON.parse(i.text)).find(i=>Array.isArray(i.evidence));
       if(!evidence)throw Error('Missing saver evidence');
       saves.push({evidence,malformed});

@@ -31,7 +31,9 @@ const server = http.createServer(async (request, response) => {
   const raw = Buffer.concat(chunks);
   const body = JSON.parse((request.headers['content-encoding'] === 'zstd' ? require('node:zlib').zstdDecompressSync(raw) : raw).toString());
   if (body.text?.format?.schema?.required?.includes('title')) {
-    assert.equal(body.model, 'gpt-5.6-luna');
+    // Naming follows the session's provider, so assert the configured model
+    // rather than a hardcoded OpenAI-only slug.
+    assert.equal(body.model, 'gpt-5.6-terra');
     assert.equal(body.text.format.strict, true);
     assert.equal(body.tools?.length || 0, 0);
     titleRequests++;

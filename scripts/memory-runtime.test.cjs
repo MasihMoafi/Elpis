@@ -57,7 +57,10 @@ const server = http.createServer(async (request, response) => {
   if (isSessionTitle) {
     titles++;
     text = JSON.stringify({ title: "Fixture session task" });
-  } else if (body.model === "gpt-5.6-luna") {
+  } else if (body.text?.format?.schema?.required?.includes("checkpoint")) {
+    // Identify the saver by its schema, not its model: the background model
+    // follows the session's provider, so keying on a model name breaks the
+    // moment this fixture is not pretending to be OpenAI.
     luna++;
     assert.equal(body.tools?.length || 0, 0, "memory call exposed tools");
     assert.equal(body.text?.format?.type, "json_schema", "memory call omitted its schema");
@@ -104,7 +107,9 @@ const server = http.createServer(async (request, response) => {
     type: "message", id: "m" + requests.length, role: "assistant", status: "completed",
     content: [{ type: "output_text", text, annotations: [] }],
   };
-  const reasoning = includeReasoning && body.model !== "gpt-5.6-luna" ? {
+  // Only ordinary turns get reasoning. Background calls are identified by their
+  // schema rather than their model, which now follows the session's provider.
+  const reasoning = includeReasoning && !body.text?.format?.schema ? {
     type: "reasoning", id: "reasoning_" + requests.length, summary: [],
     encrypted_content: "fixture_reasoning_for_queued_continuation",
   } : null;
@@ -342,7 +347,11 @@ async function run() {
     });
     releaseMemory();
   });
-  const mainRequests = requests.slice(beforeSteer).filter(request => request.model !== "gpt-5.6-luna");
+  // Background calls carry a schema; the user's turns do not. Filtering by
+  // model would miss them now that the background model tracks the provider.
+  const mainRequests = requests
+    .slice(beforeSteer)
+    .filter(request => !request.text?.format?.schema);
   assert.equal(mainRequests.length, 2, "message arriving during saving was not processed");
   assert(JSON.stringify(mainRequests[1].input).includes("QUEUED_DURING_MEMORY"));
   assert(JSON.stringify(mainRequests[1].input).includes("fixture_reasoning_for_queued_continuation"),
