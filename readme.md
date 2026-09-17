@@ -20,14 +20,10 @@ or [interactive demo](https://elpis.masihmoafi.com).
 The accepted release passed its [exact-source shipping checks](https://github.com/MasihMoafi/Elpis/actions/runs/33965914155).
 The release tag, not this development branch, identifies the shipped runtime.
 
-![Elpis interactive terminal demo](docs/assets/demo.gif)
+![Elpis walkthrough — launch, Context Ledger, and Smart Prune admission](docs/assets/elpis-scroll-demo.gif)
 
-![Elpis context audit — selective pruning and evidence trail](docs/assets/evidence.gif)
-
-Concept walkthrough of the admission flow — Smart Prune scanning a completed tool
-result before the main model sees it (illustrated with fixture data, not a captured session):
-
-![Elpis concept walkthrough — launch, Context Ledger, and Smart Prune admission, illustrated](docs/assets/elpis-scroll-demo.gif)
+The admission flow — Smart Prune scanning a completed tool result before the main
+model sees it (illustrated with fixture data, not a captured session).
 
 <details><summary>Current development interface · September 9</summary>
 
@@ -124,7 +120,7 @@ harness-supplied tool output, using a separate model instance sequenced against 
 Context is a budgeted working set, not a dumped transcript. Elpis makes admission visible and
 uses a layered pipeline to keep useful findings while removing disposable exploration:
 
-![Elpis Context Architecture](docs/assets/elpis-context-control.svg)
+![Elpis Context Architecture](docs/assets/gh/elpis-context-control.png)
 
 | Layer | What it does | When |
 | --- | --- | --- |
@@ -139,7 +135,7 @@ Prune. Automatic native compaction uses the model-window threshold and usable-wi
 Smart Prune is Experimental and off by default; `/settings` saves its value for the next
 conversation.
 
-![Ace pruning lifecycle from a retired automatic threshold-triggered configuration](docs/assets/diagram_ace_lifecycle.svg)
+![Ace pruning lifecycle from a retired automatic threshold-triggered configuration](docs/assets/gh/diagram_ace_lifecycle.png)
 
 This diagram illustrates the automatic, threshold-triggered pressure-cycling configuration used
 in the historical evaluation runs below — retired, and not current default behavior. Current
@@ -148,7 +144,7 @@ already-sent history the way this sequence shows.
 
 #### Historical emergency-pruning example
 
-![Task 1 Context Flow and Pruning Lifecycle](docs/assets/sankey_context_flow.svg)
+![Task 1 Context Flow and Pruning Lifecycle](docs/assets/gh/sankey_context_flow.png)
 
 From a configured historical run with automatic pruning enabled under the superseded
 high-frequency setup (42 passes shown here; not current default behavior). One real pass from
@@ -273,7 +269,7 @@ prevent.
 A coordinator can fan work out to several agents under an engine that validates the plan
 before anything runs. This is Elpis's own; it is not part of the Codex foundation.
 
-![Elpis deterministic work graph](docs/assets/elpis-work-graph.svg)
+![Elpis deterministic work graph](docs/assets/gh/elpis-work-graph.png)
 
 The coordinator submits a complete task graph — tasks, dependencies, write scopes,
 acceptance criteria, and environments. Elpis then owns the scheduling:
@@ -339,25 +335,25 @@ Across those configured historical runs, Elpis maintained working sets within sa
 
 In those configured historical runs, Codex expanded into the critical danger zone (>90% window) in every run, forcing 3 emergency compactions. Elpis maintained peak window utilization at **32.5–49.5%**, achieving a **47–65% reduction in peak context footprint**:
 
-![Peak Context Window Utilization (Elpis vs. Codex)](docs/assets/elpis_empirical_evaluation_bars.svg)
+![Peak Context Window Utilization (Elpis vs. Codex)](docs/assets/gh/elpis_empirical_evaluation_bars.png)
 
 #### Input Token Distribution & Interquartile Stability
 
 In those configured historical runs, Codex suffered wide distribution variance as transcripts accumulated, while Elpis tightly stabilized median token input at **68.8k–69.6k tokens (26.6%–27.0% of the window)**:
 
-![Input Tokens per Model Call (Interquartile Range & Median across 3 Runs)](docs/assets/elpis-token-distribution-boxplots.svg)
+![Input Tokens per Model Call (Interquartile Range & Median across 3 Runs)](docs/assets/gh/elpis-token-distribution-boxplots.png)
 
 #### Trajectory Dynamics across Context Health Bands
 
 When normalized across the recorded request lifecycle (0% to 100% completion), the historical Codex trace grows toward emergency rollover. The Elpis trace shown here uses automatic pruning under the superseded high-frequency setup; it is not current default behavior:
 
-![Normalized Task-Progress View (0%–100% Sequence Overlay)](docs/assets/elpis-normalized-overlay-highcontrast.svg)
+![Normalized Task-Progress View (0%–100% Sequence Overlay)](docs/assets/gh/elpis-normalized-overlay-highcontrast.png)
 
 #### Operating Zone Breakdown
 
 Across those configured historical requests, Elpis spent over 95% of its operating lifespan inside the safe and healthy bands, with zero requests entering the critical danger zone:
 
-![Context operating zones by run](docs/assets/elpis-operating-zones.svg)
+![Context operating zones by run](docs/assets/gh/elpis-operating-zones.png)
 
 ### RQ2 & RQ3: Target Retention & Task Quality
 
@@ -381,9 +377,9 @@ rates; they are estimates, not invoices. Cache-hit fractions were observed, not 
 | 35 | Low | 8 across two batches | −9.8% |
 | 35 | None | 8 | −20.9% |
 
-![Current study: cost and token changes by optimizer effort on short sessions](docs/assets/elpis-current-effort-20260909.svg)
+![Current study: cost and token changes by optimizer effort on short sessions](docs/assets/gh/elpis-current-effort-20260909.png)
 
-![Current study: cost and token changes by request horizon](docs/assets/elpis-current-horizon-20260909.svg)
+![Current study: cost and token changes by request horizon](docs/assets/gh/elpis-current-horizon-20260909.png)
 
 Longer runs can amortize optimizer cost; short runs cost more in these fixtures.
 The two Low/35 batches are a descriptive aggregation, not a pooled significance claim.
@@ -397,7 +393,7 @@ regenerated from the recorded metrics by `python3 scripts/refresh-public-evidenc
 
 Pruning adds an auxiliary model call sequenced against the main agent, and rewriting history invalidates the provider's cached prefix. Both costs are real. The figures below are configured historical runs with automatic pruning enabled under the superseded high-frequency setup; they bound that configuration's penalty rather than describe the current default: 730,810 auxiliary tokens spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token).
 
-![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
+![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/gh/elpis-what-pruning-spent.png)
 
 ### RQ5: Forensic Auditability
 
