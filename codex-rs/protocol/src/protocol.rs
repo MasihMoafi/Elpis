@@ -119,14 +119,20 @@ pub const CONTEXT_WINDOW_OPEN_TAG: &str = "<context_window>";
 pub const CONTEXT_WINDOW_CLOSE_TAG: &str = "</context_window>";
 pub const CONTEXT_WINDOW_GUIDANCE_OPEN_TAG: &str = "<context_window_guidance>";
 pub const CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG: &str = "</context_window_guidance>";
-pub const USER_MESSAGE_BEGIN: &str = "## My request for Codex:";
+pub const USER_MESSAGE_BEGIN: &str = "## My request for Elpis:";
+/// The marker written before the product stopped calling itself Codex. Threads,
+/// rollouts and titles recorded then still carry it, so it is still recognised.
+pub const LEGACY_USER_MESSAGE_BEGIN: &str = "## My request for Codex:";
 
 /// Removes the model-context prefix from a user message before displaying it.
 pub fn strip_user_message_prefix(text: &str) -> &str {
-    match text.find(USER_MESSAGE_BEGIN) {
-        Some(idx) => text[idx + USER_MESSAGE_BEGIN.len()..].trim(),
-        None => text.trim(),
-    }
+    [USER_MESSAGE_BEGIN, LEGACY_USER_MESSAGE_BEGIN]
+        .into_iter()
+        .find_map(|marker| {
+            text.find(marker)
+                .map(|idx| text[idx + marker.len()..].trim())
+        })
+        .unwrap_or_else(|| text.trim())
 }
 
 // TODO(anp): Replace `TurnEnvironmentSelection` with `PathUri` once path URIs carry environment

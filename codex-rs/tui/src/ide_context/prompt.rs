@@ -14,10 +14,8 @@ const MAX_OPEN_TABS_CHARS: usize = 20_000;
 // raw prompt before this marker, then transcript rendering strips back to the request after the last
 // marker. Keeping the same marker and stripping semantics lets threads created with IDE context in
 // one surface replay cleanly in the others.
-const PROMPT_REQUEST_BEGIN: &str = "## My request for Elpis:";
-/// The marker this file emitted before the product stopped calling itself Codex.
-/// Threads recorded then still carry it, so stripping keeps recognising it.
-const LEGACY_PROMPT_REQUEST_BEGIN: &str = "## My request for Codex:";
+use codex_protocol::protocol::LEGACY_USER_MESSAGE_BEGIN as LEGACY_PROMPT_REQUEST_BEGIN;
+use codex_protocol::protocol::USER_MESSAGE_BEGIN as PROMPT_REQUEST_BEGIN;
 
 pub(crate) fn apply_ide_context_to_user_input(
     context: &IdeContext,
