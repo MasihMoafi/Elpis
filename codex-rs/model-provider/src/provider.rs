@@ -21,7 +21,6 @@ use codex_models_manager::manager::SharedModelsManager;
 use codex_models_manager::manager::StaticModelsManager;
 use codex_protocol::account::ProviderAccount;
 use codex_protocol::error::CodexErr;
-use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelsResponse;
 
 use crate::amazon_bedrock::AmazonBedrockModelProvider;
@@ -31,6 +30,7 @@ use crate::auth::auth_manager_for_provider;
 use crate::auth::resolve_provider_auth;
 use crate::auth::resolve_provider_auth_for_scope;
 use crate::models_endpoint::OpenAiModelsEndpoint;
+use crate::native_models_endpoint::NativeModelsEndpoint;
 
 /// Optional provider-backed features that Codex may expose at runtime.
 ///
@@ -255,6 +255,18 @@ struct ConfiguredModelProvider {
 }
 
 impl ConfiguredModelProvider {
+    /// The catalog source for this provider: its own published list when Elpis
+    /// can read that provider's schema, otherwise the OpenAI-shaped endpoint.
+    fn models_endpoint(&self) -> Arc<dyn codex_models_manager::manager::ModelsEndpointClient> {
+        match NativeModelsEndpoint::for_provider(&self.info) {
+            Some(endpoint) => Arc::new(endpoint),
+            None => Arc::new(OpenAiModelsEndpoint::new(
+                self.info.clone(),
+                self.auth_manager.clone(),
+            )),
+        }
+    }
+
     fn new(provider_info: ModelProviderInfo, auth_manager: Option<Arc<AuthManager>>) -> Self {
         let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
         Self {
@@ -329,50 +341,17 @@ pub fn openrouter_free_model_catalog() -> ModelsResponse {
     ModelsResponse { models }
 }
 
+/// The catalog used when a provider publishes none that Elpis can read.
+///
+/// Anthropic and Google are deliberately absent: both publish a real list, which
+/// `NativeModelsEndpoint` fetches, so a picker shows the models the account
+/// actually has and the context window the provider itself reports. They used to
+/// be answered here by one invented entry apiece — a single model name and a
+/// context window written into this file — which is where the "1000k" Gemini
+/// window came from. The OpenRouter free auto-router stays because its one entry
+/// genuinely is the whole catalog.
 fn native_model_catalog(info: &ModelProviderInfo) -> Option<ModelsResponse> {
-    if info.base_url.as_deref() == Some(OPENROUTER_BASE_URL) {
-        return Some(openrouter_free_model_catalog());
-    }
-    let model = native_default_model(info)?;
-    let display_name = match info.wire_api {
-        WireApi::AnthropicMessages => "Claude Sonnet 4.6",
-        WireApi::GeminiGenerateContent => "Gemini 3.5 Flash",
-        WireApi::Responses | WireApi::Chat => return None,
-    };
-    let context_window = match info.wire_api {
-        WireApi::AnthropicMessages => 200_000,
-        WireApi::GeminiGenerateContent => 1_000_000,
-        WireApi::Responses | WireApi::Chat => return None,
-    };
-    let model_info: ModelInfo = serde_json::from_value(serde_json::json!({
-        "slug": model,
-        "display_name": display_name,
-        "description": format!("Native {} route", info.name),
-        "default_reasoning_level": null,
-        "supported_reasoning_levels": [],
-        "shell_type": "shell_command",
-        "visibility": "list",
-        "supported_in_api": true,
-        "priority": 0,
-        "availability_nux": null,
-        "upgrade": null,
-        "base_instructions": "",
-        "supports_reasoning_summary_parameter": false,
-        "support_verbosity": false,
-        "default_verbosity": null,
-        "apply_patch_tool_type": null,
-        "truncation_policy": {"mode": "bytes", "limit": 10000},
-        "supports_parallel_tool_calls": true,
-        "supports_image_detail_original": false,
-        "context_window": context_window,
-        "max_context_window": context_window,
-        "experimental_supported_tools": [],
-        "input_modalities": ["text"]
-    }))
-    .expect("native provider model metadata must remain valid");
-    Some(ModelsResponse {
-        models: vec![model_info],
-    })
+    (info.base_url.as_deref() == Some(OPENROUTER_BASE_URL)).then(openrouter_free_model_catalog)
 }
 
 impl ModelProvider for ConfiguredModelProvider {
@@ -479,10 +458,7 @@ impl ModelProvider for ConfiguredModelProvider {
                 model_catalog,
             )),
             None => {
-                let endpoint = Arc::new(OpenAiModelsEndpoint::new(
-                    self.info.clone(),
-                    self.auth_manager.clone(),
-                ));
+                let endpoint = self.models_endpoint();
                 Arc::new(OpenAiModelsManager::new(
                     codex_home,
                     endpoint,
@@ -502,10 +478,7 @@ impl ModelProvider for ConfiguredModelProvider {
                 model_catalog,
             )),
             None => {
-                let endpoint = Arc::new(OpenAiModelsEndpoint::new(
-                    self.info.clone(),
-                    self.auth_manager.clone(),
-                ));
+                let endpoint = self.models_endpoint();
                 Arc::new(OpenAiModelsManager::new_without_cache(
                     endpoint,
                     self.auth_manager.clone(),
@@ -566,24 +539,24 @@ mod tests {
         std::env::temp_dir().join(format!("codex-model-provider-test-{}", std::process::id()))
     }
 
+    /// Anthropic and Google must reach the picker through their own published
+    /// list. Answering them from a built-in catalog is what produced a single
+    /// invented model with an invented context window.
     #[test]
-    fn native_provider_catalogs_feed_the_model_picker() {
-        for (provider, expected_model) in [
-            (
-                ModelProviderInfo::create_anthropic_provider(),
-                ANTHROPIC_DEFAULT_MODEL,
-            ),
-            (
-                ModelProviderInfo::create_google_gemini_provider(),
-                GOOGLE_GEMINI_DEFAULT_MODEL,
-            ),
+    fn anthropic_and_gemini_are_listed_live_rather_than_from_a_built_in_catalog() {
+        for provider in [
+            ModelProviderInfo::create_anthropic_provider(),
+            ModelProviderInfo::create_google_gemini_provider(),
         ] {
-            let catalog = native_model_catalog(&provider).expect("native model catalog");
-            assert_eq!(catalog.models.len(), 1);
-            assert_eq!(catalog.models[0].slug, expected_model);
-            assert_eq!(
-                catalog.models[0].input_modalities,
-                vec![codex_protocol::openai_models::InputModality::Text]
+            assert!(
+                native_model_catalog(&provider).is_none(),
+                "{} must not ship a built-in catalog",
+                provider.name
+            );
+            assert!(
+                NativeModelsEndpoint::for_provider(&provider).is_some(),
+                "{} must have a live catalog endpoint",
+                provider.name
             );
         }
     }

@@ -13,7 +13,6 @@ on:
       - .github/workflows/embedded-elpis-linux.yml
       - .github/workflows/launcher-diagnostics.yml
       - codex-rs/**
-      - docs/**
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
       - scripts/verify-elpis
@@ -29,15 +28,12 @@ on:
       - .github/workflows/embedded-elpis-linux.yml
       - .github/workflows/launcher-diagnostics.yml
       - codex-rs/**
-      - docs/**
       - scripts/install-elpis-binary.sh
       - scripts/install-elpis.sh
       - scripts/verify-elpis
       - tests/verify-elpis/test_verify_elpis.sh
       - tests/install/**
       - tools/verify-elpis/surfaces.toml
-  schedule:
-    - cron: "17 3 * * 1"
 
 permissions:
   contents: write

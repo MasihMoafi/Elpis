@@ -24,6 +24,7 @@ codex-otel = { workspace = true }
 codex-protocol = { workspace = true }
 codex-response-debug-context = { workspace = true }
 http = { workspace = true }
+reqwest = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }
 tracing = { workspace = true, features = ["log"] }
