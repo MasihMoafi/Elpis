@@ -14,6 +14,12 @@ screen. The feature shipped dead in v0.2.0 and in every build since.
 
 ## Why it was not "fixed"
 
+This is not a fresh trade-off: Masih **accepted the opposite fix one day earlier.**
+On 2026-09-16 he tested and accepted "two-finger swipe no longer acts like a double
+Escape", whose cause was recorded as *Elpis holding the mouse for the whole session*.
+Handing the wheel back to the terminal outside overlays is that accepted fix. Making
+ledger clicks work means undoing it and re-breaking two-finger scrolling.
+
 Every X11 mouse mode (`?9`, `?1000`, `?1002`, `?1003`) reports the wheel as well as
 the buttons. Claiming the mouse for the inline chat therefore takes the wheel away
 from the terminal, and the inline chat's history lives in the terminal's own
