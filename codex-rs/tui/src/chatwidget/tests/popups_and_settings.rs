@@ -4154,6 +4154,9 @@ async fn auto_model_advertising_advanced_effort_opens_reasoning_picker() {
         });
     chat.open_model_popup_with_presets(vec![preset]);
 
+    // The picker opens with "Change provider…" above the models when no model is
+    // current, so step onto the model this test is about.
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();

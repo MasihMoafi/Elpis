@@ -15,10 +15,11 @@ expression: popup
      OPENAI                                                                    │
   1. Auto                  Elpis automatically chooses the right model for the │
                            task                                                │
-› 2. All models (current)  Browse this provider's full catalog (current: gpt-  │
+  2. Change provider…      Currently OpenAI                                    │
+› 3. All models (current)  Browse this provider's full catalog (current: gpt-  │
                            5.2)                                                │
      OPENROUTER                                                                │
-  3. openrouter/free       OpenRouter routes each request to a free open-      │
+  4. openrouter/free       OpenRouter routes each request to a free open-      │
                            source model                                        │
 └──────────────────────────────────────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

@@ -1101,6 +1101,19 @@ impl ChatWidget {
         false
     }
 
+    /// The source under the cursor, if the cursor is on a source rather than on
+    /// the Smart Prune switch.
+    pub(super) fn selected_continuity_source(
+        &self,
+    ) -> Option<crate::legacy_core::elpis_context::ContinuitySource> {
+        if self.context_ledger.smart_prune_selected {
+            return None;
+        }
+        self.continuity_sources()
+            .get(self.context_ledger.selected)
+            .cloned()
+    }
+
     pub(crate) fn continuity_sources(
         &self,
     ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {

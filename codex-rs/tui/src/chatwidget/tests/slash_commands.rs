@@ -701,13 +701,19 @@ async fn pruner_model_picker_lists_openrouter_models_with_prices() {
     chat.open_pruner_model_popup();
 
     let rows = chat.model_popup_model_ids.clone();
+    // Every picker opens with the provider step, then the role's own choices.
     assert_eq!(
         rows.first().map(String::as_str),
-        Some("Provider default"),
+        Some("Change provider…"),
         "rows: {rows:?}"
     );
     assert_eq!(
         rows.get(1).map(String::as_str),
+        Some("Provider default"),
+        "rows: {rows:?}"
+    );
+    assert_eq!(
+        rows.get(2).map(String::as_str),
         Some(model.slug.as_str()),
         "the live OpenRouter list belongs above the provider's presets; rows: {rows:?}"
     );

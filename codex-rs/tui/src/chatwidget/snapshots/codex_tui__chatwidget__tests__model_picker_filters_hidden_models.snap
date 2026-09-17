@@ -15,10 +15,11 @@ expression: popup
      OPENAI                                                                    │
      Auto                  Requires this provider to offer GPT-5.6 Luna,       │
                            Terra, and Sol.                                     │
-› 1. All models (current)  Browse this provider's full catalog (current: test- │
+  1. Change provider…      Currently OpenAI                                    │
+› 2. All models (current)  Browse this provider's full catalog (current: test- │
                            visible-model)                                      │
      OPENROUTER                                                                │
-  2. openrouter/free       OpenRouter routes each request to a free open-      │
+  3. openrouter/free       OpenRouter routes each request to a free open-      │
                            source model                                        │
 └──────────────────────────────────────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

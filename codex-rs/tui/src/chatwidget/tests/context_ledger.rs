@@ -1156,6 +1156,17 @@ async fn ledger_groups_real_sources_and_exposes_selected_reason() -> anyhow::Res
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
+    // The reason panel describes the selected row, so step onto the one this
+    // assertion is about instead of relying on where the cursor opens.
+    for _ in 0..16 {
+        if chat
+            .selected_continuity_source()
+            .is_some_and(|source| source.name == "Global AGENTS.md")
+        {
+            break;
+        }
+        chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down));
+    }
     assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char('w'))));
     let rendered = render_ledger(&chat, 80);
 
@@ -1882,9 +1893,23 @@ async fn manual_memory_remove_refreshes_for_custom_memory_dir_source_but_not_dis
 
     chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab));
-    for _ in 1..selectable_count {
+    // The cursor walks the rows in the order the panel draws them, and the Smart
+    // Prune switch shares that ring, so step until the custom source is under it
+    // rather than counting sources.
+    for _ in 0..=selectable_count {
+        if chat
+            .selected_continuity_source()
+            .is_some_and(|source| source.path == custom)
+        {
+            break;
+        }
         chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down));
     }
+    assert!(
+        chat.selected_continuity_source()
+            .is_some_and(|source| source.path == custom),
+        "the custom source should be reachable with the arrow keys"
+    );
     chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Delete));
     assert_eq!(chat.manual_memory_phase(), ManualMemoryPhase::Loading);
     assert!(matches!(
