@@ -114,6 +114,19 @@ pub(super) async fn cancel_login_attempt(
         .await;
 }
 
+/// Renders a key as dots, keeping the last four characters when the key is long
+/// enough that those four do not give it away.
+fn mask_api_key(value: &str) -> String {
+    let visible = 4;
+    let count = value.chars().count();
+    if count <= visible * 2 {
+        return "•".repeat(count);
+    }
+    let masked = "•".repeat(count - visible);
+    let tail: String = value.chars().skip(count - visible).collect();
+    format!("{masked}{tail}")
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct ApiKeyInputState {
     value: String,
@@ -392,7 +405,7 @@ impl AuthModeWidget {
         let mut lines: Vec<Line> = vec![
             Line::from(vec![
                 "  ".into(),
-                "Sign in with ChatGPT to use Codex as part of your paid plan".into(),
+                "Sign in with ChatGPT to use Elpis as part of your paid plan".into(),
             ]),
             Line::from(vec![
                 "  ".into(),
@@ -553,7 +566,7 @@ impl AuthModeWidget {
             "".into(),
             "  Before you start:".into(),
             "".into(),
-            "  Decide how much autonomy you want to grant Codex".into(),
+            "  Decide how much autonomy you want to grant Elpis".into(),
             Line::from(vec![
                 "  For more details see the ".into(),
                 crate::terminal_hyperlinks::osc8_hyperlink(
@@ -564,7 +577,7 @@ impl AuthModeWidget {
             ])
             .dim(),
             "".into(),
-            "  Codex can make mistakes".into(),
+            "  Elpis can make mistakes".into(),
             "  Review the code it writes and commands it runs"
                 .dim()
                 .into(),
@@ -608,7 +621,7 @@ impl AuthModeWidget {
         let lines = vec![
             "✓ API key configured".fg(Color::Green).into(),
             "".into(),
-            "  Codex will use usage-based billing with your API key.".into(),
+            "  Elpis will use usage-based billing with your API key.".into(),
         ];
 
         Paragraph::new(lines)
@@ -646,10 +659,13 @@ impl AuthModeWidget {
             .wrap(Wrap { trim: false })
             .render(intro_area, buf);
 
+        // A key is a secret on a screen that is often shared or recorded, so it
+        // is masked as it is typed. The last four characters stay readable so a
+        // paste can be told apart from the wrong one.
         let content_line: Line = if state.value.is_empty() {
             vec!["Paste or type your API key".dim()].into()
         } else {
-            Line::from(state.value.clone())
+            Line::from(mask_api_key(&state.value))
         };
         Paragraph::new(content_line)
             .wrap(Wrap { trim: false })
@@ -1019,6 +1035,17 @@ pub(super) fn maybe_open_auth_url_in_browser(request_handle: &AppServerRequestHa
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_typed_api_key_is_never_shown_in_full() {
+        let key = "sk-proj-1234567890abcdef";
+        let masked = super::mask_api_key(key);
+        assert!(!masked.contains("sk-proj"));
+        assert!(masked.ends_with("cdef"));
+        assert_eq!(masked.chars().count(), key.chars().count());
+        // A short value gives nothing away at all.
+        assert_eq!(super::mask_api_key("abcd"), "••••");
+    }
+
     use super::*;
     use crate::legacy_core::config::ConfigBuilder;
     use codex_app_server_client::AppServerRequestHandle;
