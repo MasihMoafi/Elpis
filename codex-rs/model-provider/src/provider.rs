@@ -13,7 +13,6 @@ use codex_login::CodexAuth;
 use codex_model_provider_info::ANTHROPIC_DEFAULT_MODEL;
 use codex_model_provider_info::GOOGLE_GEMINI_DEFAULT_MODEL;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::OPENROUTER_BASE_URL;
 use codex_model_provider_info::OPENROUTER_FREE_MODEL_GROUP;
 use codex_model_provider_info::WireApi;
 use codex_models_manager::manager::OpenAiModelsManager;
@@ -341,19 +340,6 @@ pub fn openrouter_free_model_catalog() -> ModelsResponse {
     ModelsResponse { models }
 }
 
-/// The catalog used when a provider publishes none that Elpis can read.
-///
-/// Anthropic and Google are deliberately absent: both publish a real list, which
-/// `NativeModelsEndpoint` fetches, so a picker shows the models the account
-/// actually has and the context window the provider itself reports. They used to
-/// be answered here by one invented entry apiece — a single model name and a
-/// context window written into this file — which is where the "1000k" Gemini
-/// window came from. The OpenRouter free auto-router stays because its one entry
-/// genuinely is the whole catalog.
-fn native_model_catalog(info: &ModelProviderInfo) -> Option<ModelsResponse> {
-    (info.base_url.as_deref() == Some(OPENROUTER_BASE_URL)).then(openrouter_free_model_catalog)
-}
-
 impl ModelProvider for ConfiguredModelProvider {
     fn info(&self) -> &ModelProviderInfo {
         &self.info
@@ -447,12 +433,17 @@ impl ModelProvider for ConfiguredModelProvider {
         })
     }
 
+    /// No built-in catalog backs this: every provider Elpis ships publishes a
+    /// list, so only an explicitly configured catalog can pre-empt the fetch.
+    /// OpenRouter used to be answered from `openrouter_free_model_catalog`
+    /// here, which meant its picker showed one auto-router row while the
+    /// account's real models went unlisted.
     fn models_manager(
         &self,
         codex_home: PathBuf,
         config_model_catalog: Option<ModelsResponse>,
     ) -> SharedModelsManager {
-        match config_model_catalog.or_else(|| native_model_catalog(&self.info)) {
+        match config_model_catalog {
             Some(model_catalog) => Arc::new(StaticModelsManager::new(
                 self.auth_manager.clone(),
                 model_catalog,
@@ -472,7 +463,7 @@ impl ModelProvider for ConfiguredModelProvider {
         &self,
         config_model_catalog: Option<ModelsResponse>,
     ) -> SharedModelsManager {
-        match config_model_catalog.or_else(|| native_model_catalog(&self.info)) {
+        match config_model_catalog {
             Some(model_catalog) => Arc::new(StaticModelsManager::new(
                 self.auth_manager.clone(),
                 model_catalog,
@@ -539,26 +530,48 @@ mod tests {
         std::env::temp_dir().join(format!("codex-model-provider-test-{}", std::process::id()))
     }
 
-    /// Anthropic and Google must reach the picker through their own published
-    /// list. Answering them from a built-in catalog is what produced a single
-    /// invented model with an invented context window.
+    /// Every bundled third-party provider must reach the picker through its own
+    /// published list. Answering them from a built-in catalog is what produced a
+    /// single invented model with an invented context window.
     #[test]
-    fn anthropic_and_gemini_are_listed_live_rather_than_from_a_built_in_catalog() {
-        for provider in [
-            ModelProviderInfo::create_anthropic_provider(),
-            ModelProviderInfo::create_google_gemini_provider(),
+    fn bundled_providers_are_listed_live_rather_than_from_a_built_in_catalog() {
+        let built_in = codex_model_provider_info::built_in_model_providers(None);
+        for provider_id in [
+            codex_model_provider_info::ANTHROPIC_PROVIDER_ID,
+            codex_model_provider_info::GOOGLE_GEMINI_PROVIDER_ID,
+            codex_model_provider_info::OPENROUTER_PROVIDER_ID,
+            codex_model_provider_info::DEEPSEEK_PROVIDER_ID,
+            codex_model_provider_info::GROQ_PROVIDER_ID,
+            codex_model_provider_info::MISTRAL_PROVIDER_ID,
+            codex_model_provider_info::XAI_PROVIDER_ID,
+            codex_model_provider_info::CEREBRAS_PROVIDER_ID,
+            codex_model_provider_info::TOGETHER_PROVIDER_ID,
+            codex_model_provider_info::FIREWORKS_PROVIDER_ID,
+            codex_model_provider_info::MOONSHOT_PROVIDER_ID,
+            codex_model_provider_info::NVIDIA_PROVIDER_ID,
+            codex_model_provider_info::PERPLEXITY_PROVIDER_ID,
+            codex_model_provider_info::ZAI_PROVIDER_ID,
         ] {
+            let provider = built_in
+                .get(provider_id)
+                .unwrap_or_else(|| panic!("{provider_id} must be a built-in provider"));
             assert!(
-                native_model_catalog(&provider).is_none(),
-                "{} must not ship a built-in catalog",
-                provider.name
-            );
-            assert!(
-                NativeModelsEndpoint::for_provider(&provider).is_some(),
-                "{} must have a live catalog endpoint",
-                provider.name
+                NativeModelsEndpoint::for_provider(provider).is_some(),
+                "{provider_id} must have a live catalog endpoint"
             );
         }
+    }
+
+    /// A provider is listed live only when Elpis knows how to read its schema;
+    /// the Responses providers stay on the Codex-shaped endpoint.
+    #[test]
+    fn a_responses_provider_has_no_native_catalog_endpoint() {
+        let info = ModelProviderInfo {
+            base_url: Some("https://api.openai.com/v1".to_string()),
+            wire_api: WireApi::Responses,
+            ..Default::default()
+        };
+        assert!(NativeModelsEndpoint::for_provider(&info).is_none());
     }
 
     fn provider_for(base_url: String) -> ModelProviderInfo {
@@ -989,26 +1002,5 @@ mod tests {
             assert_eq!(model.visibility, ModelVisibility::List);
             assert!(model.context_window.unwrap_or(0) > 0);
         }
-    }
-
-    #[test]
-    fn native_model_catalog_uses_openrouter_free_group_for_openrouter_base_url() {
-        let info = ModelProviderInfo {
-            base_url: Some(OPENROUTER_BASE_URL.to_string()),
-            wire_api: WireApi::Responses,
-            ..Default::default()
-        };
-        let catalog = native_model_catalog(&info).expect("openrouter catalog");
-        assert_eq!(catalog.models.len(), OPENROUTER_FREE_MODEL_GROUP.len());
-    }
-
-    #[test]
-    fn native_model_catalog_is_none_for_plain_responses_provider() {
-        let info = ModelProviderInfo {
-            base_url: Some("https://api.openai.com/v1".to_string()),
-            wire_api: WireApi::Responses,
-            ..Default::default()
-        };
-        assert!(native_model_catalog(&info).is_none());
     }
 }
