@@ -50,3 +50,19 @@ fact; retention and correction controls remain required.
 Should global preferences require an explicit cross-project request, while
 project lessons continue saving automatically? If global promotion must remain
 automatic, this proposal is insufficient and must be revised before implementation.
+
+## September 17, 2026 update
+
+Resolved by Masih: one global `MEMORY.md`, and its *contents* are global too. No
+per-project memory file, and no project facts inside the global one — a project
+already carries `AGENTS.md`, `VISION.md`, `ES.md` and its own docs, so a project
+bullet in memory is duplication. The consolidation prompt now says durable memory
+is knowledge that outlives the workspace (preferences, standing agreements,
+cross-project lessons), forbids project-name-prefixed bullets, and tells the saver
+to delete existing bullets that break the rule.
+
+Why this came up: every line of the live `MEMORY.md` had grown an `Elpis …` prefix
+and most of it was verification status for this repo. The prompt caused it — it
+asked for "stable project facts" and told the model to qualify each fact with its
+project. The file was reduced to five global preferences on the same day; the
+previous contents are kept at `memories/MEMORY.md.pre-cleanup-20260917`.

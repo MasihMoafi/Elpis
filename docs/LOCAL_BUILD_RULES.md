@@ -68,6 +68,14 @@ the `release` profile with no feature suffix is needed: Elpis enables just v8's 
 
 ## 3. Throttle every local Rust build and test
 
+**The ceiling is a temperature, not a job count: this CPU must never pass 80 C.**
+Above that the build is killed, and the machine idles around 64 C, so the headroom
+is small. `scripts/build-elpis-local` enforces it (`ELPIS_MAX_TEMP_C`, default and
+maximum 80, pausing and resuming the compiler as the package sensor crosses the
+threshold) — prefer it to a bare `cargo` command. Measured on 2026-09-17: `-j 6`
+without `nice` reached 85 C and the build was killed mid-run; two jobs under the
+guard peaked at 66-67 C and finished a warm incremental build in under a minute.
+
 Never let Cargo use the workstation's default all-core parallelism. Unless Masih
 explicitly changes the limit, every local Rust verification command must inherit:
 
