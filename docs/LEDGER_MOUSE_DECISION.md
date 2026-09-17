@@ -28,8 +28,10 @@ scrollback and text selection for a row toggle is a bad trade.
 
 ## What to do instead
 
-The ledger is fully keyboard-driven and always has been: `Tab` focuses it, arrows
-or `j`/`k` move, `Space` or `Enter` toggles admission, `Esc` leaves. The footer hint
+The ledger is keyboard-driven: `Tab` focuses it, arrows or `j`/`k` move, `Space`
+or `Enter` toggles, `Esc` closes. One row was not: the Smart Prune switch was
+reachable only by an undocumented `p` or by a click, so removing the mouse left
+it unreachable. It is now the first stop on the same cursor, above the sources. The footer hint
 already advertises `Tab controls`. Ctrl+click on a row still opens the file, because
 that is the terminal following an OSC 8 hyperlink, not Elpis reading a click.
 
