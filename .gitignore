@@ -84,6 +84,8 @@ src/fix_cuda.sh
 # Reviewed public September 2026 captures and generated technical-page media.
 !docs/assets/*-20260909.png
 !docs/assets/elpis-motion-20260909.gif
+!docs/assets/elpis-context-motion-20260909.gif
+!docs/assets/elpis-scroll-demo.gif
 !docs/assets/elpis-motion-20260909.mp4
 !website/assets/technical/*.png
 !website/assets/technical/*.webp
