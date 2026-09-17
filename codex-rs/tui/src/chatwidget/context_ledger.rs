@@ -217,6 +217,12 @@ impl ChatWidget {
             {
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
+                // Start at the top row on screen rather than wherever the
+                // underlying source order happens to begin.
+                self.context_ledger.smart_prune_selected = false;
+                if let Some(first) = self.selectable_context_source_indexes().first() {
+                    self.context_ledger.selected = *first;
+                }
             } else {
                 self.context_ledger.visible = false;
                 self.context_ledger.focused = false;
@@ -274,11 +280,7 @@ impl ChatWidget {
         }
 
         let sources = self.continuity_sources();
-        let selectable = sources
-            .iter()
-            .enumerate()
-            .filter_map(|(index, source)| source.selectable.then_some(index))
-            .collect::<Vec<_>>();
+        let selectable = self.selectable_context_source_indexes();
         if selectable.is_empty() {
             if matches!(key_event.code, KeyCode::Esc) {
                 self.close_context_ledger();
@@ -1393,11 +1395,25 @@ impl ChatWidget {
             .collect()
     }
 
+    /// Selectable rows in the order the panel draws them.
+    ///
+    /// The panel groups sources under category headers, so walking
+    /// `continuity_sources()` in its own order moves the cursor somewhere other
+    /// than the next row on screen — which put the Smart Prune switch in the
+    /// middle of the run instead of at the top where it is drawn.
     fn selectable_context_source_indexes(&self) -> Vec<usize> {
-        self.continuity_sources()
+        let sources = self.continuity_sources();
+        LedgerSourceGroup::ALL
             .iter()
-            .enumerate()
-            .filter_map(|(index, source)| source.selectable.then_some(index))
+            .flat_map(|group| {
+                sources
+                    .iter()
+                    .enumerate()
+                    .filter(move |(_, source)| {
+                        source.selectable && LedgerSourceGroup::for_source(source) == *group
+                    })
+                    .map(|(index, _)| index)
+            })
             .collect()
     }
 
