@@ -29,12 +29,144 @@ const OPENROUTER_TOP_TIER_FAMILIES: &[&str] = &[
     "mistralai/",
     "meta-llama/",
 ];
+/// Which model a picker is choosing. Each role keeps its own provider, so the
+/// provider step has to know which one it is stepping into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModelPickerRole {
+    /// The model that answers the user.
+    Chat,
+    /// The model that saves memory, names sessions and prunes when the pruner
+    /// has no model of its own.
+    Memory,
+    /// The model that prunes tool output.
+    Pruner,
+}
+
+pub(super) const PROVIDER_SELECTION_VIEW_ID: &str = "provider-selection";
 pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
 pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
 pub(super) const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 pub(super) const BACKGROUND_MODEL_SELECTION_VIEW_ID: &str = "memory-model-selection";
 
 impl ChatWidget {
+    /// Every configured provider, so a model can be chosen from any of them
+    /// rather than only from the one the session already points at.
+    pub(crate) fn open_model_provider_popup(&mut self, role: ModelPickerRole) {
+        let active = match role {
+            ModelPickerRole::Chat | ModelPickerRole::Pruner => {
+                self.active_model_provider_id().to_string()
+            }
+            ModelPickerRole::Memory => self.background_provider_id().to_string(),
+        };
+        let mut providers: Vec<(String, String, Option<String>)> = self
+            .config
+            .model_providers
+            .iter()
+            .map(|(id, info)| (id.clone(), info.name.clone(), info.env_key.clone()))
+            .collect();
+        providers.sort_by(|left, right| left.1.to_lowercase().cmp(&right.1.to_lowercase()));
+
+        let items: Vec<SelectionItem> = providers
+            .into_iter()
+            .map(|(id, name, env_key)| {
+                let is_current = id == active;
+                // Say whether this provider can answer at all, so an empty model
+                // list later is explained before it happens rather than after.
+                let description = Some(match env_key.as_deref() {
+                    None => "no key needed".to_string(),
+                    Some(env_key) => {
+                        let has_key = self
+                            .config
+                            .model_providers
+                            .get(&id)
+                            .and_then(|info| info.api_key().ok().flatten())
+                            .is_some_and(|key| !key.trim().is_empty());
+                        if has_key {
+                            format!("key set · {env_key}")
+                        } else {
+                            format!("no key · set {env_key}, or add one in /dashboard")
+                        }
+                    }
+                });
+                let provider_for_action = id.clone();
+                SelectionItem {
+                    name,
+                    description,
+                    is_current,
+                    actions: vec![Box::new(move |tx| {
+                        tx.send(AppEvent::BrowseModelProvider {
+                            role,
+                            provider_id: provider_for_action.clone(),
+                        });
+                    })],
+                    dismiss_on_select: true,
+                    ..Default::default()
+                }
+            })
+            .collect();
+
+        let initial_selected_idx = items.iter().position(|item| item.is_current);
+        self.show_model_selection_view(SelectionViewParams {
+            view_id: Some(PROVIDER_SELECTION_VIEW_ID),
+            initial_selected_idx,
+            title: Some("Choose a provider".into()),
+            subtitle: Some(
+                "The next step lists that provider's own models; nothing is saved until you pick one"
+                    .to_string(),
+            ),
+            items,
+            is_searchable: true,
+            search_placeholder: Some("Search providers".into()),
+            footer_hint: Some(standard_popup_hint_line()),
+            ..Default::default()
+        });
+    }
+
+    /// Point the open picker at another provider and list its models. Nothing is
+    /// written until a model is chosen.
+    pub(crate) fn browse_model_provider(&mut self, role: ModelPickerRole, provider_id: String) {
+        self.browsing_provider = Some(provider_id.clone());
+        self.request_model_catalog(Some(provider_id));
+        match role {
+            ModelPickerRole::Chat => self.open_model_popup(),
+            ModelPickerRole::Memory => self.refresh_background_model_popup(),
+            ModelPickerRole::Pruner => self.refresh_pruner_model_popup(),
+        }
+    }
+
+    /// The provider a picker should list: the one being browsed, else the role's own.
+    pub(super) fn picker_provider_id(&self, role: ModelPickerRole) -> String {
+        if let Some(provider) = self.browsing_provider.as_ref() {
+            return provider.clone();
+        }
+        match role {
+            ModelPickerRole::Chat | ModelPickerRole::Pruner => {
+                self.active_model_provider_id().to_string()
+            }
+            ModelPickerRole::Memory => self.background_provider_id().to_string(),
+        }
+    }
+
+    /// The row that opens the provider step, shown at the top of every picker.
+    pub(super) fn change_provider_item(&self, role: ModelPickerRole) -> SelectionItem {
+        SelectionItem {
+            name: "Change provider…".to_string(),
+            description: Some(format!(
+                "Currently {}",
+                self.config
+                    .model_providers
+                    .get(&self.picker_provider_id(role))
+                    .map(|info| info.name.clone())
+                    .unwrap_or_else(|| self.picker_provider_id(role))
+            )),
+            actions: vec![Box::new(move |tx| {
+                tx.send(AppEvent::OpenModelProviderPopup { role });
+            })],
+            dismiss_on_select: true,
+            ..Default::default()
+        }
+    }
+
     pub(crate) fn open_pruner_model_popup(&mut self) {
         self.request_model_catalog(Some(self.active_model_provider_id().to_string()));
         self.refresh_openrouter_models();
@@ -122,7 +254,7 @@ impl ChatWidget {
 
     pub(super) fn refresh_background_model_popup(&mut self) {
         let current = self.config.background_model.clone();
-        let provider_id = self.background_provider_id().to_string();
+        let provider_id = self.picker_provider_id(ModelPickerRole::Memory);
         // Each choice carries the provider that serves it, so picking a model
         // moves the provider with it instead of leaving a model the background
         // provider cannot serve.
@@ -214,6 +346,8 @@ impl ChatWidget {
                 }
             })
             .collect();
+        let mut items = items;
+        items.insert(0, self.change_provider_item(ModelPickerRole::Memory));
         let initial_selected_idx = items.iter().position(|item| item.is_current);
         self.show_model_selection_view(SelectionViewParams {
             view_id: Some(BACKGROUND_MODEL_SELECTION_VIEW_ID),
@@ -241,7 +375,7 @@ impl ChatWidget {
                 return;
             }
         };
-        let provider_id = self.active_model_provider_id().to_string();
+        let provider_id = self.picker_provider_id(ModelPickerRole::Pruner);
         // Each choice carries the provider that serves it, so picking a model
         // moves the provider with it instead of leaving the pruner pointed at a
         // model its provider cannot serve.
@@ -331,6 +465,8 @@ impl ChatWidget {
                 }
             })
             .collect();
+        let mut items = items;
+        items.insert(0, self.change_provider_item(ModelPickerRole::Pruner));
         let initial_selected_idx = items.iter().position(|item| item.is_current);
         self.show_model_selection_view(SelectionViewParams {
             view_id: Some(PRUNER_MODEL_SELECTION_VIEW_ID),
@@ -878,6 +1014,7 @@ impl ChatWidget {
         self.push_ollama_model_group(&mut items);
         items.insert(0, self.model_provider_group_item());
         items.insert(1, auto_routing_item);
+        items.insert(2, self.change_provider_item(ModelPickerRole::Chat));
 
         let header = self.model_menu_header(
             "Choose a mind",

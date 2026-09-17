@@ -289,12 +289,17 @@ impl ChatWidget {
                 self.show_rename_prompt();
             }
             SlashCommand::PrunerModel => {
+                // A fresh command starts from the role's own provider, not from
+                // whichever one the last picker wandered into.
+                self.browsing_provider = None;
                 self.open_pruner_model_popup();
             }
             SlashCommand::MemoryModel => {
+                self.browsing_provider = None;
                 self.open_background_model_popup();
             }
             SlashCommand::Model => {
+                self.browsing_provider = None;
                 self.open_model_popup();
                 self.defer_input_until_settings_applied();
             }

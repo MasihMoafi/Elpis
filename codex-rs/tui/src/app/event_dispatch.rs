@@ -1268,6 +1268,12 @@ impl App {
             AppEvent::OpenRouterModelsLoaded { models } => {
                 self.chat_widget.on_openrouter_models_loaded(models);
             }
+            AppEvent::OpenModelProviderPopup { role } => {
+                self.chat_widget.open_model_provider_popup(role);
+            }
+            AppEvent::BrowseModelProvider { role, provider_id } => {
+                self.chat_widget.browse_model_provider(role, provider_id);
+            }
             AppEvent::FetchModels {
                 request_id,
                 provider_id,

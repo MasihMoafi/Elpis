@@ -800,6 +800,17 @@ pub(crate) enum AppEvent {
         effort: Option<ReasoningEffort>,
     },
 
+    /// Show every configured provider so one can be browsed for the given role.
+    OpenModelProviderPopup {
+        role: crate::chatwidget::model_popups::ModelPickerRole,
+    },
+
+    /// Browse one provider's models for the given role without committing to it.
+    BrowseModelProvider {
+        role: crate::chatwidget::model_popups::ModelPickerRole,
+        provider_id: String,
+    },
+
     /// Fetch the latest picker catalog for one configured provider.
     FetchModels {
         request_id: uuid::Uuid,

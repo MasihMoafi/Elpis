@@ -580,6 +580,10 @@ pub(crate) struct ChatWidget {
     ollama_local_models: Vec<String>,
     /// OpenRouter's live catalogue with prices, empty until fetched.
     openrouter_models: Vec<crate::chatwidget::model_popups::OpenRouterModel>,
+    /// The provider an open picker is browsing when the user stepped into one
+    /// that is not yet the role's configured provider. Choosing a model commits
+    /// it; closing the picker without choosing leaves the configuration alone.
+    browsing_provider: Option<String>,
     session_telemetry: SessionTelemetry,
     session_header: SessionHeader,
     initial_user_message: Option<UserMessage>,

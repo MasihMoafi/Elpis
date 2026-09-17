@@ -117,6 +117,7 @@ impl ChatWidget {
             model_popup_model_ids: Vec::new(),
             ollama_local_models: Vec::new(),
             openrouter_models: Vec::new(),
+            browsing_provider: None,
             session_telemetry,
             session_header: SessionHeader::new(header_model),
             initial_user_message,
