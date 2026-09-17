@@ -35,6 +35,7 @@
       <button class="tab" id="tab-context" type="button" role="tab" aria-selected="false" aria-controls="panel-context" tabindex="-1" data-tab="context">Context</button>
       <button class="tab" id="tab-tokens" type="button" role="tab" aria-selected="false" aria-controls="panel-tokens" tabindex="-1" data-tab="tokens">Tokens</button>
       <button class="tab" id="tab-smart-prune" type="button" role="tab" aria-selected="false" aria-controls="panel-smart-prune" tabindex="-1" data-tab="smart-prune">Smart Prune <span class="badge badge-warning badge-xs">Experimental</span></button>
+      <button class="tab" id="tab-providers" type="button" role="tab" aria-selected="false" aria-controls="panel-providers" tabindex="-1" data-tab="providers">Providers</button>
     </nav>
 
     <section class="dashboard-panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0">
@@ -90,6 +91,21 @@
         <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">OVERHEAD</p><h3>Optimizer usage</h3></div><span class="badge badge-ghost" id="optimizer-coverage">Usage unavailable</span></div><div class="token-table optimizer-table"><div><span>Requests</span><strong id="optimizer-requests">Unavailable</strong></div><div><span>Input</span><strong id="optimizer-input">Unavailable</strong></div><div><span>Cached input</span><strong id="optimizer-cached">Unavailable</strong></div><div><span>Cache write</span><strong id="optimizer-cache-write">Unavailable</strong></div><div><span>Output</span><strong id="optimizer-output">Unavailable</strong></div><div><span>Reasoning</span><strong id="optimizer-reasoning">Unavailable</strong></div><div class="token-total"><span>Total</span><strong id="optimizer-total">Unavailable</strong></div></div></div></article>
         <article class="card surface-card latest-admission-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">ADMISSION</p><h3>Latest compact result</h3></div><span class="badge badge-ghost">LOCAL LINKAGE</span></div><p class="empty-state" id="smart-latest-empty">No admission observed in this dashboard state.</p><div class="admission-layout" id="smart-latest" hidden><dl class="evidence-list"><div><dt>Admitted / examined</dt><dd id="latest-outputs">Unavailable</dd></div><div><dt>Approx. source</dt><dd id="latest-source">Unavailable</dd></div><div><dt>Approx. admitted</dt><dd id="latest-admitted">Unavailable</dd></div><div><dt>Approx. saved</dt><dd id="latest-saved">Unavailable</dd></div><div><dt>Request linkage</dt><dd id="latest-request-link">Unavailable</dd></div><div><dt>Response linkage</dt><dd id="latest-response-link">Unavailable</dd></div></dl><dl class="evidence-list"><div><dt>Response input</dt><dd id="response-input">Unavailable</dd></div><div><dt>Cached input</dt><dd id="response-cached">Unavailable</dd></div><div><dt>Cache write</dt><dd id="response-cache-write">Unavailable</dd></div><div><dt>Output</dt><dd id="response-output">Unavailable</dd></div><div><dt>Reasoning</dt><dd id="response-reasoning">Unavailable</dd></div><div><dt>Total</dt><dd id="response-total">Unavailable</dd></div></dl></div></div></article>
       </div>
+    </section>
+
+    <section class="dashboard-panel" id="panel-providers" role="tabpanel" aria-labelledby="tab-providers" tabindex="0" hidden>
+      <header class="panel-heading"><div><p class="section-kicker">PROVIDER KEYS</p><h2>Paste a key here instead of exporting it</h2></div><p>Saved for this Elpis home in an owner-only file and applied to the next request. A key saved here takes precedence over the environment variable. Only a masked value is ever shown; a saved key is never sent back to this page.</p></header>
+      <article class="card surface-card"><div class="card-body compact-card-body">
+        <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th scope="col">Provider</th><th scope="col">Environment variable</th><th scope="col">Key</th><th scope="col">Source</th></tr></thead><tbody id="provider-key-rows"><tr><td colspan="4">Open a fresh /dashboard link from Elpis to manage provider keys.</td></tr></tbody></table></div>
+        <fieldset class="fieldset" id="provider-key-fields" disabled>
+          <label class="label" for="provider-key-select">Provider</label>
+          <select class="select w-full" id="provider-key-select"></select>
+          <label class="label" for="provider-key-value">API key</label>
+          <input class="input w-full" id="provider-key-value" type="password" maxlength="8192" autocomplete="off" spellcheck="false">
+          <div class="flex flex-wrap gap-3"><button class="btn" id="provider-key-save" type="button">Save key</button><button class="btn btn-ghost" id="provider-key-clear" type="button">Clear stored key</button><button class="btn btn-ghost" id="provider-key-reload" type="button">Reload</button></div>
+        </fieldset>
+        <p id="provider-key-feedback" role="status" aria-live="polite">Open a fresh /dashboard link to enter provider keys.</p>
+      </div></article>
     </section>
   </main>
   <footer class="dashboard-footer"><span id="state-meta">No valid state received</span><span>Local-only · optimizer settings editable · private evidence requires this session link</span></footer>

@@ -1095,6 +1095,7 @@ pub async fn run_main(
     }
     remove_legacy_tui_log_file(config.codex_home.as_path());
     dashboard_server::configure_pruner_home(&config.codex_home);
+    dashboard_server::configure_provider_keys(&config.codex_home, &config.model_providers);
 
     let otel_originator = originator().value;
     let otel = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

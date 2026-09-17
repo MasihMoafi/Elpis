@@ -572,6 +572,90 @@ function restoreDefaultPrunerPrompt() {
   }
 }
 
+const KEY_SOURCES = Object.freeze({
+  elpis: 'Stored in Elpis',
+  environment: 'Environment variable',
+  none: 'Not set'
+});
+
+function providerKeysUrl() {
+  const token = new URLSearchParams(location.hash.slice(1)).get('evidence');
+  return /^[a-f0-9]{32}$/.test(token || '') ? `/provider-keys/${token}` : null;
+}
+
+function text(value) {
+  return typeof value === 'string' ? value : 'Unavailable';
+}
+
+function renderProviderKeys(rows) {
+  const table = byId('provider-key-rows');
+  const select = byId('provider-key-select');
+  const chosen = select.value;
+  table.replaceChildren();
+  select.replaceChildren();
+  for (const row of rows) {
+    const line = makeNode('tr');
+    line.append(
+      makeNode('td', 'source-name', text(row.name)),
+      makeNode('td', '', text(row.env_var)),
+      makeNode('td', '', typeof row.masked === 'string' ? row.masked : '—'),
+      makeNode('td', '', KEY_SOURCES[row.source] || 'Unavailable')
+    );
+    table.append(line);
+    const option = makeNode('option', '', text(row.name));
+    option.value = text(row.id);
+    select.append(option);
+  }
+  if (!rows.length) {
+    const empty = makeNode('tr');
+    const cell = makeNode('td', '', 'No provider in this configuration reads an API key.');
+    cell.colSpan = 4;
+    empty.append(cell);
+    table.append(empty);
+  }
+  if (chosen) select.value = chosen;
+}
+
+async function loadProviderKeys() {
+  const url = providerKeysUrl();
+  if (!url) return;
+  try {
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    if (!isObject(payload) || !Array.isArray(payload.providers)) throw new Error('Invalid provider list');
+    const rows = payload.providers.filter(isObject);
+    renderProviderKeys(rows);
+    byId('provider-key-fields').disabled = rows.length === 0;
+    setText('provider-key-feedback', rows.length ? 'A saved key applies to the next request. Elpis shows it masked and never sends it back here.' : 'No provider in this configuration reads an API key.');
+  } catch (error) {
+    setText('provider-key-feedback', `Provider keys unavailable: ${error.message}`);
+  }
+}
+
+async function submitProviderKey(apiKey) {
+  const url = providerKeysUrl();
+  if (!url) return;
+  const provider = byId('provider-key-select').value;
+  if (!provider) return;
+  byId('provider-key-fields').disabled = true;
+  try {
+    const response = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, api_key: apiKey })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    renderProviderKeys(isObject(payload) && Array.isArray(payload.providers) ? payload.providers.filter(isObject) : []);
+    byId('provider-key-value').value = '';
+    setText('provider-key-feedback', apiKey === null ? 'Stored key cleared. The environment variable applies again if it is set.' : 'Saved. It applies to the next request.');
+  } catch (error) {
+    setText('provider-key-feedback', `Not saved: ${error.message}`);
+  } finally {
+    byId('provider-key-fields').disabled = false;
+  }
+}
+
 async function poll(force = false) {
   if (inFlight || (paused && !force)) return;
   inFlight = true;
@@ -651,6 +735,14 @@ byId('pruner-save').addEventListener('click', () => void savePrunerSettings());
 byId('pruner-reload').addEventListener('click', () => void loadPrunerSettings());
 byId('pruner-reset').addEventListener('click', restoreDefaultPrunerPrompt);
 void loadPrunerSettings();
+byId('provider-key-save').addEventListener('click', () => {
+  const value = byId('provider-key-value').value.trim();
+  if (!value) { setText('provider-key-feedback', 'Paste a key before saving.'); return; }
+  void submitProviderKey(value);
+});
+byId('provider-key-clear').addEventListener('click', () => void submitProviderKey(null));
+byId('provider-key-reload').addEventListener('click', () => void loadProviderKeys());
+void loadProviderKeys();
 byId('poll-toggle').addEventListener('click', () => setPaused(!paused));
 byId('refresh-now').addEventListener('click', () => { void poll(true); });
 setInterval(tickClocks, 1_000);

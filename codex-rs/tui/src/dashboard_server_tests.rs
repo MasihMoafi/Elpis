@@ -5,9 +5,11 @@ use crate::activity_state::DashboardActivityState;
 use crate::activity_state::DashboardActivityStatus;
 use codex_app_server_protocol::TurnCostAvailability;
 use codex_app_server_protocol::TurnCostState;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::TurnProfileSummary;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
+use std::collections::HashMap;
 use tiny_http::Header;
 use tiny_http::Method;
 use tiny_http::Request;
@@ -1186,4 +1188,290 @@ fn evidence_http_route_opens_only_registered_reports() {
     }
     assert!(!get("/data.json", &host, "").contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
     assert!(!get("/", &host, "").contains(url.path().split('/').nth(2).unwrap()));
+}
+
+const PROVIDER_KEY: &str = "sk-test-ABCDEFGHIJKLMNOP0123456789";
+const SAVE_KEY_BODY: &str =
+    r#"{"provider":"test-provider","api_key":"sk-test-ABCDEFGHIJKLMNOP0123456789"}"#;
+const CLEAR_KEY_BODY: &str = r#"{"provider":"test-provider","api_key":null}"#;
+
+/// A provider that exists only for these tests, so applying a key never touches
+/// the override a real provider reads.
+fn keyed_provider(env_key: &str) -> HashMap<String, ModelProviderInfo> {
+    HashMap::from([(
+        "test-provider".to_string(),
+        ModelProviderInfo {
+            name: "Test Provider".to_string(),
+            env_key: Some(env_key.to_string()),
+            ..Default::default()
+        },
+    )])
+}
+
+fn session_token() -> String {
+    evidence::dashboard_fragment()
+        .trim_start_matches("#evidence=")
+        .to_string()
+}
+
+fn key_request(token: &str, method: Method, origin: &str, body: &'static str) -> Request {
+    let mut request = TestRequest::new()
+        .with_method(method)
+        .with_path(&format!("/provider-keys/{token}"))
+        .with_header(
+            format!("Host: 127.0.0.1:{PORT}")
+                .parse::<Header>()
+                .expect("valid host header"),
+        );
+    if !origin.is_empty() {
+        request = request.with_header(
+            format!("Origin: {origin}")
+                .parse::<Header>()
+                .expect("valid origin header"),
+        );
+        request = request.with_header(
+            "Content-Type: application/json"
+                .parse::<Header>()
+                .expect("valid content type header"),
+        );
+    }
+    request.with_body(body).into()
+}
+
+fn key_rows(response: DashboardResponse) -> (String, Value) {
+    let bytes = body(response);
+    let text = String::from_utf8(bytes).expect("utf-8 provider key response");
+    let value: Value = serde_json::from_str(&text).expect("provider key response is JSON");
+    (text, value)
+}
+
+#[test]
+fn saved_provider_key_is_owner_only_reachable_through_api_key_and_never_echoed() {
+    let dir = tempfile::tempdir().expect("temp elpis home");
+    let providers = keyed_provider("ELPIS_DASHBOARD_TEST_SAVED_KEY");
+    let registry = provider_keys::build(dir.path(), &providers);
+    let token = session_token();
+    let origin = format!("http://127.0.0.1:{PORT}");
+
+    let saved = provider_keys::route_in(
+        Some(&registry),
+        &mut key_request(&token, Method::Post, &origin, SAVE_KEY_BODY),
+        PORT,
+    );
+    assert_eq!(saved.status_code(), 200);
+    assert_security_headers(&saved);
+    let (text, value) = key_rows(saved);
+    assert!(
+        !text.contains(PROVIDER_KEY),
+        "the response echoed the saved key"
+    );
+    let row = &value["providers"][0];
+    assert_eq!(row["id"], "test-provider");
+    assert_eq!(row["name"], "Test Provider");
+    assert_eq!(row["env_var"], "ELPIS_DASHBOARD_TEST_SAVED_KEY");
+    assert_eq!(row["source"], "elpis");
+    assert_eq!(
+        row["masked"],
+        "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}6789"
+    );
+
+    let path = provider_keys::path(dir.path());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&path)
+            .expect("stored provider keys exist")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "stored provider keys are owner-only");
+    }
+    assert!(
+        std::fs::read_to_string(&path)
+            .expect("stored provider keys are readable")
+            .contains(PROVIDER_KEY)
+    );
+
+    assert_eq!(
+        providers["test-provider"]
+            .api_key()
+            .expect("provider key resolves"),
+        Some(PROVIDER_KEY.to_string())
+    );
+
+    // A fresh session reads the same file back into the provider override.
+    codex_model_provider_info::set_api_key_override("ELPIS_DASHBOARD_TEST_SAVED_KEY", None);
+    provider_keys::apply_stored(&provider_keys::build(dir.path(), &providers));
+    assert_eq!(
+        providers["test-provider"]
+            .api_key()
+            .expect("provider key resolves after reload"),
+        Some(PROVIDER_KEY.to_string())
+    );
+    codex_model_provider_info::set_api_key_override("ELPIS_DASHBOARD_TEST_SAVED_KEY", None);
+}
+
+#[test]
+fn clearing_a_stored_provider_key_removes_it_from_the_file_and_the_provider() {
+    let dir = tempfile::tempdir().expect("temp elpis home");
+    let providers = keyed_provider("ELPIS_DASHBOARD_TEST_CLEARED_KEY");
+    let registry = provider_keys::build(dir.path(), &providers);
+    let token = session_token();
+    let origin = format!("http://127.0.0.1:{PORT}");
+
+    assert_eq!(
+        provider_keys::route_in(
+            Some(&registry),
+            &mut key_request(&token, Method::Post, &origin, SAVE_KEY_BODY),
+            PORT,
+        )
+        .status_code(),
+        200
+    );
+
+    let cleared = provider_keys::route_in(
+        Some(&registry),
+        &mut key_request(&token, Method::Post, &origin, CLEAR_KEY_BODY),
+        PORT,
+    );
+    assert_eq!(cleared.status_code(), 200);
+    let (text, value) = key_rows(cleared);
+    assert!(!text.contains(PROVIDER_KEY));
+    assert_eq!(value["providers"][0]["source"], "none");
+    assert_eq!(value["providers"][0]["masked"], Value::Null);
+
+    let stored = std::fs::read_to_string(provider_keys::path(dir.path()))
+        .expect("stored provider keys are readable");
+    assert!(!stored.contains(PROVIDER_KEY));
+    assert!(!stored.contains("test-provider"));
+    assert_eq!(
+        providers["test-provider"]
+            .api_key()
+            .expect("cleared provider key resolves"),
+        None
+    );
+}
+
+#[test]
+fn provider_key_writes_need_the_session_capability_and_a_same_origin_json_post() {
+    let dir = tempfile::tempdir().expect("temp elpis home");
+    let providers = keyed_provider("ELPIS_DASHBOARD_TEST_GUARDED_KEY");
+    let registry = provider_keys::build(dir.path(), &providers);
+    let token = session_token();
+    let origin = format!("http://127.0.0.1:{PORT}");
+
+    for (label, mut denied) in [
+        (
+            "wrong capability token",
+            key_request(
+                "00000000000000000000000000000000",
+                Method::Post,
+                &origin,
+                SAVE_KEY_BODY,
+            ),
+        ),
+        (
+            "foreign origin",
+            key_request(
+                &token,
+                Method::Post,
+                "https://external.invalid",
+                SAVE_KEY_BODY,
+            ),
+        ),
+        (
+            "no origin or json content type",
+            key_request(&token, Method::Post, "", SAVE_KEY_BODY),
+        ),
+    ] {
+        let response = provider_keys::route_in(Some(&registry), &mut denied, PORT);
+        assert_eq!(response.status_code(), 403, "{label}");
+        assert!(!provider_keys::path(dir.path()).exists(), "{label}");
+    }
+
+    assert_eq!(
+        provider_keys::route_in(
+            Some(&registry),
+            &mut key_request(&token, Method::Put, &origin, SAVE_KEY_BODY),
+            PORT,
+        )
+        .status_code(),
+        405
+    );
+    assert_eq!(
+        provider_keys::route_in(None, &mut key_request(&token, Method::Get, "", ""), PORT)
+            .status_code(),
+        503
+    );
+    assert_eq!(
+        provider_keys::route_in(
+            Some(&registry),
+            &mut key_request(
+                &token,
+                Method::Post,
+                &origin,
+                r#"{"provider":"unlisted","api_key":"sk-test-1234"}"#,
+            ),
+            PORT,
+        )
+        .status_code(),
+        404
+    );
+    assert_eq!(
+        provider_keys::route_in(
+            Some(&registry),
+            &mut key_request(
+                &token,
+                Method::Post,
+                &origin,
+                r#"{"provider":"test-provider","api_key":"has space"}"#,
+            ),
+            PORT,
+        )
+        .status_code(),
+        400
+    );
+    assert!(!provider_keys::path(dir.path()).exists());
+
+    let listed = provider_keys::route_in(
+        Some(&registry),
+        &mut key_request(&token, Method::Get, "", ""),
+        PORT,
+    );
+    assert_eq!(listed.status_code(), 200);
+    let (_, value) = key_rows(listed);
+    assert_eq!(value["providers"][0]["source"], "none");
+}
+
+#[test]
+fn provider_key_route_is_dispatched_by_the_running_dashboard_server() {
+    use std::io::Read;
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::time::Duration;
+    let url = ensure_running().expect("dashboard server starts");
+    let port: u16 = url
+        .split('#')
+        .next()
+        .and_then(|base| base.rsplit(':').next())
+        .and_then(|port| port.parse().ok())
+        .expect("dashboard port");
+    let token = session_token();
+    let mut socket = TcpStream::connect(("127.0.0.1", port)).expect("dashboard accepts");
+    socket
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("read timeout");
+    write!(
+        socket,
+        "GET /provider-keys/{token} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    )
+    .expect("write request");
+    let mut response = String::new();
+    socket.read_to_string(&mut response).expect("read response");
+    let status = response.lines().next().unwrap_or_default().to_string();
+    // The read-only asset router answers 404 here, so anything else proves the
+    // provider-key route is reached.
+    assert!(
+        status.starts_with("HTTP/1.1 503") || status.starts_with("HTTP/1.1 200"),
+        "provider key route is not dispatched: {status}"
+    );
 }

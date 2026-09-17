@@ -11,8 +11,20 @@ use std::sync::Mutex;
 #[path = "dashboard_pruner.rs"]
 mod pruner;
 
+#[path = "dashboard_provider_keys.rs"]
+mod provider_keys;
+
 pub(crate) fn configure_pruner_home(home: &std::path::Path) {
     pruner::configure(home);
+}
+
+/// Registers the providers the dashboard can key and loads every key already
+/// stored in this Elpis home into the in-process provider overrides.
+pub(crate) fn configure_provider_keys(
+    home: &std::path::Path,
+    providers: &std::collections::HashMap<String, codex_model_provider_info::ModelProviderInfo>,
+) {
+    provider_keys::configure(home, providers);
 }
 
 use chrono::Utc;
@@ -373,6 +385,11 @@ fn serve(listener: tiny_http::Server, port: u16) {
     for mut request in listener.incoming_requests() {
         if request.url().starts_with("/pruner-settings/") {
             let response = pruner::route(&mut request, port);
+            let _ = request.respond(response);
+            continue;
+        }
+        if request.url().starts_with("/provider-keys/") {
+            let response = provider_keys::route(&mut request, port);
             let _ = request.respond(response);
             continue;
         }
