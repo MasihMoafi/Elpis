@@ -32,7 +32,7 @@ const OPENROUTER_TOP_TIER_FAMILIES: &[&str] = &[
 pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
 pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
 pub(super) const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
-pub(super) const BACKGROUND_MODEL_SELECTION_VIEW_ID: &str = "background-model-selection";
+pub(super) const BACKGROUND_MODEL_SELECTION_VIEW_ID: &str = "memory-model-selection";
 
 impl ChatWidget {
     pub(crate) fn open_pruner_model_popup(&mut self) {
@@ -104,7 +104,7 @@ impl ChatWidget {
         })
     }
 
-    /// Edits for `/background-model <id>` typed by hand. `default` clears the
+    /// Edits for `/memory-model <id>` typed by hand. `default` clears the
     /// model and the provider together, as the picker's first row does;
     /// `<provider>:<id>` sets both; a bare id keeps the provider background work
     /// already uses.
@@ -175,7 +175,7 @@ impl ChatWidget {
             Line::from(if self.model_popup_request_is_pending(&provider_id) {
                 "Loading available models…"
             } else {
-                "No models listed for this provider. Use /background-model <id>."
+                "No models listed for this provider. Use /memory-model <id>."
             })
         });
         let items: Vec<SelectionItem> = choices

@@ -291,7 +291,7 @@ impl ChatWidget {
             SlashCommand::PrunerModel => {
                 self.open_pruner_model_popup();
             }
-            SlashCommand::BackgroundModel => {
+            SlashCommand::MemoryModel => {
                 self.open_background_model_popup();
             }
             SlashCommand::Model => {
@@ -558,7 +558,7 @@ impl ChatWidget {
             }
             return;
         }
-        if cmd == SlashCommand::BackgroundModel && !trimmed.is_empty() {
+        if cmd == SlashCommand::MemoryModel && !trimmed.is_empty() {
             let result = self.background_model_edits(trimmed).and_then(|(edits, chosen)| {
                 crate::legacy_core::config::edit::apply_blocking(&self.config.codex_home, &edits)
                     .map(|()| chosen)
@@ -1124,7 +1124,7 @@ impl ChatWidget {
         match cmd {
             SlashCommand::Usage
             | SlashCommand::PrunerModel
-            | SlashCommand::BackgroundModel
+            | SlashCommand::MemoryModel
             | SlashCommand::Context
             | SlashCommand::Dashboard
             | SlashCommand::DebugConfig

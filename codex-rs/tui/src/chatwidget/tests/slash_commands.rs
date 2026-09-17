@@ -483,7 +483,7 @@ async fn background_model_command_saves_to_config_without_changing_chat() {
 
     // A qualified id moves the provider with the model, exactly as the picker does.
     chat.dispatch_command_with_args(
-        SlashCommand::BackgroundModel,
+        SlashCommand::MemoryModel,
         "openrouter:deepseek/deepseek-v4.1-flash".into(),
         Vec::new(),
     );
@@ -499,7 +499,7 @@ async fn background_model_command_saves_to_config_without_changing_chat() {
         "choosing a background model must not move the chat model"
     );
 
-    chat.dispatch_command_with_args(SlashCommand::BackgroundModel, "default".into(), Vec::new());
+    chat.dispatch_command_with_args(SlashCommand::MemoryModel, "default".into(), Vec::new());
     assert!(
         !read().contains("background_model") && !read().contains("background_provider"),
         "\"default\" must clear the model and the provider together:\n{}",
@@ -518,7 +518,7 @@ async fn typed_background_model_cannot_leave_an_unservable_pair() {
     // Background work follows the session's provider, openai, which cannot serve
     // a vendor/model id; writing the model alone was the bug.
     chat.dispatch_command_with_args(
-        SlashCommand::BackgroundModel,
+        SlashCommand::MemoryModel,
         "deepseek/deepseek-v4.1-flash".into(),
         Vec::new(),
     );
@@ -529,7 +529,7 @@ async fn typed_background_model_cannot_leave_an_unservable_pair() {
     );
 
     // A bare id the current provider can serve keeps that provider untouched.
-    chat.dispatch_command_with_args(SlashCommand::BackgroundModel, "gpt-5.6-luna".into(), Vec::new());
+    chat.dispatch_command_with_args(SlashCommand::MemoryModel, "gpt-5.6-luna".into(), Vec::new());
     assert!(
         read().contains("background_model = \"gpt-5.6-luna\"") && !read().contains("background_provider"),
         "a bare id must save the model without pinning a provider:\n{}",
@@ -614,12 +614,12 @@ fn background_model_is_a_visible_command_with_inline_args() {
     assert!(
         visible
             .iter()
-            .any(|(_, command)| *command == SlashCommand::BackgroundModel),
+            .any(|(_, command)| *command == SlashCommand::MemoryModel),
         "the command is hidden: {:?}",
         visible.iter().map(|(name, _)| *name).collect::<Vec<_>>()
     );
-    assert!(SlashCommand::BackgroundModel.supports_inline_args());
-    assert_eq!(SlashCommand::BackgroundModel.command(), "background-model");
+    assert!(SlashCommand::MemoryModel.supports_inline_args());
+    assert_eq!(SlashCommand::MemoryModel.command(), "background-model");
 }
 
 #[tokio::test]

@@ -15,7 +15,7 @@ pub enum SlashCommand {
     // more frequently used commands should be listed first.
     Model,
     PrunerModel,
-    BackgroundModel,
+    MemoryModel,
     Permissions,
     Yolo,
     #[strum(serialize = "hotkeys", serialize = "keymap")]
@@ -126,10 +126,10 @@ impl SlashCommand {
             SlashCommand::Stop => "kill all background terminals",
             SlashCommand::Model => "choose a provider-aware model and reasoning effort",
             SlashCommand::PrunerModel => {
-                "view or set the Smart Prune model: /pruner-model <id|default>"
+                "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>"
             }
-            SlashCommand::BackgroundModel => {
-                "view or set the memory and pruning model: /background-model <id|provider:id|default>"
+            SlashCommand::MemoryModel => {
+                "view or set the model that saves memory: /memory-model <id|provider:id|default>"
             }
             SlashCommand::Personality => "choose a communication style for Elpis",
             SlashCommand::Plan => "switch to Plan mode",
@@ -170,7 +170,7 @@ impl SlashCommand {
             SlashCommand::SmartPrune
                 | SlashCommand::Compact
                 | SlashCommand::PrunerModel
-                | SlashCommand::BackgroundModel
+                | SlashCommand::MemoryModel
                 | SlashCommand::ForcePrune
                 | SlashCommand::Review
                 | SlashCommand::Add
@@ -229,7 +229,7 @@ impl SlashCommand {
             | SlashCommand::Resume
             | SlashCommand::Model
             | SlashCommand::PrunerModel
-            | SlashCommand::BackgroundModel
+            | SlashCommand::MemoryModel
             | SlashCommand::Personality
             | SlashCommand::Permissions
             | SlashCommand::Yolo
@@ -269,7 +269,7 @@ impl SlashCommand {
             // part of the public Elpis command contract.
             SlashCommand::Model
             | SlashCommand::PrunerModel
-            | SlashCommand::BackgroundModel
+            | SlashCommand::MemoryModel
             | SlashCommand::Permissions
             | SlashCommand::Yolo
             | SlashCommand::Add
