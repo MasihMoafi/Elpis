@@ -183,7 +183,7 @@ impl ChatWidget {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
                     title: Some("Archive this session?".to_string()),
                     subtitle: Some(
-                        "Are you sure? This will archive the current session and exit Codex"
+                        "Are you sure? This will archive the current session and exit Elpis"
                             .to_string(),
                     ),
                     footer_hint: Some(standard_popup_hint_line()),
@@ -559,11 +559,16 @@ impl ChatWidget {
             return;
         }
         if cmd == SlashCommand::MemoryModel && !trimmed.is_empty() {
-            let result = self.background_model_edits(trimmed).and_then(|(edits, chosen)| {
-                crate::legacy_core::config::edit::apply_blocking(&self.config.codex_home, &edits)
+            let result = self
+                .background_model_edits(trimmed)
+                .and_then(|(edits, chosen)| {
+                    crate::legacy_core::config::edit::apply_blocking(
+                        &self.config.codex_home,
+                        &edits,
+                    )
                     .map(|()| chosen)
                     .map_err(|error| error.to_string())
-            });
+                });
             match result {
                 Ok(chosen) => self.add_info_message(
                     format!(
@@ -579,9 +584,8 @@ impl ChatWidget {
         if cmd == SlashCommand::PrunerModel && !trimmed.is_empty() {
             let result = (|| -> Result<String, String> {
                 let home = &self.config.codex_home;
-                let mut settings =
-                    crate::legacy_core::pruner_settings::PrunerSettings::load(home)
-                        .map_err(|error| error.to_string())?;
+                let mut settings = crate::legacy_core::pruner_settings::PrunerSettings::load(home)
+                    .map_err(|error| error.to_string())?;
                 // A bare id is measured against the provider the pruner already
                 // talks to, so it cannot leave a model that provider cannot serve.
                 let role_provider = settings

@@ -894,7 +894,7 @@ pub async fn run_main(
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            eprintln!("Error finding Elpis home: {err}");
             std::process::exit(1);
         }
     };
@@ -1082,7 +1082,9 @@ pub async fn run_main(
         // `provider:id` pins both; a bare id follows background maintenance again
         // rather than keeping a provider chosen for some earlier model.
         let (provider, model) = match model.split_once(':') {
-            Some((provider, id)) if !id.is_empty() && config.model_providers.contains_key(provider) => {
+            Some((provider, id))
+                if !id.is_empty() && config.model_providers.contains_key(provider) =>
+            {
                 (Some(provider.to_string()), id)
             }
             _ => (None, model.as_str()),
@@ -1476,7 +1478,7 @@ async fn run_ratatui_app(
             resume_hint: None,
             update_action: None,
             exit_reason: ExitReason::Fatal(format!(
-                "No saved session found with ID {id_str}. Run `codex {action}` without an ID to choose from existing sessions."
+                "No saved session found with ID {id_str}. Run `elpis {action}` without an ID to choose from existing sessions."
             )),
         })
     };

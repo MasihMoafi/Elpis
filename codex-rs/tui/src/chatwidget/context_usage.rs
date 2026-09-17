@@ -1787,13 +1787,20 @@ mod tests {
                 );
             }
             for background in [Color::Rgb(248, 246, 239), Color::Rgb(255, 255, 255)] {
-                assert!(contrast_ratio(*left, background) >= 4.5, "{left:?} on {background:?}");
+                assert!(
+                    contrast_ratio(*left, background) >= 4.5,
+                    "{left:?} on {background:?}"
+                );
             }
         }
         for (index, pair) in colors.windows(2).enumerate() {
             let gap = lab(pair[0]).0 - lab(pair[1]).0;
             assert!(
-                if index % 2 == 0 { gap >= 8.0 } else { gap <= -8.0 },
+                if index % 2 == 0 {
+                    gap >= 8.0
+                } else {
+                    gap <= -8.0
+                },
                 "categories {index} and {} do not alternate lighter/darker on paper: {gap:.1}",
                 index + 1,
             );

@@ -14,7 +14,10 @@ const MAX_OPEN_TABS_CHARS: usize = 20_000;
 // raw prompt before this marker, then transcript rendering strips back to the request after the last
 // marker. Keeping the same marker and stripping semantics lets threads created with IDE context in
 // one surface replay cleanly in the others.
-const PROMPT_REQUEST_BEGIN: &str = "## My request for Codex:";
+const PROMPT_REQUEST_BEGIN: &str = "## My request for Elpis:";
+/// The marker this file emitted before the product stopped calling itself Codex.
+/// Threads recorded then still carry it, so stripping keeps recognising it.
+const LEGACY_PROMPT_REQUEST_BEGIN: &str = "## My request for Codex:";
 
 pub(crate) fn apply_ide_context_to_user_input(
     context: &IdeContext,
@@ -64,11 +67,15 @@ pub(crate) fn has_prompt_context(context: &IdeContext) -> bool {
 }
 
 pub(crate) fn extract_prompt_request_with_offset(message: &str) -> (&str, usize) {
-    let Some((before_request, request)) = message.rsplit_once(PROMPT_REQUEST_BEGIN) else {
+    let Some((marker, (before_request, request))) =
+        [PROMPT_REQUEST_BEGIN, LEGACY_PROMPT_REQUEST_BEGIN]
+            .into_iter()
+            .find_map(|marker| message.rsplit_once(marker).map(|split| (marker, split)))
+    else {
         return (message, 0);
     };
 
-    let request_start = before_request.len() + PROMPT_REQUEST_BEGIN.len();
+    let request_start = before_request.len() + marker.len();
     let trimmed_request = request.trim();
     let leading_trimmed_len = request.len() - request.trim_start().len();
     (trimmed_request, request_start + leading_trimmed_len)

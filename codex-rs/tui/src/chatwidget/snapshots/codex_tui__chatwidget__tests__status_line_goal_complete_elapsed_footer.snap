@@ -5,7 +5,7 @@ expression: normalized_backend_snapshot(terminal.backend())
 "                                                                                "
 " Elpis · model gpt-5.4 · location /tmp/project                                  "
 "│                                               │CONTEXT LEDGER  context not    "
-"› Ask Codex to do anything                      │measured · ≈0 source estimates "
+"› Ask Elpis to do anything                      │measured · ≈0 source estimates "
 "│                                               │Tab controls · Alt+C hide ·    "
 "│                                               │Ctrl+click open file           "
 "│                                               │                               "

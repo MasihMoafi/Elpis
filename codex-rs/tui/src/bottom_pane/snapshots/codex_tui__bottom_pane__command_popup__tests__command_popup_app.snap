@@ -5,7 +5,7 @@ expression: "format!(\"{buf:?}\")"
 Buffer {
     area: Rect { x: 0, y: 0, width: 72, height: 2 },
     content: [
-        "  /app      continue this session in Codex Desktop                      ",
+        "  /app      continue this session in Elpis Desktop                      ",
         "  /approve  approve one retry of a recent auto-review denial            ",
     ],
     styles: [

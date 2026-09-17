@@ -11,7 +11,7 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
  Elpis · model gpt-5.6-sol · location /tmp/project
 │                                                                       │CONTEXT LEDGER  context not measured · ≈0
-› Ask Codex to do anything                                              │source estimates
+› Ask Elpis to do anything                                              │source estimates
 │                                                                       │Tab controls · Alt+C hide · Ctrl+click open
 │                                                                       │file
 │                                                                       │

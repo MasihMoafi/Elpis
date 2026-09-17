@@ -218,7 +218,7 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     let mut widget = ChatWidget::new_with_op_target(common, super::CodexOpTarget::Direct(op_tx));
     widget.transcript.active_cell = None;
     widget.transcript.active_cell_revision = 0;
-    widget.normal_placeholder_text = "Ask Codex to do anything".to_string();
+    widget.normal_placeholder_text = "Ask Elpis to do anything".to_string();
     widget.side_placeholder_text =
         "Check recently modified functions for compatibility".to_string();
     widget

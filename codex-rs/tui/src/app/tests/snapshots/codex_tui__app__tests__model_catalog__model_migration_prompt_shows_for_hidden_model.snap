@@ -2,7 +2,7 @@
 source: tui/src/app/tests/model_catalog.rs
 expression: model_migration_copy_to_plain_text(&copy)
 ---
-Codex just got an upgrade. Introducing GPT-5.5.
+Elpis just got an upgrade. Introducing GPT-5.5.
 
 We recommend switching from gpt-5.2 to gpt-5.5.
 

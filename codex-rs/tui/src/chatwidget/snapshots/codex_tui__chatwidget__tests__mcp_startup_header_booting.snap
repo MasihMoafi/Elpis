@@ -6,7 +6,7 @@ expression: normalized_backend_snapshot(terminal.backend())
 " Elpis · model gpt-5.6-sol · location /tmp/proje                                "
 "Booting MCP server: alpha (0s • esc to interrup…│CONTEXT LEDGER  context not    "
 "│                                               │measured · ≈0 source estimates "
-"› Ask Codex to do anything                      │Tab controls · Alt+C hide ·    "
+"› Ask Elpis to do anything                      │Tab controls · Alt+C hide ·    "
 "│                                               │Ctrl+click open file           "
 "│                                               │                               "
 "│                                               │SMART PRUNE          [···] SYNC"

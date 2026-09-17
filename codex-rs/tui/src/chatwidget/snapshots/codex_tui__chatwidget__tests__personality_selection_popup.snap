@@ -5,7 +5,7 @@ expression: popup
  Elpis · model gpt-5.4 · location /tmp/project
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ Select Personality                                                           │
-│ Choose a communication style for Codex.                                      │
+│ Choose a communication style for Elpis.                                      │
 │                                                                              │
   1. Friendly             Warm, collaborative, and helpful.                    │
 › 2. Pragmatic (current)  Concise, task-focused, and direct.                   │

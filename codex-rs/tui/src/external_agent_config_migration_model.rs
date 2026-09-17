@@ -57,7 +57,7 @@ pub(crate) fn external_agent_config_migration_groups(
             } else {
                 format!("Projects ({project_count})")
             },
-            description: "Add Codex files alongside your existing project files",
+            description: "Add Elpis files alongside your existing project files",
             item_indices: projects,
         });
     }

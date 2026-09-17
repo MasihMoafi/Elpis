@@ -77,11 +77,9 @@ impl ChatWidget {
                 label: "built-in default".to_string(),
             });
         }
-        let qualified = input
-            .split_once(':')
-            .filter(|(provider, model)| {
-                !model.is_empty() && self.config.model_providers.contains_key(*provider)
-            });
+        let qualified = input.split_once(':').filter(|(provider, model)| {
+            !model.is_empty() && self.config.model_providers.contains_key(*provider)
+        });
         let (provider, model) = match qualified {
             Some((provider, model)) => (provider, model),
             None => (role_provider, input),

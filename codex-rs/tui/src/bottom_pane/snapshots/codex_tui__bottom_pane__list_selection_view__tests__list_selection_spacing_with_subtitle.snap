@@ -4,9 +4,9 @@ expression: render_lines(&view)
 ---
 ┌──────────────────────────────────────────────┐
 │ Select Approval Mode                         │
-│ Switch between Codex approval presets        │
+│ Switch between Elpis approval presets        │
 │                                              │
-› 1. Read Only (current)  Codex can read files │
-  2. Full Access          Codex can edit files │
+› 1. Read Only (current)  Elpis can read files │
+  2. Full Access          Elpis can edit files │
 └──────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

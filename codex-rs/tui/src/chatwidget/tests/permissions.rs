@@ -476,7 +476,7 @@ async fn startup_windows_sandbox_prompt_blocks_disallowed_unelevated_fallback() 
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     assert!(
-        popup.contains("Your organization requires the default Codex agent sandbox"),
+        popup.contains("Your organization requires the default Elpis agent sandbox"),
         "expected required sandbox prompt copy: {popup}"
     );
     assert!(

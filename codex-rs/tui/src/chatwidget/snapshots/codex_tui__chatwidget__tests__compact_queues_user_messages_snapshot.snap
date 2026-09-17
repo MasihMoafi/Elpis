@@ -9,7 +9,7 @@ Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context n
 • Messages to be submitted at end of turn       │Tab controls · Alt+C hide ·
   ↳ Steer submitted while /compact was running. │Ctrl+click open file
 │                                               │
-› Ask Codex to do anything                      │SMART PRUNE          [···] SYNC
+› Ask Elpis to do anything                      │SMART PRUNE          [···] SYNC
 │                                               │Reading current thread state
 │                                               │Syncing… · /smart-prune on|off
 │                                               │sets an explicit state

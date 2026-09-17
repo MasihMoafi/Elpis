@@ -80,13 +80,13 @@ impl WidgetRef for &ExternalAgentConfigMigrationScreen {
         let intro_lines = match self.view {
             MigrationView::Summary => vec![
                 Line::from("Bring over your setup, current project, and recent chats."),
-                Line::from("Codex may add files to your current project folder."),
+                Line::from("Elpis may add files to your current project folder."),
                 Line::from("Your existing Claude Code setup will not be changed."),
                 Line::from("Standard Claude Chat data cannot be imported."),
             ],
             MigrationView::Customize => vec![
                 Line::from("Choose the Claude Code items to import."),
-                Line::from("Codex may add files to your current project folder."),
+                Line::from("Elpis may add files to your current project folder."),
                 Line::from("Your existing Claude Code setup will not be changed."),
             ],
         };

@@ -10,7 +10,7 @@ const SAFETY_BUFFERING_LEARN_MORE_URL: &str = "https://help.openai.com/en/articl
 const SAFETY_BUFFERING_HEADER: &str =
     "Our systems are thinking a bit more about this request before responding.";
 const SAFETY_BUFFERING_MESSAGE_WITH_RETRY: &str = "Hang tight or retry with a faster model for a quicker response, though it may be less capable of handling complex requests.";
-const SAFETY_BUFFERING_FOOTER: &str = "No action is required. Codex will keep waiting, and this menu will close when the response is ready.";
+const SAFETY_BUFFERING_FOOTER: &str = "No action is required. Elpis will keep waiting, and this menu will close when the response is ready.";
 
 #[derive(Debug)]
 struct ActiveSafetyBuffering {

@@ -96,7 +96,7 @@ impl SlashCommand {
             SlashCommand::Delete => "permanently delete this session and quit",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
-            SlashCommand::App => "continue this session in Codex Desktop",
+            SlashCommand::App => "continue this session in Elpis Desktop",
             SlashCommand::Quit => "quit Elpis",
             SlashCommand::Copy => "copy last prompt and response as markdown",
             SlashCommand::Raw => "toggle raw scrollback mode for copy-friendly terminal selection",

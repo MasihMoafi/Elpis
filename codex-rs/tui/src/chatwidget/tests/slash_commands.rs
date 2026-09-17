@@ -531,7 +531,8 @@ async fn typed_background_model_cannot_leave_an_unservable_pair() {
     // A bare id the current provider can serve keeps that provider untouched.
     chat.dispatch_command_with_args(SlashCommand::MemoryModel, "gpt-5.6-luna".into(), Vec::new());
     assert!(
-        read().contains("background_model = \"gpt-5.6-luna\"") && !read().contains("background_provider"),
+        read().contains("background_model = \"gpt-5.6-luna\"")
+            && !read().contains("background_provider"),
         "a bare id must save the model without pinning a provider:\n{}",
         read()
     );
@@ -2154,7 +2155,7 @@ async fn pending_token_activity_refresh_keeps_composer_visible_in_short_viewport
             .vt100()
             .screen()
             .contents()
-            .contains("Ask Codex to do anything")
+            .contains("Ask Elpis to do anything")
     );
 }
 

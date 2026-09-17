@@ -6,7 +6,7 @@ expression: normalize_snapshot_paths(rendered)
 Waiting for background terminal (0s • esc to in…
   └ cargo test -p codex-core -- --exact…
 │
-› Ask Codex to do anything
+› Ask Elpis to do anything
 │
 │
 │

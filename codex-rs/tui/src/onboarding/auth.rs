@@ -571,7 +571,7 @@ impl AuthModeWidget {
                 "  For more details see the ".into(),
                 crate::terminal_hyperlinks::osc8_hyperlink(
                     "https://developers.openai.com/codex/security",
-                    "Codex docs",
+                    "the upstream sandbox docs",
                 )
                 .underlined(),
             ])

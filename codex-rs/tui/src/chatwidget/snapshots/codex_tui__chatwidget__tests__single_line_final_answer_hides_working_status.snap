@@ -7,7 +7,7 @@ expression: normalize_snapshot_paths(terminal.backend().vt100().screen().content
 
  Elpis · model gpt-5 · location /tmp/pro
 │
-› Ask Codex to do anything
+› Ask Elpis to do anything
 │
 │
 │
