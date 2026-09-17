@@ -382,7 +382,14 @@ mod tests {
         // `/mention` also matches this prefix upstream, but it is not part of Elpis's command
         // menu, so the run of matches is shorter here. What this covers is the order the
         // matches keep, not how many there are.
-        assert_eq!(cmds, vec!["model".to_string(), "mcp".to_string()]);
+        assert_eq!(
+            cmds,
+            vec![
+                "model".to_string(),
+                "memory-model".to_string(),
+                "mcp".to_string()
+            ]
+        );
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]

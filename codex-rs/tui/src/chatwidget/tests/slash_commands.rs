@@ -608,9 +608,9 @@ async fn background_model_picker_targets_the_provider_it_actually_uses() {
 }
 
 #[test]
-fn background_model_is_a_visible_command_with_inline_args() {
+fn memory_model_is_a_visible_command_with_inline_args() {
     // It has to be discoverable next to /pruner-model, and usable as
-    // `/background-model <id>` rather than only through its picker.
+    // `/memory-model <id>` rather than only through its picker.
     let visible = crate::slash_command::built_in_slash_commands();
     assert!(
         visible
@@ -620,7 +620,7 @@ fn background_model_is_a_visible_command_with_inline_args() {
         visible.iter().map(|(name, _)| *name).collect::<Vec<_>>()
     );
     assert!(SlashCommand::MemoryModel.supports_inline_args());
-    assert_eq!(SlashCommand::MemoryModel.command(), "background-model");
+    assert_eq!(SlashCommand::MemoryModel.command(), "memory-model");
 }
 
 #[tokio::test]
