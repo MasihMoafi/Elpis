@@ -99,6 +99,9 @@ pub(super) struct ContextLedgerState {
     visible: bool,
     focused: bool,
     selected: usize,
+    /// The Smart Prune switch sits above the source rows and is part of the same
+    /// keyboard cursor, so it can be reached and toggled without the mouse.
+    smart_prune_selected: bool,
     pending_g: bool,
     why_visible: bool,
     last_area: std::cell::Cell<Option<Rect>>,
@@ -120,6 +123,7 @@ impl Default for ContextLedgerState {
             visible: true,
             focused: false,
             selected: 0,
+            smart_prune_selected: false,
             pending_g: false,
             why_visible: false,
             last_area: std::cell::Cell::new(None),
@@ -216,6 +220,7 @@ impl ChatWidget {
             } else {
                 self.context_ledger.visible = false;
                 self.context_ledger.focused = false;
+                self.context_ledger.smart_prune_selected = false;
                 self.context_ledger.clear_rendered_geometry();
             }
             self.context_ledger.pending_g = false;
@@ -240,6 +245,34 @@ impl ChatWidget {
             return true;
         }
 
+        // The Smart Prune switch is the first stop on the cursor, above the sources.
+        if self.context_ledger.smart_prune_selected {
+            let selectable = self.selectable_context_source_indexes();
+            match key_event.code {
+                KeyCode::Esc => self.close_context_ledger(),
+                KeyCode::Char(' ') | KeyCode::Enter => {
+                    self.toggle_smart_prune();
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.move_context_ledger_selection(&selectable, -1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.move_context_ledger_selection(&selectable, 1);
+                }
+                KeyCode::Char('w') => {
+                    self.context_ledger.why_visible = !self.context_ledger.why_visible;
+                }
+                _ => {
+                    if matches!(key_event.code, KeyCode::Char(_)) {
+                        self.context_ledger.focused = false;
+                    }
+                    return false;
+                }
+            }
+            self.request_redraw();
+            return true;
+        }
+
         let sources = self.continuity_sources();
         let selectable = sources
             .iter()
@@ -248,7 +281,7 @@ impl ChatWidget {
             .collect::<Vec<_>>();
         if selectable.is_empty() {
             if matches!(key_event.code, KeyCode::Esc) {
-                self.context_ledger.focused = false;
+                self.close_context_ledger();
                 self.request_redraw();
                 return true;
             }
@@ -287,7 +320,7 @@ impl ChatWidget {
 
         match key_event.code {
             KeyCode::Esc => {
-                self.context_ledger.focused = false;
+                self.close_context_ledger();
             }
             KeyCode::Char('i') => {
                 let manual_memory_path = self
@@ -450,7 +483,7 @@ impl ChatWidget {
             )
         };
         let interaction_hint = if self.context_ledger.focused {
-            "p Smart Prune · Up/Down move · Space/Enter toggle · i all · w why · Tab close · Esc edit"
+            "Up/Down move · Space/Enter toggle · p Smart Prune · i all · w why · Tab/Esc close"
         } else {
             "Tab controls · Alt+C hide · Ctrl+click open file"
         };
@@ -477,11 +510,23 @@ impl ChatWidget {
                 "[●━━━] OFF"
             };
         let smart_prune_label = "SMART PRUNE";
+        let smart_prune_cursor =
+            if self.context_ledger.focused && self.context_ledger.smart_prune_selected {
+                "› "
+            } else {
+                ""
+            };
         let smart_prune_pad = content_width
-            .saturating_sub(smart_prune_label.chars().count() + smart_prune_button.chars().count())
+            .saturating_sub(
+                smart_prune_label.chars().count()
+                    + smart_prune_cursor.chars().count()
+                    + smart_prune_button.chars().count(),
+            )
             .max(1);
         let smart_prune_line = lines.len();
-        let smart_prune_column_start = smart_prune_label.chars().count() + smart_prune_pad;
+        let smart_prune_column_start = smart_prune_label.chars().count()
+            + smart_prune_pad
+            + smart_prune_cursor.chars().count();
         let smart_prune_columns =
             smart_prune_column_start..smart_prune_column_start + smart_prune_button.chars().count();
         let [violet, teal, emerald, green] =
@@ -506,6 +551,9 @@ impl ChatWidget {
             Span::styled(smart_prune_label, Style::default().fg(teal).bold()),
             Span::raw(" ".repeat(smart_prune_pad)),
         ];
+        if !smart_prune_cursor.is_empty() {
+            smart_prune_spans.push(Span::styled(smart_prune_cursor, brand.bold()));
+        }
         smart_prune_spans.extend(switch_spans);
         lines.push(Line::from(smart_prune_spans));
         let smart_prune_detail = if pending_smart_prune_enabled.is_some() {
@@ -1039,6 +1087,7 @@ impl ChatWidget {
             if let Some(source) = sources.get(index) {
                 if source.selectable {
                     self.context_ledger.focused = true;
+                    self.context_ledger.smart_prune_selected = false;
                     self.context_ledger.selected = index;
                     let new_state = !source.admitted;
                     self.set_context_source_admitted(source, new_state);
@@ -1344,13 +1393,41 @@ impl ChatWidget {
             .collect()
     }
 
-    fn move_context_ledger_selection(&mut self, selectable: &[usize], delta: isize) {
-        let current = selectable
+    fn selectable_context_source_indexes(&self) -> Vec<usize> {
+        self.continuity_sources()
             .iter()
-            .position(|index| *index == self.context_ledger.selected)
-            .unwrap_or(0) as isize;
-        let next = (current + delta).rem_euclid(selectable.len() as isize) as usize;
-        self.context_ledger.selected = selectable[next];
+            .enumerate()
+            .filter_map(|(index, source)| source.selectable.then_some(index))
+            .collect()
+    }
+
+    pub(super) fn close_context_ledger(&mut self) {
+        self.context_ledger.visible = false;
+        self.context_ledger.focused = false;
+        self.context_ledger.smart_prune_selected = false;
+        self.context_ledger.pending_g = false;
+        self.context_ledger.clear_rendered_geometry();
+    }
+
+    /// Position 0 is the Smart Prune switch; the selectable sources follow it.
+    fn move_context_ledger_selection(&mut self, selectable: &[usize], delta: isize) {
+        let len = selectable.len() as isize + 1;
+        let current = if self.context_ledger.smart_prune_selected {
+            0
+        } else {
+            selectable
+                .iter()
+                .position(|index| *index == self.context_ledger.selected)
+                .unwrap_or(0) as isize
+                + 1
+        };
+        let next = (current + delta).rem_euclid(len);
+        if next == 0 {
+            self.context_ledger.smart_prune_selected = true;
+        } else {
+            self.context_ledger.smart_prune_selected = false;
+            self.context_ledger.selected = selectable[(next - 1) as usize];
+        }
     }
 
     fn set_all_context_sources_admitted(
