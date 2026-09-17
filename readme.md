@@ -24,6 +24,28 @@ The release tag, not this development branch, identifies the shipped runtime.
 
 ![Elpis context audit — selective pruning and evidence trail](docs/assets/evidence.gif)
 
+Concept walkthrough of the admission flow — Smart Prune scanning a completed tool
+result before the main model sees it (illustrated with fixture data, not a captured session):
+
+![Elpis concept walkthrough — launch, Context Ledger, and Smart Prune admission, illustrated](docs/assets/elpis-scroll-demo.gif)
+
+<details><summary>Current development interface · September 9</summary>
+
+![Elpis startup, Elpising, streaming text, and Context Ledger animations — development widget captures](docs/assets/elpis-context-motion-20260909.gif)
+
+![Context breakdown in dark mode, with distinct category colors and visible free capacity](docs/assets/elpis-context-dark-20260909.png)
+
+![The same context breakdown in light mode](docs/assets/elpis-context-light-20260909.png)
+
+![Elpis Context Ledger with matching category colors and the Quiet Rail composer](docs/assets/elpis-context-ledger-20260909.png)
+
+**September 9 development preview · local visual updates to UI commit `40838f83`.** Native Rust widget captures
+with illustrative session data: matching context colors, visible unused capacity, readable Elpising motion, startup
+dissolve, and coalescing responses. These changes are newer than the September 5
+`v0.2.0` release; the screenshots are not a promise that the release contains them.
+
+</details>
+
 ## Contents
 
 - [Quickstart](#quickstart)
@@ -32,6 +54,7 @@ The release tag, not this development branch, identifies the shipped runtime.
 - [Core Features](#core-features)
   - [Context engineering](#context-engineering)
   - [Context Ledger and observability](#context-ledger-and-observability)
+  - [Live session dashboard](#live-session-dashboard)
   - [Sessions and continuity](#sessions-and-continuity)
   - [Memory](#memory)
   - [Deterministic work graphs](#deterministic-work-graphs)
@@ -59,8 +82,7 @@ SHA-256 sidecar. [RTK](https://github.com/rtk-ai/rtk) is an optional, separate
 shell-output filter; this installer does not install it. On first launch, choose
 a provider and sign in or enter its API key.
 
-`v0.2.0` is the current release. Smart Prune is experimental and off by default;
-`/prune` enables it for subsequent turns without rewriting already-sent history.
+`v0.2.0` is the current release.
 
 ## What is Elpis
 
@@ -108,20 +130,30 @@ uses a layered pipeline to keep useful findings while removing disposable explor
 | --- | --- | --- |
 | **1. RTK shell-output filtering** | Compacts supported command output before it reaches the model. | Before the agent sees it |
 | **2. Deterministic safety cap** | Bounds exceptionally large tool results. This is inherited from Codex. | Before the agent sees it |
-| **3. Smart Prune — Experimental** | Optimizes eligible fresh textual tool results before their first main-model exposure; admitted history is not revisited. | Enable with `/prune` |
-| **4. Emergency Ace pruning** | Selectively rewrites eligible old tool evidence toward a working-set target, preserving recent context and evidence pointers. | Explicit `/force-prune <1-100>` only |
+| **3. Smart Prune — Experimental** | Optimizes eligible fresh tool results before the main model's first exposure to them. Once admitted, Smart Prune does not revisit that history. | `/prune` enables it for subsequent turns; `/force-prune <1-100>` remains an explicit one-shot action that may reduce prompt-cache reuse |
 
-These controls describe v0.2.0. `/prune` only enables Smart Prune; `/force-prune`
-is a separate emergency history rewrite that may reduce cache reuse. Neither
-rewrites user instructions, assistant messages, or model reasoning. `/compact`
-runs native Codex compaction. See the [release context contract](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/docs/context.md).
+`/prune` enables Smart Prune (the ACE pruning layer) for subsequent turns without rewriting
+already-sent history. `/force-prune <1-100>` is an explicit emergency action that may reduce
+prompt-cache reuse. `/compact` immediately runs Codex native compaction, independent of Smart
+Prune. Automatic native compaction uses the model-window threshold and usable-window headroom.
+Smart Prune is Experimental and off by default; `/settings` saves its value for the next
+conversation.
+
+![Ace pruning lifecycle from a retired automatic threshold-triggered configuration](docs/assets/diagram_ace_lifecycle.svg)
+
+This diagram illustrates the automatic, threshold-triggered pressure-cycling configuration used
+in the historical evaluation runs below — retired, and not current default behavior. Current
+Smart Prune optimizes a fresh tool result once, before its first admission, and never revisits
+already-sent history the way this sequence shows.
 
 #### Historical emergency-pruning example
 
 ![Task 1 Context Flow and Pruning Lifecycle](docs/assets/sankey_context_flow.svg)
 
-One real pass from disk. A search command whose raw output ran to 18,930 characters — close to
-5,000 tokens carried across requests:
+From a configured historical run with automatic pruning enabled under the superseded
+high-frequency setup (42 passes shown here; not current default behavior). One real pass from
+disk. A search command whose raw output ran to 18,930 characters — close to 5,000 tokens
+carried across requests:
 
 **Before** — what the model was carrying:
 
@@ -162,7 +194,7 @@ skills expose compact metadata and keep their bodies lazy; `/skills` shows avail
 but mentions and the model-visible list contain enabled skills only. The Ledger has no skills-catalog token row;
 its per-source estimates are not tokenizer measurements.
 
-![The Context Ledger listing admitted instruction files with their token counts and included state](docs/assets/context-ledger.webp)
+![Current Context Ledger with distinct amber and pale-yellow source rows](docs/assets/elpis-ui-20260909.png)
 
 In v0.2.0, Ledger and `/context` share category colors and a full-window scale.
 They distinguish active context usage from locally estimated request categories:
@@ -171,6 +203,39 @@ messages, and tool definitions. Category estimates are not provider-billed count
 Available backtrack checkpoints and local evidence links remain inspectable.
 
 <img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
+
+Earlier category-view capture; this image is retained to explain `/context`, not the September 9 appearance.
+
+### Live session dashboard
+
+`/dashboard` opens a local HTML view in your browser — no transcript content
+leaves the machine. It gives the same context and token accounting as the Ledger and
+`/context`, plus what a turn is doing right now and, when Smart Prune (the ACE pruning
+layer above) is on, its admission and optimizer-cost accounting:
+
+The September 9 development dashboard also supports authorized pruner settings edits.
+The captures below use the checked-in **illustrative fixture**, with preview settings
+disabled. Their counters are demonstration data, not experiment results.
+
+![Current dashboard Activity tab](docs/assets/dashboard-activity-20260909.png)
+
+<details><summary>Context — window composition and admitted sources</summary>
+
+![Current dashboard Context tab](docs/assets/dashboard-context-20260909.png)
+
+</details>
+
+<details><summary>Tokens — recorded usage breakdown</summary>
+
+![Current dashboard Tokens tab](docs/assets/dashboard-tokens-20260909.png)
+
+</details>
+
+<details><summary>Smart Prune — settings, accounting, and failure evidence</summary>
+
+![Current dashboard Smart Prune tab, including incomplete usage and timeout evidence](docs/assets/dashboard-smart-prune-20260909.png)
+
+</details>
 
 ### Sessions and continuity
 
@@ -195,7 +260,7 @@ until you admit it: like every optional row, memory does not reach the model una
 - **Admitted in the open.** Because it is a Ledger row, you can always see whether memory
   reached the model, switch it on when you want it, and drop it when you do not.
 - **Retrieval beyond that file is your choice.** Register an MCP server — for example
-  [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) — and Elpis will use it.
+  [rag-mcp](https://github.com/MasihMoafi/rag-mcp) — and Elpis will use it.
 
 Elpis previously ran an extraction, consolidation, and promotion pipeline. It was removed
 because it did not work: across two threshold settings it produced zero durable
@@ -246,7 +311,7 @@ preserved across provider boundaries.
 
 Extend Elpis with external capabilities that stay in their own processes through MCP:
 
-- **Workspace retrieval:** [rag-mcp-lancedb](https://github.com/MasihMoafi/rag-mcp-lancedb) provides local LanceDB/Tantivy search over your documents.
+- **Workspace retrieval:** [rag-mcp](https://github.com/MasihMoafi/rag-mcp) provides local LanceDB/Tantivy search over your documents.
 - **Voice transcription:** [WhisperType](https://github.com/MasihMoafi/Voice-commander) provides local speech-to-text without adding its model/runtime dependencies to Elpis core.
 
 ### Privacy and ownership
@@ -257,7 +322,14 @@ can inspect, edit, export, or delete.
 
 ## Evaluation status
 
-The published evaluation reports three paired, byte-identical configured historical workloads with automatic pruning enabled under the superseded high-frequency setup, on `gpt-5.6-luna` (258,400 token context window).
+**Evidence reviewed September 9, 2026.** RQ1, RQ2, and RQ5 below describe historical
+evaluations. RQ4 includes the newer frozen-build cost study: 61 accepted pairs in
+17 batches. Neither study benchmarks the latest UI binary. See the
+[content and evidence audit](docs/evals/public-content-audit-20260909.md).
+
+The historical evaluation reports three paired, byte-identical configured workloads
+on `gpt-5.6-luna` (258,400 token context window), using a superseded high-frequency
+pruning setup. These runs share a workload and do not establish general task quality.
 
 ### RQ1: Context Reduction & Operating Hygiene
 
@@ -277,7 +349,7 @@ In those configured historical runs, Codex suffered wide distribution variance a
 
 #### Trajectory Dynamics across Context Health Bands
 
-When normalized across the request lifecycle (0% to 100% completion), Codex exhibits unbounded monotonic growth until emergency rollover occurs. The Elpis trace shown here is a configured historical run with automatic pruning enabled under the superseded high-frequency setup; it is not current default behavior:
+When normalized across the recorded request lifecycle (0% to 100% completion), the historical Codex trace grows toward emergency rollover. The Elpis trace shown here uses automatic pruning under the superseded high-frequency setup; it is not current default behavior:
 
 ![Normalized Task-Progress View (0%–100% Sequence Overlay)](docs/assets/elpis-normalized-overlay-highcontrast.svg)
 
@@ -294,13 +366,36 @@ Across those configured historical requests, Elpis spent over 95% of its operati
 
 ### RQ4: Pruning Overhead & Token Economics
 
-The historical history-rewriting configuration added optimizer calls and could
-invalidate cached prefixes. Its measured totals were 730,810 auxiliary tokens to
-reclaim 605,377 context tokens (0.83 reclaimed per spent token). These are not
-v0.2.0 Smart Prune results. Smart Prune acts before first exposure and does not
-revisit admitted history, but it still adds optimizer work. Controlled OFF/ON
-cache, net-cost, and general task-quality effects remain unproven. See the
-[release experiment log](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/docs/evals/EXPERIMENT_LOG.md).
+The [September 9 cost study](docs/evals/rq3/COST_EFFICIENCY_RESULTS.md) measures
+fresh-output admission on frozen binary `d58e8c9b8861`, using synthetic fixtures.
+Costs include **main-agent and optimizer usage**, priced at recorded September 8
+rates; they are estimates, not invoices. Cache-hit fractions were observed, not controlled.
+
+| Requests per session | Optimizer effort | Accepted pairs | Estimated cost change vs. off |
+| --- | --- | --- | --- |
+| 3 | Max | 8 | +162.5% |
+| 3 | Medium | 5 | +41.4% |
+| 3 | Low | 8 | +54.5% |
+| 3 | None | 8 | +24.8% |
+| 11 | Low | 8 | −3.0% |
+| 35 | Low | 8 across two batches | −9.8% |
+| 35 | None | 8 | −20.9% |
+
+![Current study: cost and token changes by optimizer effort on short sessions](docs/assets/elpis-current-effort-20260909.svg)
+
+![Current study: cost and token changes by request horizon](docs/assets/elpis-current-horizon-20260909.svg)
+
+Longer runs can amortize optimizer cost; short runs cost more in these fixtures.
+The two Low/35 batches are a descriptive aggregation, not a pooled significance claim.
+A separate None-effort multi-file probe failed exact citation fidelity. Timeouts,
+stalls, format misses, and exclusions remain in the full report. These results do
+**not** establish real-repository task quality or universal savings.
+The [chart data and provenance](docs/assets/current-evidence-20260909.json) are
+regenerated from the recorded metrics by `python3 scripts/refresh-public-evidence.py`.
+
+**Historical overhead, retained for comparison:**
+
+Pruning adds an auxiliary model call sequenced against the main agent, and rewriting history invalidates the provider's cached prefix. Both costs are real. The figures below are configured historical runs with automatic pruning enabled under the superseded high-frequency setup; they bound that configuration's penalty rather than describe the current default: 730,810 auxiliary tokens spent to reclaim 605,377 context tokens (0.83 reclaimed per spent token).
 
 ![What Pruning Spent to Hold That Window (41-Pass Breakdown)](docs/assets/elpis-what-pruning-spent.svg)
 
@@ -310,11 +405,22 @@ Every pruning event produces an immutable audit record on disk under `~/.elpis/l
 
 | Research Question | Empirical Finding |
 | --- | --- |
-| **RQ1 — Context Efficiency** | Historical superseded high-frequency setup: peak reduction of 47–65%; median context stabilized at 26.6–27.1% of the 258k window. |
+| **RQ1 — Context Efficiency** | Historical superseded high-frequency setup: peak reduction of 47–65%; median context stabilized at 26.6–27.0% of the 258k window. |
 | **RQ2 — Information Retention** | 6/6 tested post-prune targets preserved intact (100% retention). |
 | **RQ3 — Task Performance** | Not established. The available runs do not support a comparative correctness claim. |
-| **RQ4 — Pruning Economics** | Penalty established, current magnitude open. The measured figures describe a superseded high-frequency configuration. |
-| **RQ5 — Forensic Auditability** | 7/9 properties fully recoverable from local rollout evidence; 0 lost records. |
+| **RQ4 — Pruning Economics** | Frozen synthetic study: short sessions cost more; longer sessions can cost less. Quality and general savings remain unproven. |
+| **RQ5 — Forensic Auditability** | Historical audit: 7/9 properties fully recoverable, 2 partial, 0 absent properties. |
+
+### Current UI verification
+
+The other implementation agent's September 9 report records **127 focused passing tests** covering motion,
+startup, streaming, the ledger, and status; native frame exports and an installed
+PTY smoke check also passed according to that report. This content audit did not
+independently rerun those UI checks. This is scoped regression evidence, **not a clean full-suite
+claim**: pre-existing suite failures remain. The cost/pruning calculators passed 18
+tests, and all 17 cost batches reproduced from the archived records without a discrepancy.
+See the [audit](docs/evals/public-content-audit-20260909.md) for the separate build identities,
+test scope, chart provenance, and public-content checks.
 
 ## Documentation
 

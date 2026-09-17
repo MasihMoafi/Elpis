@@ -21,6 +21,7 @@ src/.env.cuda
 uv.lock
 src/uv.lock
 package-lock.json
+website/node_modules/
 
 # IDE
 .vscode/
@@ -75,9 +76,22 @@ src/fix_cuda.sh
 !docs/assets/elpis-context-slash.webp
 *.svg
 !docs/assets/*.svg
+!website/assets/diagram_ace_lifecycle.svg
 *.mp4
 *.mp3
 *.wav
+
+# Reviewed public September 2026 captures and generated technical-page media.
+!docs/assets/*-20260909.png
+!docs/assets/elpis-motion-20260909.gif
+!docs/assets/elpis-context-motion-20260909.gif
+!docs/assets/elpis-scroll-demo.gif
+!docs/assets/elpis-motion-20260909.mp4
+!website/assets/technical/*.png
+!website/assets/technical/*.webp
+!website/assets/technical/*.gif
+!website/assets/technical/*.mp4
+!website/assets/technical/*.svg
 
 # Claude Code
 .claude/
@@ -123,3 +137,4 @@ docs/evals/ling/
 
 # Eval archive: personal session evidence, local only
 docs/evals/archive/
+ES.md
