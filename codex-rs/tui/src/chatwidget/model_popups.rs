@@ -96,11 +96,7 @@ impl ChatWidget {
                 let is_current = id == active;
                 // Say whether this provider can answer at all, so an empty model
                 // list later is explained before it happens rather than after.
-                let description = Some(match env_key.as_deref() {
-                    None => "no key needed".to_string(),
-                    Some(env_key) if self.provider_has_key(&id) => format!("key set · {env_key}"),
-                    Some(_) => "needs an API key · paste one after picking a model".to_string(),
-                });
+                let description = Some(self.provider_credential_label(&id, env_key.as_deref()));
                 let provider_for_action = id.clone();
                 // Searchable by both the shown name and the id typed in config,
                 // so "deepseek" finds "DeepSeek".
@@ -207,6 +203,27 @@ impl ChatWidget {
     }
 
     /// The environment variable a provider reads its key from, if it reads one.
+    /// What it takes to make this provider answer. A missing `env_key` does not
+    /// mean a free ride: OpenAI wants a sign-in and Bedrock wants AWS
+    /// credentials, and saying "no key needed" there strands a new user on an
+    /// empty model list.
+    fn provider_credential_label(&self, provider_id: &str, env_key: Option<&str>) -> String {
+        if let Some(env_key) = env_key {
+            return if self.provider_has_key(provider_id) {
+                format!("key set · {env_key}")
+            } else {
+                "needs an API key · paste one after picking a model".to_string()
+            };
+        }
+        match self.config.model_providers.get(provider_id) {
+            Some(info) if info.aws.is_some() => "uses your AWS credentials".to_string(),
+            Some(info) if info.requires_openai_auth || info.is_openai() => {
+                "uses your OpenAI sign-in".to_string()
+            }
+            _ => "runs locally · no key needed".to_string(),
+        }
+    }
+
     fn provider_env_key(&self, provider_id: &str) -> Option<String> {
         self.config
             .model_providers
@@ -1155,11 +1172,17 @@ impl ChatWidget {
             });
         }
 
-        items.insert(0, self.model_provider_group_item());
-        items.insert(1, auto_routing_item);
-        items.insert(2, self.change_provider_item(ModelPickerRole::Chat));
+        let mut head = 0;
+        items.insert(head, self.model_provider_group_item());
+        head += 1;
+        if let Some(auto_routing_item) = auto_routing_item {
+            items.insert(head, auto_routing_item);
+            head += 1;
+        }
+        items.insert(head, self.change_provider_item(ModelPickerRole::Chat));
+        head += 1;
         if let Some(key_item) = self.add_api_key_item(ModelPickerRole::Chat, &provider_id) {
-            items.insert(3, key_item);
+            items.insert(head, key_item);
         }
 
         let header = self.model_menu_header(
@@ -1175,15 +1198,22 @@ impl ChatWidget {
         });
     }
 
-    fn auto_model_routing_item(&self, presets: &[ModelPreset]) -> SelectionItem {
+    /// Auto routing needs Luna, Terra, and Sol, which only OpenAI serves. On a
+    /// provider that cannot offer them the row is not a choice, so it is not
+    /// shown - unless it is already on, where hiding it would trap the session.
+    fn auto_model_routing_item(&self, presets: &[ModelPreset]) -> Option<SelectionItem> {
         let available = self.auto_model_routing_available()
             && presets.iter().any(|preset| {
                 preset.model.as_str() == crate::chatwidget::model_routing::TERRA_MODEL
             });
+        let enabled = self.auto_model_routing_enabled();
+        if !available && !enabled {
+            return None;
+        }
         let description = if available {
             "Elpis automatically chooses the right model for the task".to_string()
         } else {
-            "Requires this provider to offer GPT-5.6 Luna, Terra, and Sol.".to_string()
+            "On, but this provider does not offer GPT-5.6 Luna, Terra, and Sol.".to_string()
         };
         let mut actions: Vec<SelectionAction> = Vec::new();
         if available {
@@ -1191,15 +1221,15 @@ impl ChatWidget {
                 tx.send(AppEvent::EnableAutoModelRouting);
             }));
         }
-        SelectionItem {
+        Some(SelectionItem {
             name: "Auto".to_string(),
             description: Some(description),
-            is_current: self.auto_model_routing_enabled(),
+            is_current: enabled,
             is_disabled: !available,
             actions,
             dismiss_on_select: available,
             ..Default::default()
-        }
+        })
     }
 
     pub(super) fn is_auto_model(model: &str) -> bool {

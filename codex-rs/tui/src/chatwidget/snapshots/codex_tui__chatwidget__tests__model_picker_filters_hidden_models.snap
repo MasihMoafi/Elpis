@@ -13,8 +13,6 @@ expression: popup
 │ Provider, protocol, route, and credential source remain visible while choosi │
 │                                                                              │
      OPENAI                                                                    │
-     Auto                          Requires this provider to offer GPT-5.6     │
-                                   Luna, Terra, and Sol.                       │
   1. Change provider…              Currently OpenAI                            │
 › 2. test-visible-model (current)  direct provider connection · test-visible-  │
                                    model description                           │
