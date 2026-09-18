@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|dev|optimized|schema-build|test-build|core-test-build|config-test-build|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|dev|optimized|schema-build|test-build|core-test-build|core-suite-build|core-suite-tests|config-test-build|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -38,6 +38,20 @@ case "$mode" in
         cargo_args=(test --profile local-release --locked --offline -p codex-core --lib --no-run)
         artifact=
         ;;
+    core-suite-build)
+        profile=dev-small
+        # The integration suite runs the rmcp stdio helper as a subprocess and
+        # looks for it next to its own test binary.
+        cargo_args=(build --profile dev-small --locked --offline -p codex-rmcp-client --bin test_stdio_server)
+        artifact="$repo_root/codex-rs/target/dev-small/test_stdio_server"
+        ;;
+    core-suite-tests)
+        profile=dev-small
+        # The integration suite needs debug_assertions, so it cannot run from a
+        # release profile.
+        cargo_args=(test --profile dev-small --locked --offline -p codex-core --test all --no-run)
+        artifact=
+        ;;
     config-test-build)
         profile=local-release
         cargo_args=(test --profile local-release --locked --offline -p codex-config --lib --no-run)
@@ -49,7 +63,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, dev, optimized, schema-build, test-build, core-test-build, config-test-build, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, dev, optimized, schema-build, test-build, core-test-build, core-suite-build, core-suite-tests, config-test-build, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
