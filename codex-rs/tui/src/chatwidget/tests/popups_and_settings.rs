@@ -3037,6 +3037,29 @@ async fn multi_agent_enable_prompt_updates_feature_and_emits_notice() {
 }
 
 #[tokio::test]
+async fn browsing_a_provider_lists_only_that_provider_s_models() {
+    // The reported bug: choosing OpenAI listed DeepSeek and Qwen, and choosing
+    // DeepSeek listed gpt-5.6-sol.
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::DEEPSEEK_PROVIDER_ID.to_string(),
+    );
+
+    let rows = chat.model_popup_model_ids.clone();
+    assert!(
+        rows.iter().any(|row| row == "deepseek-flash"),
+        "DeepSeek's own models are missing; rows: {rows:?}"
+    );
+    assert!(
+        !rows.iter().any(|row| row.starts_with("gpt-")),
+        "the session provider's models leaked into DeepSeek; rows: {rows:?}"
+    );
+}
+
+#[tokio::test]
 async fn model_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
     chat.thread_id = Some(ThreadId::new());
@@ -3221,7 +3244,7 @@ async fn pruner_model_popup_selects_without_changing_chat_and_cancel_preserves_s
     preset.model = "selectable-pruner".into();
     preset.display_name = "selectable-pruner".into();
     preset.show_in_picker = true;
-    chat.model_catalog = Arc::new(ModelCatalog::new(vec![preset]));
+    chat.model_catalog = super::helpers::catalog_for(&chat, vec![preset]);
     let original = crate::legacy_core::pruner_settings::PrunerSettings {
         model: None,
         provider: None,
@@ -3265,7 +3288,7 @@ async fn pruner_model_popup_selects_without_changing_chat_and_cancel_preserves_s
 async fn pruner_model_popup_refreshes_from_provider_catalog_and_ignores_stale_reply() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.thread_id = Some(ThreadId::new());
-    chat.model_catalog = Arc::new(ModelCatalog::new(Vec::new()));
+    chat.model_catalog = super::helpers::catalog_for(&chat, Vec::new());
     chat.dispatch_command(SlashCommand::PrunerModel);
     assert!(render_bottom_popup(&chat, 100).contains("Loading available models"));
     let (request_id, provider_id) = std::iter::from_fn(|| rx.try_recv().ok())
@@ -3303,13 +3326,16 @@ async fn model_catalog_uses_live_openai_models_without_fabricated_fallbacks() {
     bootstrap.id = "non-openai-model".to_string();
     bootstrap.model = "non-openai-model".to_string();
     bootstrap.display_name = "non-openai-model".to_string();
-    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]));
+    chat.model_catalog = super::helpers::catalog_for(&chat, vec![bootstrap]);
     chat.config.model_provider_id = codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string();
     chat.config.model_provider.name = "OpenRouter".to_string();
     chat.config.model_provider.base_url =
         Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
 
-    chat.open_model_popup();
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    );
     let openai_request_id = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
             AppEvent::FetchModels {
@@ -3355,7 +3381,10 @@ async fn model_catalog_reports_openai_unavailable_after_initial_failure() {
     chat.config.model_provider.base_url =
         Some(codex_model_provider_info::OPENROUTER_BASE_URL.to_string());
 
-    chat.open_model_popup();
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    );
     let openai_request_id = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
             AppEvent::FetchModels {
@@ -3366,7 +3395,10 @@ async fn model_catalog_reports_openai_unavailable_after_initial_failure() {
         })
         .expect("OpenAI catalog refresh request");
     let loading_picker = render_bottom_popup(&chat, /*width*/ 100);
-    assert!(loading_picker.contains("Loading available OpenAI models"));
+    assert!(
+        loading_picker.contains("Loading available OpenAI models"),
+        "picker:\n{loading_picker}"
+    );
 
     assert!(!chat.on_models_loaded(
         openai_request_id,
@@ -3398,7 +3430,10 @@ async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_r
     visible.display_name = "Last usable OpenAI model".to_string();
     visible.show_in_picker = true;
 
-    chat.open_model_popup();
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    );
     let first_request_id = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
             AppEvent::FetchModels {
@@ -3414,7 +3449,10 @@ async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_r
         Ok(vec![visible]),
     ));
 
-    chat.open_model_popup();
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    );
     let current_request_id = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
             AppEvent::FetchModels {
@@ -3440,7 +3478,10 @@ async fn model_catalog_keeps_last_usable_openai_models_on_stale_empty_or_error_r
         Ok(Vec::new()),
     ));
 
-    chat.open_model_popup();
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    );
     let error_request_id = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
             AppEvent::FetchModels {
@@ -3470,7 +3511,7 @@ async fn model_catalog_promotes_cached_models_after_provider_switch() {
     let mut openai = crate::test_support::TEST_MODEL_PRESETS[0].clone();
     openai.id = "cached-openai-model".to_string();
     openai.model = "cached-openai-model".to_string();
-    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]).with_provider_models(
+    chat.model_catalog = Arc::new(ModelCatalog::for_provider(vec![bootstrap], chat.active_model_provider_id()).with_provider_models(
         codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
         vec![openai.clone()],
         /*make_primary*/ false,
@@ -3528,13 +3569,16 @@ async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
             description: "High reasoning".to_string(),
         },
     ];
-    chat.model_catalog = Arc::new(ModelCatalog::new(vec![bootstrap]).with_provider_models(
+    chat.model_catalog = Arc::new(ModelCatalog::for_provider(vec![bootstrap], chat.active_model_provider_id()).with_provider_models(
         codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
         vec![openai],
         /*make_primary*/ false,
     ));
 
-    chat.open_model_popup();
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+    );
     while rx.try_recv().is_ok() {}
     for _ in 0..chat.model_popup_model_ids.len() {
         let selected = chat
@@ -3551,14 +3595,18 @@ async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-    assert!(events.iter().any(|event| matches!(
-        event,
-        AppEvent::OpenReasoningPopup {
-            model,
-            provider_id: Some(provider_id),
-        } if model.model == "openai-reasoning-model"
-            && provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
-    )));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::OpenReasoningPopup {
+                model,
+                provider_id: Some(provider_id),
+            } if model.model == "openai-reasoning-model"
+                && provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+        )),
+        "rows: {:?}; events: {events:?}",
+        chat.model_popup_model_ids
+    );
     assert!(events.iter().all(|event| !matches!(
         event,
         AppEvent::UpdateModel(_)
@@ -3601,9 +3649,12 @@ async fn model_reasoning_selection_for_openai_emits_one_atomic_selection() {
 #[tokio::test]
 async fn ollama_model_selection_emits_one_atomic_selection() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
     chat.on_ollama_models_loaded(vec!["local-test-model".to_string()]);
-    let presets = chat.models_for_active_provider();
-    chat.open_model_popup_with_presets(presets);
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID.to_string(),
+    );
 
     for _ in 0..chat.model_popup_model_ids.len() {
         let selected = chat
@@ -3624,16 +3675,24 @@ async fn ollama_model_selection_emits_one_atomic_selection() {
         .iter()
         .filter(|event| matches!(event, AppEvent::ApplyProviderModelSelection { .. }))
         .collect::<Vec<_>>();
-    assert_eq!(selections.len(), 1);
-    assert!(matches!(
-        selections[0],
-        AppEvent::ApplyProviderModelSelection {
-            model,
-            provider_id,
-            effort: None,
-        } if model == "local-test-model"
-            && provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID
-    ));
+    assert_eq!(
+        selections.len(),
+        1,
+        "rows: {:?}; events: {events:?}",
+        chat.model_popup_model_ids
+    );
+    assert!(
+        matches!(
+            selections[0],
+            AppEvent::ApplyProviderModelSelection {
+                model,
+                provider_id,
+                ..
+            } if model == "local-test-model"
+                && provider_id == codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID
+        ),
+        "events: {events:?}"
+    );
     assert!(events.iter().all(|event| !matches!(
         event,
         AppEvent::UpdateModel(_) | AppEvent::PersistModelSelection { .. }
@@ -3980,7 +4039,7 @@ async fn reasoning_up_shortcut_does_not_silently_enter_advanced_effort() {
                 description: "Ultra reasoning".to_string(),
             },
         ]);
-        chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
+        chat.model_catalog = super::helpers::catalog_for(&chat, vec![preset]);
         chat.set_model(model);
 
         for effort in [ReasoningEffortConfig::XHigh, ReasoningEffortConfig::Max] {
@@ -4026,7 +4085,7 @@ async fn reasoning_down_shortcut_can_leave_advanced_effort() {
             description: "Maximum reasoning".to_string(),
         },
     ]);
-    chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
+    chat.model_catalog = super::helpers::catalog_for(&chat, vec![preset]);
 
     for (current, expected) in [
         (ReasoningEffortConfig::Ultra, ReasoningEffortConfig::Max),

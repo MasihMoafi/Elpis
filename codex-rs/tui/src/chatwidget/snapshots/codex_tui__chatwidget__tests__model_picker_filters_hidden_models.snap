@@ -13,13 +13,10 @@ expression: popup
 │ Provider, protocol, route, and credential source remain visible while choosi │
 │                                                                              │
      OPENAI                                                                    │
-     Auto                  Requires this provider to offer GPT-5.6 Luna,       │
-                           Terra, and Sol.                                     │
-  1. Change provider…      Currently OpenAI                                    │
-› 2. All models (current)  Browse this provider's full catalog (current: test- │
-                           visible-model)                                      │
-     OPENROUTER                                                                │
-  3. openrouter/free       OpenRouter routes each request to a free open-      │
-                           source model                                        │
+     Auto                          Requires this provider to offer GPT-5.6     │
+                                   Luna, Terra, and Sol.                       │
+  1. Change provider…              Currently OpenAI                            │
+› 2. test-visible-model (current)  direct provider connection · test-visible-  │
+                                   model description                           │
 └──────────────────────────────────────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

@@ -174,6 +174,10 @@ pub(crate) struct AppServerBootstrap {
     pub(crate) default_model: String,
     pub(crate) has_chatgpt_account: bool,
     pub(crate) available_models: Vec<ModelPreset>,
+    /// The provider `available_models` describes, when the server answered for
+    /// one. `None` means the list is provider-agnostic and must not be shown as
+    /// any single provider's catalogue.
+    pub(crate) available_models_provider: Option<String>,
 }
 
 pub(crate) struct AppServerSession {
@@ -292,22 +296,20 @@ impl AppServerSession {
             .requirements
             .and_then(|requirements| requirements.models)
             .and_then(|models| models.new_thread);
-        let model_request_id = self.next_request_id();
-        let models: ModelListResponse = self
-            .client
-            .request_typed(ClientRequest::ModelList {
-                request_id: model_request_id,
-                params: ModelListParams {
-                    cursor: None,
-                    limit: None,
-                    include_hidden: Some(true),
-                    model_provider: None,
-                },
-            })
-            .await
-            .map_err(|err| {
-                bootstrap_request_error("model/list failed during TUI bootstrap", err)
-            })?;
+        // Ask for the session provider's own catalogue. A shared daemon's
+        // manager answers an unscoped request from whatever provider it booted
+        // on, which is how a DeepSeek session was handed OpenAI's models.
+        let session_provider = config.model_provider_id.clone();
+        let mut available_models_provider = Some(session_provider.clone());
+        let mut models = self
+            .request_model_list(Some(session_provider.clone()))
+            .await?;
+        if models.data.is_empty() {
+            // The provider could not be enumerated - no key, no endpoint, no
+            // network. Fall back so startup still has a model to name.
+            available_models_provider = None;
+            models = self.request_model_list(/*model_provider*/ None).await?;
+        }
         let available_models = models
             .data
             .into_iter()
@@ -359,7 +361,27 @@ impl AppServerSession {
             default_model,
             has_chatgpt_account,
             available_models,
+            available_models_provider,
         })
+    }
+
+    async fn request_model_list(
+        &mut self,
+        model_provider: Option<String>,
+    ) -> color_eyre::Result<ModelListResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::ModelList {
+                request_id,
+                params: ModelListParams {
+                    cursor: None,
+                    limit: None,
+                    include_hidden: Some(true),
+                    model_provider,
+                },
+            })
+            .await
+            .map_err(|err| bootstrap_request_error("model/list failed during TUI bootstrap", err))
     }
 
     pub(crate) fn managed_new_thread_defaults(&self) -> Option<&NewThreadModelDefaults> {

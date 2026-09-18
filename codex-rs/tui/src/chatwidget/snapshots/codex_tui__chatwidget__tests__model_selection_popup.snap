@@ -13,13 +13,18 @@ expression: popup
 │ Provider, protocol, route, and credential source remain visible while choosi │
 │                                                                              │
      OPENAI                                                                    │
-  1. Auto                  Elpis automatically chooses the right model for the │
-                           task                                                │
-  2. Change provider…      Currently OpenAI                                    │
-› 3. All models (current)  Browse this provider's full catalog (current: gpt-  │
-                           5.2)                                                │
-     OPENROUTER                                                                │
-  4. openrouter/free       OpenRouter routes each request to a free open-      │
-                           source model                                        │
+  1. Auto                   Elpis automatically chooses the right model for    │
+                            the task                                           │
+  2. Change provider…       Currently OpenAI                                   │
+  3. gpt-5.6-sol (default)  direct provider connection · Latest frontier       │
+                            agentic coding model.                              │
+  4. gpt-5.6-terra          direct provider connection · Balanced agentic      │
+                            coding model for everyday work.                    │
+  5. gpt-5.6-luna           direct provider connection · Fast and affordable   │
+                            agentic coding model.                              │
+  6. gpt-5.5                direct provider connection · Frontier model for    │
+                            complex coding, research, and real-world work.     │
+› 7. gpt-5.2 (current)      direct provider connection · Optimized for         │
+                            professional work and long-running agents.         │
 └──────────────────────────────────────────────────────────────────────────────┘
   Press enter to confirm or esc to go back

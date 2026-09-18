@@ -31,6 +31,18 @@ pub(super) async fn test_config() -> Config {
     config
 }
 
+/// A session catalogue tagged with the provider the widget is on, matching how
+/// the app server answers a provider-scoped `model/list`.
+pub(super) fn catalog_for(
+    chat: &crate::chatwidget::ChatWidget,
+    models: Vec<codex_protocol::openai_models::ModelPreset>,
+) -> std::sync::Arc<crate::model_catalog::ModelCatalog> {
+    std::sync::Arc::new(crate::model_catalog::ModelCatalog::for_provider(
+        models,
+        chat.active_model_provider_id(),
+    ))
+}
+
 pub(super) fn test_project_path() -> PathBuf {
     PathBuf::from(test_path_display("/tmp/project"))
 }
@@ -145,8 +157,9 @@ pub(super) fn test_session_telemetry(config: &Config, model: &str) -> SessionTel
 }
 
 pub(super) fn test_model_catalog(_config: &Config) -> Arc<ModelCatalog> {
-    Arc::new(ModelCatalog::new(
+    Arc::new(ModelCatalog::for_provider(
         crate::test_support::TEST_MODEL_PRESETS.clone(),
+        codex_model_provider_info::OPENAI_PROVIDER_ID,
     ))
 }
 
@@ -326,7 +339,7 @@ pub(crate) fn set_fast_mode_test_catalog(chat: &mut ChatWidget) {
     .map(Into::into)
     .collect();
 
-    chat.model_catalog = Arc::new(ModelCatalog::new(models));
+    chat.model_catalog = catalog_for(chat, models);
 }
 
 pub(crate) async fn make_chatwidget_manual_with_sender() -> (

@@ -890,7 +890,12 @@ impl App {
         if let Some(updated_model) = config.model.clone() {
             model = updated_model;
         }
-        let model_catalog = Arc::new(ModelCatalog::new(available_models.clone()));
+        // Tagged with the provider the server answered for, so it is never
+        // shown as another provider's catalogue.
+        let model_catalog = Arc::new(match bootstrap.available_models_provider.as_deref() {
+            Some(provider_id) => ModelCatalog::for_provider(available_models.clone(), provider_id),
+            None => ModelCatalog::new(available_models.clone()),
+        });
         let auth_mode = bootstrap.auth_mode;
         let has_chatgpt_account = bootstrap.has_chatgpt_account;
         let has_codex_backend_auth = matches!(auth_mode, Some(TelemetryAuthMode::Chatgpt));

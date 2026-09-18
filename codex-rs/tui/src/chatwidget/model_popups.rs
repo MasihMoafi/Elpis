@@ -12,6 +12,10 @@ use codex_model_provider_info::OPENROUTER_PROVIDER_ID;
 use ratatui::text::Span;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
+/// How many of a provider's models fit in the picker before the rest move
+/// behind "All models". Every provider Elpis ships a catalogue for is under
+/// this; OpenRouter's live list is not.
+const INLINE_MODEL_ROW_LIMIT: usize = 12;
 const OLLAMA_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
 /// OpenRouter is a remote service, so it gets a longer budget than local Ollama.
 const OPENROUTER_MODELS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
@@ -74,24 +78,17 @@ impl ChatWidget {
                 // list later is explained before it happens rather than after.
                 let description = Some(match env_key.as_deref() {
                     None => "no key needed".to_string(),
-                    Some(env_key) => {
-                        let has_key = self
-                            .config
-                            .model_providers
-                            .get(&id)
-                            .and_then(|info| info.api_key().ok().flatten())
-                            .is_some_and(|key| !key.trim().is_empty());
-                        if has_key {
-                            format!("key set · {env_key}")
-                        } else {
-                            format!("no key · set {env_key}, or add one in /dashboard")
-                        }
-                    }
+                    Some(env_key) if self.provider_has_key(&id) => format!("key set · {env_key}"),
+                    Some(_) => "needs an API key · paste one after picking a model".to_string(),
                 });
                 let provider_for_action = id.clone();
+                // Searchable by both the shown name and the id typed in config,
+                // so "deepseek" finds "DeepSeek".
+                let search_value = Some(format!("{name} {id}"));
                 SelectionItem {
                     name,
                     description,
+                    search_value,
                     is_current,
                     actions: vec![Box::new(move |tx| {
                         tx.send(AppEvent::BrowseModelProvider {
@@ -126,11 +123,18 @@ impl ChatWidget {
     /// written until a model is chosen.
     pub(crate) fn browse_model_provider(&mut self, role: ModelPickerRole, provider_id: String) {
         self.browsing_provider = Some(provider_id.clone());
-        self.request_model_catalog(Some(provider_id));
         match role {
+            // `open_model_popup` asks for the catalogue itself; asking here too
+            // fired two requests and left the first one stale.
             ModelPickerRole::Chat => self.open_model_popup(),
-            ModelPickerRole::Memory => self.refresh_background_model_popup(),
-            ModelPickerRole::Pruner => self.refresh_pruner_model_popup(),
+            ModelPickerRole::Memory => {
+                self.request_model_catalog(Some(provider_id));
+                self.refresh_background_model_popup();
+            }
+            ModelPickerRole::Pruner => {
+                self.request_model_catalog(Some(provider_id));
+                self.refresh_pruner_model_popup();
+            }
         }
     }
 
@@ -145,6 +149,179 @@ impl ChatWidget {
             }
             ModelPickerRole::Memory => self.background_provider_id().to_string(),
         }
+    }
+
+    /// The provider a pick should carry with it: set only while a provider is
+    /// being browsed, so an ordinary pick on the session's own provider keeps
+    /// its existing path (plan-mode scope prompt, ultra-reasoning warning).
+    pub(super) fn picker_target_provider(&self) -> Option<String> {
+        self.browsing_provider.clone()
+    }
+
+    /// Whether a provider can authenticate right now: it needs no key, or one
+    /// is set in the environment or in this Elpis home.
+    ///
+    /// Mirrors Zed's `ApiKeyState::has_key` and Phoenix's `isProviderReady`:
+    /// the picker says so before the request fails, not after.
+    pub(super) fn provider_has_key(&self, provider_id: &str) -> bool {
+        let Some(info) = self.config.model_providers.get(provider_id) else {
+            return false;
+        };
+        // Credentials that are not an API key the owner could type here:
+        // the ChatGPT sign-in store, a bearer token, a command, AWS SigV4.
+        if info.requires_openai_auth
+            || info.experimental_bearer_token.is_some()
+            || info.auth.is_some()
+            || info.aws.is_some()
+        {
+            return true;
+        }
+        match info.env_key.as_deref() {
+            None => true,
+            Some(_) => info
+                .api_key()
+                .ok()
+                .flatten()
+                .is_some_and(|key| !key.trim().is_empty()),
+        }
+    }
+
+    /// The environment variable a provider reads its key from, if it reads one.
+    fn provider_env_key(&self, provider_id: &str) -> Option<String> {
+        self.config
+            .model_providers
+            .get(provider_id)
+            .and_then(|info| info.env_key.clone())
+    }
+
+    fn provider_display_name(&self, provider_id: &str) -> String {
+        self.config
+            .model_providers
+            .get(provider_id)
+            .map(|info| info.name.clone())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| provider_id.to_string())
+    }
+
+    /// Ask for the provider's key in the terminal, masked while it is typed.
+    ///
+    /// The two ways in are both on screen: paste it here, or open the
+    /// dashboard's key page. Nothing about the provider changes until a key
+    /// lands, so Esc leaves the session exactly as it was.
+    pub(crate) fn open_provider_api_key_prompt(
+        &mut self,
+        role: ModelPickerRole,
+        provider_id: String,
+        then_model: Option<String>,
+    ) {
+        let name = self.provider_display_name(&provider_id);
+        let Some(env_key) = self.provider_env_key(&provider_id) else {
+            self.add_info_message(
+                format!("{name} does not take an API key."),
+                /*hint*/ None,
+            );
+            return;
+        };
+        let from_env = std::env::var(&env_key)
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty());
+        if from_env {
+            self.add_info_message(
+                format!("{name} already reads its key from {env_key}."),
+                Some("Unset that variable to type a different key here.".to_string()),
+            );
+            return;
+        }
+        let where_to_get = codex_model_provider_info::provider_api_key_url(&provider_id)
+            .map(|url| format!("Get a key at {url} · "))
+            .unwrap_or_default();
+        let context_label = format!("{where_to_get}or paste it in /dashboard → Keys");
+        let tx = self.app_event_tx.clone();
+        let provider_for_submit = provider_id.clone();
+        let view = CustomPromptView::new(
+            format!("{name} API key"),
+            "Paste the key and press Enter".to_string(),
+            /*initial_text*/ String::new(),
+            Some(context_label),
+            Box::new(move |key: String| {
+                tx.send(AppEvent::SaveProviderApiKey {
+                    role,
+                    provider_id: provider_for_submit.clone(),
+                    key,
+                    then_model: then_model.clone(),
+                });
+            }),
+        )
+        .masked();
+        self.bottom_pane.show_view(Box::new(view));
+    }
+
+    /// Store the pasted key and carry on where the owner left off.
+    pub(crate) fn save_provider_api_key(
+        &mut self,
+        role: ModelPickerRole,
+        provider_id: String,
+        key: String,
+        then_model: Option<String>,
+    ) {
+        let name = self.provider_display_name(&provider_id);
+        let Some(env_key) = self.provider_env_key(&provider_id) else {
+            return;
+        };
+        if let Err(error) = crate::dashboard_server::save_provider_key(
+            self.config.codex_home.as_path(),
+            &provider_id,
+            &env_key,
+            &key,
+        ) {
+            self.add_error_message(format!("Could not save the {name} key: {error}"));
+            return;
+        }
+        self.add_info_message(
+            format!("{name} key saved."),
+            Some("Stored for this Elpis home only, readable by you alone.".to_string()),
+        );
+        match then_model {
+            Some(model) => self
+                .app_event_tx
+                .send(AppEvent::ApplyProviderModelSelection {
+                    model,
+                    provider_id,
+                    effort: None,
+                }),
+            None => self.browse_model_provider(role, provider_id),
+        }
+    }
+
+    /// A row for pasting the provider's key, shown only while that provider has
+    /// none. Phoenix puts "Configure AI Providers" in the model menu's footer
+    /// for the same reason: the answer to "no key" belongs where the wall is.
+    pub(super) fn add_api_key_item(
+        &self,
+        role: ModelPickerRole,
+        provider_id: &str,
+    ) -> Option<SelectionItem> {
+        if self.provider_has_key(provider_id) {
+            return None;
+        }
+        let description = match codex_model_provider_info::provider_api_key_url(provider_id) {
+            Some(url) => format!("Paste it here, or open /dashboard → Keys · {url}"),
+            None => "Paste it here, or open /dashboard → Keys".to_string(),
+        };
+        let provider_for_action = provider_id.to_string();
+        Some(SelectionItem {
+            name: "Add API key…".to_string(),
+            description: Some(description),
+            actions: vec![Box::new(move |tx| {
+                tx.send(AppEvent::OpenProviderApiKeyPrompt {
+                    role,
+                    provider_id: provider_for_action.clone(),
+                    then_model: None,
+                });
+            })],
+            dismiss_on_select: true,
+            ..Default::default()
+        })
     }
 
     /// The row that opens the provider step, shown at the top of every picker.
@@ -264,14 +441,6 @@ impl ChatWidget {
             "Built-in default".to_string(),
             "Follow the session's provider for background work".to_string(),
         )];
-        choices.extend(self.openrouter_models.iter().map(|model| {
-            (
-                Some(model.slug.clone()),
-                Some(OPENROUTER_PROVIDER_ID.to_string()),
-                model.slug.clone(),
-                model.description.clone(),
-            )
-        }));
         choices.extend(
             self.models_for_provider(&provider_id)
                 .into_iter()
@@ -348,6 +517,9 @@ impl ChatWidget {
             .collect();
         let mut items = items;
         items.insert(0, self.change_provider_item(ModelPickerRole::Memory));
+        if let Some(key_item) = self.add_api_key_item(ModelPickerRole::Memory, &provider_id) {
+            items.insert(1, key_item);
+        }
         let initial_selected_idx = items.iter().position(|item| item.is_current);
         self.show_model_selection_view(SelectionViewParams {
             view_id: Some(BACKGROUND_MODEL_SELECTION_VIEW_ID),
@@ -385,16 +557,8 @@ impl ChatWidget {
             "Provider default".to_string(),
             "Restore automatic pruner model selection".to_string(),
         )];
-        choices.extend(self.openrouter_models.iter().map(|model| {
-            (
-                Some(model.slug.clone()),
-                Some(OPENROUTER_PROVIDER_ID.to_string()),
-                model.slug.clone(),
-                model.description.clone(),
-            )
-        }));
         choices.extend(
-            self.models_for_active_provider()
+            self.models_for_provider(&provider_id)
                 .into_iter()
                 .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
                 .map(|preset| {
@@ -423,13 +587,11 @@ impl ChatWidget {
         let mut seen = std::collections::HashSet::new();
         choices.retain(|(model, _, _, _)| seen.insert(model.clone()));
         let footer_note = (choices.len() == 1).then(|| {
-            Line::from(
-                if self.model_popup_request_is_pending(self.active_model_provider_id()) {
-                    "Loading available models…"
-                } else {
-                    "No models available. Reopen /pruner-model to retry."
-                },
-            )
+            Line::from(if self.model_popup_request_is_pending(&provider_id) {
+                "Loading available models…"
+            } else {
+                "No models available. Reopen /pruner-model to retry."
+            })
         });
         let items: Vec<SelectionItem> = choices
             .into_iter()
@@ -467,6 +629,9 @@ impl ChatWidget {
             .collect();
         let mut items = items;
         items.insert(0, self.change_provider_item(ModelPickerRole::Pruner));
+        if let Some(key_item) = self.add_api_key_item(ModelPickerRole::Pruner, &provider_id) {
+            items.insert(1, key_item);
+        }
         let initial_selected_idx = items.iter().position(|item| item.is_current);
         self.show_model_selection_view(SelectionViewParams {
             view_id: Some(PRUNER_MODEL_SELECTION_VIEW_ID),
@@ -500,14 +665,11 @@ impl ChatWidget {
             return;
         }
 
-        let active_provider_id = self.active_model_provider_id().to_string();
-        let presets = self.models_for_active_provider();
+        let provider_id = self.picker_provider_id(ModelPickerRole::Chat);
+        let presets = self.models_for_provider(&provider_id);
         self.refresh_ollama_models();
         self.refresh_openrouter_models();
-        self.request_model_catalog(Some(active_provider_id.clone()));
-        if active_provider_id != OPENAI_PROVIDER_ID {
-            self.request_model_catalog(Some(OPENAI_PROVIDER_ID.to_string()));
-        }
+        self.request_model_catalog(Some(provider_id));
         self.open_model_popup_with_presets(presets);
     }
 
@@ -600,6 +762,46 @@ impl ChatWidget {
             .collect()
     }
 
+    /// The models installed on this machine, as picker presets, so Ollama's
+    /// entry in the provider list shows its own catalogue like every other
+    /// provider does.
+    pub(super) fn ollama_local_presets(&self) -> Vec<ModelPreset> {
+        self.ollama_local_models
+            .iter()
+            .enumerate()
+            .filter_map(|(priority, model)| {
+                let info: codex_protocol::openai_models::ModelInfo =
+                    serde_json::from_value(serde_json::json!({
+                        "slug": model,
+                        "display_name": model,
+                        "description": "Runs on this machine via Ollama",
+                        "default_reasoning_level": null,
+                        "supported_reasoning_levels": [],
+                        "shell_type": "shell_command",
+                        "visibility": "list",
+                        "supported_in_api": true,
+                        "priority": priority,
+                        "availability_nux": null,
+                        "upgrade": null,
+                        "base_instructions": "",
+                        "supports_reasoning_summary_parameter": false,
+                        "support_verbosity": false,
+                        "default_verbosity": null,
+                        "apply_patch_tool_type": null,
+                        "truncation_policy": {"mode": "bytes", "limit": 10000},
+                        "supports_parallel_tool_calls": true,
+                        "supports_image_detail_original": false,
+                        "context_window": 131_072,
+                        "max_context_window": 131_072,
+                        "experimental_supported_tools": [],
+                        "input_modalities": ["text"]
+                    }))
+                    .ok()?;
+                Some(ModelPreset::from(info))
+            })
+            .collect()
+    }
+
     pub(crate) fn on_ollama_models_loaded(&mut self, models: Vec<String>) {
         self.ollama_local_models = models;
     }
@@ -617,42 +819,6 @@ impl ChatWidget {
             .model_providers
             .get(provider_id)
             .and_then(|provider| provider.base_url.clone())
-    }
-
-    /// Appends an "OLLAMA" group listing locally installed models below whatever the active
-    /// provider's models are, mirroring `push_openrouter_free_model_group`. Selecting one
-    /// switches both the model and the provider for the active thread, and persists both to
-    /// config.toml so the next launch starts on the same local model.
-    ///
-    /// Listed even while Ollama is the active provider: the group above it comes from the
-    /// hosted model catalog, which never contains locally installed models, so skipping this
-    /// group would leave a thread running on Ollama with no way to see or reach its own models.
-    fn push_ollama_model_group(&self, items: &mut Vec<SelectionItem>) {
-        if self.ollama_local_models.is_empty() {
-            return;
-        }
-        items.push(SelectionItem {
-            name: "OLLAMA".to_string(),
-            is_disabled: true,
-            ..Default::default()
-        });
-        for model in &self.ollama_local_models {
-            let model = model.clone();
-            let model_for_action = model.clone();
-            items.push(SelectionItem {
-                name: model,
-                description: Some("Runs on this machine via Ollama".to_string()),
-                actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::ApplyProviderModelSelection {
-                        model: model_for_action.clone(),
-                        provider_id: OLLAMA_OSS_PROVIDER_ID.to_string(),
-                        effort: None,
-                    });
-                })],
-                dismiss_on_select: true,
-                ..Default::default()
-            });
-        }
     }
 
     /// Provider name and id reduced to their letters and digits, lowercased, so cosmetic
@@ -681,9 +847,17 @@ impl ChatWidget {
         }
     }
 
+    /// The heading above a provider's models. It names the provider whose list
+    /// is on screen, which is not the session's while another is being browsed.
     fn model_provider_group_item(&self) -> SelectionItem {
+        let provider_id = self.picker_provider_id(ModelPickerRole::Chat);
+        let name = if provider_id == self.active_model_provider_id() {
+            self.model_provider_display_name()
+        } else {
+            self.provider_display_name(&provider_id)
+        };
         SelectionItem {
-            name: self.model_provider_display_name().to_uppercase(),
+            name: name.to_uppercase(),
             is_disabled: true,
             ..Default::default()
         }
@@ -696,131 +870,41 @@ impl ChatWidget {
         self.config.model_provider.base_url.as_deref() == Some(OPENROUTER_BASE_URL)
     }
 
-    /// Appends an always-visible "OPENROUTER" group below whatever the active
-    /// provider's models are, mirroring how OPENAI's models are grouped: the
-    /// live catalogue with its prices first, then the bundled free tier.
-    ///
-    /// Selecting one moves the thread's provider along with its model, the same
-    /// atomic switch the OLLAMA group performs, so the choice takes effect on
-    /// the next turn instead of waiting for a relaunch with `--provider`.
-    fn push_openrouter_free_model_group(&self, items: &mut Vec<SelectionItem>) {
-        if self.is_openrouter_active() {
-            return;
-        }
-        items.push(SelectionItem {
-            name: "OPENROUTER".to_string(),
-            is_disabled: true,
-            ..Default::default()
-        });
-        let live = self
-            .openrouter_models
-            .iter()
-            .map(|model| (model.slug.clone(), model.description.clone()));
-        let free = codex_model_provider::openrouter_free_model_catalog()
-            .models
-            .into_iter()
-            .map(|preset| {
-                let preset: ModelPreset = preset.into();
-                (preset.model, preset.description)
-            });
-        for (model, description) in live.chain(free) {
-            let model_for_action = model.clone();
-            items.push(SelectionItem {
-                name: model,
-                description: Some(description),
-                actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::ApplyProviderModelSelection {
-                        model: model_for_action.clone(),
-                        provider_id: OPENROUTER_PROVIDER_ID.to_string(),
-                        effort: None,
-                    });
-                })],
-                dismiss_on_select: true,
-                ..Default::default()
-            });
-        }
-    }
-
-    /// Appends the account-scoped OpenAI catalog below a different active provider.
-    /// The list is fetched through the app server with the existing ChatGPT authentication;
-    /// until it arrives the picker renders an explicit loading row instead of invented models.
-    fn push_openai_model_group(&self, items: &mut Vec<SelectionItem>) {
-        if self.active_model_provider_id() == OPENAI_PROVIDER_ID {
-            return;
-        }
-        items.push(SelectionItem {
-            name: "OPENAI".to_string(),
-            is_disabled: true,
-            ..Default::default()
-        });
-        let Some(presets) = self.model_catalog.models_for_provider(OPENAI_PROVIDER_ID) else {
-            let item = if self.model_popup_request_is_pending(OPENAI_PROVIDER_ID) {
-                SelectionItem {
-                    name: "Loading available OpenAI models…".to_string(),
-                    description: Some("Uses the connected ChatGPT subscription".to_string()),
-                    is_disabled: true,
-                    ..Default::default()
-                }
-            } else {
-                SelectionItem {
-                    name: "OpenAI unavailable - retry with /model".to_string(),
-                    is_disabled: true,
-                    ..Default::default()
-                }
-            };
-            items.push(item);
-            return;
-        };
-        let mut visible_count = 0;
-        for preset in presets.into_iter().filter(|preset| preset.show_in_picker) {
-            visible_count += 1;
-            let model = preset.model.clone();
-            let preset_for_action = preset.clone();
-            let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
-            items.push(SelectionItem {
-                name: model.clone(),
-                description: Some(preset.description),
-                actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::OpenReasoningPopup {
-                        model: preset_for_action.clone(),
-                        provider_id: Some(OPENAI_PROVIDER_ID.to_string()),
-                    });
-                })],
-                dismiss_on_select: single_supported_effort,
-                dismiss_parent_on_child_accept: !single_supported_effort,
-                ..Default::default()
-            });
-        }
-        if visible_count == 0 {
-            items.push(SelectionItem {
-                name: "No selectable OpenAI models are available".to_string(),
-                is_disabled: true,
-                ..Default::default()
-            });
-        }
+    /// The provider the header should describe: the one whose models are on
+    /// screen. Reading the session's here told the owner "Provider: OpenRouter"
+    /// above a list of DeepSeek models.
+    fn picker_provider_info(&self) -> &codex_model_provider_info::ModelProviderInfo {
+        let provider_id = self.picker_provider_id(ModelPickerRole::Chat);
+        self.config
+            .model_providers
+            .get(&provider_id)
+            .unwrap_or(&self.config.model_provider)
     }
 
     fn model_provider_route(&self) -> crate::branding::ProviderRoute {
+        let provider_id = self.picker_provider_id(ModelPickerRole::Chat);
+        let info = self.picker_provider_info();
         crate::branding::ProviderRoute::for_provider(
-            &self.config.model_provider_id,
-            &self.config.model_provider.name,
-            self.config.model_provider.wire_api,
+            &provider_id,
+            &info.name,
+            info.wire_api,
             self.custom_openai_base_url().is_some(),
         )
     }
 
     fn model_protocol_label(&self) -> String {
-        self.config.model_provider.wire_api.to_string()
+        self.picker_provider_info().wire_api.to_string()
     }
 
     fn model_credential_label(&self) -> String {
-        if self.config.model_provider.requires_openai_auth {
+        let provider = self.picker_provider_info();
+        if provider.requires_openai_auth {
             return "OpenAI/ChatGPT credential store".to_string();
         }
-        if let Some(env_key) = self.config.model_provider.env_key.as_deref() {
+        if let Some(env_key) = provider.env_key.as_deref() {
             return format!("environment variable {env_key}");
         }
-        if let Some(headers) = self.config.model_provider.env_http_headers.as_ref()
+        if let Some(headers) = provider.env_http_headers.as_ref()
             && !headers.is_empty()
         {
             let mut env_names = headers.values().cloned().collect::<Vec<_>>();
@@ -828,18 +912,13 @@ impl ChatWidget {
             env_names.dedup();
             return format!("environment header {}", env_names.join(", "));
         }
-        if self.config.model_provider.auth.is_some() {
+        if provider.auth.is_some() {
             return "command-backed bearer token".to_string();
         }
-        if self.config.model_provider.aws.is_some() {
+        if provider.aws.is_some() {
             return "AWS SigV4 credential chain".to_string();
         }
-        if self
-            .config
-            .model_provider
-            .experimental_bearer_token
-            .is_some()
-        {
+        if provider.experimental_bearer_token.is_some() {
             return "configured bearer token".to_string();
         }
         // A provider that declares no credential of any kind is a local server; saying
@@ -857,7 +936,13 @@ impl ChatWidget {
     }
 
     fn model_menu_header(&self, title: &str, subtitle: &str) -> Box<dyn Renderable> {
-        let provider = self.model_provider_display_name();
+        let picker_provider_id = self.picker_provider_id(ModelPickerRole::Chat);
+        let browsing_other = picker_provider_id != self.active_model_provider_id();
+        let provider = if browsing_other {
+            self.provider_display_name(&picker_provider_id)
+        } else {
+            self.model_provider_display_name()
+        };
         let route = self.model_provider_route().long_label();
         let protocol = self.model_protocol_label();
         let credential = self.model_credential_label();
@@ -882,9 +967,11 @@ impl ChatWidget {
             format!("Credential: {credential}"),
             crate::style::status_symbol_style(),
         )));
-        header.push(Line::from(
-            format!("Model: {}", self.current_model()).bold(),
-        ));
+        header.push(Line::from(if browsing_other {
+            "Model: none chosen on this provider yet".to_string().bold()
+        } else {
+            format!("Model: {}", self.current_model()).bold()
+        }));
         header.push(Line::from(subtitle.to_string().dim()));
         if let Some(warning) = self.model_menu_warning_line() {
             header.push(warning);
@@ -923,41 +1010,65 @@ impl ChatWidget {
     }
 
     pub(crate) fn open_model_popup_with_presets(&mut self, presets: Vec<ModelPreset>) {
+        let provider_id = self.picker_provider_id(ModelPickerRole::Chat);
         let presets: Vec<ModelPreset> = presets
             .into_iter()
             .filter(|preset| preset.show_in_picker)
             .collect();
         let auto_routing_item = self.auto_model_routing_item(&presets);
 
-        let current_model = self.current_model();
+        // While another provider is being browsed the session's model is not on
+        // this list, so do not present it as this provider's current choice.
+        let browsing_other = provider_id != self.active_model_provider_id();
+        let current_model = if browsing_other {
+            String::new()
+        } else {
+            self.current_model().to_string()
+        };
         let current_label = presets
             .iter()
             .find(|preset| preset.model.as_str() == current_model)
             .map(|preset| preset.model.to_string())
-            .unwrap_or_else(|| self.model_display_name().to_string());
+            .unwrap_or_else(|| {
+                if browsing_other {
+                    "none yet".to_string()
+                } else {
+                    self.model_display_name().to_string()
+                }
+            });
 
-        let (mut auto_presets, other_presets): (Vec<ModelPreset>, Vec<ModelPreset>) = presets
+        let (mut auto_presets, mut other_presets): (Vec<ModelPreset>, Vec<ModelPreset>) = presets
             .into_iter()
             .partition(|preset| Self::is_auto_model(&preset.model));
 
         auto_presets.sort_by_key(|preset| Self::auto_model_order(&preset.model));
+        // Choosing a provider should put its models on screen, not one more row
+        // to open. Only a catalogue too long to read stays behind "All models".
+        if auto_presets.len() + other_presets.len() <= INLINE_MODEL_ROW_LIMIT {
+            auto_presets.append(&mut other_presets);
+        }
         let mut items: Vec<SelectionItem> = auto_presets
             .into_iter()
             .map(|preset| {
                 let description = Some(self.model_route_description(&preset.description));
                 let model = preset.model.clone();
+                // A model that offers several efforts gets its effort chosen
+                // explicitly, the same rule the full-catalog list follows.
                 let requires_advanced_selection =
                     Self::is_advanced_reasoning_effort(&preset.default_reasoning_effort)
                         || preset
                             .supported_reasoning_efforts
                             .iter()
-                            .any(|option| Self::is_advanced_reasoning_effort(&option.effort));
+                            .any(|option| Self::is_advanced_reasoning_effort(&option.effort))
+                        || (!Self::is_auto_model(&preset.model)
+                            && preset.supported_reasoning_efforts.len() > 1);
                 let actions: Vec<SelectionAction> = if requires_advanced_selection {
                     let preset_for_action = preset.clone();
+                    let provider_for_action = self.picker_target_provider();
                     vec![Box::new(move |tx| {
                         tx.send(AppEvent::OpenReasoningPopup {
                             model: preset_for_action.clone(),
-                            provider_id: None,
+                            provider_id: provider_for_action.clone(),
                         });
                     })]
                 } else {
@@ -966,10 +1077,17 @@ impl ChatWidget {
                             model.as_str(),
                             Some(preset.default_reasoning_effort.clone()),
                         );
+                    // With exactly one supported effort the default is not a
+                    // choice, it is the only answer - applying a different
+                    // default would send an effort the model does not offer.
+                    let effort = match preset.supported_reasoning_efforts.as_slice() {
+                        [only] => only.effort.clone(),
+                        _ => preset.default_reasoning_effort.clone(),
+                    };
                     self.model_selection_actions(
                         model.clone(),
-                        Some(preset.default_reasoning_effort.clone()),
-                        None,
+                        Some(effort),
+                        self.picker_target_provider(),
                         should_prompt_plan_mode_scope,
                     )
                 };
@@ -986,6 +1104,21 @@ impl ChatWidget {
             })
             .collect();
 
+        if other_presets.is_empty() && items.is_empty() {
+            // Say why the list is empty for this provider rather than showing a
+            // bare gap, and never borrow another provider's models to fill it.
+            let provider_name = self.provider_display_name(&provider_id);
+            let name = if self.model_popup_request_is_pending(&provider_id) {
+                format!("Loading available {provider_name} models…")
+            } else {
+                format!("{provider_name} unavailable - retry with /model")
+            };
+            items.push(SelectionItem {
+                name,
+                is_disabled: true,
+                ..Default::default()
+            });
+        }
         if !other_presets.is_empty() {
             let all_models = other_presets;
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
@@ -1009,12 +1142,12 @@ impl ChatWidget {
             });
         }
 
-        self.push_openai_model_group(&mut items);
-        self.push_openrouter_free_model_group(&mut items);
-        self.push_ollama_model_group(&mut items);
         items.insert(0, self.model_provider_group_item());
         items.insert(1, auto_routing_item);
         items.insert(2, self.change_provider_item(ModelPickerRole::Chat));
+        if let Some(key_item) = self.add_api_key_item(ModelPickerRole::Chat, &provider_id) {
+            items.insert(3, key_item);
+        }
 
         let header = self.model_menu_header(
             "Choose a mind",
@@ -1076,11 +1209,12 @@ impl ChatWidget {
             let is_current = preset.model.as_str() == self.current_model();
             let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
             let preset_for_action = preset.clone();
+            let provider_for_action = self.picker_target_provider();
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
                 let preset_for_event = preset_for_action.clone();
                 tx.send(AppEvent::OpenReasoningPopup {
                     model: preset_for_event,
-                    provider_id: None,
+                    provider_id: provider_for_action.clone(),
                 });
             })];
             items.push(SelectionItem {
@@ -1101,9 +1235,6 @@ impl ChatWidget {
                 ..Default::default()
             });
         }
-        self.push_openai_model_group(&mut items);
-        self.push_openrouter_free_model_group(&mut items);
-        self.push_ollama_model_group(&mut items);
 
         let header = self.model_menu_header(
             "Choose a mind and effort",
@@ -1128,6 +1259,19 @@ impl ChatWidget {
         let warning = effort_for_action
             .as_ref()
             .and_then(|effort| self.ultra_reasoning_concurrency_warning(effort));
+        // A model on a provider with no key cannot answer, so ask for the key
+        // first and apply the model once it lands.
+        if let Some(provider_id) = provider_id.clone()
+            && !self.provider_has_key(&provider_id)
+        {
+            return vec![Box::new(move |tx| {
+                tx.send(AppEvent::OpenProviderApiKeyPrompt {
+                    role: ModelPickerRole::Chat,
+                    provider_id: provider_id.clone(),
+                    then_model: Some(model_for_action.clone()),
+                });
+            })];
+        }
         vec![Box::new(move |tx| {
             if let Some(provider_id) = provider_id.as_ref() {
                 tx.send(AppEvent::ApplyProviderModelSelection {

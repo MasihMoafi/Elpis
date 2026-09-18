@@ -156,7 +156,7 @@ async fn service_tier_commands_lowercase_catalog_names() {
         .find(|tier| tier.id == ServiceTier::Fast.request_value())
         .expect("fast tier")
         .name = "Fast".to_string();
-    chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
+    chat.model_catalog = super::helpers::catalog_for(&chat, vec![preset]);
 
     assert_eq!(
         chat.current_model_service_tier_commands(),
@@ -691,14 +691,29 @@ fn first_provider_preset(chat: &ChatWidget) -> String {
         .expect("the test provider offers at least one preset")
 }
 
+/// Give a provider a credential for the duration of a test, so the picker
+/// applies a chosen model instead of first asking for a key.
+fn give_provider_a_key(chat: &mut crate::chatwidget::ChatWidget, provider_id: &str) {
+    if let Some(provider) = chat.config.model_providers.get_mut(provider_id) {
+        provider.experimental_bearer_token = Some("test-key".to_string());
+    }
+}
+
 #[tokio::test]
 async fn pruner_model_picker_lists_openrouter_models_with_prices() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
     let model = live_openrouter_model();
     chat.on_openrouter_models_loaded(vec![model.clone()]);
+    give_provider_a_key(&mut chat, codex_model_provider_info::OPENROUTER_PROVIDER_ID);
 
     chat.open_pruner_model_popup();
+    // A picker shows one provider's models; OpenRouter's appear once it is the
+    // provider being browsed, not stacked on top of somebody else's list.
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Pruner,
+        codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+    );
 
     let rows = chat.model_popup_model_ids.clone();
     // Every picker opens with the provider step, then the role's own choices.
@@ -715,13 +730,12 @@ async fn pruner_model_picker_lists_openrouter_models_with_prices() {
     assert_eq!(
         rows.get(2).map(String::as_str),
         Some(model.slug.as_str()),
-        "the live OpenRouter list belongs above the provider's presets; rows: {rows:?}"
+        "OpenRouter's own models follow its provider step; rows: {rows:?}"
     );
-    let preset_row = rows
-        .iter()
-        .position(|row| *row == first_provider_preset(&chat))
-        .expect("the provider's own presets stay in the list");
-    assert!(preset_row > 1, "rows: {rows:?}");
+    assert!(
+        !rows.contains(&first_provider_preset(&chat)),
+        "the session provider's models must not appear under OpenRouter; rows: {rows:?}"
+    );
     // The price has to be visible here exactly as it is in /background-model.
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     assert!(popup.contains("$0.30/M in"), "{popup}");
@@ -734,7 +748,12 @@ async fn choosing_a_pruner_model_moves_its_provider_too() {
     chat.thread_id = Some(ThreadId::new());
     let model = live_openrouter_model();
     chat.on_openrouter_models_loaded(vec![model.clone()]);
+    give_provider_a_key(&mut chat, codex_model_provider_info::OPENROUTER_PROVIDER_ID);
     chat.open_pruner_model_popup();
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Pruner,
+        codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+    );
 
     choose_picker_row(
         &mut chat,
@@ -796,8 +815,11 @@ async fn choosing_an_openrouter_chat_model_switches_the_session_provider() {
     chat.thread_id = Some(ThreadId::new());
     let model = live_openrouter_model();
     chat.on_openrouter_models_loaded(vec![model.clone()]);
-    let presets = chat.models_for_active_provider();
-    chat.open_model_popup_with_presets(presets);
+    give_provider_a_key(&mut chat, codex_model_provider_info::OPENROUTER_PROVIDER_ID);
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+    );
     while rx.try_recv().is_ok() {}
 
     let popup = choose_picker_row(
@@ -813,15 +835,18 @@ async fn choosing_an_openrouter_chat_model_switches_the_session_provider() {
         .filter(|event| matches!(event, AppEvent::ApplyProviderModelSelection { .. }))
         .collect::<Vec<_>>();
     assert_eq!(selections.len(), 1, "events: {events:?}");
-    assert!(matches!(
-        selections[0],
-        AppEvent::ApplyProviderModelSelection {
-            model: chosen,
-            provider_id,
-            effort: None,
-        } if *chosen == model.slug
-            && provider_id == codex_model_provider_info::OPENROUTER_PROVIDER_ID
-    ));
+    assert!(
+        matches!(
+            selections[0],
+            AppEvent::ApplyProviderModelSelection {
+                model: chosen,
+                provider_id,
+                ..
+            } if *chosen == model.slug
+                && provider_id == codex_model_provider_info::OPENROUTER_PROVIDER_ID
+        ),
+        "events: {events:?}"
+    );
     // The old two-event path moved the model locally even when the server
     // refused the provider switch.
     assert!(
@@ -1041,7 +1066,7 @@ async fn queued_settings_selection_applies_before_next_input() {
     let mut preset = get_available_model(&chat, "gpt-5.6-terra");
     preset.supported_reasoning_efforts.truncate(1);
     let selected_effort = preset.supported_reasoning_efforts[0].effort.clone();
-    chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(vec![preset]));
+    chat.model_catalog = super::helpers::catalog_for(&chat, vec![preset]);
     handle_turn_started(&mut chat, "turn-1");
 
     queue_composer_text(&mut chat, "/model");
@@ -1055,10 +1080,21 @@ async fn queued_settings_selection_applies_before_next_input() {
         "expected model menu to open; popup:\n{popup}"
     );
 
-    // The first menu lists routing choices and an "All models" entry; the individual presets
-    // live one level down, so reaching the model takes three accepts: All models, the preset,
-    // then its reasoning effort.
-    for step in 0..3 {
+    // A provider's own models are listed in the first menu now, so move onto the
+    // preset; with a single supported effort one accept applies it.
+    for _ in 0..chat.model_popup_model_ids.len() {
+        let selected = chat
+            .bottom_pane
+            .selected_index_for_active_view(
+                crate::chatwidget::model_popups::MODEL_SELECTION_VIEW_ID,
+            )
+            .and_then(|index| chat.model_popup_model_ids.get(index));
+        if selected.is_some_and(|model| model == "gpt-5.6-terra") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    for step in 0..1 {
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         if step == 0 {
             assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
@@ -3051,7 +3087,7 @@ async fn model_switch_recomputes_catalog_default_service_tier() {
         .find(|model| model.model == "gpt-5.4")
         .expect("gpt-5.4 test model");
     default_model.default_service_tier = Some(ServiceTier::Fast.request_value().to_string());
-    chat.model_catalog = std::sync::Arc::new(ModelCatalog::new(models));
+    chat.model_catalog = super::helpers::catalog_for(&chat, models);
     chat.refresh_effective_service_tier();
 
     assert_eq!(chat.current_service_tier(), None);
