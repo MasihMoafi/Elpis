@@ -456,6 +456,39 @@ async fn drive_until_request_count(
     }
 }
 
+/// Pumps the app until the source thread records `text` as a user message.
+///
+/// The thread only gains a steer once the turn it was queued behind finishes,
+/// and that finish is delivered as an app-server event - so the app has to keep
+/// being driven while waiting, not merely slept on.
+async fn drive_until_user_message(
+    app: &mut App,
+    app_server: &mut AppServerSession,
+    thread_id: ThreadId,
+    text: &str,
+) -> Result<()> {
+    let timeout = tokio::time::sleep(std::time::Duration::from_secs(/*secs*/ 10));
+    tokio::pin!(timeout);
+    loop {
+        let thread = app_server
+            .thread_read(thread_id, /*include_turns*/ true)
+            .await?;
+        if user_message_count(&thread, text) == 1 {
+            return Ok(());
+        }
+        tokio::select! {
+            event = app_server.next_event() => {
+                let event = event.expect("app-server event stream should remain open");
+                app.handle_app_server_event(app_server, event).await;
+                drain_active_thread_events(app);
+            }
+            () = &mut timeout => {
+                panic!("{text} never reached the thread");
+            }
+        }
+    }
+}
+
 fn user_input_texts(body: &Value) -> Vec<String> {
     body.get("input")
         .and_then(Value::as_array)
@@ -669,10 +702,10 @@ goals = true
             usize::from(previous_prompt.is_some()) + 2,
         )
         .await;
-        let source = app_server
-            .thread_read(source_thread_id, /*include_turns*/ true)
+        // The steer reaches the thread when the turn it queued behind ends, so
+        // keep driving the app until it lands rather than reading once.
+        drive_until_user_message(&mut app, &mut app_server, source_thread_id, committed_steer)
             .await?;
-        assert_eq!(user_message_count(&source, committed_steer), 1);
     }
 
     app.handle_app_server_event(
@@ -961,19 +994,40 @@ goals = true
     } else {
         retry_request_index + 1
     };
-    assert!(
-        user_input_texts(&request_bodies[goal_continuation_request_index])
-            .iter()
-            .any(|text| text.contains(RETRY_GOAL)),
-        "inherited goal continuation should resume after the explicit retry"
-    );
-
+    // The goal continuation starts when the explicit retry turn ends, so let
+    // that turn's response finish and then wait for the request it issues.
+    // Pinning it to a fixed index only counted the turns before it and gave up
+    // one request too early.
     if let Some(release_active_response) = release_active_response.take() {
         let _ = release_active_response.send(());
     }
     let _ = release_steered_response.send(());
     let _ = release_previous_response.send(());
     let _ = release_retry_response.send(());
+    let _ = goal_continuation_request_index;
+    let goal_continuation_seen = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            let bodies = server
+                .requests()
+                .await
+                .iter()
+                .filter_map(|request| serde_json::from_slice::<Value>(request).ok())
+                .collect::<Vec<_>>();
+            if bodies
+                .iter()
+                .any(|body| user_input_texts(body).iter().any(|text| text.contains(RETRY_GOAL)))
+            {
+                return bodies;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    assert!(
+        goal_continuation_seen.is_ok(),
+        "inherited goal continuation should resume after the explicit retry"
+    );
+
     app_server.shutdown().await?;
     server.shutdown().await;
     Ok(())

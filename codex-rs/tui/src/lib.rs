@@ -2349,7 +2349,7 @@ mod tests {
     }
 
     #[test]
-    fn app_server_target_for_launch_prefers_explicit_remote_endpoint() -> color_eyre::Result<()> {
+    fn app_server_target_for_launch_uses_an_explicit_endpoint() -> color_eyre::Result<()> {
         let explicit_endpoint = RemoteAppServerEndpoint::UnixSocket {
             socket_path: AbsolutePathBuf::relative_to_current_dir("explicit.sock")?,
         };
@@ -2359,14 +2359,15 @@ mod tests {
             /*can_reuse_implicit_local_daemon*/ false,
         );
 
+        // An explicitly named endpoint is used, and a unix socket is a daemon on
+        // this machine rather than a remote workspace.
         assert_eq!(
             target,
-            AppServerTarget::Remote {
+            AppServerTarget::LocalDaemon {
                 endpoint: explicit_endpoint,
             }
         );
-        assert!(target.uses_remote_workspace());
-        assert_eq!(target.thread_params_mode(), ThreadParamsMode::Remote);
+        assert!(!target.uses_remote_workspace());
         Ok(())
     }
 
