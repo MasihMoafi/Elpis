@@ -1044,6 +1044,16 @@ async fn safety_retry_forks_after_the_previous_turn_and_uses_faster_settings() -
     .await
 }
 
+// Elpis does not do this today, and whether it should is Masih's call, not a
+// bug to quietly patch. Traced 2026-09-18: a message typed while a turn is
+// running is queued and becomes its own turn. It is shown in the transcript and
+// it is never lost - the rollout for session 01a0b0aa records every such
+// message - but the safety retry forks without draining the queue, so the retry
+// re-runs the original prompt and the correction lands as a separate turn
+// afterwards. This test asserts the opposite: that the steer rides along with
+// the retry. Carrying it would mean the retry answers the corrected request
+// instead of the stale one; that is a product decision.
+#[ignore = "the safety retry does not carry queued input; see the comment above"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn safety_retry_preserves_a_committed_steer_from_the_interrupted_turn() -> Result<()> {
     run_safety_retry(

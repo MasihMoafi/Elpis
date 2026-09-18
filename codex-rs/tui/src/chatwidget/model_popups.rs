@@ -883,7 +883,6 @@ impl ChatWidget {
         }
     }
 
-
     /// The provider the header should describe: the one whose models are on
     /// screen. Reading the session's here told the owner "Provider: OpenRouter"
     /// above a list of DeepSeek models.
