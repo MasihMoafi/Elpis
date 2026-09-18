@@ -16,6 +16,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::sync::TryLockError;
@@ -668,6 +669,17 @@ fn find_model_by_namespaced_suffix(model: &str, candidates: &[ModelInfo]) -> Opt
     find_model_by_longest_prefix(suffix, candidates)
 }
 
+/// Metadata for a slug the provider's own list does not carry. Only the list
+/// is provider-scoped, so that no picker offers another provider's models; a
+/// model already in use still deserves its real context window rather than the
+/// fallback's guess.
+fn bundled_model_metadata(model: &str) -> Option<ModelInfo> {
+    static BUNDLED: OnceLock<Vec<ModelInfo>> = OnceLock::new();
+    let bundled = BUNDLED.get_or_init(|| load_remote_models_from_file().unwrap_or_default());
+    find_model_by_longest_prefix(model, bundled)
+        .or_else(|| find_model_by_namespaced_suffix(model, bundled))
+}
+
 pub(crate) fn construct_model_info_from_candidates(
     model: &str,
     candidates: &[ModelInfo],
@@ -682,6 +694,12 @@ pub(crate) fn construct_model_info_from_candidates(
             slug: model.to_string(),
             used_fallback_model_metadata: false,
             ..remote
+        }
+    } else if let Some(bundled) = bundled_model_metadata(model) {
+        ModelInfo {
+            slug: model.to_string(),
+            used_fallback_model_metadata: false,
+            ..bundled
         }
     } else {
         model_info::model_info_from_slug(model)

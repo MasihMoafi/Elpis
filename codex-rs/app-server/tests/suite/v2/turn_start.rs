@@ -3145,19 +3145,31 @@ async fn turn_start_streams_apply_patch_change_updates_v2() -> Result<()> {
         ]),
     )?;
     write_models_cache(&codex_home)?;
-    let cache_path = codex_home.join("models_cache.json");
+    let cache_path = codex_models_manager::manager::models_cache_path(
+        &codex_home,
+        "https://api.openai.com/v1",
+    );
     let mut cache: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&cache_path)?)?;
     let models = cache["models"]
         .as_array_mut()
-        .expect("models_cache.json models should be an array");
+        .expect("models cache models should be an array");
     let model = models
         .first_mut()
-        .expect("models_cache.json should contain at least one model");
+        .expect("models cache should contain at least one model");
     model["slug"] = serde_json::Value::from("mock-model");
     model["display_name"] = serde_json::Value::from("mock-model");
     model["apply_patch_tool_type"] = serde_json::Value::from("freeform");
-    std::fs::write(&cache_path, serde_json::to_string_pretty(&cache)?)?;
+    // The session runs on the mock provider, and the cache is scoped per
+    // endpoint, so the edited fixture belongs under that provider's path.
+    let provider_cache_path = codex_models_manager::manager::models_cache_path(
+        &codex_home,
+        &format!("{}/v1", server.uri()),
+    );
+    if let Some(parent) = provider_cache_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&provider_cache_path, serde_json::to_string_pretty(&cache)?)?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(&codex_home)

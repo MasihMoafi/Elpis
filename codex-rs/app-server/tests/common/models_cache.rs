@@ -94,8 +94,18 @@ pub fn write_models_cache_with_models(
 ) -> std::io::Result<()> {
     // The cache is per provider endpoint; these fixtures stand in for the
     // default OpenAI provider the app server starts on.
-    let cache_path =
-        codex_models_manager::manager::models_cache_path(codex_home, "https://api.openai.com/v1");
+    write_models_cache_for_base_url(codex_home, "https://api.openai.com/v1", models)
+}
+
+/// Write the cache under a specific provider endpoint. A test that reads the
+/// fixture back needs the path its own provider will consult, which for the
+/// mock server is `{uri}/v1` rather than OpenAI's.
+pub fn write_models_cache_for_base_url(
+    codex_home: &Path,
+    base_url: &str,
+    models: Vec<ModelInfo>,
+) -> std::io::Result<()> {
+    let cache_path = codex_models_manager::manager::models_cache_path(codex_home, base_url);
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent)?;
     }

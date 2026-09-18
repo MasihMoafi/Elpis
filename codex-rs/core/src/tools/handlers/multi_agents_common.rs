@@ -358,6 +358,12 @@ fn find_spawn_agent_model_name(
     requested_model: &str,
     multi_agent_version: MultiAgentVersion,
 ) -> Result<String, FunctionCallError> {
+    // An empty catalog means the provider never published one, not that it
+    // permits nothing. Refusing every model there would leave sub-agents
+    // unusable on any provider Elpis cannot enumerate.
+    if available_models.is_empty() {
+        return Ok(requested_model.to_string());
+    }
     available_models
         .iter()
         .find(|model| {
