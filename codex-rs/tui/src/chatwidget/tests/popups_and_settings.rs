@@ -3039,23 +3039,23 @@ async fn multi_agent_enable_prompt_updates_feature_and_emits_notice() {
 #[tokio::test]
 async fn browsing_a_provider_lists_only_that_provider_s_models() {
     // The reported bug: choosing OpenAI listed DeepSeek and Qwen, and choosing
-    // DeepSeek listed gpt-5.6-sol.
+    // another provider listed gpt-5.6-sol.
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
     chat.thread_id = Some(ThreadId::new());
 
     chat.browse_model_provider(
         crate::chatwidget::model_popups::ModelPickerRole::Chat,
-        codex_model_provider_info::DEEPSEEK_PROVIDER_ID.to_string(),
+        codex_model_provider_info::ANTHROPIC_PROVIDER_ID.to_string(),
     );
 
     let rows = chat.model_popup_model_ids.clone();
     assert!(
-        rows.iter().any(|row| row == "deepseek-flash"),
-        "DeepSeek's own models are missing; rows: {rows:?}"
+        rows.iter().any(|row| row.starts_with("claude-")),
+        "Anthropic's own models are missing; rows: {rows:?}"
     );
     assert!(
         !rows.iter().any(|row| row.starts_with("gpt-")),
-        "the session provider's models leaked into DeepSeek; rows: {rows:?}"
+        "the session provider's models leaked into Anthropic; rows: {rows:?}"
     );
 }
 
@@ -3511,11 +3511,14 @@ async fn model_catalog_promotes_cached_models_after_provider_switch() {
     let mut openai = crate::test_support::TEST_MODEL_PRESETS[0].clone();
     openai.id = "cached-openai-model".to_string();
     openai.model = "cached-openai-model".to_string();
-    chat.model_catalog = Arc::new(ModelCatalog::for_provider(vec![bootstrap], chat.active_model_provider_id()).with_provider_models(
-        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
-        vec![openai.clone()],
-        /*make_primary*/ false,
-    ));
+    chat.model_catalog = Arc::new(
+        ModelCatalog::for_provider(vec![bootstrap], chat.active_model_provider_id())
+            .with_provider_models(
+                codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+                vec![openai.clone()],
+                /*make_primary*/ false,
+            ),
+    );
     chat.config.model_provider_id = codex_model_provider_info::OPENAI_PROVIDER_ID.to_string();
 
     chat.request_model_catalog(Some(
@@ -3569,11 +3572,14 @@ async fn model_reasoning_selection_for_openai_waits_for_an_explicit_effort() {
             description: "High reasoning".to_string(),
         },
     ];
-    chat.model_catalog = Arc::new(ModelCatalog::for_provider(vec![bootstrap], chat.active_model_provider_id()).with_provider_models(
-        codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
-        vec![openai],
-        /*make_primary*/ false,
-    ));
+    chat.model_catalog = Arc::new(
+        ModelCatalog::for_provider(vec![bootstrap], chat.active_model_provider_id())
+            .with_provider_models(
+                codex_model_provider_info::OPENAI_PROVIDER_ID.to_string(),
+                vec![openai],
+                /*make_primary*/ false,
+            ),
+    );
 
     chat.browse_model_provider(
         crate::chatwidget::model_popups::ModelPickerRole::Chat,
@@ -4286,7 +4292,7 @@ fn openrouter_catalogue_keeps_top_tier_models_with_live_prices() {
     // The price has to come from the response, not a hardcoded table that goes stale.
     assert_eq!(
         models[0].description,
-        "$0.30/M in · $1.20/M out · 1048k context"
+        "$0.30/M in · $1.20/M out · 1M context"
     );
     assert_eq!(
         models[1].description,

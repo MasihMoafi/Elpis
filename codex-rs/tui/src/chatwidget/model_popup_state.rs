@@ -174,10 +174,13 @@ impl ChatWidget {
                 let description = match model.max_output_tokens {
                     Some(max_output) => format!(
                         "{} context · {} max output",
-                        Self::token_count_label(model.context_window),
-                        Self::token_count_label(max_output)
+                        super::model_popups::token_count_label(model.context_window.into()),
+                        super::model_popups::token_count_label(max_output.into())
                     ),
-                    None => format!("{} context", Self::token_count_label(model.context_window)),
+                    None => format!(
+                        "{} context",
+                        super::model_popups::token_count_label(model.context_window.into())
+                    ),
                 };
                 let info: codex_protocol::openai_models::ModelInfo =
                     serde_json::from_value(serde_json::json!({
@@ -209,16 +212,6 @@ impl ChatWidget {
                 Some(ModelPreset::from(info))
             })
             .collect()
-    }
-
-    fn token_count_label(tokens: u32) -> String {
-        if tokens >= 1_000_000 && tokens % 1_000_000 == 0 {
-            format!("{}M", tokens / 1_000_000)
-        } else if tokens >= 1_000 {
-            format!("{}k", tokens / 1_000)
-        } else {
-            tokens.to_string()
-        }
     }
 
     pub(super) fn show_model_selection_view(&mut self, mut params: SelectionViewParams) {

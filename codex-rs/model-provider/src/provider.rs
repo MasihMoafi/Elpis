@@ -557,17 +557,6 @@ mod tests {
             codex_model_provider_info::ANTHROPIC_PROVIDER_ID,
             codex_model_provider_info::GOOGLE_GEMINI_PROVIDER_ID,
             codex_model_provider_info::OPENROUTER_PROVIDER_ID,
-            codex_model_provider_info::DEEPSEEK_PROVIDER_ID,
-            codex_model_provider_info::GROQ_PROVIDER_ID,
-            codex_model_provider_info::MISTRAL_PROVIDER_ID,
-            codex_model_provider_info::XAI_PROVIDER_ID,
-            codex_model_provider_info::CEREBRAS_PROVIDER_ID,
-            codex_model_provider_info::TOGETHER_PROVIDER_ID,
-            codex_model_provider_info::FIREWORKS_PROVIDER_ID,
-            codex_model_provider_info::MOONSHOT_PROVIDER_ID,
-            codex_model_provider_info::NVIDIA_PROVIDER_ID,
-            codex_model_provider_info::PERPLEXITY_PROVIDER_ID,
-            codex_model_provider_info::ZAI_PROVIDER_ID,
         ] {
             let provider = built_in
                 .get(provider_id)

@@ -46,6 +46,26 @@ pub(crate) enum ModelPickerRole {
     Pruner,
 }
 
+/// A token count as people say it: 1M, not 1048k.
+///
+/// A million is a million even when the provider's real number is 1,048,576,
+/// so anything from a million up reads in M with at most one decimal.
+pub(super) fn token_count_label(tokens: u64) -> String {
+    if tokens >= 1_000_000 {
+        let millions = tokens as f64 / 1_000_000.0;
+        let rounded = (millions * 10.0).round() / 10.0;
+        if (rounded - rounded.round()).abs() < f64::EPSILON {
+            format!("{}M", rounded.round() as u64)
+        } else {
+            format!("{rounded:.1}M")
+        }
+    } else if tokens >= 1_000 {
+        format!("{}k", tokens / 1_000)
+    } else {
+        tokens.to_string()
+    }
+}
+
 pub(super) const PROVIDER_SELECTION_VIEW_ID: &str = "provider-selection";
 pub(super) const MODEL_SELECTION_VIEW_ID: &str = "model-selection";
 pub(super) const ALL_MODELS_SELECTION_VIEW_ID: &str = "all-models-selection";
@@ -863,12 +883,6 @@ impl ChatWidget {
         }
     }
 
-    /// Whether the currently active provider is already OpenRouter -- if so, its free
-    /// models are already listed under the normal provider group above, and appending
-    /// a second OPENROUTER group would just duplicate them.
-    fn is_openrouter_active(&self) -> bool {
-        self.config.model_provider.base_url.as_deref() == Some(OPENROUTER_BASE_URL)
-    }
 
     /// The provider the header should describe: the one whose models are on
     /// screen. Reading the session's here told the owner "Provider: OpenRouter"
@@ -1998,8 +2012,8 @@ pub(crate) fn openrouter_models_from_response(body: &serde_json::Value) -> Vec<O
                 OpenRouterModel {
                     slug: slug.to_string(),
                     description: format!(
-                        "${input:.2}/M in · ${output:.2}/M out · {}k context",
-                        context / 1_000
+                        "${input:.2}/M in · ${output:.2}/M out · {} context",
+                        token_count_label(context)
                     ),
                 },
             ))

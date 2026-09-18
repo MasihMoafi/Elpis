@@ -131,117 +131,6 @@ pub const GOOGLE_GEMINI_PROVIDER_NAME: &str = "Google Gemini";
 pub const GOOGLE_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 pub const GOOGLE_GEMINI_API_KEY_ENV: &str = "GEMINI_API_KEY";
 pub const GOOGLE_GEMINI_DEFAULT_MODEL: &str = "gemini-3.5-flash";
-pub const DEEPSEEK_PROVIDER_ID: &str = "deepseek";
-pub const GROQ_PROVIDER_ID: &str = "groq";
-pub const MISTRAL_PROVIDER_ID: &str = "mistral";
-pub const XAI_PROVIDER_ID: &str = "xai";
-pub const CEREBRAS_PROVIDER_ID: &str = "cerebras";
-pub const TOGETHER_PROVIDER_ID: &str = "together";
-pub const FIREWORKS_PROVIDER_ID: &str = "fireworks";
-pub const MOONSHOT_PROVIDER_ID: &str = "moonshotai";
-pub const NVIDIA_PROVIDER_ID: &str = "nvidia";
-pub const PERPLEXITY_PROVIDER_ID: &str = "perplexity";
-pub const ZAI_PROVIDER_ID: &str = "zai";
-
-/// A hosted provider that needs nothing but its own base URL and an API key:
-/// it speaks OpenAI's `/chat/completions` on the wire and publishes its catalog
-/// at `{base_url}/models`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OpenAiCompatibleProvider {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub base_url: &'static str,
-    pub env_key: &'static str,
-    /// Where the owner goes to mint a key, shown next to the key prompt so the
-    /// answer to "no key" is on screen instead of somewhere in a browser.
-    pub api_key_url: &'static str,
-}
-
-/// The third-party providers Elpis ships a route for.
-///
-/// Every base URL is the provider's own OpenAI-compatible root, so
-/// `{base_url}/chat/completions` carries a turn and `{base_url}/models` lists
-/// what the key can reach. No model names or context windows are written down
-/// here: the list comes from the provider.
-pub const OPENAI_COMPATIBLE_PROVIDERS: &[OpenAiCompatibleProvider] = &[
-    OpenAiCompatibleProvider {
-        id: DEEPSEEK_PROVIDER_ID,
-        name: "DeepSeek",
-        base_url: "https://api.deepseek.com",
-        env_key: "DEEPSEEK_API_KEY",
-        api_key_url: "https://platform.deepseek.com/api_keys",
-    },
-    OpenAiCompatibleProvider {
-        id: GROQ_PROVIDER_ID,
-        name: "Groq",
-        base_url: "https://api.groq.com/openai/v1",
-        env_key: "GROQ_API_KEY",
-        api_key_url: "https://console.groq.com/keys",
-    },
-    OpenAiCompatibleProvider {
-        id: MISTRAL_PROVIDER_ID,
-        name: "Mistral",
-        base_url: "https://api.mistral.ai/v1",
-        env_key: "MISTRAL_API_KEY",
-        api_key_url: "https://console.mistral.ai/api-keys",
-    },
-    OpenAiCompatibleProvider {
-        id: XAI_PROVIDER_ID,
-        name: "xAI",
-        base_url: "https://api.x.ai/v1",
-        env_key: "XAI_API_KEY",
-        api_key_url: "https://console.x.ai",
-    },
-    OpenAiCompatibleProvider {
-        id: CEREBRAS_PROVIDER_ID,
-        name: "Cerebras",
-        base_url: "https://api.cerebras.ai/v1",
-        env_key: "CEREBRAS_API_KEY",
-        api_key_url: "https://cloud.cerebras.ai/platform/apikeys",
-    },
-    OpenAiCompatibleProvider {
-        id: TOGETHER_PROVIDER_ID,
-        name: "Together",
-        base_url: "https://api.together.ai/v1",
-        env_key: "TOGETHER_API_KEY",
-        api_key_url: "https://api.together.ai/settings/api-keys",
-    },
-    OpenAiCompatibleProvider {
-        id: FIREWORKS_PROVIDER_ID,
-        name: "Fireworks",
-        base_url: "https://api.fireworks.ai/inference/v1",
-        env_key: "FIREWORKS_API_KEY",
-        api_key_url: "https://app.fireworks.ai/settings/users/api-keys",
-    },
-    OpenAiCompatibleProvider {
-        id: MOONSHOT_PROVIDER_ID,
-        name: "Moonshot AI",
-        base_url: "https://api.moonshot.ai/v1",
-        env_key: "MOONSHOT_API_KEY",
-        api_key_url: "https://platform.moonshot.ai/console/api-keys",
-    },
-    OpenAiCompatibleProvider {
-        id: NVIDIA_PROVIDER_ID,
-        name: "NVIDIA",
-        base_url: "https://integrate.api.nvidia.com/v1",
-        env_key: "NVIDIA_API_KEY",
-        api_key_url: "https://build.nvidia.com/settings/api-keys",
-    },
-    OpenAiCompatibleProvider {
-        id: PERPLEXITY_PROVIDER_ID,
-        name: "Perplexity",
-        base_url: "https://api.perplexity.ai",
-        env_key: "PERPLEXITY_API_KEY",
-        api_key_url: "https://www.perplexity.ai/account/api/keys",
-    },
-    OpenAiCompatibleProvider {
-        id: ZAI_PROVIDER_ID,
-        name: "Z.AI",
-        base_url: "https://api.z.ai/api/coding/paas/v4",
-        env_key: "ZAI_API_KEY",
-        api_key_url: "https://z.ai/manage-apikey/apikey-list",
-    },
-];
 const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
 pub const AMAZON_BEDROCK_PROVIDER_ID: &str = "amazon-bedrock";
 pub const AMAZON_BEDROCK_GPT_5_5_MODEL_ID: &str = "openai.gpt-5.5";
@@ -700,41 +589,6 @@ impl ModelProviderInfo {
         }
     }
 
-    /// Builds one of [`OPENAI_COMPATIBLE_PROVIDERS`]. Same shape as
-    /// `create_openrouter_provider` without the OpenRouter-only title header.
-    pub fn create_openai_compatible_provider(
-        provider: &OpenAiCompatibleProvider,
-    ) -> ModelProviderInfo {
-        let OpenAiCompatibleProvider {
-            id: _,
-            name,
-            base_url,
-            env_key,
-            api_key_url: _,
-        } = provider;
-        ModelProviderInfo {
-            name: (*name).into(),
-            base_url: Some((*base_url).into()),
-            env_key: Some((*env_key).into()),
-            env_key_instructions: Some(format!(
-                "Set {env_key} to a {name} API key before launching Elpis."
-            )),
-            experimental_bearer_token: None,
-            auth: None,
-            aws: None,
-            wire_api: WireApi::Chat,
-            query_params: None,
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            websocket_connect_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: false,
-        }
-    }
-
     pub fn create_anthropic_provider() -> ModelProviderInfo {
         ModelProviderInfo {
             name: ANTHROPIC_PROVIDER_NAME.into(),
@@ -898,12 +752,6 @@ pub fn built_in_model_providers(
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
-    .chain(OPENAI_COMPATIBLE_PROVIDERS.iter().map(|provider| {
-        (
-            provider.id.to_string(),
-            P::create_openai_compatible_provider(provider),
-        )
-    }))
     .collect()
 }
 

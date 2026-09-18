@@ -16,9 +16,7 @@
 //! rather than showing an invented number.
 
 use crate::ANTHROPIC_PROVIDER_ID;
-use crate::DEEPSEEK_PROVIDER_ID;
 use crate::GOOGLE_GEMINI_PROVIDER_ID;
-use crate::XAI_PROVIDER_ID;
 
 /// One model as its provider publishes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,22 +31,6 @@ pub struct ProviderModel {
     /// one. `None` means unpublished, not unlimited.
     pub max_output_tokens: Option<u32>,
 }
-
-/// Source: Zed `crates/deepseek/src/deepseek.rs`.
-const DEEPSEEK_MODELS: &[ProviderModel] = &[
-    ProviderModel {
-        slug: "deepseek-flash",
-        display_name: "DeepSeek V4.1 Flash",
-        context_window: 1_000_000,
-        max_output_tokens: Some(384_000),
-    },
-    ProviderModel {
-        slug: "deepseek-v4-pro",
-        display_name: "DeepSeek V4 Pro",
-        context_window: 1_000_000,
-        max_output_tokens: Some(384_000),
-    },
-];
 
 /// Source: Zed `crates/anthropic/src/anthropic.rs` for the ids. Anthropic
 /// publishes its own limits through the listing endpoint Elpis already calls,
@@ -132,40 +114,6 @@ const GOOGLE_GEMINI_MODELS: &[ProviderModel] = &[
     },
 ];
 
-/// Source: Zed `crates/x_ai/src/x_ai.rs`.
-const XAI_MODELS: &[ProviderModel] = &[
-    ProviderModel {
-        slug: "grok-4.6",
-        display_name: "Grok 4.6",
-        context_window: 500_000,
-        max_output_tokens: None,
-    },
-    ProviderModel {
-        slug: "grok-4.5",
-        display_name: "Grok 4.5",
-        context_window: 500_000,
-        max_output_tokens: None,
-    },
-    ProviderModel {
-        slug: "grok-4.3",
-        display_name: "Grok 4.3",
-        context_window: 1_000_000,
-        max_output_tokens: Some(64_000),
-    },
-    ProviderModel {
-        slug: "grok-4.20-0309-reasoning",
-        display_name: "Grok 4.20 Reasoning",
-        context_window: 2_000_000,
-        max_output_tokens: Some(64_000),
-    },
-    ProviderModel {
-        slug: "grok-4.20-0309-non-reasoning",
-        display_name: "Grok 4.20 (Non-Reasoning)",
-        context_window: 2_000_000,
-        max_output_tokens: Some(64_000),
-    },
-];
-
 /// The models Elpis ships for a provider, used when the provider's own
 /// `/models` endpoint has not answered (yet, or at all).
 ///
@@ -174,10 +122,8 @@ const XAI_MODELS: &[ProviderModel] = &[
 /// written down here.
 pub fn bundled_provider_models(provider_id: &str) -> &'static [ProviderModel] {
     match provider_id {
-        DEEPSEEK_PROVIDER_ID => DEEPSEEK_MODELS,
         ANTHROPIC_PROVIDER_ID => ANTHROPIC_MODELS,
         GOOGLE_GEMINI_PROVIDER_ID => GOOGLE_GEMINI_MODELS,
-        XAI_PROVIDER_ID => XAI_MODELS,
         _ => &[],
     }
 }
@@ -185,12 +131,6 @@ pub fn bundled_provider_models(provider_id: &str) -> &'static [ProviderModel] {
 /// Where the owner mints a key for a provider, or `None` when the provider
 /// needs no key at all (a local runtime) or Elpis has no page to point at.
 pub fn provider_api_key_url(provider_id: &str) -> Option<&'static str> {
-    if let Some(provider) = crate::OPENAI_COMPATIBLE_PROVIDERS
-        .iter()
-        .find(|provider| provider.id == provider_id)
-    {
-        return Some(provider.api_key_url);
-    }
     match provider_id {
         ANTHROPIC_PROVIDER_ID => Some("https://console.anthropic.com/settings/keys"),
         GOOGLE_GEMINI_PROVIDER_ID => Some("https://aistudio.google.com/apikey"),
@@ -203,19 +143,13 @@ pub fn provider_api_key_url(provider_id: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::OPENAI_COMPATIBLE_PROVIDERS;
 
     #[test]
     fn a_providers_models_are_only_its_own() {
         // The whole point of the table: no slug may appear under two
         // providers, or the picker is back to offering a model the chosen
         // provider cannot serve.
-        let ids = [
-            DEEPSEEK_PROVIDER_ID,
-            ANTHROPIC_PROVIDER_ID,
-            GOOGLE_GEMINI_PROVIDER_ID,
-            XAI_PROVIDER_ID,
-        ];
+        let ids = [ANTHROPIC_PROVIDER_ID, GOOGLE_GEMINI_PROVIDER_ID];
         let mut seen: Vec<&str> = Vec::new();
         for id in ids {
             for model in bundled_provider_models(id) {
@@ -226,17 +160,6 @@ mod tests {
                 );
                 seen.push(model.slug);
             }
-        }
-    }
-
-    #[test]
-    fn every_openai_compatible_provider_says_where_to_get_a_key() {
-        for provider in OPENAI_COMPATIBLE_PROVIDERS {
-            assert!(
-                provider.api_key_url.starts_with("https://"),
-                "{} has no key URL to show the user",
-                provider.id
-            );
         }
     }
 }
