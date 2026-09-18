@@ -13,6 +13,7 @@ use codex_login::CodexAuth;
 use codex_model_provider_info::ANTHROPIC_DEFAULT_MODEL;
 use codex_model_provider_info::GOOGLE_GEMINI_DEFAULT_MODEL;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::OPENAI_DEFAULT_BASE_URL;
 use codex_model_provider_info::OPENROUTER_FREE_MODEL_GROUP;
 use codex_model_provider_info::WireApi;
 use codex_models_manager::manager::OpenAiModelsManager;
@@ -462,8 +463,14 @@ impl ModelProvider for ConfiguredModelProvider {
             None => {
                 let endpoint = self.models_endpoint();
                 // Scope the cache to this provider's endpoint so one provider's
-                // catalog is never served for another.
-                let cache_scope = self.info.base_url.clone().unwrap_or_default();
+                // catalog is never served for another. No base URL means the
+                // OpenAI default, which is a real endpoint and should be named
+                // as one rather than scoping the cache to the empty string.
+                let cache_scope = self
+                    .info
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string());
                 Arc::new(OpenAiModelsManager::new(
                     codex_home,
                     &cache_scope,

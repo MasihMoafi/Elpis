@@ -57,6 +57,8 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 const OPENAI_ACTOR_AUTHORIZATION_HEADER: &str = "x-openai-actor-authorization";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
+/// The endpoint a provider with no `base_url` talks to.
+pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 const OPENROUTER_PROVIDER_NAME: &str = "OpenRouter";
 pub const OPENROUTER_PROVIDER_ID: &str = "openrouter";
@@ -447,7 +449,7 @@ impl ModelProviderInfo {
         ) {
             CHATGPT_CODEX_BASE_URL
         } else {
-            "https://api.openai.com/v1"
+            OPENAI_DEFAULT_BASE_URL
         };
         let base_url = self
             .base_url
