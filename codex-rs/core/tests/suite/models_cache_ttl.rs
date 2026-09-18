@@ -333,6 +333,11 @@ async fn write_cache(path: &Path, cache: &ModelsCache) -> Result<()> {
 }
 
 fn write_cache_sync(path: &Path, cache: &ModelsCache) -> Result<()> {
+    // The cache lives in a per-provider directory now, which the manager
+    // creates on its first write and a test seeding the file must create too.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let contents = serde_json::to_vec_pretty(cache)?;
     std::fs::write(path, contents)?;
     Ok(())

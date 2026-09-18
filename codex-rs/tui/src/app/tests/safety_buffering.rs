@@ -1013,10 +1013,11 @@ goals = true
                 .iter()
                 .filter_map(|request| serde_json::from_slice::<Value>(request).ok())
                 .collect::<Vec<_>>();
-            if bodies
-                .iter()
-                .any(|body| user_input_texts(body).iter().any(|text| text.contains(RETRY_GOAL)))
-            {
+            if bodies.iter().any(|body| {
+                user_input_texts(body)
+                    .iter()
+                    .any(|text| text.contains(RETRY_GOAL))
+            }) {
                 return bodies;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
