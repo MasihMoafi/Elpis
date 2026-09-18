@@ -27,6 +27,17 @@ pub(crate) fn configure_provider_keys(
     provider_keys::configure(home, providers);
 }
 
+/// Saves a provider key typed into the terminal. Same file, same permissions
+/// and same in-process override as the dashboard's key page.
+pub(crate) fn save_provider_key(
+    home: &std::path::Path,
+    provider_id: &str,
+    env_key: &str,
+    key: &str,
+) -> std::io::Result<()> {
+    provider_keys::save_key(home, provider_id, env_key, key)
+}
+
 use chrono::Utc;
 use codex_app_server_protocol::TurnCostAvailability;
 use codex_app_server_protocol::TurnCostState;

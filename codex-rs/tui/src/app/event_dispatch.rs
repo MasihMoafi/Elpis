@@ -1274,6 +1274,23 @@ impl App {
             AppEvent::BrowseModelProvider { role, provider_id } => {
                 self.chat_widget.browse_model_provider(role, provider_id);
             }
+            AppEvent::OpenProviderApiKeyPrompt {
+                role,
+                provider_id,
+                then_model,
+            } => {
+                self.chat_widget
+                    .open_provider_api_key_prompt(role, provider_id, then_model);
+            }
+            AppEvent::SaveProviderApiKey {
+                role,
+                provider_id,
+                key,
+                then_model,
+            } => {
+                self.chat_widget
+                    .save_provider_api_key(role, provider_id, key, then_model);
+            }
             AppEvent::FetchModels {
                 request_id,
                 provider_id,

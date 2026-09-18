@@ -40,6 +40,9 @@ pub(crate) struct CustomPromptView {
     textarea_state: RefCell<TextAreaState>,
     paste_burst: PasteBurst,
     completion: Option<ViewCompletion>,
+    /// Draw the text as dots. Set for secrets typed on a screen that is often
+    /// shared or recorded.
+    masked: bool,
 }
 
 impl CustomPromptView {
@@ -65,7 +68,15 @@ impl CustomPromptView {
             textarea_state: RefCell::new(TextAreaState::default()),
             paste_burst: PasteBurst::default(),
             completion: None,
+            masked: false,
         }
+    }
+
+    /// Hide the typed text behind dots, keeping the last four characters so a
+    /// wrong paste is still recognisable.
+    pub(crate) fn masked(mut self) -> Self {
+        self.masked = true;
+        self
     }
 
     fn handle_key_event_at(&mut self, key_event: KeyEvent, now: Instant) {
@@ -232,7 +243,19 @@ impl Renderable for CustomPromptView {
                     height: text_area_height,
                 };
                 let mut state = self.textarea_state.borrow_mut();
-                StatefulWidgetRef::render_ref(&(&self.textarea), textarea_rect, buf, &mut state);
+                if self.masked {
+                    Paragraph::new(Line::from(crate::onboarding::auth::mask_api_key(
+                        self.textarea.text(),
+                    )))
+                    .render(textarea_rect, buf);
+                } else {
+                    StatefulWidgetRef::render_ref(
+                        &(&self.textarea),
+                        textarea_rect,
+                        buf,
+                        &mut state,
+                    );
+                }
                 if self.textarea.text().is_empty() {
                     Paragraph::new(Line::from(self.placeholder.clone().dim()))
                         .render(textarea_rect, buf);

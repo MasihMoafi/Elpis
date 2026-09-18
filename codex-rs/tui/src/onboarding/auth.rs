@@ -116,7 +116,7 @@ pub(super) async fn cancel_login_attempt(
 
 /// Renders a key as dots, keeping the last four characters when the key is long
 /// enough that those four do not give it away.
-fn mask_api_key(value: &str) -> String {
+pub(crate) fn mask_api_key(value: &str) -> String {
     let visible = 4;
     let count = value.chars().count();
     if count <= visible * 2 {

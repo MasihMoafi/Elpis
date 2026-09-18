@@ -82,6 +82,29 @@ pub(super) fn apply_stored(registry: &Registry) {
     }
 }
 
+/// Saves a key the owner pasted into the terminal, into the same owner-only
+/// file the dashboard writes, and makes it live for this session.
+///
+/// Same store, one behaviour: a key added in either place shows up in the other
+/// and survives a relaunch.
+pub(crate) fn save_key(home: &Path, provider_id: &str, env_key: &str, key: &str) -> io::Result<()> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty API key"));
+    }
+    if key.len() > MAX_KEY_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "API key too long",
+        ));
+    }
+    let mut keys = load(home)?;
+    keys.insert(provider_id.to_string(), key.to_string());
+    store(home, &keys)?;
+    codex_model_provider_info::set_api_key_override(env_key, Some(key.to_string()));
+    Ok(())
+}
+
 pub(super) fn path(home: &Path) -> PathBuf {
     home.join(FILE_NAME)
 }

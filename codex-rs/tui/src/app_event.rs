@@ -811,6 +811,22 @@ pub(crate) enum AppEvent {
         provider_id: String,
     },
 
+    /// Ask for a provider's API key in the terminal, masked as it is typed.
+    /// `then_model`, when set, is applied on the provider once the key lands.
+    OpenProviderApiKeyPrompt {
+        role: crate::chatwidget::model_popups::ModelPickerRole,
+        provider_id: String,
+        then_model: Option<String>,
+    },
+
+    /// Store a key the owner pasted into the terminal.
+    SaveProviderApiKey {
+        role: crate::chatwidget::model_popups::ModelPickerRole,
+        provider_id: String,
+        key: String,
+        then_model: Option<String>,
+    },
+
     /// Fetch the latest picker catalog for one configured provider.
     FetchModels {
         request_id: uuid::Uuid,
