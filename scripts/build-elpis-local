@@ -51,7 +51,7 @@ case "$mode" in
         profile=dev-small
         # The integration suite needs debug_assertions, so it cannot run from a
         # release profile.
-        cargo_args=(test --profile dev-small --locked --offline -p codex-core --test all --no-run)
+        cargo_args=(test --profile dev-small --locked --offline -p codex-core -p codex-app-server --test all --no-run)
         artifact=
         ;;
     config-test-build)
