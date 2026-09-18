@@ -40,3 +40,30 @@ that is the terminal following an OSC 8 hyperlink, not Elpis reading a click.
 Do not add mouse interaction to any surface drawn on the normal screen. If a future
 surface genuinely needs the mouse, it belongs in an alt-screen overlay, which
 already owns the mouse while it is up.
+
+## Why dragging to select still feels rough (2026-09-18)
+
+Masih reported that dragging with the left button to copy model output is "not
+very smooth". Nothing is intercepting the drag: the inline chat never claims the
+mouse, so the selection belongs to the terminal, exactly as decided above.
+
+What fights it is repainting. While a turn is running Elpis asks for a frame
+every 40 ms (`elpis_motion::FRAME_TICK`) to animate the status header and the
+composer shimmer. A terminal drops or flickers a selection when the region under
+it is rewritten, so selecting while the model works means selecting against 25
+repaints a second.
+
+The setting that governs this already exists and is not written down anywhere:
+
+```toml
+[tui]
+animations = false
+```
+
+With it off, `frame_animations_enabled` is false, no periodic frame is scheduled,
+and Elpis repaints only when something actually changes. Selection then behaves
+like any other terminal program's.
+
+Not done, and deliberately: pausing animation while a drag is in progress is
+impossible without claiming the mouse, which is the trade this document already
+refused.
