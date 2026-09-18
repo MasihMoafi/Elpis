@@ -40,9 +40,11 @@ case "$mode" in
         ;;
     core-suite-build)
         profile=dev-small
-        # The integration suite runs the rmcp stdio helper as a subprocess and
-        # looks for it next to its own test binary.
-        cargo_args=(build --profile dev-small --locked --offline -p codex-rmcp-client --bin test_stdio_server)
+        # The integration suite spawns these three as subprocesses and looks
+        # for them next to its own test binary.
+        cargo_args=(build --profile dev-small --locked --offline)
+        cargo_args+=(-p codex-rmcp-client --bin test_stdio_server --bin test_streamable_http_server)
+        cargo_args+=(-p codex-cli --bin codex)
         artifact="$repo_root/codex-rs/target/dev-small/test_stdio_server"
         ;;
     core-suite-tests)
