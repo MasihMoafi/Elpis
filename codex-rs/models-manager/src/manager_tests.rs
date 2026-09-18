@@ -203,7 +203,13 @@ fn openai_manager_for_tests_with_auth(
     endpoint_client: Arc<dyn ModelsEndpointClient>,
     auth_manager: Option<Arc<AuthManager>>,
 ) -> OpenAiModelsManager {
-    OpenAiModelsManager::new(codex_home, endpoint_client, auth_manager)
+    OpenAiModelsManager::new(
+        codex_home,
+        "https://api.openai.com/v1",
+        /*include_bundled_catalog*/ true,
+        endpoint_client,
+        auth_manager,
+    )
 }
 
 fn static_manager_for_tests(model_catalog: ModelsResponse) -> StaticModelsManager {
@@ -211,10 +217,38 @@ fn static_manager_for_tests(model_catalog: ModelsResponse) -> StaticModelsManage
 }
 
 #[tokio::test]
+async fn a_third_party_provider_never_starts_from_the_bundled_openai_catalog() {
+    // The bundled catalog is OpenAI's. Merging it into another provider's reply
+    // is how choosing DeepSeek listed gpt-5.6-sol.
+    let remote_models = vec![remote_model(
+        "provider-only-model",
+        "Provider Only",
+        /*priority*/ 0,
+    )];
+    let endpoint = TestModelsEndpoint::new(vec![remote_models.clone()]);
+    let manager = OpenAiModelsManager::new_without_cache(
+        /*include_bundled_catalog*/ false,
+        endpoint.clone(),
+        /*auth_manager*/ None,
+    );
+
+    let catalog = manager
+        .raw_model_catalog(
+            RefreshStrategy::OnlineIfUncached,
+            DEFAULT_HTTP_CLIENT_FACTORY,
+        )
+        .await;
+
+    let slugs: Vec<&str> = catalog.models.iter().map(|m| m.slug.as_str()).collect();
+    assert_eq!(slugs, vec!["provider-only-model"], "slugs: {slugs:?}");
+}
+
+#[tokio::test]
 async fn manager_without_cache_fetches_on_every_refresh() {
     let remote_models = vec![remote_model("remote", "Remote", /*priority*/ 0)];
     let endpoint = TestModelsEndpoint::new(vec![remote_models.clone(), remote_models.clone()]);
     let manager = OpenAiModelsManager::new_without_cache(
+        /*include_bundled_catalog*/ true,
         endpoint.clone(),
         Some(AuthManager::from_auth_for_testing(
             CodexAuth::create_dummy_chatgpt_auth_for_testing(),

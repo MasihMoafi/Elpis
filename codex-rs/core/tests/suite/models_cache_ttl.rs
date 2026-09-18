@@ -37,7 +37,11 @@ use serde::Serialize;
 use wiremock::MockServer;
 
 const ETAG: &str = "\"models-etag-ttl\"";
-const CACHE_FILE: &str = "models_cache.json";
+/// The cache is scoped to the provider's endpoint, so a test has to ask for
+/// the same scope the session will use.
+fn cache_path(home: &std::path::Path, server_uri: &str) -> std::path::PathBuf {
+    codex_models_manager::manager::models_cache_path(home, &format!("{server_uri}/v1"))
+}
 const REMOTE_MODEL: &str = "codex-test-ttl";
 const VERSIONED_MODEL: &str = "codex-test-versioned";
 const MISSING_VERSION_MODEL: &str = "codex-test-missing-version";
@@ -77,7 +81,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
         )
         .await;
 
-    let cache_path = config.codex_home.join(CACHE_FILE);
+    let cache_path = cache_path(&config.codex_home, &server.uri());
     let stale_time = Utc.timestamp_opt(0, 0).single().expect("valid epoch");
     rewrite_cache_timestamp(&cache_path, stale_time).await?;
 
@@ -165,6 +169,7 @@ async fn uses_cache_when_version_matches() -> Result<()> {
     )
     .await;
 
+    let hook_server_uri = server.uri();
     let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     builder = builder
         .with_pre_build_hook(move |home| {
@@ -174,7 +179,7 @@ async fn uses_cache_when_version_matches() -> Result<()> {
                 client_version: Some(client_version_to_whole()),
                 models: vec![cached_model],
             };
-            let cache_path = home.join(CACHE_FILE);
+            let cache_path = cache_path(home, &hook_server_uri);
             write_cache_sync(&cache_path, &cache).expect("write cache");
         })
         .with_config(|config| {
@@ -215,6 +220,7 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
     )
     .await;
 
+    let hook_server_uri = server.uri();
     let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     builder = builder
         .with_pre_build_hook(move |home| {
@@ -224,7 +230,7 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
                 client_version: None,
                 models: vec![cached_model],
             };
-            let cache_path = home.join(CACHE_FILE);
+            let cache_path = cache_path(home, &hook_server_uri);
             write_cache_sync(&cache_path, &cache).expect("write cache");
         })
         .with_config(|config| {
@@ -265,6 +271,7 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
         models_mocks.push(responses::mount_models_once(&server, models_response.clone()).await);
     }
 
+    let hook_server_uri = server.uri();
     let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     builder = builder
         .with_pre_build_hook(move |home| {
@@ -275,7 +282,7 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
                 client_version: Some(format!("{client_version}-diff")),
                 models: vec![cached_model],
             };
-            let cache_path = home.join(CACHE_FILE);
+            let cache_path = cache_path(home, &hook_server_uri);
             write_cache_sync(&cache_path, &cache).expect("write cache");
         })
         .with_config(|config| {

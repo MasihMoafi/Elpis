@@ -116,6 +116,11 @@ mod openrouter_free_fallback_tests {
     }
 }
 
+mod provider_models;
+pub use provider_models::ProviderModel;
+pub use provider_models::bundled_provider_models;
+pub use provider_models::provider_api_key_url;
+
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
 pub const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic Claude";
 pub const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
@@ -147,6 +152,9 @@ pub struct OpenAiCompatibleProvider {
     pub name: &'static str,
     pub base_url: &'static str,
     pub env_key: &'static str,
+    /// Where the owner goes to mint a key, shown next to the key prompt so the
+    /// answer to "no key" is on screen instead of somewhere in a browser.
+    pub api_key_url: &'static str,
 }
 
 /// The third-party providers Elpis ships a route for.
@@ -161,66 +169,77 @@ pub const OPENAI_COMPATIBLE_PROVIDERS: &[OpenAiCompatibleProvider] = &[
         name: "DeepSeek",
         base_url: "https://api.deepseek.com",
         env_key: "DEEPSEEK_API_KEY",
+        api_key_url: "https://platform.deepseek.com/api_keys",
     },
     OpenAiCompatibleProvider {
         id: GROQ_PROVIDER_ID,
         name: "Groq",
         base_url: "https://api.groq.com/openai/v1",
         env_key: "GROQ_API_KEY",
+        api_key_url: "https://console.groq.com/keys",
     },
     OpenAiCompatibleProvider {
         id: MISTRAL_PROVIDER_ID,
         name: "Mistral",
         base_url: "https://api.mistral.ai/v1",
         env_key: "MISTRAL_API_KEY",
+        api_key_url: "https://console.mistral.ai/api-keys",
     },
     OpenAiCompatibleProvider {
         id: XAI_PROVIDER_ID,
         name: "xAI",
         base_url: "https://api.x.ai/v1",
         env_key: "XAI_API_KEY",
+        api_key_url: "https://console.x.ai",
     },
     OpenAiCompatibleProvider {
         id: CEREBRAS_PROVIDER_ID,
         name: "Cerebras",
         base_url: "https://api.cerebras.ai/v1",
         env_key: "CEREBRAS_API_KEY",
+        api_key_url: "https://cloud.cerebras.ai/platform/apikeys",
     },
     OpenAiCompatibleProvider {
         id: TOGETHER_PROVIDER_ID,
         name: "Together",
         base_url: "https://api.together.ai/v1",
         env_key: "TOGETHER_API_KEY",
+        api_key_url: "https://api.together.ai/settings/api-keys",
     },
     OpenAiCompatibleProvider {
         id: FIREWORKS_PROVIDER_ID,
         name: "Fireworks",
         base_url: "https://api.fireworks.ai/inference/v1",
         env_key: "FIREWORKS_API_KEY",
+        api_key_url: "https://app.fireworks.ai/settings/users/api-keys",
     },
     OpenAiCompatibleProvider {
         id: MOONSHOT_PROVIDER_ID,
         name: "Moonshot AI",
         base_url: "https://api.moonshot.ai/v1",
         env_key: "MOONSHOT_API_KEY",
+        api_key_url: "https://platform.moonshot.ai/console/api-keys",
     },
     OpenAiCompatibleProvider {
         id: NVIDIA_PROVIDER_ID,
         name: "NVIDIA",
         base_url: "https://integrate.api.nvidia.com/v1",
         env_key: "NVIDIA_API_KEY",
+        api_key_url: "https://build.nvidia.com/settings/api-keys",
     },
     OpenAiCompatibleProvider {
         id: PERPLEXITY_PROVIDER_ID,
         name: "Perplexity",
         base_url: "https://api.perplexity.ai",
         env_key: "PERPLEXITY_API_KEY",
+        api_key_url: "https://www.perplexity.ai/account/api/keys",
     },
     OpenAiCompatibleProvider {
         id: ZAI_PROVIDER_ID,
         name: "Z.AI",
         base_url: "https://api.z.ai/api/coding/paas/v4",
         env_key: "ZAI_API_KEY",
+        api_key_url: "https://z.ai/manage-apikey/apikey-list",
     },
 ];
 const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
@@ -691,6 +710,7 @@ impl ModelProviderInfo {
             name,
             base_url,
             env_key,
+            api_key_url: _,
         } = provider;
         ModelProviderInfo {
             name: (*name).into(),

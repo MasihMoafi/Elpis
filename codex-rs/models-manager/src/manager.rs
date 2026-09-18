@@ -23,7 +23,37 @@ use tracing::Instrument as _;
 use tracing::error;
 use tracing::info;
 
-const MODEL_CACHE_FILE: &str = "models_cache.json";
+const MODEL_CACHE_DIR: &str = "models_cache";
+
+/// One cache file per provider endpoint.
+///
+/// This used to be a single `models_cache.json` shared by every provider, so
+/// whichever provider was fetched first answered for all the others - browsing
+/// to OpenAI could list DeepSeek's models. The scope is the provider's own
+/// base URL, the same thing Zed binds a stored API key to
+/// (`crates/language_model/src/api_key.rs`), so a catalog can never be served
+/// against an endpoint it did not come from.
+pub fn models_cache_path(codex_home: &std::path::Path, cache_scope: &str) -> PathBuf {
+    let mut slug: String = cache_scope
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        slug = "default".to_string();
+    }
+    codex_home
+        .join(MODEL_CACHE_DIR)
+        .join(format!("{slug}.json"))
+}
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// Remote endpoint used by the OpenAI-compatible model manager.
@@ -218,6 +248,12 @@ pub struct OpenAiModelsManager {
     cache_manager: Option<ModelsCacheManager>,
     endpoint_client: SharedModelsEndpointClient,
     auth_manager: Option<Arc<AuthManager>>,
+    /// Whether the models bundled with the binary belong to this endpoint.
+    ///
+    /// They are OpenAI's catalog. Seeding every provider with them is how a
+    /// third-party provider ended up listing `gpt-5.6-sol`: the provider's own
+    /// reply was merged on top of OpenAI's list instead of replacing it.
+    include_bundled_catalog: bool,
 }
 
 /// Static model manager backed by an authoritative in-process catalog.
@@ -231,12 +267,15 @@ impl OpenAiModelsManager {
     /// Construct an OpenAI-compatible remote model manager.
     pub fn new(
         codex_home: PathBuf,
+        cache_scope: &str,
+        include_bundled_catalog: bool,
         endpoint_client: Arc<dyn ModelsEndpointClient>,
         auth_manager: Option<Arc<AuthManager>>,
     ) -> Self {
-        let cache_path = codex_home.join(MODEL_CACHE_FILE);
+        let cache_path = models_cache_path(&codex_home, cache_scope);
         Self::new_with_cache_manager(
             Some(ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL)),
+            include_bundled_catalog,
             endpoint_client,
             auth_manager,
         )
@@ -244,24 +283,36 @@ impl OpenAiModelsManager {
 
     /// Construct an OpenAI-compatible model manager with caching disabled.
     pub fn new_without_cache(
+        include_bundled_catalog: bool,
         endpoint_client: Arc<dyn ModelsEndpointClient>,
         auth_manager: Option<Arc<AuthManager>>,
     ) -> Self {
-        Self::new_with_cache_manager(/*cache_manager*/ None, endpoint_client, auth_manager)
+        Self::new_with_cache_manager(
+            /*cache_manager*/ None,
+            include_bundled_catalog,
+            endpoint_client,
+            auth_manager,
+        )
     }
 
     fn new_with_cache_manager(
         cache_manager: Option<ModelsCacheManager>,
+        include_bundled_catalog: bool,
         endpoint_client: Arc<dyn ModelsEndpointClient>,
         auth_manager: Option<Arc<AuthManager>>,
     ) -> Self {
-        let remote_models = load_remote_models_from_file().unwrap_or_default();
+        let remote_models = if include_bundled_catalog {
+            load_remote_models_from_file().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         Self {
             remote_models: RwLock::new(remote_models),
             etag: RwLock::new(None),
             cache_manager,
             endpoint_client,
             auth_manager,
+            include_bundled_catalog,
         }
     }
 }
@@ -436,7 +487,11 @@ impl OpenAiModelsManager {
             return;
         }
 
-        let mut existing_models = load_remote_models_from_file().unwrap_or_default();
+        let mut existing_models = if self.include_bundled_catalog {
+            load_remote_models_from_file().unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         for model in models {
             if let Some(existing_index) = existing_models
                 .iter()
@@ -459,8 +514,6 @@ impl OpenAiModelsManager {
             codex_otel::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::client_version_to_whole();
         info!(client_version, "models cache: evaluating cache eligibility");
-        // TODO(celia-oai): Include provider identity in cache eligibility so switching
-        // providers does not reuse a fresh models_cache.json entry from another provider.
         let cache = match cache_manager.load_fresh(&client_version).await {
             Some(cache) => cache,
             None => {

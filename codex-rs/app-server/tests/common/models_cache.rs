@@ -61,7 +61,7 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
     }
 }
 
-/// Write a models_cache.json file to the codex home directory.
+/// Write the models cache for the default OpenAI provider into a codex home.
 /// This prevents ModelsManager from making network requests to refresh models.
 /// The cache will be treated as fresh (within TTL) and used instead of fetching from the network.
 /// Uses bundled-catalog-derived presets, converted to ModelInfo format.
@@ -86,13 +86,19 @@ pub fn write_models_cache(codex_home: &Path) -> std::io::Result<()> {
     write_models_cache_with_models(codex_home, models)
 }
 
-/// Write a models_cache.json file with specific models.
+/// Write the models cache with specific models.
 /// Useful when tests need specific models to be available.
 pub fn write_models_cache_with_models(
     codex_home: &Path,
     models: Vec<ModelInfo>,
 ) -> std::io::Result<()> {
-    let cache_path = codex_home.join("models_cache.json");
+    // The cache is per provider endpoint; these fixtures stand in for the
+    // default OpenAI provider the app server starts on.
+    let cache_path =
+        codex_models_manager::manager::models_cache_path(codex_home, "https://api.openai.com/v1");
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     // DateTime<Utc> serializes to RFC3339 format by default with serde
     let fetched_at: DateTime<Utc> = Utc::now();
     let client_version = client_version_to_whole();

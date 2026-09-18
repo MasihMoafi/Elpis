@@ -79,6 +79,8 @@ async fn refreshes_immediately_periodically_and_stops_when_dropped() {
     let endpoint = TestModelsEndpoint::new();
     let models_manager: SharedModelsManager = Arc::new(OpenAiModelsManager::new(
         codex_home.path().to_path_buf(),
+        "https://api.openai.com/v1",
+        /*include_bundled_catalog*/ true,
         endpoint.clone(),
         /*auth_manager*/ None,
     ));

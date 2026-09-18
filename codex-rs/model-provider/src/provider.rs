@@ -266,6 +266,17 @@ impl ConfiguredModelProvider {
         }
     }
 
+    /// Whether the catalog bundled with the binary describes this provider.
+    /// It lists OpenAI's models, so only OpenAI's own endpoint may start from it.
+    fn serves_bundled_openai_catalog(&self) -> bool {
+        self.info.requires_openai_auth
+            || self
+                .info
+                .base_url
+                .as_deref()
+                .is_none_or(|base_url| base_url.starts_with("https://api.openai.com"))
+    }
+
     fn new(provider_info: ModelProviderInfo, auth_manager: Option<Arc<AuthManager>>) -> Self {
         let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
         Self {
@@ -450,8 +461,13 @@ impl ModelProvider for ConfiguredModelProvider {
             )),
             None => {
                 let endpoint = self.models_endpoint();
+                // Scope the cache to this provider's endpoint so one provider's
+                // catalog is never served for another.
+                let cache_scope = self.info.base_url.clone().unwrap_or_default();
                 Arc::new(OpenAiModelsManager::new(
                     codex_home,
+                    &cache_scope,
+                    self.serves_bundled_openai_catalog(),
                     endpoint,
                     self.auth_manager.clone(),
                 ))
@@ -471,6 +487,7 @@ impl ModelProvider for ConfiguredModelProvider {
             None => {
                 let endpoint = self.models_endpoint();
                 Arc::new(OpenAiModelsManager::new_without_cache(
+                    self.serves_bundled_openai_catalog(),
                     endpoint,
                     self.auth_manager.clone(),
                 ))
