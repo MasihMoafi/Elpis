@@ -220,7 +220,20 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
         Box::pin(
             async move {
                 let remote_models = self.get_remote_models().await;
-                construct_model_info_from_candidates(model, &remote_models, config)
+                let info = construct_model_info_from_candidates(model, &remote_models, config);
+                if !info.used_fallback_model_metadata {
+                    return info;
+                }
+                // The provider's own list does not name this slug, but the
+                // catalog shipped with the binary may still know its real
+                // numbers. Only the list stays provider-scoped; a model already
+                // in use deserves better than the fallback's guesses.
+                match bundled_model_metadata(model) {
+                    Some(bundled) => {
+                        construct_model_info_from_candidates(model, &[bundled], config)
+                    }
+                    None => info,
+                }
             }
             .instrument(tracing::info_span!("get_model_info", model = model)),
         )
@@ -673,7 +686,7 @@ fn find_model_by_namespaced_suffix(model: &str, candidates: &[ModelInfo]) -> Opt
 /// is provider-scoped, so that no picker offers another provider's models; a
 /// model already in use still deserves its real context window rather than the
 /// fallback's guess.
-fn bundled_model_metadata(model: &str) -> Option<ModelInfo> {
+pub(crate) fn bundled_model_metadata(model: &str) -> Option<ModelInfo> {
     static BUNDLED: OnceLock<Vec<ModelInfo>> = OnceLock::new();
     let bundled = BUNDLED.get_or_init(|| load_remote_models_from_file().unwrap_or_default());
     find_model_by_longest_prefix(model, bundled)
@@ -694,12 +707,6 @@ pub(crate) fn construct_model_info_from_candidates(
             slug: model.to_string(),
             used_fallback_model_metadata: false,
             ..remote
-        }
-    } else if let Some(bundled) = bundled_model_metadata(model) {
-        ModelInfo {
-            slug: model.to_string(),
-            used_fallback_model_metadata: false,
-            ..bundled
         }
     } else {
         model_info::model_info_from_slug(model)
