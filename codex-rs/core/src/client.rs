@@ -517,6 +517,16 @@ impl ModelClient {
         if let Some(override_key) = &self.prompt_cache_key_override {
             return override_key.clone();
         }
+        // An internally-started session - a sub-agent, or the thread a safety
+        // retry forks onto - carries its parent's history, so it belongs in the
+        // parent's cache slot. Keying it on its own fresh id sends an identical
+        // prefix to a different slot and pays full input price for work already
+        // cached. Restored from upstream Codex, where this branch never left.
+        if let SessionSource::Internal(source) = &self.state.session_source
+            && let Some(parent_thread_id) = responses_metadata.parent_thread_id
+        {
+            return format!("{source}:{parent_thread_id}");
+        }
         let session_id = &responses_metadata.session_id;
         match responses_metadata
             .request_kind
@@ -524,6 +534,18 @@ impl ModelClient {
         {
             Some(namespace) => format!("{session_id}:{namespace}"),
             None => session_id.clone(),
+        }
+    }
+
+    /// The session id sent on the wire, which is a cache-affinity hint rather
+    /// than the session's identity. A non-root agent keeps its own id; everyone
+    /// else shares whatever slot `prompt_cache_key` chose, so a fork lands on
+    /// its parent's cache. Restored from upstream Codex.
+    fn responses_session_id(&self, metadata: &CodexResponsesMetadata) -> String {
+        if self.state.session_source.is_non_root_agent() {
+            metadata.session_id.clone()
+        } else {
+            self.prompt_cache_key(metadata)
         }
     }
 
@@ -659,7 +681,7 @@ impl ModelClient {
         add_originator_header(&mut extra_headers, self.state.originator.as_str());
         extra_headers.extend(self.build_responses_compatibility_headers(responses_metadata));
         extra_headers.extend(build_session_headers(
-            Some(responses_metadata.session_id.to_string()),
+            Some(self.responses_session_id(responses_metadata)),
             Some(responses_metadata.thread_id.to_string()),
         ));
         if let Some(header_value) = self.generate_attestation_header_for().await {
@@ -1109,7 +1131,7 @@ impl ModelClientSession {
         use_responses_lite: bool,
     ) -> ApiResponsesOptions {
         ApiResponsesOptions {
-            session_id: Some(responses_metadata.session_id.to_string()),
+            session_id: Some(self.client.responses_session_id(responses_metadata)),
             thread_id: Some(responses_metadata.thread_id.to_string()),
             session_source: Some(self.client.state.session_source.clone()),
             extra_headers: {
