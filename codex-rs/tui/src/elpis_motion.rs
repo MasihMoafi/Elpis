@@ -14,13 +14,17 @@ pub(crate) fn elapsed() -> Duration {
     START.get_or_init(Instant::now).elapsed()
 }
 
+/// How much faster the Elpis motion runs than the rates it was first tuned at.
+/// The shimmer and the colour drift keep their shape; they just move.
+const SPEED: f64 = 3.0;
+
 pub(crate) fn pigment(position: f64, seconds: f64, light: bool) -> (u8, u8, u8) {
     let colors = if light {
         [(160, 95, 0), (133, 108, 0), (150, 100, 0)]
     } else {
         [(220, 139, 32), (230, 179, 52), (208, 174, 49)]
     };
-    let offset = (position + seconds / 24.0).rem_euclid(1.0) * 3.0;
+    let offset = (position + seconds * SPEED / 24.0).rem_euclid(1.0) * 3.0;
     let index = offset.floor() as usize;
     let mix = tachyonfx::Interpolation::SineInOut.alpha(offset.fract() as f32);
     blend(colors[(index + 1) % 3], colors[index], mix)
@@ -56,7 +60,9 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
     let width = text.width().max(1) as f64;
     let light = is_light(background);
     let half_width = (width * 0.1).max(3.0);
-    let position = (time.as_secs_f64() % 2.5) / 2.5 * (width + 2.0 * half_width) - half_width;
+    let sweep = 2.5 / SPEED;
+    let position =
+        (time.as_secs_f64() % sweep) / sweep * (width + 2.0 * half_width) - half_width;
     let mut column = 0.0;
     text.graphemes(true)
         .map(|glyph| {
@@ -468,9 +474,16 @@ mod tests {
 
     #[test]
     fn animated_labels_change_color_without_changing_text() {
+        // Part-way through the colour cycle, not a whole number of them: at the
+        // period this runs at, a sample on the boundary reads the same as zero
+        // and the assertion below would be measuring the period, not motion.
+        let sample = Duration::from_millis(2_500);
         let first = gradient_text_at("Read Search Full access", Duration::ZERO);
-        let later = gradient_text_at("Read Search Full access", Duration::from_secs(8));
-        assert_ne!(pigment(0.0, 0.0, false), pigment(0.0, 8.0, false));
+        let later = gradient_text_at("Read Search Full access", sample);
+        assert_ne!(
+            pigment(0.0, 0.0, false),
+            pigment(0.0, sample.as_secs_f64(), false)
+        );
         assert_eq!(
             first.iter().map(|s| s.content.as_ref()).collect::<String>(),
             later.iter().map(|s| s.content.as_ref()).collect::<String>()
@@ -527,11 +540,16 @@ mod tests {
         original[(8, 2)].set_symbol("文");
         let mut first = original.clone();
         let mut later = original.clone();
+        // Part-way through the cycle, for the same reason as above.
+        let sample = Duration::from_millis(2_500);
         paint_frame(area, &mut first, Duration::ZERO, true);
-        paint_frame(area, &mut later, Duration::from_secs(8), true);
-        assert_ne!(pigment(0.2, 0.0, false), pigment(0.2, 8.0, false));
+        paint_frame(area, &mut later, sample, true);
+        assert_ne!(
+            pigment(0.2, 0.0, false),
+            pigment(0.2, sample.as_secs_f64(), false)
+        );
         assert_eq!(first[(8, 2)], original[(8, 2)]);
-        paint_frame(area, &mut later, Duration::from_secs(8), false);
+        paint_frame(area, &mut later, sample, false);
         assert_eq!(first, later);
         for light in [false, true] {
             let a = pigment(0.2, 0.0, light);
