@@ -3308,15 +3308,23 @@ async fn token_count_includes_rate_limits_snapshot() {
 
     let token_event = wait_for_event(
         &codex,
-        |msg| matches!(msg, EventMsg::TokenCount(ev) if ev.info.is_some()),
+        |msg| matches!(msg, EventMsg::TokenCount(ev) if ev.rate_limits.is_some()),
     )
     .await;
     let final_payload = match token_event {
         EventMsg::TokenCount(ev) => ev,
         _ => unreachable!(),
     };
-    // Assert full JSON for the final token count event (usage + rate limits)
-    let final_json = serde_json::to_value(&final_payload).unwrap();
+    // Assert full JSON for the final token count event (usage + rate limits).
+    // Elpis hangs its own accounting off the same event; this test is about
+    // usage and rate limits, so drop those fields rather than pin their totals.
+    let mut final_json = serde_json::to_value(&final_payload).unwrap();
+    if let Some(object) = final_json.as_object_mut() {
+        object.remove("context_attribution");
+        object.remove("context_prune_saved_tokens");
+        object.remove("smart_prune");
+    }
+    let final_json = final_json;
     pretty_assertions::assert_eq!(
         final_json,
         json!({
@@ -3460,12 +3468,25 @@ async fn usage_limit_error_emits_rate_limit_event() -> anyhow::Result<()> {
         .await
         .expect("submission should succeed while emitting usage limit error events");
 
-    let token_event = wait_for_event(&codex, |msg| matches!(msg, EventMsg::TokenCount(_))).await;
+    // Elpis emits its own context-attribution token count before the one that
+    // carries rate limits, so take the event this test is actually about.
+    let token_event = wait_for_event(
+        &codex,
+        |msg| matches!(msg, EventMsg::TokenCount(ev) if ev.rate_limits.is_some()),
+    )
+    .await;
     let EventMsg::TokenCount(event) = token_event else {
         unreachable!();
     };
 
-    let event_json = serde_json::to_value(&event).expect("serialize token count event");
+    let mut event_json = serde_json::to_value(&event).expect("serialize token count event");
+    // Elpis's own accounting rides along on this event; it is not what the
+    // rate-limit assertion is about.
+    if let Some(object) = event_json.as_object_mut() {
+        object.remove("context_attribution");
+        object.remove("context_prune_saved_tokens");
+        object.remove("smart_prune");
+    }
     pretty_assertions::assert_eq!(
         event_json,
         json!({

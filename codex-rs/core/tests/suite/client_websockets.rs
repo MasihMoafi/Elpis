@@ -1525,12 +1525,24 @@ async fn responses_websocket_usage_limit_error_emits_rate_limit_event() {
         .expect("submission should succeed while emitting usage limit error events");
 
     let token_event =
-        wait_for_event(&test.codex, |msg| matches!(msg, EventMsg::TokenCount(_))).await;
+        wait_for_event(&test.codex, |msg| {
+            // Elpis emits a context-attribution token count first; this test is
+            // about the one carrying rate limits.
+            matches!(msg, EventMsg::TokenCount(ev) if ev.rate_limits.is_some())
+        })
+        .await;
     let EventMsg::TokenCount(event) = token_event else {
         unreachable!();
     };
 
-    let event_json = serde_json::to_value(&event).expect("serialize token count event");
+    let mut event_json = serde_json::to_value(&event).expect("serialize token count event");
+    // Elpis's own accounting rides along on this event; it is not what the
+    // rate-limit assertion is about.
+    if let Some(object) = event_json.as_object_mut() {
+        object.remove("context_attribution");
+        object.remove("context_prune_saved_tokens");
+        object.remove("smart_prune");
+    }
     pretty_assertions::assert_eq!(
         event_json,
         json!({
