@@ -1257,7 +1257,7 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
             condition: DisplayCondition::WhenCollaborationModesEnabled,
         }],
         prefix: "",
-        label: " to change mode",
+        label: " to change permissions",
     },
     ShortcutDescriptor {
         id: ShortcutId::ReasoningDown,

@@ -104,7 +104,12 @@ async fn restored_conversation_ultra_remains_selected_after_switching_to_plan() 
         network_proxy: None,
         rollout_path: None,
     });
-    chat.cycle_collaboration_mode();
+    // Shift+Tab cycles permission presets now, so switch modes the way the
+    // picker does. What this guards is unchanged: choosing Plan must not drag
+    // the restored reasoning effort back to the mode's own default.
+    let plan = crate::collaboration_modes::plan_mask(chat.model_catalog.as_ref())
+        .expect("plan mode should be available");
+    chat.set_collaboration_mask_from_user_action(plan);
 
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
     assert_eq!(

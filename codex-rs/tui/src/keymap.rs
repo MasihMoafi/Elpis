@@ -1793,7 +1793,7 @@ const MAIN_RESERVED_BINDINGS: &[(&str, KeyBinding)] = &[
     ("fixed.paste_image", key_hint::ctrl(KeyCode::Char('v'))),
     ("fixed.paste_image", key_hint::ctrl_alt(KeyCode::Char('v'))),
     (
-        "fixed.cycle_collaboration_mode",
+        "fixed.cycle_approval_preset",
         key_hint::shift(KeyCode::Tab),
     ),
     ("fixed.backtrack", key_hint::plain(KeyCode::Esc)),
