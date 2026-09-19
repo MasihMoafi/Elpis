@@ -4,11 +4,30 @@ use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::PluginAvailability;
 use pretty_assertions::assert_eq;
 
+/// One directory per test process to hold every widget's home, emptied when the
+/// process first asks for it.
+///
+/// These homes outlive the `TempDir` guard -- the widget keeps a path, not the
+/// handle -- so they were kept deliberately and never removed. At three
+/// thousand tests a run that left tens of thousands of directories loose in the
+/// system temp root. Nesting them under one parent that is purged on entry
+/// bounds the litter to a single run, and to one directory.
+fn test_home_root() -> &'static std::path::Path {
+    static ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| {
+        let root = std::env::temp_dir().join(format!("elpis-tui-tests-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("test home root");
+        root
+    })
+    .as_path()
+}
+
 pub(super) async fn test_config() -> Config {
     // Start from the built-in defaults so tests do not inherit host/system config.
     let codex_home = tempfile::Builder::new()
         .prefix("chatwidget-tests-")
-        .tempdir()
+        .tempdir_in(test_home_root())
         .expect("tempdir")
         .keep();
     let mut config =

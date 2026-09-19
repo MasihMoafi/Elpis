@@ -382,10 +382,18 @@ impl ThreadManager {
         provider: ModelProviderInfo,
     ) -> Self {
         set_thread_manager_test_mode_for_tests(/*enabled*/ true);
-        let codex_home = std::env::temp_dir().join(format!(
-            "codex-thread-manager-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        // Under one parent per process, purged on first use: these homes are
+        // never removed -- the manager keeps the path -- so loose in the system
+        // temp root they accumulated one directory per test, every run.
+        static ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+        let root = ROOT.get_or_init(|| {
+            let root = std::env::temp_dir()
+                .join(format!("elpis-thread-manager-tests-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).expect("test home root");
+            root
+        });
+        let codex_home = root.join(uuid::Uuid::new_v4().to_string());
         std::fs::create_dir_all(&codex_home)
             .unwrap_or_else(|err| panic!("temp codex home dir create failed: {err}"));
         let mut manager = Self::with_models_provider_and_home_for_tests(
