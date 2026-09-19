@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|dev|optimized|schema-build|test-build|core-test-build|core-suite-build|core-suite-tests|models-test-build|config-test-build|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|dev|optimized|schema-build|test-build|core-test-build|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -54,6 +54,13 @@ case "$mode" in
         cargo_args=(test --profile dev-small --locked --offline -p codex-core -p codex-app-server --test all --no-run)
         artifact=
         ;;
+    workspace-check)
+        profile=check
+        # Every crate and every target, so warnings in test and bench code are
+        # visible too. `check` alone only covers the elpis binary's own tree.
+        cargo_args=(check --workspace --all-targets --locked --offline)
+        artifact=
+        ;;
     models-test-build)
         profile=dev-small
         # The model catalog crates: which models a provider lists, and how its
@@ -73,7 +80,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, dev, optimized, schema-build, test-build, core-test-build, core-suite-build, core-suite-tests, models-test-build, config-test-build, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, dev, optimized, schema-build, test-build, core-test-build, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac

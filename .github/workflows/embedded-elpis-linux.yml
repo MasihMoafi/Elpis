@@ -318,145 +318,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  build-macos:
-    name: Build and verify Elpis on macOS (Apple Silicon)
-    runs-on: macos-14
-    timeout-minutes: 120
-    defaults:
-      run:
-        working-directory: codex-rs
-    env:
-      CARGO_INCREMENTAL: "1"
-      CARGO_PROFILE_DEV_DEBUG: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
-      CARGO_TERM_COLOR: always
-      MACOS_TARGET: aarch64-apple-darwin
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Install pinned Rust toolchain
-        run: |
-          rustup set profile minimal
-          rustup toolchain install 1.95.0 --no-self-update
-          rustup target add "$MACOS_TARGET" --toolchain 1.95.0
-
-      - name: Confirm the runner is Apple Silicon
-        run: |
-          # macos-14 is arm64. If GitHub ever repoints it, fail loudly rather than
-          # publishing an x86_64 binary under an arm64 asset name.
-          test "$(uname -s)-$(uname -m)" = "Darwin-arm64"
-
-      - name: Restore Cargo downloads
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: elpis-cargo-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}
-          restore-keys: |
-            elpis-cargo-${{ runner.os }}-
-
-      - name: Restore incremental build outputs
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
-        with:
-          path: codex-rs/target
-          key: elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
-            elpis-target-${{ runner.os }}-${{ hashFiles('codex-rs/rust-toolchain.toml') }}-
-
-      - name: Verify Elpis launcher and provider entrypoints
-        run: cargo test -p codex-tui --bin elpis --locked --target "$MACOS_TARGET"
-
-      - name: Verify context lifecycle and archive failure safety
-        run: |
-          cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" context_cleaner::tests
-          cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" elpis_context::tests
-
-      - name: Verify durable memory admission and filesystem bounds
-        run: |
-          set -euo pipefail
-          # See the Linux job: a filter matching zero tests must fail, not pass silently.
-          run_filter() {
-            local out
-            out=$(cargo test "$@" 2>&1) || { printf '%s\n' "$out"; exit 1; }
-            printf '%s\n' "$out"
-            if printf '%s\n' "$out" | grep -qE 'test result: ok\. 0 passed'; then
-              printf '::error::test filter matched zero tests: %s\n' "$*"
-              exit 1
-            fi
-          }
-          run_filter -p codex-app-server --test all --locked --target "$MACOS_TARGET" durable_memory_reaches_the_model_only_once_the_ledger_admits_it
-          run_filter -p codex-core --lib --locked --target "$MACOS_TARGET" memory_dir_is_readable_without_creating_or_widening_writes
-          run_filter -p codex-core --lib --locked --target "$MACOS_TARGET" permission_profile_override_keeps_memories_root_out_of_legacy_projection
-
-      - name: Verify provider protocol and authentication boundaries
-        run: |
-          cargo test -p codex-model-provider-info --locked --target "$MACOS_TARGET"
-          cargo test -p codex-core --lib --locked --target "$MACOS_TARGET" chat_completions
-
-      - name: Verify runtime identity surfaces
-        run: |
-          cargo test -p codex-tui --lib --locked --target "$MACOS_TARGET" branding::tests
-          cargo test -p codex-tui --lib --locked --target "$MACOS_TARGET" slash_command::tests
-
-      - name: Build Elpis binary
-        run: cargo build -p codex-tui --bin elpis --locked --release --target "$MACOS_TARGET"
-
-      - name: Ensure the binary carries a valid ad-hoc signature
-        run: |
-          # The release profile already sets `strip = "symbols"`, so there is nothing
-          # left to strip here. What matters on arm64 macOS is the signature: an
-          # unsigned or stale-signed Mach-O is killed on launch, and rustc's own strip
-          # pass has historically invalidated it. Repair it rather than assume.
-          binary="target/$MACOS_TARGET/release/elpis"
-          ls -l "$binary"
-          if ! codesign --verify --verbose "$binary"; then
-            echo "Signature missing or invalid; re-signing ad hoc."
-            codesign --force --sign - "$binary"
-            codesign --verify --verbose "$binary"
-          fi
-
-      - name: Verify the binary is a native arm64 Mach-O
-        run: |
-          file "target/$MACOS_TARGET/release/elpis"
-          file "target/$MACOS_TARGET/release/elpis" | grep -q 'Mach-O 64-bit executable arm64'
-
-      - name: Verify executable identity
-        run: |
-          binary="target/$MACOS_TARGET/release/elpis"
-          "$binary" --help
-          expected="$(sed -n '/^\[package\]/,/^\[[^p]/s/^version *= *"\([^"]*\)"/\1/p' tui/Cargo.toml | head -1)"
-          test -n "$expected"
-          test "$("$binary" --version)" = "elpis $expected"
-
-      - name: Launch the binary headlessly and assert a clean exit
-        run: |
-          # A non-interactive run that actually starts the async runtime, resolves the
-          # Elpis home, and touches the filesystem. This is the dead-on-arrival check:
-          # a missing framework or a Linux-only syscall shows up here, not in --version.
-          binary="$PWD/target/$MACOS_TARGET/release/elpis"
-          home="$RUNNER_TEMP/elpis-smoke-home"
-          codex_home="$RUNNER_TEMP/elpis-smoke-codex"
-          mkdir -p "$home" "$codex_home"
-          ELPIS_HOME="$home" CODEX_HOME="$codex_home" \
-            "$binary" --migrate-from-codex > "$RUNNER_TEMP/migrate-preview.txt"
-          cat "$RUNNER_TEMP/migrate-preview.txt"
-          grep -q 'Preview only. Nothing is selected or copied.' "$RUNNER_TEMP/migrate-preview.txt"
-          test -d "$home"
-
-      - name: Upload Elpis macOS binary
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: elpis-macos-arm64
-          path: codex-rs/target/aarch64-apple-darwin/release/elpis
-          if-no-files-found: error
-          retention-days: 7
-
   installer-platform-detection:
     name: Verify installer platform selection
     runs-on: ubuntu-24.04
@@ -471,7 +332,7 @@ jobs:
   release:
     name: Publish tagged binaries
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, build-macos, installer-platform-detection]
+    needs: [build, installer-platform-detection]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -484,12 +345,6 @@ jobs:
         with:
           name: elpis-linux-x86_64
           path: dist
-
-      - name: Download verified Elpis macOS binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: elpis-macos-arm64
-          path: dist-macos
 
       - name: Download Elpis .deb
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -505,11 +360,7 @@ jobs:
           mv dist/bwrap dist/elpis-bwrap-linux-x86_64
           cp codex-rs/vendor/bubblewrap/COPYING dist/bubblewrap.COPYING
           (cd dist && sha256sum elpis-bwrap-linux-x86_64 > elpis-bwrap-linux-x86_64.sha256)
-          # Both artifacts contain a file named `elpis`, so the macOS one is
-          # downloaded to its own directory and renamed before it joins dist/.
-          mv dist-macos/elpis dist/elpis-macos-arm64
           (cd dist && sha256sum elpis-linux-x86_64 > elpis-linux-x86_64.sha256)
-          (cd dist && sha256sum elpis-macos-arm64 > elpis-macos-arm64.sha256)
           for deb in dist/*.deb; do
             (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
           done
@@ -523,8 +374,6 @@ jobs:
             dist/elpis-bwrap-linux-x86_64 \
             dist/elpis-bwrap-linux-x86_64.sha256 \
             dist/bubblewrap.COPYING \
-            dist/elpis-macos-arm64 \
-            dist/elpis-macos-arm64.sha256 \
             dist/*.deb \
             dist/*.deb.sha256 \
             --repo "$GITHUB_REPOSITORY" \
