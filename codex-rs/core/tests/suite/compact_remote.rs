@@ -2149,10 +2149,15 @@ async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result
     let baseline_input_tokens = estimate_compact_input_tokens(&baseline_compact_request);
     let baseline_payload_tokens = estimate_compact_payload_tokens(&baseline_compact_request);
 
+    // Far past the window, not just over it. The margin below is 500 tokens on
+    // a ~15,000-token prediction that this test makes with its own arithmetic
+    // while the code under test makes its own; at eight thousand characters the
+    // two landed eighteen tokens apart and the test measured the approximation
+    // rather than the behaviour.
     let override_base_instructions = format!(
         "{}\nREMOTE_BASE_INSTRUCTIONS_OVERRIDE {}",
         baseline_compact_request.instructions_text(),
-        "x".repeat(8_000)
+        "x".repeat(80_000)
     );
     let override_context_window = baseline_payload_tokens.saturating_add(500);
     let pretrim_override_estimate =
