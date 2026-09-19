@@ -611,8 +611,32 @@ impl Match for ModelsMock {
     }
 }
 
+/// Elpis names a session from its first user message on a background model,
+/// fired with `tokio::spawn` while the turn is still running. It is not part of
+/// the conversation, so letting it land in the request log shifts every index a
+/// test asserts on and eats a slot in a mounted response sequence. Upstream's
+/// tests were written before the feature existed. Left unmatched it 404s, which
+/// naming already treats as "skipped".
+fn is_session_naming_request(request: &wiremock::Request) -> bool {
+    request
+        .headers
+        .get("x-codex-turn-metadata")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| serde_json::from_str::<Value>(value).ok())
+        .and_then(|metadata| {
+            metadata
+                .get("request_kind")
+                .and_then(Value::as_str)
+                .map(|kind| kind == "session_title")
+        })
+        .unwrap_or(false)
+}
+
 impl Match for ResponseMock {
     fn matches(&self, request: &wiremock::Request) -> bool {
+        if is_session_naming_request(request) {
+            return false;
+        }
         self.requests
             .lock()
             .unwrap()
