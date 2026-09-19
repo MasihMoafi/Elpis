@@ -617,7 +617,7 @@ impl Match for ModelsMock {
 /// test asserts on and eats a slot in a mounted response sequence. Upstream's
 /// tests were written before the feature existed. Left unmatched it 404s, which
 /// naming already treats as "skipped".
-fn is_session_naming_request(request: &wiremock::Request) -> bool {
+pub fn is_session_naming_request(request: &wiremock::Request) -> bool {
     request
         .headers
         .get("x-codex-turn-metadata")
@@ -630,6 +630,17 @@ fn is_session_naming_request(request: &wiremock::Request) -> bool {
                 .map(|kind| kind == "session_title")
         })
         .unwrap_or(false)
+}
+
+/// Matcher form of [`is_session_naming_request`], negated: use it on mocks that
+/// stand in for the conversation so the naming call cannot consume a slot.
+#[derive(Debug, Clone, Copy)]
+pub struct NotSessionNaming;
+
+impl Match for NotSessionNaming {
+    fn matches(&self, request: &wiremock::Request) -> bool {
+        !is_session_naming_request(request)
+    }
 }
 
 impl Match for ResponseMock {
