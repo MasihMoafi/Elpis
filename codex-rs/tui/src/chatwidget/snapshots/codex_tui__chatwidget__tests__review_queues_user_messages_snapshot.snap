@@ -14,9 +14,9 @@ Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context n
 │                                               │Syncing… · /smart-prune on|off
 │                                               │sets an explicit state
           context unknown · Tab Context Ledger  │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
+                                                │
                                                 │CONTEXT WINDOW  usage
                                                 │unavailable
                                                 │Context measurement unavailable
-                                                │until the first request
-                                                │snapshot
-                                                │

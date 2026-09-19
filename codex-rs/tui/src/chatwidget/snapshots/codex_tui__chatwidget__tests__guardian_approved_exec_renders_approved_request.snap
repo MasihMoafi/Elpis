@@ -20,6 +20,9 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
                                                                         │Syncing… · /smart-prune on|off sets an explicit
                                                                         │state
                                                                         │
+                                                                        │SUBAGENTS                             [━━━●] ON
+                                                                        │May delegate to other agents
+                                                                        │
                                                                         │CONTEXT WINDOW  usage unavailable
                                                                         │Context measurement unavailable until the first
                                                                         │request snapshot

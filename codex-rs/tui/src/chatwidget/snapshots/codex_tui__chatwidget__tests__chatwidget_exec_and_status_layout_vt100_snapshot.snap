@@ -14,9 +14,6 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 
 
-
-
-
 • I’m going to search the repo for where “Change Approved” is rendered to update
   that view.
 • Explored
@@ -33,6 +30,9 @@ Investigating rendering code (0s • esc to inter…│CONTEXT LEDGER  context n
   enter to queue message                        │Reading current thread state
                                                 │Syncing… · /smart-prune on|off
                                                 │sets an explicit state
+                                                │
+                                                │SUBAGENTS             [━━━●] ON
+                                                │May delegate to other agents
                                                 │
                                                 │CONTEXT WINDOW  usage
                                                 │unavailable

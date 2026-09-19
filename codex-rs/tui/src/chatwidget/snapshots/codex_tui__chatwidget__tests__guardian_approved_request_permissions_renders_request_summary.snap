@@ -20,6 +20,9 @@ Elpising… (0s • esc to interrupt)                                 │CONTEXT
                                                                   │Syncing… · /smart-prune on|off sets an
                                                                   │explicit state
                                                                   │
+                                                                  │SUBAGENTS                         [━━━●] ON
+                                                                  │May delegate to other agents
+                                                                  │
                                                                   │CONTEXT WINDOW  usage unavailable
                                                                   │Context measurement unavailable until the
                                                                   │first request snapshot

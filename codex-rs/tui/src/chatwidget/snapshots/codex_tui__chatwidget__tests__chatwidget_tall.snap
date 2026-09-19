@@ -14,15 +14,15 @@ Elpising… (0s • esc to interrupt)               │CONTEXT LEDGER  context n
   ↳ Hello, world! 4                             │Syncing… · /smart-prune on|off
   ↳ Hello, world! 5                             │sets an explicit state
   ↳ Hello, world! 6                             │
-  ↳ Hello, world! 7                             │CONTEXT WINDOW  usage
-  ↳ Hello, world! 8                             │unavailable
-  ↳ Hello, world! 9                             │Context measurement unavailable
-  ↳ Hello, world! 10                            │until the first request
-  ↳ Hello, world! 11                            │snapshot
-  ↳ Hello, world! 12                            │
+  ↳ Hello, world! 7                             │SUBAGENTS             [━━━●] ON
+  ↳ Hello, world! 8                             │May delegate to other agents
+  ↳ Hello, world! 9                             │
+  ↳ Hello, world! 10                            │CONTEXT WINDOW  usage
+  ↳ Hello, world! 11                            │unavailable
+  ↳ Hello, world! 12                            │Context measurement unavailable
+│                                               │until the first request
+› Ask Elpis to do anything                      │snapshot
+│                                               │
 │                                               │No portable context is
-› Ask Elpis to do anything                      │available.
-│
-│
-│
+│                                               │available.
           context unknown · Tab Context Ledger
