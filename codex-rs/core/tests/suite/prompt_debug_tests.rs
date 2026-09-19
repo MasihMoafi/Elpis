@@ -29,6 +29,15 @@ async fn build_prompt_input_includes_context_and_user_message() -> Result<()> {
         })
         .build()
         .await?;
+    // A global AGENTS.md reaches the prompt only once the Context Ledger admits
+    // it; Elpis excludes it by default where upstream always sent it.
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(config.memory_dir.as_path()),
+        config.cwd.as_path(),
+        "Global AGENTS.md",
+        true,
+    )
+    .expect("admit AGENTS.md in the ledger");
     let user_instructions_provider = Arc::new(CodexHomeUserInstructionsProvider::new(
         config.codex_home.clone(),
     ));

@@ -1686,7 +1686,14 @@ async fn includes_user_instructions_message_in_request() {
     );
 
     assert_message_role(&request_body["input"][1], "user");
-    let user_context_texts = message_input_texts(&request_body["input"][1]);
+    // Elpis sends an environment-context user message of its own, so the
+    // AGENTS text is no longer pinned to a fixed index.
+    let user_context_texts: Vec<&str> = request_body["input"]
+        .as_array()
+        .expect("input should be an array")
+        .iter()
+        .flat_map(message_input_texts)
+        .collect();
     assert!(
         user_context_texts
             .iter()
@@ -2997,7 +3004,14 @@ async fn includes_developer_instructions_message_in_request() {
     );
 
     assert_message_role(&request_body["input"][1], "user");
-    let user_context_texts = message_input_texts(&request_body["input"][1]);
+    // Elpis sends an environment-context user message of its own, so the
+    // AGENTS text is no longer pinned to a fixed index.
+    let user_context_texts: Vec<&str> = request_body["input"]
+        .as_array()
+        .expect("input should be an array")
+        .iter()
+        .flat_map(message_input_texts)
+        .collect();
     assert!(
         user_context_texts
             .iter()
