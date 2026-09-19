@@ -105,7 +105,9 @@ impl SlashCommand {
             SlashCommand::Skills => "use skills to improve how Elpis performs specific tasks",
             SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
             SlashCommand::Hooks => "view and manage lifecycle hooks",
-            SlashCommand::Usage => "inspect current context, continuity, and token usage",
+            SlashCommand::Usage => {
+                "inspect this session, or add daily/weekly/cumulative for account activity"
+            }
             SlashCommand::SmartPrune => {
                 "optimize fresh tool results before their first model request"
             }
@@ -185,6 +187,7 @@ impl SlashCommand {
                 | SlashCommand::Btw
                 | SlashCommand::Resume
                 | SlashCommand::SandboxReadRoot
+                | SlashCommand::Usage
         )
     }
 

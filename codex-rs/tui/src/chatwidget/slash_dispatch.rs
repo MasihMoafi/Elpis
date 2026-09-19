@@ -748,9 +748,20 @@ impl ChatWidget {
                 self.request_manual_memory_status_refresh();
             }
             SlashCommand::Usage => {
-                self.add_status_output(
-                    /*refreshing_rate_limits*/ false, /*request_id*/ None,
-                );
+                // Bare `/usage` keeps showing this session's own numbers. A
+                // named view asks the account for the last twelve months and
+                // draws the activity chart instead.
+                if trimmed.is_empty() {
+                    self.add_status_output(
+                        /*refreshing_rate_limits*/ false, /*request_id*/ None,
+                    );
+                } else if let Some(view) = crate::chatwidget::TokenActivityView::parse(trimmed) {
+                    self.add_token_activity_output(view);
+                } else {
+                    self.add_error_message(format!(
+                        "'/usage {trimmed}' is not a view; try daily, weekly, or cumulative."
+                    ));
+                }
             }
             SlashCommand::Context => {
                 self.request_fresh_context_usage_report();
