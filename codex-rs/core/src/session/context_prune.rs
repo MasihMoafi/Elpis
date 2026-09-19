@@ -278,8 +278,15 @@ async fn run_context_prune(
     let active_question = context_pruner::latest_user_message_text(&items);
     // Keep maintenance inference isolated from the active turn's sticky routing and
     // incremental request state. This lets the pressure check run between tool
-    // follow-ups without perturbing the user's model session.
-    let mut prune_client_session = sess.services.model_client.load().new_session();
+    // follow-ups without perturbing the user's model session. `new_session` on the
+    // shared client would take the turn loop's pooled websocket with it, so ask for
+    // a background client instead.
+    let mut prune_client_session = sess
+        .services
+        .model_client
+        .load()
+        .for_background_work(/*provider_info*/ None)
+        .new_session();
     let log_dir = sess.codex_home().await.join("logs");
 
     let (pass_result, attempts, debug_records) = match run_prune_pass(

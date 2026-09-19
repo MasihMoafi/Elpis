@@ -102,13 +102,11 @@ pub(crate) fn background_client(
     client: &crate::client::ModelClient,
     config: &crate::config::Config,
 ) -> anyhow::Result<crate::client::ModelClient> {
-    match resolve_background_provider(
+    let provider = resolve_background_provider(
         config.background_provider.as_deref(),
         &config.model_providers,
-    )? {
-        Some(provider) => Ok(client.with_provider(provider)),
-        None => Ok(client.clone()),
-    }
+    )?;
+    Ok(client.for_background_work(provider))
 }
 
 /// The provider a pruning request should go to, or `None` when the session's
