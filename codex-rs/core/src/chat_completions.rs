@@ -1059,6 +1059,19 @@ fn chat_completions_request(request: &ResponsesApiRequest) -> Result<Value, ApiE
         body["tools"] = json!(openai_tools);
     }
 
+    // Thinking effort was only ever sent on the Responses wire, so choosing it
+    // for a model reached over this one changed nothing: the picker offered the
+    // dial and the request left without it. Only models whose provider listed
+    // `reasoning` among their parameters carry levels, so the field goes out
+    // exactly where the provider said it is understood.
+    if let Some(effort) = request
+        .reasoning
+        .as_ref()
+        .and_then(|reasoning| reasoning.effort.as_ref())
+    {
+        body["reasoning"] = json!({ "effort": effort.as_str() });
+    }
+
     // Structured output was only ever sent on the Responses wire, so a
     // schema-dependent caller such as the memory saver or the pruner pointed at a
     // chat-protocol provider got free-form prose back and failed to parse it,

@@ -166,6 +166,29 @@ impl ModelsEndpointClient for NativeModelsEndpoint {
     }
 }
 
+/// The reasoning levels offered for a model whose provider says it can think.
+///
+/// A provider's listing says whether a model reasons, not how finely: these are
+/// the three the OpenAI-compatible wire has always carried, and the ones
+/// OpenRouter forwards to whatever model sits behind the slug. The descriptions
+/// say what changes, not how clever the answer will be.
+const REASONING_LEVELS: [(&str, &str); 3] = [
+    ("low", "Answers soonest"),
+    ("medium", "Balanced"),
+    ("high", "Thinks longest before answering"),
+];
+
+fn reasoning_levels_json() -> serde_json::Value {
+    serde_json::Value::Array(
+        REASONING_LEVELS
+            .iter()
+            .map(|(effort, description)| {
+                serde_json::json!({"effort": effort, "description": description})
+            })
+            .collect(),
+    )
+}
+
 /// Builds a catalog entry. Only `context_window` is optional: an unknown window
 /// stays unknown rather than being filled with a plausible number.
 fn model_info(
@@ -174,13 +197,18 @@ fn model_info(
     description: String,
     context_window: Option<u32>,
     priority: i32,
+    reasons: bool,
 ) -> Option<ModelInfo> {
     serde_json::from_value(serde_json::json!({
         "slug": slug,
         "display_name": display_name,
         "description": description,
-        "default_reasoning_level": null,
-        "supported_reasoning_levels": [],
+        "default_reasoning_level": if reasons { Some("medium") } else { None },
+        "supported_reasoning_levels": if reasons {
+            reasoning_levels_json()
+        } else {
+            serde_json::Value::Array(Vec::new())
+        },
         "shell_type": "shell_command",
         "visibility": "list",
         "supported_in_api": true,
@@ -226,6 +254,11 @@ pub(crate) fn anthropic_models(body: &serde_json::Value) -> Vec<ModelInfo> {
                 format!("≈{}k context", ANTHROPIC_DEFAULT_CONTEXT_WINDOW / 1_000),
                 Some(ANTHROPIC_DEFAULT_CONTEXT_WINDOW),
                 index as i32,
+                // Anthropic's listing says which models exist, not which of
+                // them think, and Elpis does not put a thinking budget on the
+                // Messages wire yet. Claiming levels here would offer a choice
+                // that changes nothing.
+                /*reasons*/ false,
             )
         })
         .collect()
@@ -275,6 +308,9 @@ pub(crate) fn gemini_models(body: &serde_json::Value) -> Vec<ModelInfo> {
                 description,
                 context_window,
                 index as i32,
+                // Same as Anthropic: the listing carries no thinking signal and
+                // the generateContent wire carries no thinking config yet.
+                /*reasons*/ false,
             )
         })
         .collect()
@@ -318,12 +354,26 @@ pub(crate) fn openai_compatible_models(body: &serde_json::Value) -> Vec<ModelInf
                 Some(window) => format!("≈{}k context", window / 1_000),
                 None => "context window not reported".to_string(),
             };
+            // OpenRouter lists the parameters each model accepts. A model that
+            // takes `reasoning` is one the owner can turn the effort up on;
+            // every other row keeps an empty list rather than offering a dial
+            // that goes nowhere.
+            let reasons = entry
+                .get("supported_parameters")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|parameters| {
+                    parameters
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .any(|parameter| parameter == "reasoning")
+                });
             model_info(
                 slug,
                 display_name,
                 description,
                 context_window,
                 index as i32,
+                reasons,
             )
         })
         .collect()
@@ -332,6 +382,7 @@ pub(crate) fn openai_compatible_models(body: &serde_json::Value) -> Vec<ModelInf
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_protocol::openai_models::ReasoningEffort;
 
     #[test]
     fn anthropic_catalog_is_read_from_the_response() {
@@ -463,6 +514,52 @@ mod tests {
         assert_eq!(models[0].slug, "anthropic/claude-sonnet-4.5");
         assert_eq!(models[0].display_name, "Anthropic: Claude Sonnet 4.5");
         assert_eq!(models[0].context_window, Some(200_000));
+    }
+
+    /// OpenRouter says which parameters each model accepts. A model that takes
+    /// `reasoning` gets the effort levels; one that does not is offered none,
+    /// so the picker never shows a dial that changes nothing.
+    #[test]
+    fn reasoning_levels_follow_what_the_provider_says_the_model_accepts() {
+        let body = serde_json::json!({
+            "data": [
+                {
+                    "id": "deepseek/deepseek-v4.1-flash",
+                    "context_length": 164_000u64,
+                    "supported_parameters": ["tools", "reasoning", "include_reasoning"]
+                },
+                {
+                    "id": "meta-llama/llama-3.3-70b-instruct",
+                    "context_length": 131_072u64,
+                    "supported_parameters": ["tools", "temperature"]
+                },
+                {
+                    "id": "some/model-that-says-nothing",
+                    "context_length": 8_192u64
+                }
+            ]
+        });
+        let models = openai_compatible_models(&body);
+
+        assert_eq!(
+            models[0]
+                .supported_reasoning_levels
+                .iter()
+                .map(|preset| preset.effort.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High
+            ]
+        );
+        assert_eq!(
+            models[0].default_reasoning_level,
+            Some(ReasoningEffort::Medium)
+        );
+        assert!(models[1].supported_reasoning_levels.is_empty());
+        assert!(models[1].default_reasoning_level.is_none());
+        assert!(models[2].supported_reasoning_levels.is_empty());
     }
 
     /// Together returns the rows as a bare array instead of `{"data": …}`.
