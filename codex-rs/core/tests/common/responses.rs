@@ -1396,10 +1396,6 @@ pub async fn start_websocket_server_with_headers(
                         break 'requests;
                     };
                     let body = parse_ws_request_body(message);
-                    eprintln!(
-                        "[ws test server] request_kind={:?}",
-                        body.as_ref().and_then(ws_request_kind)
-                    );
                     // Elpis fires background maintenance (session naming, memory,
                     // pruning) on the same provider while a turn is still running.
                     // These fixtures script conversation turns only, so a background
