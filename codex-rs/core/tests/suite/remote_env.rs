@@ -661,6 +661,15 @@ async fn deferred_executor_loads_agents_md_when_environment_becomes_ready() -> R
     let test = timeout(Duration::from_secs(5), builder.build(&server))
         .await
         .context("thread startup should not wait for the remote environment")??;
+    // A project AGENTS.md reaches the model only once the Context Ledger
+    // admits it, and starting the thread resets that state.
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(test.config.memory_dir.as_path()),
+        test.config.cwd.as_path(),
+        "Project AGENTS.md",
+        true,
+    )
+    .expect("admit the project AGENTS.md");
 
     test.codex
         .submit(Op::UserInput {
