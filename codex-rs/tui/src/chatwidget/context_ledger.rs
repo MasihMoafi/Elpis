@@ -254,7 +254,23 @@ impl ChatWidget {
                 .last_rendered_width
                 .get()
                 .is_some_and(|width| width >= LEDGER_MIN_TERMINAL_WIDTH as usize);
-        if !self.context_ledger.focused || !ledger_is_rendered {
+        if !ledger_is_rendered {
+            return false;
+        }
+        // The panel says "Tab/Esc close", and the owner reads that from the
+        // composer too. Esc still belongs to a running turn and to a composer
+        // with something in it; when it would otherwise do nothing, it closes
+        // the panel that claims it.
+        if !self.context_ledger.focused {
+            let esc_is_idle = matches!(key_event.code, KeyCode::Esc)
+                && !self.bottom_pane.has_active_view()
+                && !self.bottom_pane.is_task_running()
+                && self.composer_is_empty();
+            if esc_is_idle {
+                self.close_context_ledger();
+                self.request_redraw();
+                return true;
+            }
             return false;
         }
         if !key_event.modifiers.is_empty() {
@@ -267,7 +283,7 @@ impl ChatWidget {
             return true;
         }
 
-        if matches!(key_event.code, KeyCode::Char('a')) {
+        if matches!(key_event.code, KeyCode::Char('s')) {
             self.toggle_subagents();
             return true;
         }
@@ -511,7 +527,7 @@ impl ChatWidget {
             )
         };
         let interaction_hint = if self.context_ledger.focused {
-            "Up/Down move · Space/Enter toggle · p prune · a subagents · i all · w why · Tab/Esc close"
+            "Up/Down move · Space/Enter toggle · p prune · s subagents · i all · w why · Tab/Esc close"
         } else {
             "Tab controls · Alt+C hide · Ctrl+click open file"
         };
@@ -575,10 +591,15 @@ impl ChatWidget {
         } else {
             vec![Span::styled(smart_prune_button, muted)]
         };
-        let mut smart_prune_spans = vec![
-            Span::styled(smart_prune_label, Style::default().fg(teal).bold()),
-            Span::raw(" ".repeat(smart_prune_pad)),
-        ];
+        let mut smart_prune_spans = if smart_prune_cursor.is_empty() {
+            vec![Span::styled(
+                smart_prune_label,
+                Style::default().fg(teal).bold(),
+            )]
+        } else {
+            crate::elpis_motion::animated_text(smart_prune_label, self.config.animations)
+        };
+        smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
         if !smart_prune_cursor.is_empty() {
             smart_prune_spans.push(Span::styled(smart_prune_cursor, brand.bold()));
         }
@@ -771,10 +792,15 @@ impl ChatWidget {
         } else {
             vec![Span::styled(subagents_button, muted)]
         };
-        let mut subagents_spans = vec![
-            Span::styled(subagents_label, Style::default().fg(teal).bold()),
-            Span::raw(" ".repeat(subagents_pad)),
-        ];
+        let mut subagents_spans = if subagents_cursor.is_empty() {
+            vec![Span::styled(
+                subagents_label,
+                Style::default().fg(teal).bold(),
+            )]
+        } else {
+            crate::elpis_motion::animated_text(subagents_label, self.config.animations)
+        };
+        subagents_spans.push(Span::raw(" ".repeat(subagents_pad)));
         if !subagents_cursor.is_empty() {
             subagents_spans.push(Span::styled(subagents_cursor, brand.bold()));
         }
@@ -782,7 +808,7 @@ impl ChatWidget {
         lines.push(Line::from(subagents_spans));
         // One line, not a block: the ledger's own height is what the owner sees
         // of their sources, and this setting has nothing to report beyond its
-        // state. The `a` key is already named in the header hint.
+        // state. The `s` key is already named in the header hint.
         lines.push(Line::from(Span::styled(
             if pending_subagents_enabled.is_some() {
                 "Saving… · applies next turn"
@@ -899,7 +925,13 @@ impl ChatWidget {
             ]));
             for (index, source) in category_sources {
                 let source_line_start = lines.len();
-                let selected = self.context_ledger.focused && index == self.context_ledger.selected;
+                // A switch above can hold the cursor, and then no source does.
+                // Without this the mark stayed on whichever row was last chosen
+                // and two rows looked selected at once.
+                let selected = self.context_ledger.focused
+                    && !self.context_ledger.smart_prune_selected
+                    && !self.context_ledger.subagents_selected
+                    && index == self.context_ledger.selected;
                 let marker = if source.selectable {
                     if source.admitted { "[x]" } else { "[ ]" }
                 } else {
@@ -949,22 +981,30 @@ impl ChatWidget {
                 if let Ok(destination) = url::Url::from_file_path(&source.path) {
                     source_links.push((lines.len(), destination.to_string()));
                 }
-                lines.push(Line::from(vec![
+                // The row under the cursor wears the Elpis gradient. Bold brand
+                // text alone was too close to the rows around it to find at a
+                // glance, and every name is underlined already.
+                let mut row = vec![
                     Span::styled(prefix, brand),
                     Span::styled(marker, marker_style),
                     Span::raw(" "),
-                    Span::styled(
+                ];
+                if selected {
+                    row.extend(crate::elpis_motion::animated_text(
+                        &shown_name,
+                        self.config.animations,
+                    ));
+                } else {
+                    row.push(Span::styled(
                         shown_name,
-                        if selected {
-                            brand.bold().underlined()
-                        } else {
-                            Style::default()
-                                .fg(crate::terminal_palette::default_fg()
-                                    .map(crate::terminal_palette::best_color)
-                                    .unwrap_or(if light { Color::Black } else { Color::Reset }))
-                                .underlined()
-                        },
-                    ),
+                        Style::default()
+                            .fg(crate::terminal_palette::default_fg()
+                                .map(crate::terminal_palette::best_color)
+                                .unwrap_or(if light { Color::Black } else { Color::Reset }))
+                            .underlined(),
+                    ));
+                }
+                row.extend(vec![
                     Span::raw(" ".repeat(pad)),
                     Span::styled(
                         format!(
@@ -974,7 +1014,8 @@ impl ChatWidget {
                         muted,
                     ),
                     Span::styled(state, state_style),
-                ]));
+                ]);
+                lines.push(Line::from(row));
 
                 if selected && self.context_ledger.why_visible {
                     let inclusion = if source.admitted {

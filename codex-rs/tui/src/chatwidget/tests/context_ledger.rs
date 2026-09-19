@@ -2538,3 +2538,85 @@ async fn context_command_does_not_infer_smart_prune_outcome_before_sync_or_from_
     );
     assert!(failed.contains("optimizer usage unreported"), "{failed}");
 }
+
+#[tokio::test]
+async fn esc_closes_the_ledger_from_any_cursor_stop() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    assert!(chat.context_ledger_width(100) > 0, "ledger starts visible");
+
+    // On a source row.
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(
+        chat.context_ledger_width(100),
+        0,
+        "Esc should close the ledger from a source row"
+    );
+
+    // And on a switch, which is a different branch of the key handler.
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(
+        chat.context_ledger_width(100),
+        0,
+        "Esc should close the ledger from a switch too"
+    );
+
+    // Visible but not focused: the cursor is still in the composer. The ledger
+    // advertises "Tab/Esc close", so Esc has to reach it from here too.
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert!(
+        chat.context_ledger_width(100) > 0,
+        "the ledger should be showing again"
+    );
+    chat.focus_composer();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(
+        chat.context_ledger_width(100),
+        0,
+        "Esc should close a visible ledger even when the composer holds the cursor"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_cursor_marks_one_row_at_a_time() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let on_a_source = render_ledger(&chat, 80);
+    assert_eq!(
+        on_a_source.lines().filter(|line| line.contains('\u{203a}')).count(),
+        1,
+        "a source row should carry the only mark:\n{on_a_source}"
+    );
+
+    // Walking up onto the switches has to take the mark with it.
+    for expected in ["SUBAGENTS", "SMART PRUNE"] {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        let rendered = render_ledger(&chat, 80);
+        let marked: Vec<&str> = rendered
+            .lines()
+            .filter(|line| line.contains('\u{203a}'))
+            .collect();
+        assert_eq!(
+            marked.len(),
+            1,
+            "only one row may carry the mark, found {marked:?}:\n{rendered}"
+        );
+        assert!(
+            marked[0].contains(expected),
+            "the mark should be on {expected}, found {:?}",
+            marked[0]
+        );
+    }
+    Ok(())
+}
