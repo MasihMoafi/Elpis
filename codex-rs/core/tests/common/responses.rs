@@ -1390,11 +1390,27 @@ pub async fn start_websocket_server_with_headers(
                 log.len() - 1
             };
             let close_after_requests = connection.close_after_requests;
-            for request_events in connection.requests {
-                let Some(Ok(message)) = ws_stream.next().await else {
-                    break;
+            'requests: for request_events in connection.requests {
+                let body = loop {
+                    let Some(Ok(message)) = ws_stream.next().await else {
+                        break 'requests;
+                    };
+                    let body = parse_ws_request_body(message);
+                    eprintln!(
+                        "[ws test server] request_kind={:?}",
+                        body.as_ref().and_then(ws_request_kind)
+                    );
+                    // Elpis fires background maintenance (session naming, memory,
+                    // pruning) on the same provider while a turn is still running.
+                    // These fixtures script conversation turns only, so a background
+                    // request left alone eats a scripted response and shifts every
+                    // index a test asserts on.
+                    if body.as_ref().is_some_and(is_background_ws_request) {
+                        continue;
+                    }
+                    break body;
                 };
-                if let Some(body) = parse_ws_request_body(message) {
+                if let Some(body) = body {
                     let mut log = requests.lock().unwrap();
                     if let Some(connection_log) = log.get_mut(connection_index) {
                         connection_log.push(WebSocketRequest { body });
@@ -1474,6 +1490,34 @@ pub async fn start_websocket_server_with_headers(
         shutdown: shutdown_tx,
         task,
     }
+}
+
+/// The `request_kind` a websocket `response.create` payload declares in its client
+/// metadata, if any.
+fn ws_request_kind(body: &Value) -> Option<String> {
+    body.get("client_metadata")
+        .and_then(|metadata| metadata.get("x-codex-turn-metadata"))
+        .and_then(Value::as_str)
+        .and_then(|value| serde_json::from_str::<Value>(value).ok())
+        .and_then(|metadata| {
+            metadata
+                .get("request_kind")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+}
+
+/// True for Elpis's background maintenance calls: session naming, the memory saver,
+/// and the two pruners all run on the session's provider while a turn is in flight.
+/// Compaction is deliberately absent -- it is part of the conversation and several
+/// fixtures script it.
+fn is_background_ws_request(body: &Value) -> bool {
+    ws_request_kind(body).is_some_and(|kind| {
+        matches!(
+            kind.as_str(),
+            "session_title" | "memory" | "context_prune" | "smart_prune"
+        )
+    })
 }
 
 fn parse_ws_request_body(message: Message) -> Option<Value> {
