@@ -634,21 +634,34 @@ impl Session {
         );
         let mut provider = config.model_provider.clone();
         let initial_model = collaboration_mode.model();
-        if config.model_provider_id == "anthropic"
-            || (initial_model.starts_with("claude") && !initial_model.contains('/'))
-        {
+        // Guessing the vendor from the model name is a convenience for the stock OpenAI
+        // setup: type `claude-...` or `vendor/model` and Elpis picks the vendor for you.
+        // A provider the user actually pointed somewhere -- a gateway, a local runtime,
+        // a proxied base URL -- has to win over that guess. Otherwise every slug with a
+        // slash in it, which is most open-weight names, silently reroutes their session
+        // to OpenRouter and asks for an OpenRouter key.
+        let provider_is_stock_openai =
+            config.model_provider.is_openai() && config.model_provider.base_url.is_none();
+        if config.model_provider_id == "anthropic" {
             provider = codex_model_provider_info::ModelProviderInfo::create_anthropic_provider();
-        } else if config.model_provider_id == "gemini"
-            || (initial_model.starts_with("gemini") && !initial_model.contains('/'))
-        {
+        } else if config.model_provider_id == "gemini" {
             provider =
                 codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider();
-        } else if initial_model.contains('/')
-            || initial_model.contains(":free")
-            || !codex_model_provider_info::openrouter_free_fallback_candidates(initial_model)
-                .is_empty()
-        {
-            provider = codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
+        } else if provider_is_stock_openai {
+            if initial_model.starts_with("claude") && !initial_model.contains('/') {
+                provider =
+                    codex_model_provider_info::ModelProviderInfo::create_anthropic_provider();
+            } else if initial_model.starts_with("gemini") && !initial_model.contains('/') {
+                provider =
+                    codex_model_provider_info::ModelProviderInfo::create_google_gemini_provider();
+            } else if initial_model.contains('/')
+                || initial_model.contains(":free")
+                || !codex_model_provider_info::openrouter_free_fallback_candidates(initial_model)
+                    .is_empty()
+            {
+                provider =
+                    codex_model_provider_info::ModelProviderInfo::create_openrouter_provider();
+            }
         }
         let service_tier =
             get_service_tier(config.service_tier.clone(), fast_mode_enabled, &model_info);
