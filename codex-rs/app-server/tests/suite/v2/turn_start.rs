@@ -11,6 +11,7 @@ use app_test_support::create_mock_responses_server_sequence_unchecked;
 use app_test_support::create_shell_command_sse_response;
 use app_test_support::format_with_current_shell_display;
 use app_test_support::to_response;
+use app_test_support::write_default_models_cache_for_base_url;
 use app_test_support::write_models_cache;
 use codex_app_server::INPUT_TOO_LARGE_ERROR_CODE;
 use codex_app_server::INVALID_PARAMS_ERROR_CODE;
@@ -586,12 +587,12 @@ async fn turn_start_emits_thread_scoped_warning_notification_for_trimmed_skills(
         "never",
         &BTreeMap::from([(Feature::Personality, true)]),
     )?;
-    write_models_cache(codex_home.path())?;
-    // The cache is filed per provider endpoint; read back the path the fixture wrote.
-    let cache_path = codex_models_manager::manager::models_cache_path(
-        codex_home.path(),
-        "https://api.openai.com/v1",
-    );
+    // The cache is filed per provider endpoint, and this test runs on the mock
+    // provider, so file it there or the shrunken context window is never read.
+    let provider_base_url = format!("{}/v1", server.uri());
+    write_default_models_cache_for_base_url(codex_home.path(), &provider_base_url)?;
+    let cache_path =
+        codex_models_manager::manager::models_cache_path(codex_home.path(), &provider_base_url);
     let mut cache: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&cache_path)?)?;
     let models = cache["models"]
@@ -662,9 +663,21 @@ async fn turn_start_emits_thread_scoped_warning_notification_for_trimmed_skills(
     let warning: WarningNotification =
         serde_json::from_value(params).expect("deserialize warning notification");
     assert_eq!(warning.thread_id.as_deref(), Some(thread.id.as_str()));
-    assert_eq!(
-        warning.message,
-        "Exceeded skills context budget of 2%. All skill descriptions were removed and 7 additional skills were not included in the model-visible skills list."
+    // The omitted count follows however many skills Elpis bundles, so assert the
+    // warning's shape rather than a number that rots whenever one is added.
+    assert!(
+        warning
+            .message
+            .starts_with("Exceeded skills context budget of 2%. All skill descriptions were removed and "),
+        "unexpected skills warning: {}",
+        warning.message
+    );
+    assert!(
+        warning
+            .message
+            .ends_with(" additional skills were not included in the model-visible skills list."),
+        "unexpected skills warning: {}",
+        warning.message
     );
 
     timeout(

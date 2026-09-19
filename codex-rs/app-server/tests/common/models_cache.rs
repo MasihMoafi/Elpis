@@ -66,6 +66,15 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
 /// The cache will be treated as fresh (within TTL) and used instead of fetching from the network.
 /// Uses bundled-catalog-derived presets, converted to ModelInfo format.
 pub fn write_models_cache(codex_home: &Path) -> std::io::Result<()> {
+    write_default_models_cache_for_base_url(codex_home, "https://api.openai.com/v1")
+}
+
+/// [`write_models_cache`] filed under a specific provider endpoint, for tests that
+/// run on the mock provider rather than OpenAI's.
+pub fn write_default_models_cache_for_base_url(
+    codex_home: &Path,
+    base_url: &str,
+) -> std::io::Result<()> {
     // Get a stable bundled-catalog-derived preset list and filter for picker-visible entries.
     let presets: Vec<&ModelPreset> = all_model_presets()
         .iter()
@@ -83,7 +92,7 @@ pub fn write_models_cache(codex_home: &Path) -> std::io::Result<()> {
         })
         .collect();
 
-    write_models_cache_with_models(codex_home, models)
+    write_models_cache_for_base_url(codex_home, base_url, models)
 }
 
 /// Write the models cache with specific models.
