@@ -17,13 +17,13 @@ pub(super) fn ensure_table_for_write(item: &mut TomlItem) -> Option<&mut TomlTab
     match item {
         TomlItem::Table(table) => Some(table),
         TomlItem::Value(value) => {
-            if let Some(inline) = value.as_inline_table() {
-                *item = TomlItem::Table(table_from_inline(inline));
-                item.as_table_mut()
-            } else {
-                *item = TomlItem::Table(new_implicit_table());
-                item.as_table_mut()
-            }
+            // An inline table is the same data in another spelling, so it can be
+            // rewritten in place. Anything else at this key is a value the owner
+            // put there; saying no hands the caller the choice of refusing the
+            // edit, where quietly swapping in an empty table would delete it.
+            let inline = value.as_inline_table()?;
+            *item = TomlItem::Table(table_from_inline(inline));
+            item.as_table_mut()
         }
         TomlItem::None => {
             *item = TomlItem::Table(new_implicit_table());
