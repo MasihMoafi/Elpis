@@ -191,7 +191,7 @@ fn assert_codex_client_metadata(
 
 /// The Context Ledger admits nothing until asked, so a test about AGENTS.md reaching the
 /// model has to say so. Apply last in a builder chain: admission is keyed to the final cwd.
-fn admit_global_agents_md(config: &mut codex_core::config::Config) {
+fn admit_global_agents_md(config: &codex_core::config::Config) {
     codex_core::elpis_context::set_continuity_source_admitted(
         Some(config.memory_dir.as_path()),
         config.cwd.as_path(),
@@ -790,11 +790,12 @@ async fn resume_includes_initial_messages_and_sends_prior_items() {
         .with_pre_build_hook(|home| {
             std::fs::write(home.join("AGENTS.md"), "be nice").expect("write global instructions");
         })
-        .with_config(admit_global_agents_md);
+;
     let test = builder
         .resume(&server, codex_home, session_path.clone())
         .await
         .expect("resume conversation");
+    admit_global_agents_md(&test.config);
     let codex = test.codex.clone();
     let session_configured = test.session_configured;
 
@@ -1644,12 +1645,13 @@ async fn includes_user_instructions_message_in_request() {
         .with_pre_build_hook(|home| {
             std::fs::write(home.join("AGENTS.md"), "be nice").expect("write global instructions");
         })
-        .with_config(admit_global_agents_md);
-    let codex = builder
+;
+    let test = builder
         .build(&server)
         .await
-        .expect("create new conversation")
-        .codex;
+        .expect("create new conversation");
+    admit_global_agents_md(&test.config);
+    let codex = test.codex;
 
     codex
         .submit(Op::UserInput {
@@ -2947,12 +2949,13 @@ async fn includes_developer_instructions_message_in_request() {
         .with_config(|config| {
             config.developer_instructions = Some("be useful".to_string());
         })
-        .with_config(admit_global_agents_md);
-    let codex = builder
+;
+    let test = builder
         .build(&server)
         .await
-        .expect("create new conversation")
-        .codex;
+        .expect("create new conversation");
+    admit_global_agents_md(&test.config);
+    let codex = test.codex;
 
     codex
         .submit(Op::UserInput {

@@ -41,6 +41,21 @@ fn write_global_instructions(home: &Path) {
         .expect("write global instructions");
 }
 
+/// A global AGENTS.md reaches the model only once the Context Ledger admits it.
+fn admit_global_agents_md_mut(config: &mut codex_core::config::Config) {
+    admit_global_agents_md(config);
+}
+
+fn admit_global_agents_md(config: &codex_core::config::Config) {
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(config.memory_dir.as_path()),
+        config.cwd.as_path(),
+        "Global AGENTS.md",
+        true,
+    )
+    .expect("admit AGENTS.md in the ledger");
+}
+
 fn text_user_input(text: String) -> serde_json::Value {
     text_user_input_parts(vec![text])
 }
@@ -140,6 +155,7 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
         ..
     } = test_codex()
         .with_pre_build_hook(write_global_instructions)
+        .with_config(admit_global_agents_md_mut)
         .with_config(|config| {
             config.model = Some("gpt-5.2".to_string());
             // Keep tool expectations stable when the default web_search mode changes.
@@ -250,6 +266,7 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
 
     let TestCodex { codex, .. } = test_codex()
         .with_pre_build_hook(write_global_instructions)
+        .with_config(admit_global_agents_md_mut)
         .with_config(|config| {
             config
                 .features
@@ -338,6 +355,7 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
         })
         .build(&server)
         .await?;
+    admit_global_agents_md(&config);
 
     codex
         .submit(Op::UserInput {
@@ -428,6 +446,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
 
     let TestCodex { codex, config, .. } = test_codex()
         .with_pre_build_hook(write_global_instructions)
+        .with_config(admit_global_agents_md_mut)
         .with_config(|config| {
             config
                 .features
@@ -720,6 +739,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
 
     let TestCodex { codex, .. } = test_codex()
         .with_pre_build_hook(write_global_instructions)
+        .with_config(admit_global_agents_md_mut)
         .with_config(|config| {
             config
                 .features
@@ -863,6 +883,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
         })
         .build(&server)
         .await?;
+    admit_global_agents_md(&config);
 
     let default_cwd = config.cwd.clone();
     let default_approval_policy = config.permissions.approval_policy.value();
@@ -1002,6 +1023,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
         })
         .build(&server)
         .await?;
+    admit_global_agents_md(&config);
 
     let default_cwd = config.cwd.clone();
     let default_approval_policy = config.permissions.approval_policy.value();
