@@ -183,6 +183,8 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         model,
         service_tier: None,
         review_model: None,
+        background_model: None,
+        background_provider: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
         model_auto_compact_enabled: None,
