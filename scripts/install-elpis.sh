@@ -7,14 +7,15 @@ set -euo pipefail
 platform=${ELPIS_PLATFORM:-"$(uname -s)-$(uname -m)"}
 case "$platform" in
   Linux-x86_64) asset=elpis-linux-x86_64 ;;
-  Darwin-arm64) asset=elpis-macos-arm64 ;;
-  Darwin-x86_64)
-    printf 'Elpis publishes an Apple Silicon (arm64) macOS binary only.\n' >&2
-    printf 'This shell reports x86_64; if the Mac is Apple Silicon, rerun outside Rosetta.\n' >&2
+  Darwin-*)
+    # Releases stopped carrying a macOS binary when that build left CI. Saying
+    # so beats sending curl after an asset that will 404.
+    printf 'Elpis does not publish a macOS binary yet; releases carry Linux x86_64 only.\n' >&2
+    printf 'Build from source with `cargo build --release -p codex-tui --bin elpis`.\n' >&2
     exit 1
     ;;
   *)
-    printf 'Elpis publishes binaries for Linux x86_64 and macOS arm64 only (detected %s).\n' \
+    printf 'Elpis publishes a binary for Linux x86_64 only (detected %s).\n' \
       "$platform" >&2
     exit 1
     ;;
