@@ -1,4 +1,5 @@
-//! Bounded, opt-in Luna consolidation at continuity boundaries.
+//! Bounded, opt-in memory consolidation at continuity boundaries, run on
+//! whichever background model the owner points it at.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,7 +25,11 @@ use crate::responses_metadata::CodexResponsesRequestKind;
 
 const MODEL: &str = "gpt-5.6-luna";
 const INPUT_CHARS: usize = 64_000;
-const TIMEOUT: Duration = Duration::from_secs(60);
+// Consolidation runs after a turn, so nothing the owner is watching waits on
+// it. The background model is whatever they chose, reached over whatever route
+// that provider is on, and a minute is a first-party assumption that a slower
+// third-party one fails for no reason the owner can act on.
+const TIMEOUT: Duration = Duration::from_secs(180);
 
 pub(crate) async fn save_continuity(sess: &Arc<Session>, turn: &Arc<TurnContext>) {
     let result = save(sess, turn).await;
@@ -210,13 +215,13 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
                         sess.record_rollout_budget_usage(usage)?;
                     }
                     let output = super::turn::get_last_assistant_message_from_turn(&items)
-                        .context("Luna completed without a memory decision")?;
+                        .with_context(|| format!("{slug} completed without a memory decision"))?;
                     return Ok::<_, anyhow::Error>((output, token_usage));
                 }
                 _ => {}
             }
         }
-        anyhow::bail!("Luna stream ended without completion")
+        anyhow::bail!("{slug} stream ended without completion")
     })
     .await;
     let request_ms = request_started.elapsed().as_millis() as u64;
@@ -226,7 +231,12 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         succeeded = response.as_ref().is_ok_and(|result| result.is_ok()),
         "memory save request timing"
     );
-    let response = response.context("Luna exceeded the 60-second memory limit")??;
+    let response = response.with_context(|| {
+        format!(
+            "{slug} did not finish consolidating memory within {}s",
+            TIMEOUT.as_secs()
+        )
+    })??;
     let decision = crate::memory_save::parse_decision(&response.0)?;
     let (memory, checkpoint) = snapshot.commit(
         &decision,
