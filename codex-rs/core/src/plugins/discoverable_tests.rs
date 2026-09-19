@@ -68,8 +68,12 @@ async fn list_tool_suggest_discoverable_plugins_includes_cached_remote_global_pl
     let codex_home = tempdir().expect("tempdir should succeed");
     write_file(
         &codex_home.path().join(crate::config::CONFIG_TOML_FILE),
+        // Elpis does not fetch a plugin catalog from the ChatGPT backend unless
+        // the owner turns that on, so the subject of this test has to be asked
+        // for by name.
         r#"[features]
 plugins = true
+remote_plugin = true
 "#,
     );
 
@@ -306,6 +310,7 @@ plugins = true
         &codex_home.path().join(crate::config::CONFIG_TOML_FILE),
         r#"[features]
 plugins = true
+remote_plugin = true
 
 [tool_suggest]
 disabled_tools = [

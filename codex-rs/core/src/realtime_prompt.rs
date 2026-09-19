@@ -75,7 +75,7 @@ mod tests {
             prepare_realtime_backend_prompt(/*prompt*/ None, /*config_prompt*/ None);
 
         assert!(prompt.starts_with("## Identity, tone, and role"));
-        assert!(prompt.contains("You are Elpis, an OpenAI general-purpose agentic assistant"));
+        assert!(prompt.contains("You are Elpis, a general-purpose agentic assistant"));
         assert!(prompt.contains("The user's name is "));
         assert!(!prompt.contains("{{ user_first_name }}"));
     }

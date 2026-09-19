@@ -232,8 +232,14 @@ fn user_message(text: &str) -> ResponseItem {
 #[tokio::test]
 async fn automatic_context_pruning_is_local_only_in_beta_header() {
     let mut config = test_config().await;
-    config.features.enable(Feature::AutomaticContextPruning);
-    config.features.enable(Feature::RemoteCompactionV2);
+    config
+        .features
+        .enable(Feature::AutomaticContextPruning)
+        .expect("automatic context pruning should be allowed");
+    config
+        .features
+        .enable(Feature::RemoteCompactionV2)
+        .expect("remote compaction should be allowed");
 
     let header = Session::build_model_client_beta_features_header(&config)
         .expect("remote compaction should remain advertised");
@@ -485,6 +491,8 @@ async fn interrupting_regular_turn_waiting_on_startup_prewarm_emits_turn_aborted
         .expect("expected turn aborted marker event")
         .expect("channel open");
     assert!(matches!(marker_evt.msg, EventMsg::RawResponseItem(_)));
+
+    expect_turn_profile(&rx).await;
 
     let second = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
         .await
@@ -6956,6 +6964,8 @@ async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
     .instrument(dispatch_span)
     .await;
 
+    expect_turn_profile(&rx).await;
+
     let evt = tokio::time::timeout(StdDuration::from_secs(2), rx.recv())
         .await
         .expect("timeout waiting for turn completion")
@@ -7709,6 +7719,21 @@ pub(crate) async fn make_session_and_context_with_rx() -> (
     async_channel::Receiver<Event>,
 ) {
     make_session_and_context_with_dynamic_tools_and_rx(Vec::new()).await
+}
+
+/// Every turn ends by reporting how it spent its time, immediately before the
+/// event that closes it. A test walking the stream in order has to read that
+/// summary to reach the terminal event behind it.
+async fn expect_turn_profile(rx: &async_channel::Receiver<Event>) {
+    let evt = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+        .await
+        .expect("timeout waiting for turn profile event")
+        .expect("event");
+    assert!(
+        matches!(evt.msg, EventMsg::TurnProfile(_)),
+        "expected the turn profile before the terminal event, got {:?}",
+        evt.msg
+    );
 }
 
 #[tokio::test]
@@ -9664,6 +9689,8 @@ async fn abort_regular_task_emits_marker_before_turn_aborted() {
         .expect("event");
     assert!(matches!(marker_evt.msg, EventMsg::RawResponseItem(_)));
 
+    expect_turn_profile(&rx).await;
+
     let evt = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
         .await
         .expect("timeout waiting for event")
@@ -9704,6 +9731,8 @@ async fn abort_gracefully_emits_marker_before_turn_aborted() {
         .expect("timeout waiting for marker event")
         .expect("event");
     assert!(matches!(marker_evt.msg, EventMsg::RawResponseItem(_)));
+
+    expect_turn_profile(&rx).await;
 
     let evt = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
         .await
@@ -9823,6 +9852,8 @@ async fn task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input()
             && text_elements == vec![text_element]
             && local_images.is_empty()
     ));
+
+    expect_turn_profile(&rx).await;
 
     let fifth = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
         .await

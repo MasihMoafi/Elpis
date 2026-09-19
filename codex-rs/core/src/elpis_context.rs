@@ -2826,16 +2826,24 @@ mod tests {
             &[GLOBAL_RULES, PROJECT_RULES, "dev/AGENTS.md", "dev/SKILL.md"],
         )?;
         let sources = continuity_sources(Some(&memories), &cwd, &instructions)?;
-        assert!(
-            sources
+        // Assert about the four rows this test created, not about every row the
+        // ledger found. Dev-rule discovery also reads `ELPIS_DEV_SKILLS_DIRS`
+        // from the ambient environment, so a machine that sets it contributes
+        // rows this test never admitted -- and a sweep over all of them fails
+        // for a reason that has nothing to do with what is under test.
+        for name in [GLOBAL_RULES, PROJECT_RULES, "dev/AGENTS.md", "dev/SKILL.md"] {
+            let source = sources
                 .iter()
-                .filter(|source| source.category == ContinuitySourceCategory::Instructions)
-                .all(|source| source.selectable && source.admitted)
-        );
-        assert!(sources.iter().any(|source| source.name == GLOBAL_RULES));
-        assert!(sources.iter().any(|source| source.name == PROJECT_RULES));
-        assert!(sources.iter().any(|source| source.name == "dev/AGENTS.md"));
-        assert!(sources.iter().any(|source| source.name == "dev/SKILL.md"));
+                .find(|source| source.name == name)
+                .unwrap_or_else(|| panic!("{name} missing from ledger sources: {sources:?}"));
+            assert_eq!(
+                source.category,
+                ContinuitySourceCategory::Instructions,
+                "{name} should be an instruction row"
+            );
+            assert!(source.selectable, "{name} should be selectable");
+            assert!(source.admitted, "{name} was admitted above");
+        }
 
         set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, false)?;
         set_continuity_source_admitted(Some(&memories), &cwd, "dev/SKILL.md", false)?;

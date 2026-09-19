@@ -99,7 +99,7 @@ async fn handle_non_tool_response_item_runs_turn_item_contributors_only_when_req
     .expect("assistant message should parse");
 
     assert!(turn_store.get::<TurnItemContributorRan>().is_none());
-    let TurnItem::AgentMessage(provisional_agent_message) = provisional_turn_item else {
+    let TurnItem::AgentMessage(_) = provisional_turn_item else {
         panic!("expected agent message");
     };
 
