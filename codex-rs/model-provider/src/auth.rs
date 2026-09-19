@@ -229,7 +229,10 @@ pub(crate) fn resolve_provider_auth(
         }));
     }
 
-    if !provider.requires_openai_auth {
+    // A provider whose token comes from an auth command still has to send it.
+    // Only a provider with no credential at all goes out unauthenticated.
+    // Restored from upstream Codex, where this second condition never left.
+    if !provider.requires_openai_auth && provider.auth.is_none() {
         return Ok(unauthenticated_auth_provider());
     }
 
