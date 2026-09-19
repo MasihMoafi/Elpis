@@ -79,6 +79,7 @@ fn assert_models_contain(actual: &[ModelInfo], expected: &[ModelInfo]) {
 struct TestModelsEndpoint {
     has_command_auth: bool,
     uses_codex_backend: bool,
+    lists_own_models: bool,
     responses: Mutex<VecDeque<Vec<ModelInfo>>>,
     fetch_count: AtomicUsize,
     observed_proxy_policy: Mutex<Option<OutboundProxyPolicy>>,
@@ -89,6 +90,7 @@ impl TestModelsEndpoint {
         Arc::new(Self {
             has_command_auth: false,
             uses_codex_backend: true,
+            lists_own_models: false,
             responses: Mutex::new(responses.into()),
             fetch_count: AtomicUsize::new(0),
             observed_proxy_policy: Mutex::new(None),
@@ -99,6 +101,20 @@ impl TestModelsEndpoint {
         Arc::new(Self {
             has_command_auth: false,
             uses_codex_backend: false,
+            lists_own_models: false,
+            responses: Mutex::new(responses.into()),
+            fetch_count: AtomicUsize::new(0),
+            observed_proxy_policy: Mutex::new(None),
+        })
+    }
+
+    /// A provider that is not the Codex backend but publishes its own catalog:
+    /// every third party the owner pastes an API key for.
+    fn listing_own_models(responses: Vec<Vec<ModelInfo>>) -> Arc<Self> {
+        Arc::new(Self {
+            has_command_auth: false,
+            uses_codex_backend: false,
+            lists_own_models: true,
             responses: Mutex::new(responses.into()),
             fetch_count: AtomicUsize::new(0),
             observed_proxy_policy: Mutex::new(None),
@@ -163,6 +179,10 @@ impl ExternalAuth for TestUnresolvedExternalApiKeyAuth {
 impl ModelsEndpointClient for TestModelsEndpoint {
     fn has_command_auth(&self) -> bool {
         self.has_command_auth
+    }
+
+    fn lists_own_models(&self) -> bool {
+        self.lists_own_models
     }
 
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool> {
@@ -418,6 +438,74 @@ async fn dynamic_manager_preserves_requested_model_when_fallback_is_allowed() {
 }
 
 #[tokio::test]
+async fn provider_that_publishes_its_own_catalog_is_asked_for_it() {
+    // Discovery used to be reserved for the Codex backend, so every provider
+    // the owner pasted an API key for was answered from the list compiled into
+    // the binary and never asked what it actually serves.
+    let codex_home = tempdir().expect("temp dir");
+    let listed = vec![remote_model("provider-model", "Provider Model", 0)];
+    let endpoint = TestModelsEndpoint::listing_own_models(vec![listed.clone()]);
+    let manager = openai_manager_for_tests_with_auth(
+        codex_home.path().to_path_buf(),
+        endpoint.clone(),
+        /*auth_manager*/ None,
+    );
+
+    let catalog = manager
+        .raw_model_catalog(
+            RefreshStrategy::OnlineIfUncached,
+            DEFAULT_HTTP_CLIENT_FACTORY,
+        )
+        .await;
+
+    assert_eq!(endpoint.fetch_count(), 1);
+    assert_models_contain(&catalog.models, &listed);
+}
+
+#[tokio::test]
+async fn a_third_partys_catalog_is_not_redownloaded_on_the_refresh_timer() {
+    // The app server refreshes every three minutes for Codex entitlements.
+    // A provider list that big (OpenRouter's is megabytes) must not ride it.
+    let codex_home = tempdir().expect("temp dir");
+    let listed = vec![remote_model("provider-model", "Provider Model", 0)];
+    let endpoint = TestModelsEndpoint::listing_own_models(vec![listed.clone(), listed]);
+    let manager = openai_manager_for_tests_with_auth(
+        codex_home.path().to_path_buf(),
+        endpoint.clone(),
+        /*auth_manager*/ None,
+    );
+
+    for _ in 0..2 {
+        manager
+            .raw_model_catalog(RefreshStrategy::Online, DEFAULT_HTTP_CLIENT_FACTORY)
+            .await;
+    }
+
+    assert_eq!(endpoint.fetch_count(), 1, "the cache should absorb the second");
+}
+
+#[tokio::test]
+async fn provider_without_a_catalog_of_its_own_is_left_alone() {
+    let codex_home = tempdir().expect("temp dir");
+    let endpoint =
+        TestModelsEndpoint::without_refresh(vec![vec![remote_model("unasked", "Unasked", 0)]]);
+    let manager = openai_manager_for_tests_with_auth(
+        codex_home.path().to_path_buf(),
+        endpoint.clone(),
+        /*auth_manager*/ None,
+    );
+
+    manager
+        .raw_model_catalog(
+            RefreshStrategy::OnlineIfUncached,
+            DEFAULT_HTTP_CLIENT_FACTORY,
+        )
+        .await;
+
+    assert_eq!(endpoint.fetch_count(), 0);
+}
+
+#[tokio::test]
 async fn get_model_info_tracks_fallback_usage() {
     let codex_home = tempdir().expect("temp dir");
     let config = ModelsManagerConfig::default();
@@ -621,7 +709,7 @@ async fn refresh_available_models_uses_cached_remote_only_catalog_for_chatgpt_au
 }
 
 #[tokio::test]
-async fn get_model_info_uses_fallback_for_bundled_models_when_chatgpt_remote_is_authoritative() {
+async fn get_model_info_reads_the_bundled_catalog_when_the_remote_omits_a_slug() {
     let remote_models = vec![remote_model(
         "chatgpt-authoritative-model-info",
         "ChatGPT Model Info",
@@ -630,12 +718,12 @@ async fn get_model_info_uses_fallback_for_bundled_models_when_chatgpt_remote_is_
     let codex_home = tempdir().expect("temp dir");
     let endpoint = TestModelsEndpoint::new(vec![remote_models]);
     let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint);
-    let bundled_slug = load_remote_models_from_file()
+    let bundled = load_remote_models_from_file()
         .expect("bundled models should parse")
         .first()
         .expect("bundled models should contain at least one model")
-        .slug
         .clone();
+    let bundled_slug = bundled.slug.clone();
 
     manager
         .refresh_available_models(
@@ -649,8 +737,12 @@ async fn get_model_info_uses_fallback_for_bundled_models_when_chatgpt_remote_is_
         .get_model_info(&bundled_slug, &ModelsManagerConfig::default())
         .await;
 
+    // The remote list is authoritative about what this provider *serves*, not
+    // about models it has never heard of. A slug the binary ships real numbers
+    // for gets them, rather than the fallback's guessed context window.
     assert_eq!(model_info.slug, bundled_slug);
-    assert!(model_info.used_fallback_model_metadata);
+    assert!(!model_info.used_fallback_model_metadata);
+    assert_eq!(model_info.context_window, bundled.context_window);
 }
 
 #[tokio::test]
@@ -707,6 +799,7 @@ async fn refresh_available_models_keeps_merging_for_api_auth() {
     let endpoint = Arc::new(TestModelsEndpoint {
         has_command_auth: true,
         uses_codex_backend: false,
+        lists_own_models: false,
         responses: Mutex::new(vec![remote_models.clone()].into()),
         fetch_count: AtomicUsize::new(0),
         observed_proxy_policy: Mutex::new(None),
@@ -982,6 +1075,10 @@ impl TestAuthAwareModelsEndpoint {
 
 impl ModelsEndpointClient for TestAuthAwareModelsEndpoint {
     fn has_command_auth(&self) -> bool {
+        false
+    }
+
+    fn lists_own_models(&self) -> bool {
         false
     }
 

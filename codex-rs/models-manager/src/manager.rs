@@ -66,6 +66,11 @@ pub trait ModelsEndpointClient: fmt::Debug + Send + Sync {
     /// Returns whether this provider can authenticate command-scoped requests.
     fn has_command_auth(&self) -> bool;
 
+    /// Returns whether this endpoint can answer a catalog request on its own
+    /// authority: a provider that publishes a list Elpis can read and holds the
+    /// credentials to ask for it.
+    fn lists_own_models(&self) -> bool;
+
     /// Returns whether the currently resolved auth can use Codex backend-only models.
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool>;
 
@@ -450,7 +455,17 @@ impl OpenAiModelsManager {
                 self.fetch_and_update_models(http_client_factory).await
             }
             RefreshStrategy::Online => {
-                // Always fetch from network
+                // A refresh every few minutes is how a Codex account's changing
+                // entitlements arrive. A third party's catalog changes when it
+                // ships a model, so re-downloading its list on that timer buys
+                // nothing -- and OpenRouter's runs to megabytes. Let the cache
+                // stand for them and fetch when it expires.
+                if !self.endpoint_client.uses_codex_backend().await
+                    && !self.endpoint_client.has_command_auth()
+                    && self.try_load_cache().await
+                {
+                    return Ok(());
+                }
                 self.fetch_and_update_models(http_client_factory).await
             }
         }
@@ -475,8 +490,17 @@ impl OpenAiModelsManager {
         Ok(())
     }
 
+    /// Whether this provider has a `/models` endpoint worth asking.
+    ///
+    /// Only the Codex backend used to qualify, so every provider the owner
+    /// pasted a key for was answered from the list compiled into the binary --
+    /// permanently, however many models that key could actually reach. A key is
+    /// the provider saying who we are; its own listing is the only honest answer
+    /// to what it serves.
     async fn should_refresh_models(&self) -> bool {
-        self.endpoint_client.uses_codex_backend().await || self.endpoint_client.has_command_auth()
+        self.endpoint_client.uses_codex_backend().await
+            || self.endpoint_client.has_command_auth()
+            || self.endpoint_client.lists_own_models()
     }
 
     async fn get_etag(&self) -> Option<String> {

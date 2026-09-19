@@ -119,8 +119,6 @@ mod openrouter_free_fallback_tests {
 }
 
 mod provider_models;
-pub use provider_models::ProviderModel;
-pub use provider_models::bundled_provider_models;
 pub use provider_models::provider_api_key_url;
 
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";

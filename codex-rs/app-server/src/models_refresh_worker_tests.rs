@@ -50,6 +50,10 @@ impl ModelsEndpointClient for TestModelsEndpoint {
         true
     }
 
+    fn lists_own_models(&self) -> bool {
+        false
+    }
+
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool> {
         Box::pin(async { false })
     }

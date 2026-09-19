@@ -19,6 +19,7 @@ use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_models_manager::manager::ModelsEndpointClient;
 use codex_models_manager::manager::ModelsEndpointFuture;
+use codex_models_manager::model_info::BASE_INSTRUCTIONS;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CoreResult;
 use codex_protocol::openai_models::ModelInfo;
@@ -138,6 +139,17 @@ impl ModelsEndpointClient for NativeModelsEndpoint {
         self.info.has_command_auth()
     }
 
+    /// Anthropic's and Google's catalogs are account-scoped, so until there is
+    /// a key there is nothing to ask them for. An OpenAI-compatible server
+    /// lists either way: a hosted one wants the bearer key, a local one does
+    /// not need it.
+    fn lists_own_models(&self) -> bool {
+        match self.info.wire_api {
+            WireApi::AnthropicMessages | WireApi::GeminiGenerateContent => self.api_key().is_some(),
+            _ => true,
+        }
+    }
+
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool> {
         Box::pin(async { false })
     }
@@ -175,7 +187,10 @@ fn model_info(
         "priority": priority,
         "availability_nux": null,
         "upgrade": null,
-        "base_instructions": "",
+        // These entries are what the session runs on once one is picked, not
+        // just picker rows. An empty prompt here would strip the agent's
+        // instructions from every turn on a discovered model.
+        "base_instructions": BASE_INSTRUCTIONS,
         "supports_reasoning_summary_parameter": false,
         "support_verbosity": false,
         "default_verbosity": null,
@@ -333,6 +348,17 @@ mod tests {
         // A missing display name falls back to the id rather than inventing one.
         assert_eq!(models[1].display_name, "claude-haiku-4-5");
         assert_eq!(models[0].context_window, Some(200_000));
+    }
+
+    #[test]
+    fn a_discovered_model_carries_the_agents_instructions() {
+        // A picked model's catalog entry is what the session runs on. These
+        // entries shipped with an empty prompt while nothing could reach this
+        // code; the moment discovery went live that would have stripped the
+        // agent's instructions from every turn on a third-party provider.
+        let body = serde_json::json!({"data": [{"id": "claude-sonnet-4-6"}]});
+        let models = anthropic_models(&body);
+        assert_eq!(models[0].base_instructions, BASE_INSTRUCTIONS);
     }
 
     #[test]

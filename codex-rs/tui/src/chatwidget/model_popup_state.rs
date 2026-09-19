@@ -9,6 +9,13 @@ use super::*;
 
 impl ChatWidget {
     pub(super) fn request_model_catalog(&mut self, provider_id: Option<String>) {
+        // OpenRouter is already sourced by `refresh_openrouter_models`, which
+        // reads the same endpoint and keeps the live prices off it. Asking the
+        // app server for it too downloads that catalogue -- megabytes of it --
+        // a second time for a list the picker will not use.
+        if provider_id.as_deref() == Some(codex_model_provider_info::OPENROUTER_PROVIDER_ID) {
+            return;
+        }
         let request_id = uuid::Uuid::new_v4();
         self.model_popup_request_ids
             .insert(provider_id.clone(), request_id);
@@ -124,8 +131,8 @@ impl ChatWidget {
     ///
     /// The old fallback here handed back the session catalogue for any provider
     /// that had not answered yet, which is how picking OpenAI could list
-    /// DeepSeek and Qwen. A provider now answers with its own live list, else
-    /// the list Elpis ships for it, else nothing.
+    /// DeepSeek and Qwen. A provider answers with its own live list or with
+    /// nothing; no list is written down here on its behalf.
     pub(super) fn models_for_provider(&self, provider_id: &str) -> Vec<ModelPreset> {
         // OpenRouter's bundled catalogue is only the free auto-router, so prefer
         // the live list with prices once it has arrived.
@@ -160,58 +167,10 @@ impl ChatWidget {
         {
             return models;
         }
-        Self::bundled_presets_for_provider(provider_id)
-    }
-
-    /// The models Elpis ships for a provider, for the moment before that
-    /// provider's own endpoint answers - or for good, when it has no endpoint
-    /// Elpis can read.
-    pub(super) fn bundled_presets_for_provider(provider_id: &str) -> Vec<ModelPreset> {
-        codex_model_provider_info::bundled_provider_models(provider_id)
-            .iter()
-            .enumerate()
-            .filter_map(|(priority, model)| {
-                let description = match model.max_output_tokens {
-                    Some(max_output) => format!(
-                        "{} context · {} max output",
-                        super::model_popups::token_count_label(model.context_window.into()),
-                        super::model_popups::token_count_label(max_output.into())
-                    ),
-                    None => format!(
-                        "{} context",
-                        super::model_popups::token_count_label(model.context_window.into())
-                    ),
-                };
-                let info: codex_protocol::openai_models::ModelInfo =
-                    serde_json::from_value(serde_json::json!({
-                        "slug": model.slug,
-                        "display_name": model.display_name,
-                        "description": description,
-                        "default_reasoning_level": null,
-                        "supported_reasoning_levels": [],
-                        "shell_type": "shell_command",
-                        "visibility": "list",
-                        "supported_in_api": true,
-                        "priority": priority,
-                        "availability_nux": null,
-                        "upgrade": null,
-                        "base_instructions": "",
-                        "supports_reasoning_summary_parameter": false,
-                        "support_verbosity": false,
-                        "default_verbosity": null,
-                        "apply_patch_tool_type": null,
-                        "truncation_policy": {"mode": "bytes", "limit": 10000},
-                        "supports_parallel_tool_calls": true,
-                        "supports_image_detail_original": false,
-                        "context_window": model.context_window,
-                        "max_context_window": model.context_window,
-                        "experimental_supported_tools": [],
-                        "input_modalities": ["text"]
-                    }))
-                    .ok()?;
-                Some(ModelPreset::from(info))
-            })
-            .collect()
+        // Nothing yet. The provider's own list is on its way, or the provider
+        // could not be reached; either way an empty group says so, where a
+        // hand-written one would claim to know this account's models.
+        Vec::new()
     }
 
     pub(super) fn show_model_selection_view(&mut self, mut params: SelectionViewParams) {

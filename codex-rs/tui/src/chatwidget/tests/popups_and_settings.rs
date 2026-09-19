@@ -3048,6 +3048,35 @@ async fn browsing_a_provider_lists_only_that_provider_s_models() {
         codex_model_provider_info::ANTHROPIC_PROVIDER_ID.to_string(),
     );
 
+    // Elpis no longer ships a table of Anthropic's models, so until Anthropic
+    // answers there is nothing to list -- and the picker says so rather than
+    // falling back to the session provider's models.
+    let rows = chat.model_popup_model_ids.clone();
+    assert!(
+        !rows.iter().any(|row| row.starts_with("gpt-")),
+        "the session provider's models leaked into Anthropic; rows: {rows:?}"
+    );
+    let loading = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(
+        loading.contains("Loading available Anthropic Claude models…"),
+        "expected the picker to say the list is on its way:\n{loading}"
+    );
+
+    // Play Anthropic's answer back the way the app server delivers it.
+    let provider = codex_model_provider_info::ANTHROPIC_PROVIDER_ID.to_string();
+    let request_id = *chat
+        .model_popup_request_ids
+        .get(&Some(provider.clone()))
+        .expect("browsing a provider should ask that provider for its models");
+    chat.on_models_loaded(
+        request_id,
+        Some(provider),
+        Ok(vec![
+            listed_preset("claude-sonnet-4-6"),
+            listed_preset("claude-haiku-4-5"),
+        ]),
+    );
+
     let rows = chat.model_popup_model_ids.clone();
     assert!(
         rows.iter().any(|row| row.starts_with("claude-")),
@@ -3057,6 +3086,30 @@ async fn browsing_a_provider_lists_only_that_provider_s_models() {
         !rows.iter().any(|row| row.starts_with("gpt-")),
         "the session provider's models leaked into Anthropic; rows: {rows:?}"
     );
+}
+
+/// One row as a provider's `/models` endpoint answers it: a slug, and none of
+/// the reasoning or tier metadata only OpenAI's catalog carries.
+fn listed_preset(slug: &str) -> ModelPreset {
+    ModelPreset {
+        id: slug.to_string(),
+        model: slug.to_string(),
+        display_name: slug.to_string(),
+        description: "200K context".to_string(),
+        default_reasoning_effort: ReasoningEffortConfig::Medium,
+        supported_reasoning_efforts: Vec::new(),
+        supports_personality: false,
+        additional_speed_tiers: Vec::new(),
+        service_tiers: Vec::new(),
+        default_service_tier: None,
+        is_default: false,
+        upgrade: None,
+        show_in_picker: true,
+        multi_agent_version: None,
+        availability_nux: None,
+        supported_in_api: true,
+        input_modalities: default_input_modalities(),
+    }
 }
 
 #[tokio::test]
