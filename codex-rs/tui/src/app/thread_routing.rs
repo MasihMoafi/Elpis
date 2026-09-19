@@ -1104,13 +1104,30 @@ impl App {
         }
         session.message_history = None;
         session.rollout_path = rollout_path;
-        self.upsert_agent_picker_thread(
-            thread_id,
-            notification.thread.agent_nickname.clone(),
-            notification.thread.agent_role.clone(),
-            /*is_closed*/ false,
-        );
+        // The app server broadcasts every thread it starts, including threads
+        // belonging to another Elpis window on the same server. Only a thread
+        // this window spawned belongs in this window's agent list; without the
+        // check, two unrelated sessions each list the other as a subagent.
+        if self.thread_was_spawned_by_this_window(&notification.thread) {
+            self.upsert_agent_picker_thread(
+                thread_id,
+                notification.thread.agent_nickname.clone(),
+                notification.thread.agent_role.clone(),
+                /*is_closed*/ false,
+            );
+        }
         Some(session)
+    }
+
+    fn thread_was_spawned_by_this_window(
+        &self,
+        thread: &codex_app_server_protocol::Thread,
+    ) -> bool {
+        super::loaded_threads::thread_belongs_to_window(
+            thread,
+            self.primary_thread_id,
+            |parent_thread_id| self.agent_navigation.get(&parent_thread_id).is_some(),
+        )
     }
 
     pub(super) async fn enqueue_thread_request(

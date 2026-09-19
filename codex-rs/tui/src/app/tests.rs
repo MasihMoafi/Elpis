@@ -3001,7 +3001,20 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
                 path: Some(rollout_path.clone()),
                 cwd: test_path_buf("/tmp/agent").abs(),
                 cli_version: "0.0.0".to_string(),
-                source: codex_app_server_protocol::SessionSource::Unknown,
+                // Only a thread this window spawned joins its agent list, and a
+                // nickname exists only on a spawn source, so name the parent the
+                // way the server does.
+                source: serde_json::from_value(serde_json::json!({
+                    "subAgent": {
+                        "thread_spawn": {
+                            "parent_thread_id": main_thread_id.to_string(),
+                            "depth": 1,
+                            "agent_nickname": "Robie",
+                            "agent_role": "explorer",
+                        }
+                    }
+                }))
+                .expect("valid subagent source"),
                 thread_source: None,
                 agent_nickname: Some("Robie".to_string()),
                 agent_role: Some("explorer".to_string()),
