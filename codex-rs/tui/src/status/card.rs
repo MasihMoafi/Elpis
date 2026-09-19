@@ -108,7 +108,6 @@ struct StatusHistoryCell {
     model_details: Vec<String>,
     directory: PathBuf,
     permissions: String,
-    continuity_sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
     collaboration_mode: Option<String>,
     model_provider: Option<String>,
     remote_connection: Option<RemoteConnectionStatus>,
@@ -192,7 +191,6 @@ pub(crate) fn new_status_output_with_rate_limits(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
-        /*continuity_sources*/ &[],
         refreshing_rate_limits,
         /*context_prune_saved_tokens*/ 0,
     )
@@ -216,7 +214,6 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     model_name: &str,
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
-    continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
     refreshing_rate_limits: bool,
     context_prune_saved_tokens: u64,
 ) -> (CompositeHistoryCell, StatusHistoryHandle) {
@@ -237,7 +234,6 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
-        continuity_sources,
         refreshing_rate_limits,
         context_prune_saved_tokens,
     );
@@ -266,7 +262,6 @@ impl StatusHistoryCell {
         model_name: &str,
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
-        continuity_sources: &[crate::legacy_core::elpis_context::ContinuitySource],
         refreshing_rate_limits: bool,
         context_prune_saved_tokens: u64,
     ) -> (Self, StatusHistoryHandle) {
@@ -368,7 +363,6 @@ impl StatusHistoryCell {
                 session_id,
                 forked_from,
                 token_usage,
-                continuity_sources: continuity_sources.to_vec(),
                 rate_limit_state: rate_limit_state.clone(),
                 context_prune_saved_tokens,
             },

@@ -18,11 +18,6 @@ pub(crate) fn card_inner_width(width: u16, max_inner_width: usize) -> Option<usi
     Some(inner_width)
 }
 
-/// Render `lines` inside a border sized to the widest span in the content.
-pub(crate) fn with_border(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    with_border_internal(lines, /*forced_inner_width*/ None)
-}
-
 /// Render `lines` inside a border whose inner width is at least `inner_width`.
 ///
 /// This is useful when callers have already clamped their content to a

@@ -2708,20 +2708,6 @@ async fn ui_snapshots_small_heights_task_running() {
     }
 }
 
-fn buffer_row_containing(buffer: &ratatui::buffer::Buffer, text: &str) -> Option<String> {
-    (0..buffer.area.height)
-        .map(|y| {
-            (0..buffer.area.width)
-                .map(|x| buffer.cell((x, y)).expect("cell should exist").symbol())
-                .collect::<String>()
-        })
-        .find(|row| row.contains(text))
-}
-
-fn row_tail_is_blank(row: &str, start_col: usize) -> bool {
-    row.chars().skip(start_col).all(char::is_whitespace)
-}
-
 // Snapshot test: status widget + approval modal active together
 // The modal takes precedence visually; this captures the layout with a running
 // task (status indicator active) while an approval request is shown.

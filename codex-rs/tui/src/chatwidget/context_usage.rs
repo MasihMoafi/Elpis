@@ -130,8 +130,6 @@ struct ContextUsageSnapshot {
     saved_tokens: u64,
     sources: Vec<crate::legacy_core::elpis_context::ContinuitySource>,
     backtrack_points: usize,
-    native_compaction_count: u64,
-    latest_native_compaction: Option<crate::branding::EvictionNotice>,
     rollout_path: Option<std::path::PathBuf>,
 }
 
@@ -552,9 +550,6 @@ impl ChatWidget {
         let used_percent = used_tokens
             .zip(window)
             .map(|(used, window)| context_used_percent(used, window));
-        let (native_compaction_count, latest_native_compaction) =
-            crate::branding::compaction_evidence();
-
         ContextUsageSnapshot {
             model: self.model_display_name().to_string(),
             used_tokens,
@@ -566,8 +561,6 @@ impl ChatWidget {
             saved_tokens,
             sources,
             backtrack_points: totals.checkpoints,
-            native_compaction_count,
-            latest_native_compaction,
             rollout_path: self.rollout_path(),
         }
     }
@@ -874,205 +867,6 @@ impl ChatWidget {
     }
 }
 
-#[cfg(test)]
-fn render_dashboard_lines(snapshot: &ContextUsageSnapshot, width: u16) -> Vec<Line<'static>> {
-    let narrow = width < 80;
-    let mut lines = Vec::new();
-
-    match (snapshot.used_tokens, snapshot.window_tokens) {
-        (Some(used), Some(window)) => {
-            let used_percent = fmt_percent(used, window);
-            let free_percent = fmt_percent(window.saturating_sub(used), window);
-            lines.push(Line::from(vec![
-                Span::from(" "),
-                snapshot.model.clone().bold(),
-                " · ".not_dim(),
-                format!("{} / {} tokens", fmt_tokens(used), fmt_tokens(window))
-                    .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow))
-                    .bold(),
-                format!(" · {used_percent} used · {free_percent} free").not_dim(),
-            ]));
-            lines.extend(build_category_bar_chart(
-                &snapshot.categories,
-                used,
-                window,
-                width,
-            ));
-        }
-        (Some(used), None) => {
-            lines.push(
-                format!(
-                    " {} · {} tokens used · capacity unknown",
-                    snapshot.model,
-                    fmt_tokens(used)
-                )
-                .into(),
-            );
-        }
-        _ => {
-            lines.push(Line::from(vec![
-                Span::from(" "),
-                snapshot.model.clone().bold(),
-                " · context occupancy not recorded yet".not_dim(),
-            ]));
-            lines.push(
-                "   Send the first provider request to establish an occupancy snapshot."
-                    .not_dim()
-                    .into(),
-            );
-        }
-    }
-    lines.push(Line::default());
-    lines.push(" Context Ledger".bold().into());
-    if snapshot.sources.is_empty() {
-        lines.push("   No continuity sources discovered.".not_dim().into());
-    } else {
-        for group in LedgerSourceGroup::ALL {
-            let sources = snapshot
-                .sources
-                .iter()
-                .filter(|source| LedgerSourceGroup::for_source(source) == group);
-            if !snapshot
-                .sources
-                .iter()
-                .any(|source| LedgerSourceGroup::for_source(source) == group)
-            {
-                continue;
-            }
-            lines.push(format!("   {}", group.display_name()).bold().into());
-            for source in sources {
-                let (marker, state, style) = if source.admitted {
-                    ("●", "admitted", Style::default().fg(Color::LightGreen))
-                } else {
-                    ("○", "discovered", Style::default().fg(Color::Reset))
-                };
-                let control = if source.selectable {
-                    "toggleable"
-                } else {
-                    "fixed"
-                };
-                let mut source_line = vec![
-                    Span::styled(format!("     {marker} {state:<10}"), style),
-                    source.name.clone().bold(),
-                ];
-                let metadata = format!(
-                    "≈{} tokens · {} bytes · {control}",
-                    fmt_tokens(source.estimated_tokens),
-                    source.bytes,
-                );
-                if narrow {
-                    lines.push(Line::from(source_line));
-                    lines.push(format!("       {metadata}").not_dim().into());
-                } else {
-                    source_line.push(format!(" · {metadata}").not_dim());
-                    lines.push(Line::from(source_line));
-                }
-                lines.push(format!("       {}", source.path.display()).not_dim().into());
-                lines.push(
-                    format!("       {} · {}", source.reason, source.lifetime)
-                        .not_dim()
-                        .into(),
-                );
-            }
-        }
-    }
-
-    lines.push(Line::default());
-    lines.push(" Continuity evidence".bold().into());
-    let pruning = if snapshot.saved_tokens > 0 {
-        format!(
-            "~{} removed earlier in history",
-            fmt_tokens(snapshot.saved_tokens)
-        )
-    } else {
-        "none recorded".to_string()
-    };
-    if narrow {
-        lines.push(Line::from(vec![
-            Span::from("   Pruning "),
-            Span::styled(pruning, Style::default().fg(Color::LightGreen).bold()),
-        ]));
-        lines.push(Line::from(vec![
-            Span::from("   Native compaction (process) "),
-            format!("{} recorded", snapshot.native_compaction_count)
-                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow)),
-        ]));
-        lines.push(Line::from(vec![
-            Span::from("   Backtrack "),
-            format!("{} available", snapshot.backtrack_points).yellow(),
-        ]));
-        lines.push(
-            "   Pruning checkpoint count unavailable in this UI snapshot."
-                .not_dim()
-                .into(),
-        );
-    } else {
-        lines.push(Line::from(vec![
-            Span::from("   Pruning "),
-            Span::styled(pruning, Style::default().fg(Color::LightGreen).bold()),
-            "  ·  Native compaction (process) ".not_dim(),
-            format!("{} recorded", snapshot.native_compaction_count)
-                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow)),
-            "  ·  Backtrack ".not_dim(),
-            format!("{} available", snapshot.backtrack_points).yellow(),
-        ]));
-        lines.push(
-            "   Pruning checkpoint count: not recorded in the current UI snapshot."
-                .not_dim()
-                .into(),
-        );
-    }
-    if let Some(latest) = &snapshot.latest_native_compaction {
-        if narrow {
-            lines.push(
-                format!(
-                    "   Latest process compaction: {} · {}",
-                    latest.reason, latest.count
-                )
-                .into(),
-            );
-            lines.push(
-                format!("     evidence {}", latest.evidence)
-                    .not_dim()
-                    .into(),
-            );
-        } else {
-            lines.push(
-                format!(
-                    "   Latest process compaction: {} · {} · evidence {}",
-                    latest.reason, latest.count, latest.evidence
-                )
-                .into(),
-            );
-        }
-    }
-    match &snapshot.rollout_path {
-        Some(path) => lines.push(Line::from(vec![
-            Span::from("   Rollout "),
-            path.display()
-                .to_string()
-                .fg(crate::style::brand_style().fg.unwrap_or(Color::Yellow)),
-        ])),
-        None => lines.push(
-            "   Rollout evidence not available for this session."
-                .not_dim()
-                .into(),
-        ),
-    }
-
-    lines.push(Line::default());
-    lines.push(if narrow {
-        " Accounting only · no quality, cost, or causal claims."
-            .not_dim()
-            .into()
-    } else {
-        " Context accounting only · no task-quality, cost, or causal claims."
-            .not_dim()
-            .into()
-    });
-    lines
-}
-
 fn build_category_bar_chart(
     categories: &[CategoryUsage],
     used: u64,
@@ -1287,6 +1081,8 @@ fn smart_prune_saved_context_flash_line(saved_tokens: u64) -> Option<Line<'stati
     })
 }
 
+/// Exercised by tests only; no production path reaches it today.
+#[cfg(test)]
 fn no_prune_totals_line() -> Line<'static> {
     "   No history pruning recorded this thread"
         .not_dim()
@@ -1429,23 +1225,6 @@ mod tests {
         assert!(text.contains("110k · 55.0% of context window"), "{text}");
         assert_eq!(text.matches('█').count(), 80);
         assert_eq!(text.matches('░').count(), 0);
-        let snapshot = ContextUsageSnapshot {
-            model: "gpt-test".to_string(),
-            used_tokens: Some(210_000),
-            window_tokens: Some(200_000),
-            used_percent: Some(105),
-            has_request_snapshot: true,
-            attributed_tokens: Some(210_000),
-            categories,
-            saved_tokens: 0,
-            sources: Vec::new(),
-            backtrack_points: 0,
-            native_compaction_count: 0,
-            latest_native_compaction: None,
-            rollout_path: None,
-        };
-        let dashboard = plain_text(render_dashboard_lines(&snapshot, 100));
-        assert!(dashboard.contains("105.0% used · 0.0% free"), "{dashboard}");
     }
 
     #[test]
@@ -1583,52 +1362,44 @@ mod tests {
 
     #[test]
     fn context_report_groups_manual_additions_as_user_files() {
-        let snapshot = ContextUsageSnapshot {
-            model: "gpt-test".to_string(),
-            used_tokens: None,
-            window_tokens: Some(200_000),
-            used_percent: None,
-            has_request_snapshot: false,
-            attributed_tokens: None,
-            categories: Vec::new(),
-            saved_tokens: 0,
-            sources: vec![
-                crate::legacy_core::elpis_context::ContinuitySource {
-                    name: "GOAL.md".to_string(),
-                    path: std::path::PathBuf::from("/workspace/GOAL.md"),
-                    bytes: 64,
-                    estimated_tokens: 16,
-                    category: ContinuitySourceCategory::Files,
-                    origin: "Elpis workspace state",
-                    lifetime: "every turn",
-                    reason: "active workspace goal",
-                    admitted: true,
-                    selectable: true,
-                },
-                crate::legacy_core::elpis_context::ContinuitySource {
-                    name: "/workspace/notes.md".to_string(),
-                    path: std::path::PathBuf::from("/workspace/notes.md"),
-                    bytes: 80,
-                    estimated_tokens: 20,
-                    category: ContinuitySourceCategory::Files,
-                    origin: "manual addition",
-                    lifetime: "every turn",
-                    reason: "manually added file",
-                    admitted: true,
-                    selectable: true,
-                },
-            ],
-            backtrack_points: 0,
-            native_compaction_count: 0,
-            latest_native_compaction: None,
-            rollout_path: None,
-        };
+        let sources = vec![
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: "GOAL.md".to_string(),
+                path: std::path::PathBuf::from("/workspace/GOAL.md"),
+                bytes: 64,
+                estimated_tokens: 16,
+                category: ContinuitySourceCategory::Files,
+                origin: "Elpis workspace state",
+                lifetime: "every turn",
+                reason: "active workspace goal",
+                admitted: true,
+                selectable: true,
+            },
+            crate::legacy_core::elpis_context::ContinuitySource {
+                name: "/workspace/notes.md".to_string(),
+                path: std::path::PathBuf::from("/workspace/notes.md"),
+                bytes: 80,
+                estimated_tokens: 20,
+                category: ContinuitySourceCategory::Files,
+                origin: "manual addition",
+                lifetime: "every turn",
+                reason: "manually added file",
+                admitted: true,
+                selectable: true,
+            },
+        ];
 
-        let text = plain_text(render_dashboard_lines(&snapshot, 100));
-        assert!(text.contains("SESSION CONTINUITY"));
-        assert!(text.contains("● admitted  GOAL.md"));
-        assert!(text.contains("USER FILES"));
-        assert!(text.contains("● admitted  /workspace/notes.md"));
+        let projected: Vec<_> = sources.iter().map(dashboard_source_projection).collect();
+
+        // A file Elpis loaded on its own stays session continuity; one the owner
+        // added by hand is filed under their own, and shows by file name rather
+        // than by the absolute path it was added with.
+        assert_eq!(projected[0].category, "session continuity");
+        assert_eq!(projected[0].name, "GOAL.md");
+        assert!(projected[0].admitted);
+        assert_eq!(projected[1].category, "user files");
+        assert_eq!(projected[1].name, "notes.md");
+        assert!(projected[1].admitted);
     }
 
     #[test]
@@ -2033,226 +1804,4 @@ mod tests {
         assert!(text.contains("9.3% of context window"));
     }
 
-    #[test]
-    fn dashboard_lines_keep_measured_usage_and_source_provenance_together() {
-        let snapshot = ContextUsageSnapshot {
-            model: "gpt-test".to_string(),
-            used_tokens: Some(42_000),
-            window_tokens: Some(200_000),
-            used_percent: Some(21),
-            has_request_snapshot: true,
-            attributed_tokens: Some(12_000),
-            categories: vec![CategoryUsage {
-                label: "Tool results",
-                tokens: 12_000,
-                color: Color::Yellow,
-            }],
-            saved_tokens: 6_000,
-            sources: vec![crate::legacy_core::elpis_context::ContinuitySource {
-                name: "GOAL.md".to_string(),
-                path: std::path::PathBuf::from("/workspace/GOAL.md"),
-                bytes: 1_024,
-                origin: "Elpis workspace state",
-                estimated_tokens: 256,
-                category: ContinuitySourceCategory::Files,
-                lifetime: "until goal completion",
-                reason: "the active objective",
-                admitted: true,
-                selectable: true,
-            }],
-            backtrack_points: 2,
-            native_compaction_count: 1,
-            latest_native_compaction: Some(crate::branding::EvictionNotice {
-                count: 1,
-                reason: "context compaction".to_string(),
-                evidence: "thread:t/turn:u".to_string(),
-            }),
-            rollout_path: Some(std::path::PathBuf::from("/tmp/rollout.jsonl")),
-        };
-
-        let text = render_dashboard_lines(&snapshot, 100)
-            .iter()
-            .flat_map(|line| line.spans.iter())
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-
-        assert!(text.contains("42k / 200k tokens"));
-        assert!(text.contains("GOAL.md"));
-        assert!(text.contains("/workspace/GOAL.md"));
-        assert!(text.contains("≈256 tokens"));
-        assert!(text.contains("6k removed earlier in history"));
-        assert!(text.contains("1 recorded"));
-        assert!(text.contains("thread:t/turn:u"));
-        assert!(text.contains("/tmp/rollout.jsonl"));
-        assert!(text.contains("not recorded in the current UI snapshot"));
-        assert!(
-            render_dashboard_lines(&snapshot, 60)
-                .iter()
-                .all(|line| line.width() <= 60),
-            "narrow dashboard fixture must not rely on wrapping"
-        );
-
-        insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 100)), @r"
-gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
-Context Accounting · history savings excluded
-  Context Window [█████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
-  42k/200k · 21.0% used
-  Free capacity · 158k · 79.0% of window
-  ● Tool results               42k · 21.0% of context window
-  Segment proportions are estimated from the latest built request; total width is measured active context.
-
-Context Ledger
-  SESSION CONTINUITY
-    ● admitted  GOAL.md · ≈256 tokens · 1024 bytes · toggleable
-      /workspace/GOAL.md
-      the active objective · until goal completion
-
-Continuity evidence
-  Pruning ~6k removed earlier in history  ·  Native compaction (process) 1 recorded  ·  Backtrack 2 available
-  Pruning checkpoint count: not recorded in the current UI snapshot.
-  Latest process compaction: context compaction · 1 · evidence thread:t/turn:u
-  Rollout /tmp/rollout.jsonl
-
-Context accounting only · no task-quality, cost, or causal claims.
-");
-        insta::assert_snapshot!(plain_text(render_dashboard_lines(&snapshot, 60)), @r"
-gpt-test · 42k / 200k tokens · 21.0% used · 79.0% free
-Context Accounting · history savings excluded
-  Context [██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]
-  42k/200k · 21.0% used
-  Free capacity · 158k · 79.0% of window
-  ● Tool results · 42k · 21.0% of window
-  Estimated segments · measured total.
-
-Context Ledger
-  SESSION CONTINUITY
-    ● admitted  GOAL.md
-      ≈256 tokens · 1024 bytes · toggleable
-      /workspace/GOAL.md
-      the active objective · until goal completion
-
-Continuity evidence
-  Pruning ~6k removed earlier in history
-  Native compaction (process) 1 recorded
-  Backtrack 2 available
-  Pruning checkpoint count unavailable in this UI snapshot.
-  Latest process compaction: context compaction · 1
-    evidence thread:t/turn:u
-  Rollout /tmp/rollout.jsonl
-
-Accounting only · no quality, cost, or causal claims.
-");
-    }
-
-    #[test]
-    fn dashboard_leads_with_measured_visual_context() {
-        let snapshot = ContextUsageSnapshot {
-            model: "gpt-test".to_string(),
-            used_tokens: Some(42_000),
-            window_tokens: Some(200_000),
-            used_percent: Some(21),
-            has_request_snapshot: true,
-            attributed_tokens: Some(12_000),
-            categories: vec![CategoryUsage {
-                label: "Tool calls",
-                tokens: 12_000,
-                color: Color::Yellow,
-            }],
-            saved_tokens: 6_000,
-            sources: Vec::new(),
-            backtrack_points: 2,
-            native_compaction_count: 1,
-            latest_native_compaction: None,
-            rollout_path: None,
-        };
-
-        let lines = render_dashboard_lines(&snapshot, 100);
-        let first_line = lines
-            .iter()
-            .find(|line| !line.spans.is_empty())
-            .expect("dashboard has content")
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-        let text = lines
-            .iter()
-            .flat_map(|line| line.spans.iter())
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-
-        assert!(first_line.contains("gpt-test · 42k / 200k"));
-        assert!(
-            text.contains('█'),
-            "dashboard needs a visual occupancy mark"
-        );
-        assert!(!text.contains("Read-only observability view"));
-    }
-
-    #[test]
-    fn dashboard_primary_visuals_fit_a_narrow_terminal() {
-        let snapshot = ContextUsageSnapshot {
-            model: "gpt-test".to_string(),
-            used_tokens: Some(42_000),
-            window_tokens: Some(200_000),
-            used_percent: Some(21),
-            has_request_snapshot: true,
-            attributed_tokens: Some(12_000),
-            categories: vec![CategoryUsage {
-                label: "Tool calls",
-                tokens: 12_000,
-                color: Color::Yellow,
-            }],
-            saved_tokens: 6_000,
-            sources: Vec::new(),
-            backtrack_points: 2,
-            native_compaction_count: 1,
-            latest_native_compaction: None,
-            rollout_path: None,
-        };
-
-        let overflowing = render_dashboard_lines(&snapshot, 60)
-            .into_iter()
-            .filter(|line| line.width() > 60)
-            .map(|line| {
-                line.spans
-                    .into_iter()
-                    .map(|span| span.content.into_owned())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>();
-
-        assert!(
-            overflowing.is_empty(),
-            "primary dashboard rows must not wrap at 60 columns: {overflowing:?}"
-        );
-    }
-
-    #[test]
-    fn dashboard_does_not_turn_missing_request_usage_into_zero() {
-        let snapshot = ContextUsageSnapshot {
-            model: "gpt-test".to_string(),
-            used_tokens: None,
-            window_tokens: Some(200_000),
-            used_percent: None,
-            has_request_snapshot: false,
-            attributed_tokens: None,
-            categories: Vec::new(),
-            saved_tokens: 0,
-            sources: Vec::new(),
-            backtrack_points: 0,
-            native_compaction_count: 0,
-            latest_native_compaction: None,
-            rollout_path: None,
-        };
-
-        let text = render_dashboard_lines(&snapshot, 100)
-            .iter()
-            .flat_map(|line| line.spans.iter())
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-
-        assert!(text.contains("not recorded yet"));
-        assert!(!text.contains("0 / 200k tokens"));
-    }
 }

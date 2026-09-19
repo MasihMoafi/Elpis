@@ -2,8 +2,6 @@
 #![cfg(not(debug_assertions))]
 
 use crate::legacy_core::config::Config;
-use crate::npm_registry;
-use crate::npm_registry::NpmPackageInfo;
 use crate::update_action;
 use crate::update_action::UpdateAction;
 use crate::update_versions::extract_version_from_latest_tag;

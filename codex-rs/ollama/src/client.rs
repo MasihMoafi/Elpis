@@ -14,6 +14,7 @@ use crate::url::is_openai_compatible_base_url;
 use codex_core::config::Config;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
+#[cfg(test)]
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_NAME;
 #[cfg(test)]
 use codex_model_provider_info::WireApi;

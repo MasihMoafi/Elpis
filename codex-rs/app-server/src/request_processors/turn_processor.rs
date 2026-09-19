@@ -73,7 +73,6 @@ fn validate_response_item_image_urls(items: &[ResponseItem]) -> Result<(), JSONR
 #[derive(Clone)]
 pub(crate) struct TurnRequestProcessor {
     agent_runner: AgentRunner,
-    auth_manager: Arc<AuthManager>,
     thread_manager: Arc<ThreadManager>,
     outgoing: Arc<OutgoingMessageSender>,
     arg0_paths: Arg0DispatchPaths,
@@ -131,7 +130,6 @@ struct ThreadSettingsBuildParams {
 impl TurnRequestProcessor {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        auth_manager: Arc<AuthManager>,
         thread_manager: Arc<ThreadManager>,
         outgoing: Arc<OutgoingMessageSender>,
         arg0_paths: Arg0DispatchPaths,
@@ -148,7 +146,6 @@ impl TurnRequestProcessor {
         let agent_runner = AgentRunner::new(Arc::downgrade(&thread_manager));
         Self {
             agent_runner,
-            auth_manager,
             thread_manager,
             outgoing,
             arg0_paths,

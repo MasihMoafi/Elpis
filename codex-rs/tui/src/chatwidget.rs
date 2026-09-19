@@ -203,7 +203,6 @@ const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "Apply reasoning change";
 const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "Apply to Plan mode override";
 const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "Apply to global default and Plan mode override";
 const CONNECTORS_SELECTION_VIEW_ID: &str = "connectors-selection";
-const AMBIENT_PET_WRAP_GAP_COLUMNS: u16 = 2;
 const TUI_STUB_MESSAGE: &str = "Not available in TUI yet.";
 
 /// Choose the keybinding used to edit the most-recently queued message.
@@ -391,7 +390,6 @@ use self::rate_limits::RateLimitWarningState;
 use self::rate_limits::app_server_rate_limit_error_kind;
 pub(crate) use self::rate_limits::fallback_limit_label;
 use self::rate_limits::is_app_server_cyber_policy_error;
-mod reset_credits;
 pub(crate) use self::rate_limits::limit_label_for_window;
 mod reasoning_shortcuts;
 mod rendering;
@@ -604,12 +602,6 @@ pub(crate) struct ChatWidget {
     refreshing_token_activity_output: Option<tokens::PendingTokenActivityOutput>,
     completed_token_activity_output: Option<history_cell::CompositeHistoryCell>,
     next_token_activity_request_id: u64,
-    pending_rate_limit_reset_request_id: Option<u64>,
-    pending_rate_limit_reset_hint_request_id: Option<u64>,
-    pending_usage_menu_rate_limit_request_id: Option<u64>,
-    pending_rate_limit_reset_hint: Option<PlainHistoryCell>,
-    available_rate_limit_reset_credits: Option<i64>,
-    next_rate_limit_reset_request_id: u64,
     plan_type: Option<PlanType>,
     codex_rate_limit_reached_type: Option<RateLimitReachedType>,
     codex_spend_control_reached: Option<bool>,
@@ -1458,11 +1450,6 @@ impl ChatWidget {
     pub(crate) fn add_error_message(&mut self, message: String) {
         self.add_to_history(history_cell::new_error_event(message));
         self.request_redraw();
-    }
-
-    fn add_app_server_stub_message(&mut self, feature: &str) {
-        warn!(feature, "stubbed unsupported TUI feature");
-        self.add_error_message(format!("{feature}: {TUI_STUB_MESSAGE}"));
     }
 
     fn rename_confirmation_cell(name: &str, thread_id: Option<ThreadId>) -> PlainHistoryCell {

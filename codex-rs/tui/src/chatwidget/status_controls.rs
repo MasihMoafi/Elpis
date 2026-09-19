@@ -227,7 +227,6 @@ impl ChatWidget {
             .values()
             .cloned()
             .collect();
-        let continuity_sources = self.continuity_sources();
         let (mut cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
             self.runtime_model_provider_base_url.as_deref(),
@@ -244,7 +243,6 @@ impl ChatWidget {
             self.model_display_name(),
             collaboration_mode,
             reasoning_effort_override,
-            &continuity_sources,
             refreshing_rate_limits,
             self.last_prune_saved_tokens.unwrap_or(0),
         );
@@ -387,28 +385,6 @@ impl ChatWidget {
     pub(super) fn status_line_context_used_percent(&self) -> Option<i64> {
         let remaining = self.status_line_context_remaining_percent()?;
         Some((100 - remaining).clamp(0, 100))
-    }
-
-    pub(super) fn status_line_context_used_display(&self) -> String {
-        let Some(context_window) = self.status_line_context_window_size() else {
-            return "unknown".to_string();
-        };
-        let default_usage = TokenUsage::default();
-        let usage = self
-            .token_info
-            .as_ref()
-            .map(|info| &info.last_token_usage)
-            .unwrap_or(&default_usage);
-        let pct = usage.percent_of_context_window_used_exact(context_window);
-        if pct == 0.0 {
-            "0%".to_string()
-        } else if pct < 1.0 {
-            format!("{pct:.1}%")
-        } else if (pct - pct.round()).abs() < 0.05 {
-            format!("{:.0}%", pct)
-        } else {
-            format!("{pct:.1}%")
-        }
     }
 
     pub(super) fn status_line_total_usage(&self) -> TokenUsage {

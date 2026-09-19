@@ -123,6 +123,8 @@ impl ChatWidget {
         }
     }
 
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(super) fn models_for_active_provider(&self) -> Vec<ModelPreset> {
         self.models_for_provider(self.active_model_provider_id())
     }

@@ -291,7 +291,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-use ratatui::style::Color;
 
 /// If the pasted content exceeds this number of characters, replace it with a
 /// placeholder in the UI.
@@ -4832,12 +4831,13 @@ impl ChatComposer {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::style::Color;
+
     /// Render real widgets to inspect colors, geometry, and draft preservation.
     #[test]
     #[ignore = "manual visual review; set ELPIS_VISUAL_DIR"]
     fn export_quiet_motion_visual_review() {
         use crate::history_cell::HistoryCell;
-        use tachyonfx::Shader;
         let output = std::path::PathBuf::from(std::env::var("ELPIS_VISUAL_DIR").unwrap());
         std::fs::create_dir_all(&output).unwrap();
         for (name, width, fg, bg) in [

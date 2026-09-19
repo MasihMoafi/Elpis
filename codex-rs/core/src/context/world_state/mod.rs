@@ -364,6 +364,8 @@ impl WorldState {
     }
 
     /// Renders each section against the exact persisted snapshot when available.
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn render_diff(
         &self,
         previous: &WorldStateSnapshot,
@@ -375,6 +377,8 @@ impl WorldState {
     }
 
     /// Falls back to retained model history when no exact persisted snapshot is available.
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn render_history_diff(
         &self,
         previous: Option<&WorldStateSnapshot>,

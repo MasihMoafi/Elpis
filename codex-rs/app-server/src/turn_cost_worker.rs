@@ -252,6 +252,8 @@ impl TurnCostAvailabilityPolicy {
         }
     }
 
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn classify(&self, thread_config: &Config) -> TurnCostState {
         self.classify_with_revision(thread_config).0
     }

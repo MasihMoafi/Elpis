@@ -24,7 +24,6 @@ use crossterm::cursor::MoveToColumn;
 use crossterm::cursor::RestorePosition;
 use crossterm::cursor::SavePosition;
 use crossterm::queue;
-use crossterm::style::Color as CColor;
 use crossterm::style::Colors;
 use crossterm::style::Print;
 use crossterm::style::SetAttribute;
@@ -543,6 +542,7 @@ mod tests {
     use super::*;
     use crate::markdown_render::render_markdown_text;
     use crate::test_backend::VT100Backend;
+    use crossterm::style::Color as CColor;
     use ratatui::layout::Rect;
     use ratatui::style::Color;
     use ratatui::style::Style;

@@ -183,9 +183,6 @@ impl ChatWidget {
         if !from_replay {
             self.finish_context_prune_tracking();
         }
-        if !from_replay {
-            let body = Notification::agent_turn_preview(&notification_response);
-        }
         self.request_redraw();
 
         let had_pending_steers = !self.input_queue.pending_steers.is_empty();

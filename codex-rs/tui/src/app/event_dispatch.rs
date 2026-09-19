@@ -1208,7 +1208,6 @@ impl App {
                 result,
             } => match result {
                 Ok(response) => {
-                    let rate_limit_reset_credits = response.rate_limit_reset_credits.clone();
                     let snapshots = if hard_stop_generation == self.rate_limit_hard_stop_generation
                     {
                         app_server_rate_limit_snapshots(response)

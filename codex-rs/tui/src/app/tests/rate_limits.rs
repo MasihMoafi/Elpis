@@ -299,7 +299,7 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
             _ => unreachable!("unknown refresh origin"),
         };
         let read_generation = app.rate_limit_hard_stop_generation;
-        let mut rolling_snapshot = rate_limit_snapshot(
+        let rolling_snapshot = rate_limit_snapshot(
             /*used_percent*/ 95,
             Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached),
             Some(true),

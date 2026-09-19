@@ -12,8 +12,6 @@ use crate::app_info::app_info_from_api;
 use crate::config_update::format_config_error;
 use codex_app_server_protocol::AppsListParams;
 use codex_app_server_protocol::AppsListResponse;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditParams;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
 use codex_app_server_protocol::MarketplaceAddParams;
 use codex_app_server_protocol::MarketplaceAddResponse;
 use codex_app_server_protocol::MarketplaceRemoveParams;
@@ -29,8 +27,6 @@ use crate::hooks_rpc::write_hook_trusts;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 const TOKEN_ACTIVITY_FETCH_TIMEOUT: std::time::Duration =
-    std::time::Duration::from_secs(/*secs*/ 15);
-const RATE_LIMIT_RESET_REQUEST_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(/*secs*/ 15);
 const WORKSPACE_HEADLINE_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_millis(/*millis*/ 2000);
@@ -997,24 +993,6 @@ pub(super) async fn fetch_account_token_activity(
         })
         .await
         .wrap_err("account/usage/read failed in TUI")
-}
-
-pub(super) async fn consume_rate_limit_reset_credit_request(
-    request_handle: AppServerRequestHandle,
-    idempotency_key: String,
-    credit_id: Option<String>,
-) -> Result<ConsumeAccountRateLimitResetCreditResponse> {
-    let request_id = RequestId::String(format!("consume-rate-limit-reset-{}", Uuid::new_v4()));
-    request_handle
-        .request_typed(ClientRequest::ConsumeAccountRateLimitResetCredit {
-            request_id,
-            params: ConsumeAccountRateLimitResetCreditParams {
-                idempotency_key,
-                credit_id,
-            },
-        })
-        .await
-        .wrap_err("account/rateLimitResetCredit/consume failed in TUI")
 }
 
 pub(super) async fn fetch_workspace_messages(

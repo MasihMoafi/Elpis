@@ -56,11 +56,9 @@ use codex_rollout_trace::replay_bundle;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
@@ -68,14 +66,6 @@ use std::task::Poll;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::Notify;
-use tracing::Event;
-use tracing::Subscriber;
-use tracing::field::Visit;
-use tracing_subscriber::Layer;
-use tracing_subscriber::layer::Context as LayerContext;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::util::SubscriberInitExt;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
@@ -387,42 +377,6 @@ async fn chatgpt_auth_manager(
         auth,
         agent_identity_authapi_base_url,
     )
-}
-
-#[derive(Default)]
-struct TagCollectorVisitor {
-    tags: BTreeMap<String, String>,
-}
-
-impl Visit for TagCollectorVisitor {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        self.tags
-            .insert(field.name().to_string(), value.to_string());
-    }
-
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        self.tags
-            .insert(field.name().to_string(), format!("{value:?}"));
-    }
-}
-
-#[derive(Clone)]
-struct TagCollectorLayer {
-    tags: Arc<Mutex<BTreeMap<String, String>>>,
-}
-
-impl<S> Layer<S> for TagCollectorLayer
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-{
-    fn on_event(&self, event: &Event<'_>, _ctx: LayerContext<'_, S>) {
-        if event.metadata().target() != "feedback_tags" {
-            return;
-        }
-        let mut visitor = TagCollectorVisitor::default();
-        event.record(&mut visitor);
-        self.tags.lock().unwrap().extend(visitor.tags);
-    }
 }
 
 fn started_inference_attempt(temp: &TempDir) -> anyhow::Result<InferenceTraceAttempt> {

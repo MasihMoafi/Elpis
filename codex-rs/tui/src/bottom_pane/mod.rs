@@ -114,7 +114,6 @@ pub(crate) use footer::GoalStatusIndicator;
 pub(crate) use footer::goal_status_indicator_line;
 pub(crate) use list_selection_view::ColumnWidthMode;
 pub(crate) use list_selection_view::ListSelectionView;
-pub(crate) use list_selection_view::OnSelectionChangedCallback;
 pub(crate) use list_selection_view::SelectionRowDisplay;
 pub(crate) use list_selection_view::SelectionToggle;
 pub(crate) use list_selection_view::SelectionViewParams;
@@ -1154,34 +1153,6 @@ impl BottomPane {
         true
     }
 
-    /// Replace the newest matching selection view without disturbing views stacked above it.
-    pub(crate) fn replace_selection_view_if_present(
-        &mut self,
-        view_id: &'static str,
-        mut params: list_selection_view::SelectionViewParams,
-    ) -> bool {
-        let Some(index) = self
-            .view_stack
-            .iter()
-            .rposition(|view| view.view_id() == Some(view_id))
-        else {
-            return false;
-        };
-
-        let replaces_active_view = index + 1 == self.view_stack.len();
-        self.apply_standard_popup_hint(&mut params);
-        self.view_stack[index] = Box::new(list_selection_view::ListSelectionView::new(
-            params,
-            self.app_event_tx.clone(),
-            self.keymap.list.clone(),
-        ));
-        if replaces_active_view {
-            self.schedule_active_view_frame();
-        }
-        self.request_redraw();
-        true
-    }
-
     pub(crate) fn standard_popup_hint_line(&self) -> Line<'static> {
         popup_consts::standard_popup_hint_line_for_keymap(&self.keymap.list)
     }
@@ -1236,20 +1207,6 @@ impl BottomPane {
             .last()
             .filter(|view| view.view_id() == Some(view_id))
             .and_then(|view| view.active_tab_id())
-    }
-
-    pub(crate) fn dismiss_active_view_if_id(&mut self, view_id: &'static str) -> bool {
-        let is_match = self
-            .view_stack
-            .last()
-            .is_some_and(|view| view.view_id() == Some(view_id));
-        if !is_match {
-            return false;
-        }
-
-        self.view_stack.pop();
-        self.request_redraw();
-        true
     }
 
     /// Dismiss the newest matching view without disturbing views stacked above it.

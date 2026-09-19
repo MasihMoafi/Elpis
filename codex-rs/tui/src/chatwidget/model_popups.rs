@@ -7,7 +7,6 @@
 use super::*;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::OPENAI_PROVIDER_ID;
-use codex_model_provider_info::OPENROUTER_BASE_URL;
 use codex_model_provider_info::OPENROUTER_PROVIDER_ID;
 use ratatui::text::Span;
 
@@ -1477,6 +1476,8 @@ impl ChatWidget {
     ///
     /// Max and Ultra require an explicit second step so expensive efforts cannot
     /// be selected accidentally while moving through the normal effort scale.
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn open_reasoning_popup(&mut self, preset: ModelPreset) {
         self.open_reasoning_popup_for_provider(preset, None);
     }
@@ -1660,6 +1661,8 @@ impl ChatWidget {
     }
 
     /// Open the explicit Max/Ultra effort picker for the given model.
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn open_advanced_reasoning_popup(&mut self, preset: ModelPreset) {
         self.open_advanced_reasoning_popup_for_provider(preset, None);
     }
