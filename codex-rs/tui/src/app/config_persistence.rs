@@ -490,6 +490,9 @@ impl App {
         let smart_prune_requested = updates
             .iter()
             .any(|(feature, _)| *feature == Feature::AutomaticContextPruning);
+        let subagents_requested = updates
+            .iter()
+            .any(|(feature, _)| *feature == Feature::Collab);
 
         let auto_review_preset = auto_review_mode();
         let mut next_config = self.config.clone();
@@ -611,6 +614,9 @@ impl App {
                 if smart_prune_requested {
                     self.chat_widget.cancel_pending_smart_prune_update();
                 }
+                if subagents_requested {
+                    self.chat_widget.cancel_pending_subagents_update();
+                }
                 self.chat_widget
                     .add_error_message(format!("Failed to update experimental features: {error}"));
                 return;
@@ -648,6 +654,9 @@ impl App {
             if smart_prune_requested {
                 self.chat_widget.cancel_pending_smart_prune_update();
             }
+            if subagents_requested {
+                self.chat_widget.cancel_pending_subagents_update();
+            }
             return;
         }
 
@@ -655,6 +664,9 @@ impl App {
         for (feature, effective_enabled) in feature_updates_to_apply {
             self.chat_widget
                 .set_feature_enabled(feature, effective_enabled);
+        }
+        if subagents_requested {
+            self.chat_widget.cancel_pending_subagents_update();
         }
         if smart_prune_requested {
             self.chat_widget.cancel_pending_smart_prune_update();

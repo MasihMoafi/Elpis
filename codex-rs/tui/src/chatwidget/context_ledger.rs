@@ -87,6 +87,8 @@ pub(super) struct LedgerLines {
     source_links: Vec<(usize, String)>,
     smart_prune_line: usize,
     smart_prune_columns: std::ops::Range<usize>,
+    subagents_line: usize,
+    subagents_columns: std::ops::Range<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -102,6 +104,9 @@ pub(super) struct ContextLedgerState {
     /// The Smart Prune switch sits above the source rows and is part of the same
     /// keyboard cursor, so it can be reached and toggled without the mouse.
     smart_prune_selected: bool,
+    /// The subagent switch is the cursor's second stop, directly below Smart
+    /// Prune, so both settings are reachable without leaving the ledger.
+    subagents_selected: bool,
     pending_g: bool,
     why_visible: bool,
     last_area: std::cell::Cell<Option<Rect>>,
@@ -109,7 +114,10 @@ pub(super) struct ContextLedgerState {
     last_source_ranges: std::cell::RefCell<Vec<(usize, std::ops::Range<usize>)>>,
     last_smart_prune_row: std::cell::Cell<Option<u16>>,
     last_smart_prune_columns: std::cell::Cell<Option<(u16, u16)>>,
+    last_subagents_row: std::cell::Cell<Option<u16>>,
+    last_subagents_columns: std::cell::Cell<Option<(u16, u16)>>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
+    pub(super) pending_subagents_enabled: Option<bool>,
     pub(super) projected_token_delta: i64,
     pub(super) projection_baseline_turn_id: Option<String>,
     pub(super) pending_context_admissions:
@@ -124,6 +132,7 @@ impl Default for ContextLedgerState {
             focused: false,
             selected: 0,
             smart_prune_selected: false,
+            subagents_selected: false,
             pending_g: false,
             why_visible: false,
             last_area: std::cell::Cell::new(None),
@@ -131,7 +140,10 @@ impl Default for ContextLedgerState {
             last_source_ranges: std::cell::RefCell::new(Vec::new()),
             last_smart_prune_row: std::cell::Cell::new(None),
             last_smart_prune_columns: std::cell::Cell::new(None),
+            last_subagents_row: std::cell::Cell::new(None),
+            last_subagents_columns: std::cell::Cell::new(None),
             pending_smart_prune_enabled: None,
+            pending_subagents_enabled: None,
             projected_token_delta: 0,
             projection_baseline_turn_id: None,
             pending_context_admissions: std::collections::BTreeMap::new(),
@@ -146,6 +158,8 @@ impl ContextLedgerState {
         self.last_source_ranges.borrow_mut().clear();
         self.last_smart_prune_row.set(None);
         self.last_smart_prune_columns.set(None);
+        self.last_subagents_row.set(None);
+        self.last_subagents_columns.set(None);
     }
 }
 
@@ -220,6 +234,7 @@ impl ChatWidget {
                 // Start at the top row on screen rather than wherever the
                 // underlying source order happens to begin.
                 self.context_ledger.smart_prune_selected = false;
+                self.context_ledger.subagents_selected = false;
                 if let Some(first) = self.selectable_context_source_indexes().first() {
                     self.context_ledger.selected = *first;
                 }
@@ -227,6 +242,7 @@ impl ChatWidget {
                 self.context_ledger.visible = false;
                 self.context_ledger.focused = false;
                 self.context_ledger.smart_prune_selected = false;
+                self.context_ledger.subagents_selected = false;
                 self.context_ledger.clear_rendered_geometry();
             }
             self.context_ledger.pending_g = false;
@@ -251,13 +267,23 @@ impl ChatWidget {
             return true;
         }
 
-        // The Smart Prune switch is the first stop on the cursor, above the sources.
-        if self.context_ledger.smart_prune_selected {
+        if matches!(key_event.code, KeyCode::Char('a')) {
+            self.toggle_subagents();
+            return true;
+        }
+
+        // The two switches are the first stops on the cursor, above the sources.
+        if self.context_ledger.smart_prune_selected || self.context_ledger.subagents_selected {
+            let on_smart_prune = self.context_ledger.smart_prune_selected;
             let selectable = self.selectable_context_source_indexes();
             match key_event.code {
                 KeyCode::Esc => self.close_context_ledger(),
                 KeyCode::Char(' ') | KeyCode::Enter => {
-                    self.toggle_smart_prune();
+                    if on_smart_prune {
+                        self.toggle_smart_prune();
+                    } else {
+                        self.toggle_subagents();
+                    }
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.move_context_ledger_selection(&selectable, -1);
@@ -485,7 +511,7 @@ impl ChatWidget {
             )
         };
         let interaction_hint = if self.context_ledger.focused {
-            "Up/Down move · Space/Enter toggle · p Smart Prune · i all · w why · Tab/Esc close"
+            "Up/Down move · Space/Enter toggle · p prune · a subagents · i all · w why · Tab/Esc close"
         } else {
             "Tab controls · Alt+C hide · Ctrl+click open file"
         };
@@ -702,6 +728,73 @@ impl ChatWidget {
         };
         lines.push(Line::from(Span::styled(smart_prune_hint, muted)));
         lines.push(Line::from(""));
+
+        // Whether the model may hand work to other agents. Flipping it off keeps
+        // the whole turn in this thread; the next turn is the first one bound by
+        // the new answer, the same as Smart Prune.
+        let pending_subagents_enabled = self.context_ledger.pending_subagents_enabled;
+        let subagents_enabled =
+            pending_subagents_enabled.unwrap_or(self.config.features.enabled(Feature::Collab));
+        let subagents_button = if subagents_enabled {
+            "[━━━●] ON"
+        } else {
+            "[●━━━] OFF"
+        };
+        let subagents_label = "SUBAGENTS";
+        let subagents_cursor =
+            if self.context_ledger.focused && self.context_ledger.subagents_selected {
+                "› "
+            } else {
+                ""
+            };
+        let subagents_pad = content_width
+            .saturating_sub(
+                subagents_label.chars().count()
+                    + subagents_cursor.chars().count()
+                    + subagents_button.chars().count(),
+            )
+            .max(1);
+        let subagents_line = lines.len();
+        let subagents_column_start = subagents_label.chars().count()
+            + subagents_pad
+            + subagents_cursor.chars().count();
+        let subagents_columns =
+            subagents_column_start..subagents_column_start + subagents_button.chars().count();
+        let subagents_switch_spans = if subagents_enabled {
+            vec![
+                Span::styled("[", Style::default().fg(teal)),
+                Span::styled("━", Style::default().fg(violet)),
+                Span::styled("━", Style::default().fg(teal)),
+                Span::styled("━", Style::default().fg(emerald)),
+                Span::styled("●] ON", Style::default().fg(green).bold()),
+            ]
+        } else {
+            vec![Span::styled(subagents_button, muted)]
+        };
+        let mut subagents_spans = vec![
+            Span::styled(subagents_label, Style::default().fg(teal).bold()),
+            Span::raw(" ".repeat(subagents_pad)),
+        ];
+        if !subagents_cursor.is_empty() {
+            subagents_spans.push(Span::styled(subagents_cursor, brand.bold()));
+        }
+        subagents_spans.extend(subagents_switch_spans);
+        lines.push(Line::from(subagents_spans));
+        // One line, not a block: the ledger's own height is what the owner sees
+        // of their sources, and this setting has nothing to report beyond its
+        // state. The `a` key is already named in the header hint.
+        lines.push(Line::from(Span::styled(
+            if pending_subagents_enabled.is_some() {
+                "Saving… · applies next turn"
+            } else if subagents_enabled {
+                "May delegate to other agents"
+            } else {
+                "All work stays in this thread"
+            },
+            muted,
+        )));
+        lines.push(Line::from(""));
+
         lines.push(Line::from(vec![
             Span::styled("CONTEXT WINDOW", brand.bold()),
             Span::raw("  "),
@@ -940,6 +1033,8 @@ impl ChatWidget {
             source_links,
             smart_prune_line,
             smart_prune_columns,
+            subagents_line,
+            subagents_columns,
         }
     }
 
@@ -962,6 +1057,8 @@ impl ChatWidget {
             source_links,
             smart_prune_line,
             smart_prune_columns,
+            subagents_line,
+            subagents_columns,
         } = ledger_lines;
         let brand = crate::style::brand_style().not_bold();
 
@@ -1004,6 +1101,26 @@ impl ChatWidget {
         self.context_ledger
             .last_smart_prune_columns
             .set(switch_start.zip(switch_end));
+        let rows_before_subagents = Paragraph::new(lines[..subagents_line].to_vec())
+            .wrap(Wrap { trim: true })
+            .line_count(content_width);
+        let visible_subagents_row = u16::try_from(rows_before_subagents)
+            .ok()
+            .and_then(|row| row.checked_sub(scroll_lines))
+            .filter(|row| *row < area.height)
+            .map(|row| area.y.saturating_add(row));
+        self.context_ledger
+            .last_subagents_row
+            .set(visible_subagents_row);
+        let subagents_switch_start = u16::try_from(subagents_columns.start)
+            .ok()
+            .map(|column| area.x.saturating_add(1).saturating_add(column));
+        let subagents_switch_end = u16::try_from(subagents_columns.end)
+            .ok()
+            .map(|column| area.x.saturating_add(1).saturating_add(column));
+        self.context_ledger
+            .last_subagents_columns
+            .set(subagents_switch_start.zip(subagents_switch_end));
         let tracked_ranges = source_line_ranges
             .into_iter()
             .enumerate()
@@ -1074,6 +1191,16 @@ impl ChatWidget {
             self.toggle_smart_prune();
             return true;
         }
+        if self.context_ledger.last_subagents_row.get() == Some(row)
+            && self
+                .context_ledger
+                .last_subagents_columns
+                .get()
+                .is_some_and(|(start, end)| col >= start && col < end)
+        {
+            self.toggle_subagents();
+            return true;
+        }
         let relative_line = (row.saturating_sub(area.y) + scroll) as usize;
 
         let target_index = {
@@ -1090,6 +1217,7 @@ impl ChatWidget {
                 if source.selectable {
                     self.context_ledger.focused = true;
                     self.context_ledger.smart_prune_selected = false;
+                    self.context_ledger.subagents_selected = false;
                     self.context_ledger.selected = index;
                     let new_state = !source.admitted;
                     self.set_context_source_admitted(source, new_state);
@@ -1103,6 +1231,8 @@ impl ChatWidget {
 
     /// The source under the cursor, if the cursor is on a source rather than on
     /// the Smart Prune switch.
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(super) fn selected_continuity_source(
         &self,
     ) -> Option<crate::legacy_core::elpis_context::ContinuitySource> {
@@ -1161,16 +1291,22 @@ impl ChatWidget {
         self.manual_memory_cache.bound_target.as_ref()
     }
 
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn manual_memory_phase(&self) -> ManualMemoryPhase {
         self.manual_memory_cache.phase
     }
 
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn manual_memory_status(
         &self,
     ) -> Option<&crate::legacy_core::elpis_context::ManualMemoryStatus> {
         self.manual_memory_cache.status.as_ref()
     }
 
+    /// Exercised by tests only; no production path reaches it today.
+    #[cfg(test)]
     pub(crate) fn manual_memory_unavailable_reason(&self) -> Option<ManualMemoryUnavailableReason> {
         self.manual_memory_cache.unavailable_reason
     }
@@ -1434,28 +1570,33 @@ impl ChatWidget {
         self.context_ledger.visible = false;
         self.context_ledger.focused = false;
         self.context_ledger.smart_prune_selected = false;
+        self.context_ledger.subagents_selected = false;
         self.context_ledger.pending_g = false;
         self.context_ledger.clear_rendered_geometry();
     }
 
     /// Position 0 is the Smart Prune switch; the selectable sources follow it.
+    /// Walks the ledger cursor. The two switches are its first two stops, in the
+    /// order they are drawn, and the admitted sources follow.
     fn move_context_ledger_selection(&mut self, selectable: &[usize], delta: isize) {
-        let len = selectable.len() as isize + 1;
+        const SWITCH_STOPS: isize = 2;
+        let len = selectable.len() as isize + SWITCH_STOPS;
         let current = if self.context_ledger.smart_prune_selected {
             0
+        } else if self.context_ledger.subagents_selected {
+            1
         } else {
             selectable
                 .iter()
                 .position(|index| *index == self.context_ledger.selected)
                 .unwrap_or(0) as isize
-                + 1
+                + SWITCH_STOPS
         };
         let next = (current + delta).rem_euclid(len);
-        if next == 0 {
-            self.context_ledger.smart_prune_selected = true;
-        } else {
-            self.context_ledger.smart_prune_selected = false;
-            self.context_ledger.selected = selectable[(next - 1) as usize];
+        self.context_ledger.smart_prune_selected = next == 0;
+        self.context_ledger.subagents_selected = next == 1;
+        if next >= SWITCH_STOPS {
+            self.context_ledger.selected = selectable[(next - SWITCH_STOPS) as usize];
         }
     }
 

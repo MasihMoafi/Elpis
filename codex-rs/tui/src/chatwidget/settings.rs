@@ -39,6 +39,32 @@ impl ChatWidget {
         self.request_redraw();
     }
 
+    /// Flips whether the model may hand work to other agent threads.
+    ///
+    /// The setting is durable, so the switch shows the requested state right
+    /// away and the write reconciles it. A turn already running keeps the policy
+    /// it started under; the next one is bound by the new answer.
+    pub(super) fn toggle_subagents(&mut self) -> bool {
+        if self.context_ledger.pending_subagents_enabled.is_some() {
+            return false;
+        }
+        let enabled = !self
+            .context_ledger
+            .pending_subagents_enabled
+            .unwrap_or(self.config.features.enabled(Feature::Collab));
+        self.context_ledger.pending_subagents_enabled = Some(enabled);
+        self.app_event_tx.send(AppEvent::UpdateFeatureFlags {
+            updates: vec![(Feature::Collab, enabled)],
+        });
+        self.request_redraw();
+        true
+    }
+
+    pub(crate) fn cancel_pending_subagents_update(&mut self) {
+        self.context_ledger.pending_subagents_enabled = None;
+        self.request_redraw();
+    }
+
     pub(crate) fn current_thread_smart_prune_enabled(&self) -> Option<bool> {
         self.smart_prune_synced.then_some(self.smart_prune.enabled)
     }
@@ -710,20 +736,6 @@ impl ChatWidget {
         }
         self.current_goal_status = Some(GoalStatusState::new(goal, Instant::now()));
         self.update_collaboration_mode_indicator();
-    }
-
-    /// Cycle to the next collaboration mode variant (Plan -> Default -> Plan).
-    pub(super) fn cycle_collaboration_mode(&mut self) {
-        if !self.collaboration_modes_enabled() {
-            return;
-        }
-
-        if let Some(next_mask) = collaboration_modes::next_mask(
-            self.model_catalog.as_ref(),
-            self.active_collaboration_mask.as_ref(),
-        ) {
-            self.set_collaboration_mask_from_user_action(next_mask);
-        }
     }
 
     pub(crate) fn set_collaboration_mask_from_user_action(&mut self, mask: CollaborationModeMask) {

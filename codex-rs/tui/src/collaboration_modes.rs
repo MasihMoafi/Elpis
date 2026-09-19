@@ -32,23 +32,6 @@ pub(crate) fn mask_for_kind(
         .find(|mask| mask.mode == Some(kind))
 }
 
-/// Cycle to the next collaboration mode preset in list order.
-pub(crate) fn next_mask(
-    model_catalog: &ModelCatalog,
-    current: Option<&CollaborationModeMask>,
-) -> Option<CollaborationModeMask> {
-    let presets = filtered_presets(model_catalog);
-    if presets.is_empty() {
-        return None;
-    }
-    let current_kind = current.and_then(|mask| mask.mode);
-    let next_index = presets
-        .iter()
-        .position(|mask| mask.mode == current_kind)
-        .map_or(0, |idx| (idx + 1) % presets.len());
-    presets.get(next_index).cloned()
-}
-
 pub(crate) fn default_mode_mask(model_catalog: &ModelCatalog) -> Option<CollaborationModeMask> {
     mask_for_kind(model_catalog, ModeKind::Default)
 }
