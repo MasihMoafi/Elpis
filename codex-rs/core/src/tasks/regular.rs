@@ -84,24 +84,31 @@ impl SessionTask for RegularTask {
             .await?;
             if !sess.input_queue.has_pending_input(&sess.active_turn).await {
                 if last_agent_message.is_some() {
-                    tokio::select! {
-                        _ = cancellation_token.cancelled() => {
-                            return Err(codex_protocol::error::CodexErr::TurnAborted);
+                    // Consolidating memory, expiring reasoning and naming the
+                    // thread are maintenance, not part of the answer. Awaiting
+                    // them here kept the turn open after the model had stopped,
+                    // so the next thing the owner typed was taken as an
+                    // interruption of a turn that was already over and Esc was
+                    // claimed by the interrupt path instead of the ledger. The
+                    // wait was whatever the background model took -- minutes,
+                    // on a slow third-party route.
+                    //
+                    // They keep their order relative to each other, because the
+                    // save reads the history that expiry then rewrites. They
+                    // just no longer hold the turn open to do it.
+                    let sess = Arc::clone(&sess);
+                    let ctx = Arc::clone(&ctx);
+                    let cancellation_token = cancellation_token.child_token();
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            _ = cancellation_token.cancelled() => return,
+                            _ = crate::session::memory_save::save_continuity(&sess, &ctx) => {}
                         }
-                        _ = crate::session::memory_save::save_continuity(&sess, &ctx) => {}
-                    }
-                    if sess.input_queue.has_pending_input(&sess.active_turn).await {
-                        next_input = Vec::new();
-                        continue;
-                    }
-                }
-                // Expire reasoning only after memory saving and the final queue check.
-                // A message arriving during the save can continue this same turn.
-                if last_agent_message.is_some() && !ctx.model_info.use_responses_lite {
-                    sess.expire_reasoning_items_for_turn(&ctx.sub_id).await;
-                }
-                if last_agent_message.is_some() {
-                    crate::session::session_title::start(&sess, &ctx).await;
+                        if !ctx.model_info.use_responses_lite {
+                            sess.expire_reasoning_items_for_turn(&ctx.sub_id).await;
+                        }
+                        crate::session::session_title::start(&sess, &ctx).await;
+                    });
                 }
                 return Ok(last_agent_message);
             }
