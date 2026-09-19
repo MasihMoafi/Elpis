@@ -133,7 +133,11 @@ async fn wait_for_responses_request_count(
             let responses_request_count = requests
                 .iter()
                 .filter(|request| {
-                    request.method == "POST" && request.url.path().ends_with("/responses")
+                    request.method == "POST"
+                        && request.url.path().ends_with("/responses")
+                        // Session naming runs in the background while the turn is
+                        // still going; it is not part of the conversation being counted.
+                        && !core_test_support::responses::is_session_naming_request(request)
                 })
                 .count();
             if responses_request_count == expected_count {

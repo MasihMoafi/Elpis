@@ -587,7 +587,11 @@ async fn turn_start_emits_thread_scoped_warning_notification_for_trimmed_skills(
         &BTreeMap::from([(Feature::Personality, true)]),
     )?;
     write_models_cache(codex_home.path())?;
-    let cache_path = codex_home.path().join("models_cache.json");
+    // The cache is filed per provider endpoint; read back the path the fixture wrote.
+    let cache_path = codex_models_manager::manager::models_cache_path(
+        codex_home.path(),
+        "https://api.openai.com/v1",
+    );
     let mut cache: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&cache_path)?)?;
     let models = cache["models"]
