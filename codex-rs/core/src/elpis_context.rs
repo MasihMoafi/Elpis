@@ -19,7 +19,8 @@ pub const ELPIS_CONTINUITY_PROMPT_PREFIX: &str = "## Elpis Admitted Context\n\n\
     message when it changes the task.\n\n";
 const ADMISSION_FILE: &str = "admission.toml";
 const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
-const MEMORY_SCOPE_GUIDANCE: &str = "The user activates saved memories, including automatically saved memories, \
+/// Public so tests can strip exactly what the prompt inserts ahead of the memory body.
+pub const MEMORY_SCOPE_GUIDANCE: &str = "The user activates saved memories, including automatically saved memories, \
     by selecting MEMORY.md in the Context Ledger. Saving a memory does not activate it; \
     this section is included because the user admitted it. \
     Shared memory can contain global preferences and lessons from different projects. \

@@ -143,6 +143,14 @@ async fn thread_start_reports_selected_environment_instruction_source() -> Resul
     let response: ThreadStartResponse = to_response(response)?;
 
     assert_eq!(response.instruction_sources, vec![agents_source.into()]);
+    // AGENTS.md only reaches the prompt once it is admitted in the Context Ledger,
+    // and the workspace's ledger directory does not exist until the thread loads.
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(codex_home.path().join("memories").as_path()),
+        std::path::Path::new(&environment_cwd.inferred_native_path_string()),
+        "Project AGENTS.md",
+        true,
+    )?;
     timeout(
         DEFAULT_READ_TIMEOUT,
         app_server.start_turn_and_wait_for_completion(text_turn_params(

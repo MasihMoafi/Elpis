@@ -932,6 +932,15 @@ async fn thread_start_without_selected_environment_includes_only_global_instruct
         )?)]
     );
 
+    // AGENTS.md only reaches the prompt once it is admitted in the Context Ledger,
+    // and the workspace's ledger directory does not exist until the thread loads.
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(codex_home.path().join("memories").as_path()),
+        workspace.path(),
+        "Global AGENTS.md",
+        true,
+    )?;
+
     let turn_request_id = mcp
         .send_turn_start_request(TurnStartParams {
             thread_id: thread.id,

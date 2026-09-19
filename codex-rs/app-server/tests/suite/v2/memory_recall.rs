@@ -297,7 +297,14 @@ fn manual_memory_body(developer: &[String]) -> String {
         .iter()
         .find_map(|text| {
             text.rsplit_once("MEMORY.md (8000 characters)\n\n")
-                .map(|(_, body)| body.to_string())
+                .map(|(_, body)| {
+                    // The prompt puts the scope guidance between the header and the
+                    // memory itself; the body under test is what follows it.
+                    body.strip_prefix(codex_core::elpis_context::MEMORY_SCOPE_GUIDANCE)
+                        .and_then(|body| body.strip_prefix("\n\n"))
+                        .unwrap_or(body)
+                        .to_string()
+                })
         })
         .expect("the admitted request must contain the capped manual-memory source")
 }
