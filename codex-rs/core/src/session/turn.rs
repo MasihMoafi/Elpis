@@ -2099,6 +2099,33 @@ async fn try_run_sampling_request(
                     cancellation_token: cancellation_token.child_token(),
                 };
 
+                // Mail from a sub-agent has to interrupt the parent at the next
+                // item boundary. Without this the parent keeps consuming whatever
+                // the model already streamed -- stale tool calls included -- and the
+                // mail slips to the following turn. Restored from upstream Codex,
+                // where it is still present.
+                let preempt_for_mailbox_mail = match &item {
+                    ResponseItem::Message { role, phase, .. } => {
+                        role == "assistant" && matches!(phase, Some(MessagePhase::Commentary))
+                    }
+                    ResponseItem::Reasoning { .. } => true,
+                    ResponseItem::AgentMessage { .. } => false,
+                    ResponseItem::AdditionalTools { .. }
+                    | ResponseItem::LocalShellCall { .. }
+                    | ResponseItem::FunctionCall { .. }
+                    | ResponseItem::ToolSearchCall { .. }
+                    | ResponseItem::FunctionCallOutput { .. }
+                    | ResponseItem::CustomToolCall { .. }
+                    | ResponseItem::CustomToolCallOutput { .. }
+                    | ResponseItem::ToolSearchOutput { .. }
+                    | ResponseItem::WebSearchCall { .. }
+                    | ResponseItem::ImageGenerationCall { .. }
+                    | ResponseItem::Compaction { .. }
+                    | ResponseItem::CompactionTrigger { .. }
+                    | ResponseItem::ContextCompaction { .. }
+                    | ResponseItem::Other => false,
+                };
+
                 let output_result =
                     match handle_output_item_done(&mut ctx, item, previously_streamed_item)
                         .instrument(handle_responses)
@@ -2114,6 +2141,12 @@ async fn try_run_sampling_request(
                     last_agent_message = Some(agent_message);
                 }
                 needs_follow_up |= output_result.needs_follow_up;
+                if preempt_for_mailbox_mail && sess.input_queue.has_pending_mailbox_items().await {
+                    break Ok(SamplingRequestResult {
+                        needs_follow_up: true,
+                        last_agent_message,
+                    });
+                }
             }
             ResponseEvent::OutputItemAdded(mut item) => {
                 if turn_context.item_ids_enabled() {
