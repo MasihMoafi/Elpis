@@ -8,6 +8,8 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub(crate) const FRAME_TICK: Duration = Duration::from_millis(40);
+const MOTION_BURST: Duration = Duration::from_millis(800);
+const MOTION_WAIT: Duration = Duration::from_secs(4);
 
 pub(crate) fn elapsed() -> Duration {
     static START: OnceLock<Instant> = OnceLock::new();
@@ -43,6 +45,27 @@ pub(crate) fn text(text: &str) -> Vec<Span<'static>> {
 
 pub(crate) fn animated_text(text: &str, animated: bool) -> Vec<Span<'static>> {
     gradient_text_at(text, if animated { elapsed() } else { Duration::ZERO })
+}
+
+pub(crate) fn animated_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
+    gradient_text_at(text, time)
+}
+
+/// Run one quick shimmer, then leave the terminal untouched long enough for
+/// native click-and-drag selection to remain stable.
+pub(crate) fn paced_motion(elapsed: Duration) -> (Duration, Duration) {
+    let cycle = MOTION_BURST + MOTION_WAIT;
+    let position_nanos = u64::try_from(elapsed.as_nanos() % cycle.as_nanos())
+        .expect("motion cycle remainder fits in u64 nanoseconds");
+    let position = Duration::from_nanos(position_nanos);
+    if position < MOTION_BURST {
+        (
+            position,
+            FRAME_TICK.min(MOTION_BURST.saturating_sub(position)),
+        )
+    } else {
+        (MOTION_BURST, cycle.saturating_sub(position))
+    }
 }
 
 fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
@@ -489,6 +512,24 @@ mod tests {
         );
         assert_eq!(animated_text("Elpis", false), text("Elpis"));
     }
+
+    #[test]
+    fn paced_motion_uses_a_fast_burst_and_a_four_second_wait() {
+        assert_eq!(paced_motion(Duration::ZERO), (Duration::ZERO, FRAME_TICK));
+        assert_eq!(
+            paced_motion(Duration::from_millis(800)),
+            (Duration::from_millis(800), Duration::from_secs(4))
+        );
+        assert_eq!(
+            paced_motion(Duration::from_secs(1)),
+            (Duration::from_millis(800), Duration::from_millis(3_800))
+        );
+        assert_eq!(
+            paced_motion(Duration::from_millis(4_800)),
+            (Duration::ZERO, FRAME_TICK)
+        );
+    }
+
     #[test]
     fn coalesce_settles_without_replaying_and_reduced_motion_preserves_text() {
         let area = Rect::new(0, 0, 30, 2);

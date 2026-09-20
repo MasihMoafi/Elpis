@@ -267,7 +267,6 @@ impl BottomPane {
             disable_paste_burst,
         );
         composer.set_frame_requester(frame_requester.clone());
-        composer.set_frame_animations_enabled(animations_enabled);
         let keymap = RuntimeKeymap::defaults();
         composer.set_keymap_bindings(&keymap);
         composer.set_skill_mentions(skills);

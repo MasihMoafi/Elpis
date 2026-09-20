@@ -237,18 +237,16 @@ impl Renderable for StatusIndicatorWidget {
             return;
         }
 
-        if self.animations_enabled && !self.is_paused {
-            // Schedule next animation frame.
-            self.frame_requester
-                .schedule_frame_in(crate::elpis_motion::FRAME_TICK);
-        }
         let now = Instant::now();
         let elapsed_duration = self.elapsed_duration_at(now);
         let pretty_elapsed = fmt_elapsed_compact(elapsed_duration.as_secs());
-        let mut spans = crate::elpis_motion::animated_text(
-            &self.header,
-            self.animations_enabled && !self.is_paused,
-        );
+        let mut spans = if self.animations_enabled && !self.is_paused {
+            let (sample_at, next_frame_in) = crate::elpis_motion::paced_motion(elapsed_duration);
+            self.frame_requester.schedule_frame_in(next_frame_in);
+            crate::elpis_motion::animated_text_at(&self.header, sample_at)
+        } else {
+            crate::elpis_motion::animated_text(&self.header, /*animated*/ false)
+        };
         if !spans.is_empty() {
             spans.push(" ".into());
         }
@@ -433,6 +431,44 @@ mod tests {
             .collect::<String>();
 
         assert!(line.starts_with("Elpising… (0s • esc to interrupt)"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn status_motion_starts_fast_then_waits_without_redrawing() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(4);
+        let mut widget = StatusIndicatorWidget::new(
+            AppEventSender::new(tx_raw),
+            FrameRequester::new(draw_tx),
+            /*animations_enabled*/ true,
+        );
+        let area = Rect::new(0, 0, 80, 1);
+        let mut buffer = Buffer::empty(area);
+
+        widget.render(area, &mut buffer);
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            draw_rx.try_recv().is_ok(),
+            "initial shimmer frame was not fast"
+        );
+
+        widget.last_resume_at = Instant::now() - Duration::from_secs(1);
+        widget.render(area, &mut buffer);
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            draw_rx.try_recv().is_err(),
+            "status redrew during the selection-safe wait"
+        );
+        tokio::time::advance(Duration::from_secs(3)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            draw_rx.try_recv().is_ok(),
+            "next shimmer burst was not scheduled"
+        );
     }
 
     #[test]

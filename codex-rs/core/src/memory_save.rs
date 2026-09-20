@@ -109,9 +109,13 @@ impl MemorySnapshot {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
         loop {
             match Self::open(root, cwd) {
-                Err(error)
-                    if error.is::<MemoryLockBusy>() && tokio::time::Instant::now() < deadline =>
-                {
+                Err(error) if error.is::<MemoryLockBusy>() => {
+                    if tokio::time::Instant::now() >= deadline {
+                        // A saver already owns the complete snapshot and its locks.
+                        // Treat the overlapping boundary as coalesced rather than
+                        // presenting normal contention as a failed save.
+                        return Ok(None);
+                    }
                     tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                 }
                 result => return result,
@@ -453,7 +457,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn waits_for_short_memory_lock_but_bounds_contention_and_other_errors()
+    async fn waits_for_short_memory_lock_but_coalesces_contention_and_surfaces_other_errors()
     -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
         let root = dir.path().join("memories");
@@ -479,11 +483,8 @@ mod tests {
         assert!(try_lock_memory(&root)?.is_none());
         assert!(try_lock_checkpoint(&dir.path().join("other-workspace"))?.is_some());
         let started = tokio::time::Instant::now();
-        let error = MemorySnapshot::open_when_available(&root, &cwd)
-            .await
-            .err()
-            .unwrap();
-        assert!(error.is::<MemoryLockBusy>());
+        let contended = MemorySnapshot::open_when_available(&root, &cwd).await?;
+        assert!(contended.is_none());
         assert_eq!(started.elapsed(), std::time::Duration::from_secs(1));
         std::fs::write(&settings, "invalid settings")?;
         let started = tokio::time::Instant::now();

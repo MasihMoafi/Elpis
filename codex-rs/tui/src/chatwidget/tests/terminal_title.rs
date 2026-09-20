@@ -3,6 +3,27 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+#[tokio::test(start_paused = true)]
+async fn terminal_title_spinner_does_not_redraw_during_the_selection_wait() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(4);
+    chat.frame_requester = FrameRequester::new(draw_tx);
+    chat.config.animations = true;
+    chat.turn_lifecycle
+        .start(Instant::now() - std::time::Duration::from_secs(1));
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    chat.refresh_terminal_title();
+    tokio::task::yield_now().await;
+    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    tokio::task::yield_now().await;
+
+    assert!(
+        draw_rx.try_recv().is_err(),
+        "terminal title redrew during the selection-safe wait"
+    );
+}
+
 #[tokio::test]
 async fn terminal_title_shows_action_required_while_exec_approval_is_pending() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;

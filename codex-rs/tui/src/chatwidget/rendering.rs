@@ -359,7 +359,18 @@ impl ChatWidget {
         let model = self.current_model();
         let location = format_directory_display(self.status_line_cwd(), /*max_width*/ None);
         let animate_identity = self.config.animations && self.turn_lifecycle.agent_turn_running;
-        let mut spans = crate::elpis_motion::animated_text(" Elpis ", animate_identity);
+        let mut spans = if animate_identity {
+            let elapsed = self
+                .turn_lifecycle
+                .goal_status_active_turn_started_at
+                .map(|started| started.elapsed())
+                .unwrap_or_else(crate::elpis_motion::elapsed);
+            let (sample_at, next_frame_in) = crate::elpis_motion::paced_motion(elapsed);
+            self.frame_requester.schedule_frame_in(next_frame_in);
+            crate::elpis_motion::animated_text_at(" Elpis ", sample_at)
+        } else {
+            crate::elpis_motion::animated_text(" Elpis ", /*animated*/ false)
+        };
         for span in &mut spans {
             span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
         }
@@ -370,9 +381,5 @@ impl ChatWidget {
             location.dim(),
         ]);
         Line::from(spans).render(area, buf);
-        if animate_identity {
-            self.frame_requester
-                .schedule_frame_in(std::time::Duration::from_millis(160));
-        }
     }
 }

@@ -231,7 +231,8 @@ impl ChatWidget {
 
         let now = Instant::now();
         let title = self.terminal_title_text_for_selections(selections, now);
-        let animation_interval = self.terminal_title_animation_interval_with_selections(selections);
+        let animation_interval =
+            self.terminal_title_animation_interval_with_selections(selections, now);
         if self.last_terminal_title == title {
             if let Some(interval) = animation_interval {
                 self.frame_requester.schedule_frame_in(interval);
@@ -362,6 +363,7 @@ impl ChatWidget {
     fn terminal_title_animation_interval_with_selections(
         &self,
         selections: &StatusSurfaceSelections,
+        now: Instant,
     ) -> Option<Duration> {
         if self.config.animations
             && self.terminal_title_shows_action_required_with_selections(selections)
@@ -370,7 +372,9 @@ impl ChatWidget {
         }
 
         self.should_animate_terminal_title_spinner_with_selections(selections)
-            .then_some(TERMINAL_TITLE_SPINNER_INTERVAL)
+            .then(|| {
+                crate::elpis_motion::paced_motion(self.terminal_title_animation_elapsed_at(now)).1
+            })
     }
 
     pub(super) fn request_status_line_branch_refresh(&mut self) {
@@ -922,10 +926,18 @@ impl ChatWidget {
     }
 
     fn terminal_title_spinner_frame_at(&self, now: Instant) -> &'static str {
-        let elapsed = now.saturating_duration_since(self.terminal_title_animation_origin);
+        let elapsed = self.terminal_title_animation_elapsed_at(now);
+        let (sample_at, _) = crate::elpis_motion::paced_motion(elapsed);
         let frame_index =
-            (elapsed.as_millis() / TERMINAL_TITLE_SPINNER_INTERVAL.as_millis()) as usize;
+            (sample_at.as_millis() / TERMINAL_TITLE_SPINNER_INTERVAL.as_millis()) as usize;
         TERMINAL_TITLE_SPINNER_FRAMES[frame_index % TERMINAL_TITLE_SPINNER_FRAMES.len()]
+    }
+
+    fn terminal_title_animation_elapsed_at(&self, now: Instant) -> Duration {
+        self.turn_lifecycle
+            .goal_status_active_turn_started_at
+            .map(|started| now.saturating_duration_since(started))
+            .unwrap_or_else(|| now.saturating_duration_since(self.terminal_title_animation_origin))
     }
 
     fn terminal_title_uses_activity(&self) -> bool {

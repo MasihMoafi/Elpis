@@ -8,6 +8,8 @@ commands, and boundary.
 - [Context continuity](context-continuity/README.md) — a synthetic 3×10 comparison
   protocol and scorer. It has no published score because provider runs have not been
   performed.
+- [Memory contention and native drag selection](memory-selection-20260920.md) — bounded lock
+  contention plus repeatable GTK/VTE active-response drag checks against Codex 0.155.1.
 
 Screenshots and demonstrations are product illustrations. They are not eval evidence
 unless their underlying run records are present.

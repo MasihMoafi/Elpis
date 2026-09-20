@@ -398,7 +398,6 @@ pub(crate) struct ChatComposer {
     footer: FooterState,
     has_focus: bool,
     frame_requester: Option<FrameRequester>,
-    frame_animations_enabled: bool,
     effort_tier: Option<EffortTier>,
     effort_animation_style: Option<IgnitionStyle>,
     effort_ignition: Option<EffortIgnition>,
@@ -612,7 +611,6 @@ impl ChatComposer {
             },
             has_focus: has_input_focus,
             frame_requester: None,
-            frame_animations_enabled: false,
             effort_tier: None,
             effort_animation_style: None,
             effort_ignition: None,
@@ -656,10 +654,6 @@ impl ChatComposer {
 
     pub(crate) fn set_frame_requester(&mut self, frame_requester: FrameRequester) {
         self.frame_requester = Some(frame_requester);
-    }
-
-    pub(crate) fn set_frame_animations_enabled(&mut self, enabled: bool) {
-        self.frame_animations_enabled = enabled;
     }
 
     /// Records the effective reasoning tier, captures the outgoing status
@@ -3681,7 +3675,6 @@ impl ChatComposer {
 
         FooterProps {
             mode,
-            animations_enabled: self.frame_animations_enabled,
             esc_backtrack_hint: self.footer.esc_backtrack_hint,
             use_shift_enter_hint: self.footer.use_shift_enter_hint,
             is_task_running: self.is_task_running,
@@ -4481,12 +4474,6 @@ impl ChatComposer {
             }
             ActivePopup::None => {
                 let footer_props = self.footer_props();
-                if footer_props.animations_enabled
-                    && footer_props.approval_mode_label.is_some()
-                    && let Some(requester) = self.frame_requester.as_ref()
-                {
-                    requester.schedule_frame_in(crate::elpis_motion::FRAME_TICK);
-                }
                 let show_cycle_hint = !footer_props.is_task_running
                     && self.footer.collaboration_mode_indicator.is_some();
                 let show_shortcuts_hint = match footer_props.mode {
@@ -4758,16 +4745,9 @@ impl ChatComposer {
         crate::elpis_motion::paint_frame(
             composer_rect,
             buf,
-            crate::elpis_motion::elapsed(),
-            self.frame_animations_enabled && self.is_task_running,
+            Duration::ZERO,
+            /*animated*/ false,
         );
-        if self.frame_animations_enabled
-            && self.is_task_running
-            && !composer_rect.is_empty()
-            && let Some(requester) = self.frame_requester.as_ref()
-        {
-            requester.schedule_frame_in(crate::elpis_motion::FRAME_TICK);
-        }
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
                 .style(style)
@@ -5016,6 +4996,27 @@ mod tests {
             ),
             rx,
         )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn running_composer_does_not_schedule_continuous_animation_frames() {
+        let (mut composer, _rx) = new_test_composer();
+        let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(4);
+        composer.set_frame_requester(crate::tui::FrameRequester::new(draw_tx));
+        composer.set_approval_mode_label(Some("Full Access".to_string()));
+        composer.set_task_running(/*running*/ true);
+
+        let area = Rect::new(0, 0, 80, 6);
+        let mut buffer = Buffer::empty(area);
+        composer.render(area, &mut buffer);
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+
+        assert!(
+            draw_rx.try_recv().is_err(),
+            "composer scheduled a continuous redraw that can clear native drag selection"
+        );
     }
 
     #[test]
