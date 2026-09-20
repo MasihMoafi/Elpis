@@ -1008,8 +1008,8 @@ impl TranscriptOverlay {
                 Ok(())
             }
             TuiEvent::Paste(_) => Ok(()),
-            TuiEvent::Draw | TuiEvent::Resize => {
-                if matches!(event, TuiEvent::Resize) {
+            TuiEvent::Draw | TuiEvent::Resize(_) | TuiEvent::Resume => {
+                if matches!(event, TuiEvent::Resize(_)) {
                     self.selection = None;
                 }
                 tui.draw(u16::MAX, |frame| {
@@ -1114,7 +1114,7 @@ impl StaticOverlay {
                 Ok(())
             }
             TuiEvent::Paste(_) => Ok(()),
-            TuiEvent::Draw | TuiEvent::Resize => {
+            TuiEvent::Draw | TuiEvent::Resize(_) | TuiEvent::Resume => {
                 tui.draw(u16::MAX, |frame| {
                     self.render(frame.area(), frame.buffer);
                 })?;

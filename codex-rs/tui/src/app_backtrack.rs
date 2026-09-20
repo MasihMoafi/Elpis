@@ -221,7 +221,10 @@ impl App {
         }
         self.overlay = None;
         self.backtrack.overlay_preview_active = false;
-        if rebuild_inline_history && let Err(error) = self.rebuild_transcript_from_source(tui) {
+        let terminal_width = tui.terminal.last_known_screen_size.width;
+        if rebuild_inline_history
+            && let Err(error) = self.rebuild_transcript_from_source(tui, terminal_width)
+        {
             self.chat_widget
                 .add_error_message(format!("Could not restore chat history: {error}"));
         }
@@ -352,8 +355,10 @@ impl App {
     /// source of truth for the active cell and its cache invalidation key, and because `App` owns
     /// overlay lifecycle and frame scheduling for animations.
     fn overlay_forward_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
-        if matches!(&event, TuiEvent::Draw | TuiEvent::Resize)
-            && let Some(Overlay::Transcript(t)) = &mut self.overlay
+        if matches!(
+            &event,
+            TuiEvent::Draw | TuiEvent::Resize(_) | TuiEvent::Resume
+        ) && let Some(Overlay::Transcript(t)) = &mut self.overlay
         {
             let active_key = self.chat_widget.active_cell_transcript_key();
             let chat_widget = &self.chat_widget;

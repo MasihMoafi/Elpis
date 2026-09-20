@@ -496,6 +496,7 @@ pub(crate) async fn run_onboarding_app(
         tokio::select! {
             event = tui_events.next() => {
                 if let Some(event) = event {
+                    tui.screen_size_for_event(&event)?;
                     match event {
                         TuiEvent::Key(key_event) => {
                             onboarding_screen.handle_key_event(key_event);
@@ -511,7 +512,7 @@ pub(crate) async fn run_onboarding_app(
                             onboarding_screen.handle_paste(text);
                         }
                         TuiEvent::Mouse(_) => {}
-                        TuiEvent::Draw | TuiEvent::Resize => {
+                        TuiEvent::Draw | TuiEvent::Resize(_) | TuiEvent::Resume => {
                             if !did_full_clear_after_success
                                 && onboarding_screen.steps.iter().any(|step| {
                                     if let Step::Auth(w) = step {

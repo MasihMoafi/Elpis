@@ -36,6 +36,7 @@ use ratatui::crossterm::terminal::enable_raw_mode;
 use ratatui::layout::Offset;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
+use ratatui::layout::Size;
 use ratatui::text::Line;
 use tokio::sync::broadcast;
 use tokio_stream::Stream;
@@ -62,6 +63,7 @@ mod frame_requester;
 #[cfg(unix)]
 mod job_control;
 mod keyboard_modes;
+mod screen_size;
 mod terminal_stderr;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -521,9 +523,11 @@ pub enum TuiEvent {
     ///
     /// Resize is separate from `Draw` so the app can run feature-gated pre-render logic without
     /// changing the default draw path for scheduled frames.
-    Resize,
+    Resize(Size),
     /// A scheduled repaint that does not necessarily correspond to a terminal size change.
     Draw,
+    /// The first repaint after returning from process suspension.
+    Resume,
 }
 
 pub struct Tui {
@@ -532,6 +536,7 @@ pub struct Tui {
     event_broker: Arc<EventBroker>,
     pub(crate) terminal: Terminal,
     pending_history_lines: Vec<PendingHistoryLines>,
+    screen_size: screen_size::ScreenSizePolicy,
     alt_saved_viewport: Option<ratatui::layout::Rect>,
     alt_saved_history: Option<SavedHistoryRows>,
     #[cfg(unix)]
@@ -630,6 +635,7 @@ impl Tui {
             event_broker: Arc::new(EventBroker::new()),
             terminal,
             pending_history_lines: vec![],
+            screen_size: screen_size::ScreenSizePolicy::default(),
             alt_saved_viewport: None,
             alt_saved_history: None,
             #[cfg(unix)]
@@ -725,6 +731,7 @@ impl Tui {
         }
 
         self.resume_events();
+        self.schedule_screen_size_recheck(Duration::ZERO);
         output
     }
 
@@ -788,6 +795,7 @@ impl Tui {
         let _ = std::io::Write::write_all(backend, b"\x1b[?1002h\x1b[?1006h");
         let _ = std::io::Write::flush(backend);
         if let Ok(size) = self.terminal.size() {
+            self.terminal.resize(size)?;
             self.alt_saved_history = Some(SavedHistoryRows {
                 screen: size,
                 visible_rows: self.terminal.visible_history_rows(),
@@ -881,29 +889,29 @@ impl Tui {
     fn update_inline_viewport_for_resize_reflow(
         terminal: &mut Terminal,
         height: u16,
+        screen_size: Size,
     ) -> Result<bool> {
-        let size = terminal.size()?;
-        let terminal_height_shrank = size.height < terminal.last_known_screen_size.height;
-        let terminal_height_grew = size.height > terminal.last_known_screen_size.height;
+        let terminal_height_shrank = screen_size.height < terminal.last_known_screen_size.height;
+        let terminal_height_grew = screen_size.height > terminal.last_known_screen_size.height;
         let viewport_was_bottom_aligned =
             terminal.viewport_area.bottom() == terminal.last_known_screen_size.height;
         let previous_area = terminal.viewport_area;
 
         let mut area = terminal.viewport_area;
-        area.height = height.min(size.height);
-        area.width = size.width;
+        area.height = height.min(screen_size.height);
+        area.width = screen_size.width;
         let mut needs_full_repaint = false;
 
-        if area.bottom() > size.height {
-            let scroll_by = area.bottom() - size.height;
+        if area.bottom() > screen_size.height {
+            let scroll_by = area.bottom() - screen_size.height;
             if !terminal_height_shrank {
                 terminal
                     .backend_mut()
                     .scroll_region_up(0..area.top(), scroll_by)?;
             }
-            area.y = size.height - area.height;
+            area.y = screen_size.height - area.height;
         } else if terminal_height_grew && viewport_was_bottom_aligned {
-            area.y = size.height - area.height;
+            area.y = screen_size.height - area.height;
         }
 
         if area != terminal.viewport_area {
@@ -948,6 +956,7 @@ impl Tui {
         height: u16,
         draw_fn: impl FnOnce(&mut custom_terminal::Frame),
     ) -> Result<()> {
+        let screen_size = self.take_event_screen_size()?;
         // If we are resuming from ^Z, we need to prepare the resume action now so we can apply it
         // in the synchronized update.
         #[cfg(unix)]
@@ -957,14 +966,14 @@ impl Tui {
 
         // Precompute any viewport updates that need a cursor-position query before entering
         // the synchronized update, to avoid racing with the event reader.
-        let mut pending_viewport_area = self.pending_viewport_area()?;
+        let mut pending_viewport_area = self.pending_viewport_area(screen_size)?;
 
         ensure_virtual_terminal_processing()?;
 
         with_synchronized_update(self.synchronized_output_supported, || {
             #[cfg(unix)]
             if let Some(prepared) = prepared_resume.take() {
-                prepared.apply(&mut self.terminal)?;
+                prepared.apply(&mut self.terminal, screen_size)?;
             }
 
             let terminal = &mut self.terminal;
@@ -973,17 +982,15 @@ impl Tui {
                 terminal.clear()?;
             }
 
-            let size = terminal.size()?;
-
             let mut area = terminal.viewport_area;
-            area.height = height.min(size.height);
-            area.width = size.width;
+            area.height = height.min(screen_size.height);
+            area.width = screen_size.width;
             // If the viewport has expanded, scroll everything else up to make room.
-            if area.bottom() > size.height {
+            if area.bottom() > screen_size.height {
                 terminal
                     .backend_mut()
-                    .scroll_region_up(0..area.top(), area.bottom() - size.height)?;
-                area.y = size.height - area.height;
+                    .scroll_region_up(0..area.top(), area.bottom() - screen_size.height)?;
+                area.y = screen_size.height - area.height;
             }
             if area != terminal.viewport_area {
                 // On startup, the old viewport can still be empty. Clear from the
@@ -1012,7 +1019,7 @@ impl Tui {
                 self.suspend_context.set_cursor_y(inline_area_bottom);
             }
 
-            terminal.draw(|frame| {
+            terminal.draw_with_size(screen_size, |frame| {
                 draw_fn(frame);
             })
         })
@@ -1026,6 +1033,7 @@ impl Tui {
     pub fn draw_with_resize_reflow(
         &mut self,
         height: u16,
+        screen_size: Size,
         draw_fn: impl FnOnce(&mut custom_terminal::Frame),
     ) -> Result<()> {
         // If we are resuming from ^Z, we need to prepare the resume action now so we can apply it
@@ -1040,12 +1048,12 @@ impl Tui {
         with_synchronized_update(self.synchronized_output_supported, || {
             #[cfg(unix)]
             if let Some(prepared) = prepared_resume.take() {
-                prepared.apply(&mut self.terminal)?;
+                prepared.apply(&mut self.terminal, screen_size)?;
             }
 
             let terminal = &mut self.terminal;
             let needs_full_repaint =
-                Self::update_inline_viewport_for_resize_reflow(terminal, height)?;
+                Self::update_inline_viewport_for_resize_reflow(terminal, height, screen_size)?;
             Self::flush_pending_history_lines(
                 terminal,
                 &mut self.pending_history_lines,
@@ -1070,15 +1078,14 @@ impl Tui {
                 self.suspend_context.set_cursor_y(inline_area_bottom);
             }
 
-            terminal.draw(|frame| {
+            terminal.draw_with_size(screen_size, |frame| {
                 draw_fn(frame);
             })
         })
     }
 
-    fn pending_viewport_area(&mut self) -> Result<Option<Rect>> {
+    fn pending_viewport_area(&mut self, screen_size: Size) -> Result<Option<Rect>> {
         let terminal = &mut self.terminal;
-        let screen_size = terminal.size()?;
         let last_known_screen_size = terminal.last_known_screen_size;
         if screen_size != last_known_screen_size
             && let Ok(cursor_pos) = terminal.get_cursor_position()

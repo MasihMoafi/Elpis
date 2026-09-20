@@ -373,8 +373,17 @@ where
     where
         F: FnOnce(&mut Frame),
     {
-        self.try_draw(|frame| {
-            render_callback(frame);
+        let screen_size = self.size()?;
+        self.draw_with_size(screen_size, render_callback)
+    }
+
+    /// Draws a single frame using a screen size already obtained by the caller.
+    pub(crate) fn draw_with_size<F>(&mut self, screen_size: Size, render: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut Frame),
+    {
+        self.try_draw_with_size(screen_size, |frame| {
+            render(frame);
             io::Result::Ok(())
         })
     }
@@ -419,9 +428,18 @@ where
         F: FnOnce(&mut Frame) -> Result<(), E>,
         E: Into<io::Error>,
     {
-        // Autoresize - otherwise we get glitches if shrinking or potential desync between widgets
-        // and the terminal (if growing), which may OOB.
-        self.autoresize()?;
+        let screen_size = self.size()?;
+        self.try_draw_with_size(screen_size, render_callback)
+    }
+
+    fn try_draw_with_size<F, E>(&mut self, screen_size: Size, render_callback: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut Frame) -> Result<(), E>,
+        E: Into<io::Error>,
+    {
+        if screen_size != self.last_known_screen_size {
+            self.resize(screen_size)?;
+        }
 
         let mut frame = self.get_frame();
 
@@ -873,6 +891,7 @@ mod tests {
         output: Vec<u8>,
         size: Size,
         cursor: Position,
+        size_call_count: std::cell::Cell<usize>,
     }
 
     impl CaptureBackend {
@@ -881,6 +900,7 @@ mod tests {
                 output: Vec::new(),
                 size: Size { width, height },
                 cursor: Position { x: 0, y: 0 },
+                size_call_count: std::cell::Cell::new(0),
             }
         }
 
@@ -954,6 +974,8 @@ mod tests {
         }
 
         fn size(&self) -> io::Result<Size> {
+            self.size_call_count
+                .set(self.size_call_count.get().saturating_add(1));
             Ok(self.size)
         }
 
@@ -967,6 +989,22 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn ordinary_redraws_with_known_size_do_not_query_backend_size() {
+        let mut terminal = Terminal::with_options(CaptureBackend::new(80, 24)).expect("terminal");
+        let screen_size = terminal.last_known_screen_size;
+
+        for _ in 0..3 {
+            terminal.draw_with_size(screen_size, |_| {}).expect("draw");
+        }
+        assert_eq!(terminal.backend().size_call_count.get(), 1);
+
+        terminal
+            .draw(|_| {})
+            .expect("size-querying compatibility draw");
+        assert_eq!(terminal.backend().size_call_count.get(), 2);
     }
 
     #[test]

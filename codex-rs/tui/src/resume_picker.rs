@@ -51,6 +51,7 @@ use crossterm::event::KeyModifiers;
 use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::layout::Size;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Styled as _;
@@ -466,6 +467,7 @@ async fn run_session_picker_with_loader(
     loop {
         tokio::select! {
             Some(ev) = tui_events.next() => {
+                let screen_size = alt.tui.screen_size_for_event(&ev)?;
                 if state.overlay.is_some() {
                     state.handle_overlay_event(alt.tui, ev)?;
                     continue;
@@ -483,14 +485,13 @@ async fn run_session_picker_with_loader(
                         state.handle_paste(pasted);
                     }
                     TuiEvent::Mouse(_) => {}
-                    TuiEvent::Draw | TuiEvent::Resize => {
-                        if let Ok(size) = alt.tui.terminal.size() {
-                            let list_height =
-                                size.height.saturating_sub(PICKER_CHROME_HEIGHT) as usize;
-                            state.update_viewport(list_height, list_viewport_width(size.width));
-                            state.ensure_minimum_rows_for_view(list_height);
-                        }
-                        draw_picker(alt.tui, &state)?;
+                    TuiEvent::Draw | TuiEvent::Resize(_) | TuiEvent::Resume => {
+                        let list_width = list_viewport_width(screen_size.width);
+                        let list_height =
+                            usize::from(screen_size.height.saturating_sub(PICKER_CHROME_HEIGHT));
+                        state.update_viewport(list_height, list_width);
+                        state.ensure_minimum_rows_for_view(list_height);
+                        draw_picker(alt.tui, &state, screen_size)?;
                         if state.note_transcript_loading_frame_drawn() {
                             state.open_pending_transcript_if_ready();
                         }
@@ -1939,10 +1940,9 @@ fn parse_timestamp_str(ts: &str) -> Option<DateTime<Utc>> {
         .ok()
 }
 
-fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
+fn draw_picker(tui: &mut Tui, state: &PickerState, screen_size: Size) -> std::io::Result<()> {
     // Render full-screen overlay
-    let height = tui.terminal.size()?.height;
-    tui.draw(height, |frame| {
+    tui.draw(screen_size.height, |frame| {
         let area = frame.area();
         let [header, _header_gap, search, _search_gap, list, footer] = Layout::vertical([
             Constraint::Length(1),

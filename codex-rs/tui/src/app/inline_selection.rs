@@ -31,7 +31,7 @@ impl App {
         tui: &mut Tui,
         event: &TuiEvent,
     ) -> std::io::Result<bool> {
-        if matches!(event, TuiEvent::Resize) {
+        if matches!(event, TuiEvent::Resize(_)) {
             tui.invalidate_saved_history_rows();
             self.chat_widget.clear_displayed_live_rows();
         }
@@ -114,7 +114,7 @@ impl App {
                 }
             }
             TuiEvent::Draw if self.inline_history_selection.is_some() => return Ok(true),
-            TuiEvent::Resize => {
+            TuiEvent::Resize(_) | TuiEvent::Resume => {
                 self.inline_history_selection = None;
                 return Ok(false);
             }
