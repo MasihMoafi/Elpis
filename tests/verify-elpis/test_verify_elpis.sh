@@ -633,8 +633,9 @@ def require(condition: bool, message: str) -> None:
 
 main = Path(sys.argv[1]).read_text()
 launcher = Path(sys.argv[2]).read_text()
-linux, separator, macos_and_later = main.partition("\n  build-macos:")
-require(bool(separator), "main workflow must retain the macOS job boundary")
+# Elpis publishes a Linux binary only, so the whole workflow is the Linux job.
+linux = main
+require("\n  build-macos:" not in main, "main workflow must not regrow a macOS job")
 
 for trigger_path in (
     ".github/workflows/launcher-diagnostics.yml",
@@ -736,8 +737,6 @@ require(
     "      - name: Package .deb\n        if: startsWith(github.ref, 'refs/tags/v')\n        working-directory: codex-rs\n" in linux,
     "package step must retain codex-rs working directory",
 )
-require("cargo test -p codex-tui --bin elpis --locked --target" in macos_and_later, "macOS checks changed")
-
 require("scripts/verify-elpis --surface tui" in launcher, "launcher must reuse the TUI surface")
 require("cargo test -p codex-tui --bin elpis" not in launcher, "launcher must not retain a Cargo list")
 require("run_filter()" not in launcher, "launcher must not add a second test helper")

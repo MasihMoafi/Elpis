@@ -19,6 +19,9 @@ on:
       - tests/verify-elpis/test_verify_elpis.sh
       - tests/install/**
       - tools/verify-elpis/surfaces.toml
+      - docs/**
+  schedule:
+    - cron: "17 3 * * 1"
   push:
     branches:
       - main
@@ -34,6 +37,7 @@ on:
       - tests/verify-elpis/test_verify_elpis.sh
       - tests/install/**
       - tools/verify-elpis/surfaces.toml
+      - docs/**
 
 permissions:
   contents: write
