@@ -4878,6 +4878,7 @@ impl ChatComposer {
 #[cfg(test)]
 mod tests {
     use ratatui::style::Color;
+    use unicode_width::UnicodeWidthStr;
 
     /// Render real widgets to inspect colors, geometry, and draft preservation.
     #[test]
@@ -5396,25 +5397,41 @@ mod tests {
         );
     }
 
-    fn plugin_mention_foreground_color(composer: &ChatComposer) -> Option<Color> {
-        let area = Rect::new(0, 0, 40, 5);
-        let mut buf = Buffer::empty(area);
-        composer.render(area, &mut buf);
+    fn with_plugin_test_palette<T>(render: impl FnOnce() -> T) -> T {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (222, 222, 219),
+                bg: (17, 18, 20),
+            },
+            render,
+        )
+    }
 
-        let textarea_row = 1;
-        let row_text = (0..area.width)
-            .map(|x| {
-                buf[(x, textarea_row)]
-                    .symbol()
-                    .chars()
-                    .next()
-                    .unwrap_or(' ')
-            })
-            .collect::<String>();
-        let mention_x = row_text
-            .find("@sample")
-            .expect("expected plugin mention in composer row");
-        buf[(mention_x as u16, textarea_row)].style().fg
+    fn plugin_mention_foreground_colors(composer: &ChatComposer) -> (Option<Color>, Option<Color>) {
+        with_plugin_test_palette(|| {
+            let area = Rect::new(0, 0, 40, 5);
+            let mut buf = Buffer::empty(area);
+            composer.render(area, &mut buf);
+
+            let textarea_row = 1;
+            let row_text = (0..area.width)
+                .map(|x| {
+                    buf[(x, textarea_row)]
+                        .symbol()
+                        .chars()
+                        .next()
+                        .unwrap_or(' ')
+                })
+                .collect::<String>();
+            let mention_byte = row_text
+                .find("@sample")
+                .expect("expected plugin mention in composer row");
+            let mention_x = row_text[..mention_byte].width();
+            (
+                buf[(mention_x as u16, textarea_row)].style().fg,
+                crate::elpis_motion::accent_style().fg,
+            )
+        })
     }
 
     #[test]
@@ -5439,14 +5456,12 @@ mod tests {
             }],
         );
 
-        assert_eq!(
-            plugin_mention_foreground_color(&composer),
-            crate::elpis_motion::accent_style().fg
-        );
+        let (actual, expected) = plugin_mention_foreground_colors(&composer);
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn plugin_at_mentions_render_with_plugin_accent_snapshot() {
+    fn plugin_at_mentions_accent_only_the_bound_token() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
         let mut composer = ChatComposer::new(
@@ -5467,35 +5482,28 @@ mod tests {
             }],
         );
 
-        let area = Rect::new(0, 0, 40, 5);
-        let mut buf = Buffer::empty(area);
-        composer.render(area, &mut buf);
+        with_plugin_test_palette(|| {
+            let area = Rect::new(0, 0, 40, 5);
+            let mut buf = Buffer::empty(area);
+            composer.render(area, &mut buf);
+            let row = 1;
+            let row_text = (0..area.width)
+                .map(|x| buf[(x, row)].symbol().chars().next().unwrap_or(' '))
+                .collect::<String>();
+            let mention_byte = row_text.find("@sample").expect("plugin mention");
+            let mention_x = row_text[..mention_byte].width();
+            let accent = crate::elpis_motion::accent_style().fg;
 
-        let textarea_row = 1;
-        let mut text = String::new();
-        let mut magenta = String::new();
-        for x in 0..area.width {
-            let cell = &buf[(x, textarea_row)];
-            text.push(cell.symbol().chars().next().unwrap_or(' '));
-            magenta.push(
-                if cell.style().fg == crate::elpis_motion::accent_style().fg {
-                    '^'
-                } else {
-                    ' '
-                },
+            assert_eq!(
+                (mention_x..mention_x + "@sample".len())
+                    .map(|x| buf[(x as u16, row)].style().fg)
+                    .collect::<Vec<_>>(),
+                vec![accent; "@sample".len()]
             );
-        }
-        while text.ends_with(' ') {
-            text.pop();
-        }
-        while magenta.ends_with(' ') {
-            magenta.pop();
-        }
-
-        insta::assert_snapshot!(
-            "plugin_at_mentions_render_with_plugin_accent",
-            format!("text:    {text}\nmagenta: {magenta}")
-        );
+            let trailing_text_byte = row_text.find("plugin").expect("unbound trailing text");
+            let trailing_text_x = row_text[..trailing_text_byte].width();
+            assert_ne!(buf[(trailing_text_x as u16, row)].style().fg, accent);
+        });
     }
 
     #[test]
@@ -5528,10 +5536,8 @@ mod tests {
             composer.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
         assert!(needs_redraw);
 
-        assert_eq!(
-            plugin_mention_foreground_color(&composer),
-            crate::elpis_motion::accent_style().fg
-        );
+        let (actual, expected) = plugin_mention_foreground_colors(&composer);
+        assert_eq!(actual, expected);
     }
 
     #[test]
