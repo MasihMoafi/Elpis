@@ -10,6 +10,9 @@ use serde::Deserialize;
 use serde::Serialize;
 
 pub const OUTPUT_CHARS: usize = 6_000;
+const EXISTING_INPUT_CHARS: usize = 8_000;
+const OMITTED_CHECKPOINT_MARKER: &str =
+    "\n\n[...checkpoint middle omitted for memory consolidation...]\n\n";
 
 #[derive(Default, Serialize)]
 pub struct MemorySaveTiming {
@@ -134,12 +137,8 @@ impl MemorySnapshot {
         let goal = read_optional(&workspace.join("GOAL.md"))?;
         anyhow::ensure!(goal.chars().count() <= 8_000, "existing goal is oversized");
         anyhow::ensure!(
-            memory.chars().count() <= 8_000,
+            memory.chars().count() <= EXISTING_INPUT_CHARS,
             "existing memory is oversized; refusing to truncate it"
-        );
-        anyhow::ensure!(
-            checkpoint.chars().count() <= 8_000,
-            "existing checkpoint is oversized; refusing to truncate it"
         );
         Ok(Some(Self {
             root: root.into(),
@@ -150,6 +149,18 @@ impl MemorySnapshot {
             _lock: lock,
             _checkpoint_lock: checkpoint_lock,
         }))
+    }
+
+    /// Return a bounded model-input view without changing the checkpoint held for conflict checks,
+    /// rollback evidence, or the on-disk file. Keeping both ends preserves the current state and
+    /// the latest result from legacy checkpoints that predate the save budget.
+    pub(crate) fn checkpoint_for_prompt(&self) -> String {
+        let notes = self
+            .checkpoint
+            .split_once("\n## Consolidated State\n\n")
+            .map(|(_, notes)| notes)
+            .unwrap_or(&self.checkpoint);
+        bounded_checkpoint(notes)
     }
 
     pub fn commit(
@@ -247,6 +258,27 @@ impl MemorySnapshot {
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
         Ok((memory, checkpoint))
     }
+}
+
+fn bounded_checkpoint(checkpoint: &str) -> String {
+    let char_count = checkpoint.chars().count();
+    if char_count <= EXISTING_INPUT_CHARS {
+        return checkpoint.to_string();
+    }
+
+    let marker_chars = OMITTED_CHECKPOINT_MARKER.chars().count();
+    let retained_chars = EXISTING_INPUT_CHARS.saturating_sub(marker_chars);
+    let head_chars = retained_chars / 2;
+    let tail_chars = retained_chars - head_chars;
+    let tail_byte = checkpoint
+        .char_indices()
+        .nth(char_count - tail_chars)
+        .map(|(index, _)| index)
+        .unwrap_or(checkpoint.len());
+    let mut bounded = checkpoint.chars().take(head_chars).collect::<String>();
+    bounded.push_str(OMITTED_CHECKPOINT_MARKER);
+    bounded.push_str(&checkpoint[tail_byte..]);
+    bounded
 }
 
 fn validate_unchanged_memory_citations(
@@ -493,6 +525,54 @@ mod tests {
                 &serde_json::json!({"checkpoint":"valid","memory":"valid"}).to_string()
             )?
             .is_some()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_oversized_checkpoint_opens_without_mutating_source() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let root = dir.path().join("memories");
+        let cwd = dir.path().join("project");
+        let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        std::fs::create_dir_all(&workspace)?;
+        std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
+        let checkpoint = format!(
+            "# Elpis Session Checkpoint\n\n- Thread: `legacy`\n\n## Consolidated State\n\ncurrent-state\n{}\nlatest-result",
+            "界".repeat(EXISTING_INPUT_CHARS + 1)
+        );
+        let checkpoint_path = workspace.join("ES.md");
+        std::fs::write(&checkpoint_path, &checkpoint)?;
+
+        let snapshot = MemorySnapshot::open(&root, &cwd)?.expect("enabled memory snapshot");
+        let prompt_checkpoint = snapshot.checkpoint_for_prompt();
+
+        assert_eq!(snapshot.checkpoint, checkpoint);
+        assert_eq!(std::fs::read_to_string(&checkpoint_path)?, checkpoint);
+        assert_eq!(prompt_checkpoint.chars().count(), EXISTING_INPUT_CHARS);
+        assert!(prompt_checkpoint.starts_with("current-state"));
+        assert!(prompt_checkpoint.ends_with("latest-result"));
+        assert!(prompt_checkpoint.contains(OMITTED_CHECKPOINT_MARKER));
+
+        snapshot.commit(
+            &MemoryDecision {
+                checkpoint: "bounded replacement".into(),
+                memory: String::new(),
+            },
+            "gpt-5.6-luna",
+            "thread",
+            "turn",
+            None,
+            None,
+            MemorySaveTiming::default(),
+        )?;
+        let replaced = std::fs::read_to_string(checkpoint_path)?;
+        assert!(replaced.contains("bounded replacement"));
+        assert!(replaced.chars().count() <= EXISTING_INPUT_CHARS);
+
+        assert_eq!(
+            bounded_checkpoint("ordinary checkpoint"),
+            "ordinary checkpoint"
         );
         Ok(())
     }

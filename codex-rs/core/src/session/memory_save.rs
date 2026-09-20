@@ -125,10 +125,7 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
     let input = serde_json::to_string(&serde_json::json!({
         "workspace": cwd,
         "goal": snapshot.goal,
-        "previous_checkpoint": snapshot.checkpoint
-            .split_once("\n## Consolidated State\n\n")
-            .map(|(_, notes)| notes)
-            .unwrap_or(&snapshot.checkpoint),
+        "previous_checkpoint": snapshot.checkpoint_for_prompt(),
         "previous_memory": snapshot.memory,
         "character_budget": crate::memory_save::OUTPUT_CHARS,
         "evidence": evidence,
