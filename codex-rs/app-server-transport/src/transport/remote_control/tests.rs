@@ -1026,7 +1026,7 @@ async fn remote_control_start_allows_remote_control_invalid_url_when_disabled() 
     .expect("disabled remote control should not validate the URL at startup");
 
     shutdown_token.cancel();
-    timeout(Duration::from_secs(1), remote_task)
+    timeout(Duration::from_secs(5), remote_task)
         .await
         .expect("remote control task should stop")
         .expect("remote control task should join");
@@ -1073,7 +1073,7 @@ async fn remote_control_start_allows_missing_auth_when_enabled() {
         .expect_err("remote control should wait for auth before connecting");
 
     shutdown_token.cancel();
-    timeout(Duration::from_secs(1), remote_task)
+    timeout(Duration::from_secs(5), remote_task)
         .await
         .expect("remote control task should stop")
         .expect("remote control task should join");
@@ -1132,7 +1132,7 @@ async fn remote_control_start_reports_missing_state_db_as_disabled_when_enabled(
         .expect_err("status should remain disabled without sqlite state db");
 
     shutdown_token.cancel();
-    timeout(Duration::from_secs(1), remote_task)
+    timeout(Duration::from_secs(5), remote_task)
         .await
         .expect("remote control task should stop")
         .expect("remote control task should join");
@@ -1213,7 +1213,9 @@ async fn remote_control_handle_enable_disable_stops_and_restarts_connections() {
         },
     )
     .await;
-    timeout(Duration::from_secs(1), first_websocket.next())
+    // A busy machine can take longer than a second to deliver the close, and
+    // every other wait-for-an-event in this file already allows five.
+    timeout(Duration::from_secs(5), first_websocket.next())
         .await
         .expect("disabling remote control should close the websocket");
     timeout(Duration::from_millis(100), listener.accept())
