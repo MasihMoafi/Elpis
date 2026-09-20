@@ -95,3 +95,21 @@ clarification prefers existing TASKS.md files; do not create further request led
   worktree deletion is implied by these outcomes.
 - Automated checks and agent reviews are evidence. Masih alone provides user-visible
   acceptance.
+
+## 2026-09-21 v0.3.0 candidate checkpoint
+
+- Built from local commit `891253ac` under the thermal guard; peak 73 C, no cooling pauses.
+- Installed atomically as `~/.local/bin/elpis`: version `0.3.0`, 225,695,744 bytes. Artifact and
+  installed SHA-256 both equal
+  `37a6a5f5ef71a9b5c1585c91a3314d3845b5bbd44de1f635c1b77de2b3cbe433`.
+- The replaced executable is retained at
+  `~/.local/share/elpis/release-recovery/motion-update-20260921/elpis-before`.
+- Zero compiler warnings on the workspace check, the release test profile, and the shipping
+  binaries. Interface 3,271 · engine 2,243 · engine integration 987 · app server 657 · model
+  catalogs 157, all passing.
+- Whole-workspace survey recorded separately: 152 test binaries, 10,391 passing, 13 failing, every
+  failure in a crate no verification surface selects. Eight closed, five open.
+- The Elpis and Elpising names animate continuously again at the 3× speed; the composer and the
+  approval label stay static, which is how Codex behaves.
+- Running clients keep the previous executable; restart is required. Nothing was pushed, tagged, or
+  published.
