@@ -2,7 +2,7 @@
 source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
-◆ Elpis (v0.2.0)
+◆ Elpis (v0.3.0)
 │ 
 │ model:     gpt-5   /model to change
 │ directory: /tmp/project
