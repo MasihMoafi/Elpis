@@ -741,6 +741,10 @@ mod tests {
                 .update_thread_metadata(UpdateThreadMetadataParams {
                     thread_id,
                     patch: ThreadMetadataPatch {
+                        // These tests drove the rollout compatibility write through
+                        // `memory_mode`, which no longer exists. A name patch is the
+                        // remaining input that always takes that path.
+                        name: Some(Some("compatibility rewrite".into())),
                         ..Default::default()
                     },
                     include_archived: false,
@@ -783,12 +787,16 @@ mod tests {
             .update_thread_metadata(UpdateThreadMetadataParams {
                 thread_id,
                 patch: ThreadMetadataPatch {
+                    // These tests drove the rollout compatibility write through
+                    // `memory_mode`, which no longer exists. A name patch is the
+                    // remaining input that always takes that path.
+                    name: Some(Some("compatibility rewrite".into())),
                     ..Default::default()
                 },
                 include_archived: false,
             })
             .await
-            .expect("set memory mode on external live thread");
+            .expect("rewrite rollout on external live thread");
 
         assert_eq!(thread.thread_id, thread_id);
         assert!(thread.rollout_path.is_some());
@@ -1028,12 +1036,16 @@ mod tests {
             .update_thread_metadata(UpdateThreadMetadataParams {
                 thread_id,
                 patch: ThreadMetadataPatch {
+                    // These tests drove the rollout compatibility write through
+                    // `memory_mode`, which no longer exists. A name patch is the
+                    // remaining input that always takes that path.
+                    name: Some(Some("compatibility rewrite".into())),
                     ..Default::default()
                 },
                 include_archived: false,
             })
             .await
-            .expect("set memory mode after git clear");
+            .expect("rewrite rollout after git clear");
         let appended = last_rollout_item(path.as_path());
         assert_eq!(appended["type"], "session_meta");
         assert_eq!(appended["payload"].get("git"), None);
@@ -1138,6 +1150,10 @@ mod tests {
             .update_thread_metadata(UpdateThreadMetadataParams {
                 thread_id,
                 patch: ThreadMetadataPatch {
+                    // These tests drove the rollout compatibility write through
+                    // `memory_mode`, which no longer exists. A name patch is the
+                    // remaining input that always takes that path.
+                    name: Some(Some("compatibility rewrite".into())),
                     ..Default::default()
                 },
                 include_archived: false,
