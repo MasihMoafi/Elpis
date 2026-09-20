@@ -33,19 +33,28 @@ struct Settings {
 }
 
 pub fn parse_decision(text: &str) -> anyhow::Result<MemoryDecision> {
+    parse_decision_or_skip_oversized(text)?.context("memory output exceeds character budget")
+}
+
+/// Parse a memory decision while treating an otherwise-valid oversized generation as a skipped
+/// save. The caller can then preserve the last valid snapshot instead of surfacing a maintenance
+/// error or truncating durable notes.
+pub fn parse_decision_or_skip_oversized(text: &str) -> anyhow::Result<Option<MemoryDecision>> {
     let decision: MemoryDecision = serde_json::from_str(text)?;
     anyhow::ensure!(!decision.checkpoint.trim().is_empty(), "empty checkpoint");
     for content in [&decision.checkpoint, &decision.memory] {
-        anyhow::ensure!(
-            content.chars().count() <= OUTPUT_CHARS,
-            "memory output exceeds character budget"
-        );
         anyhow::ensure!(
             !content.contains('\0'),
             "memory output contains a NUL character"
         );
     }
-    Ok(decision)
+    if [&decision.checkpoint, &decision.memory]
+        .into_iter()
+        .any(|content| content.chars().count() > OUTPUT_CHARS)
+    {
+        return Ok(None);
+    }
+    Ok(Some(decision))
 }
 
 pub struct MemorySnapshot {
@@ -465,6 +474,27 @@ mod tests {
         }
         let text = serde_json::json!({"checkpoint":"界".repeat(OUTPUT_CHARS + 1),"memory":""});
         assert!(parse_decision(&text.to_string()).is_err());
+    }
+
+    #[test]
+    fn oversized_decision_is_skipped_without_replacing_valid_memory() -> anyhow::Result<()> {
+        let text = serde_json::json!({
+            "checkpoint": "x".repeat(OUTPUT_CHARS + 1),
+            "memory": "new memory"
+        });
+
+        assert!(
+            parse_decision_or_skip_oversized(&text.to_string())?.is_none(),
+            "an oversized generation must preserve the last valid snapshot"
+        );
+        assert!(parse_decision_or_skip_oversized("not json").is_err());
+        assert!(
+            parse_decision_or_skip_oversized(
+                &serde_json::json!({"checkpoint":"valid","memory":"valid"}).to_string()
+            )?
+            .is_some()
+        );
+        Ok(())
     }
 
     #[test]

@@ -171,15 +171,7 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
         base_instructions: BaseInstructions {
             text: include_str!("../../templates/memory_consolidation.md").into(),
         },
-        output_schema: Some(serde_json::json!({
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["checkpoint", "memory"],
-            "properties": {
-                "checkpoint": {"type": "string"},
-                "memory": {"type": "string"}
-            }
-        })),
+        output_schema: Some(memory_output_schema()),
         output_schema_strict: true,
         ..Default::default()
     };
@@ -237,7 +229,16 @@ async fn save(sess: &Arc<Session>, turn: &Arc<TurnContext>) -> anyhow::Result<()
             TIMEOUT.as_secs()
         )
     })??;
-    let decision = crate::memory_save::parse_decision(&response.0)?;
+    let Some(decision) = crate::memory_save::parse_decision_or_skip_oversized(&response.0)? else {
+        tracing::warn!(
+            thread_id = %sess.session_id(), turn_id = %turn.sub_id,
+            response_chars = response.0.chars().count(),
+            output_budget_chars = crate::memory_save::OUTPUT_CHARS,
+            "memory save output exceeded its schema budget; preserved previous memory"
+        );
+        sess.state.lock().await.last_successful_memory_save = Some(save_key);
+        return Ok(());
+    };
     let (memory, checkpoint) = snapshot.commit(
         &decision,
         slug,
@@ -262,4 +263,39 @@ fn memory_save_key(
     checkpoint: &str,
 ) -> anyhow::Result<[u8; 32]> {
     Ok(Sha256::digest(serde_json::to_vec(&(evidence_hash, memory, checkpoint))?).into())
+}
+
+fn memory_output_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checkpoint", "memory"],
+        "properties": {
+            "checkpoint": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": crate::memory_save::OUTPUT_CHARS
+            },
+            "memory": {
+                "type": "string",
+                "maxLength": crate::memory_save::OUTPUT_CHARS
+            }
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_schema_enforces_the_persisted_character_budget() {
+        let schema = memory_output_schema();
+        for field in ["checkpoint", "memory"] {
+            assert_eq!(
+                schema["properties"][field]["maxLength"],
+                crate::memory_save::OUTPUT_CHARS
+            );
+        }
+    }
 }
