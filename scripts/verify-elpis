@@ -49,10 +49,12 @@ done
 manifest_records=
 path_records=
 test_output=
+command_tmp=
 cleanup() {
     [[ -z $manifest_records ]] || rm -f -- "$manifest_records"
     [[ -z $path_records ]] || rm -f -- "$path_records"
     [[ -z $test_output ]] || rm -f -- "$test_output"
+    [[ -z $command_tmp ]] || rm -rf -- "$command_tmp"
 }
 trap cleanup EXIT
 
@@ -476,12 +478,21 @@ for command_name in "${selected_commands[@]}"; do
     kind=${command_kind[$command_name]}
     mode=${command_mode[$command_name]}
     printf 'Elpis verification: running=%s\n' "$command_name"
+    # Every command gets an empty temporary directory of its own. The sandbox
+    # materialises `.git`, `.codex` and `.elpis` placeholders in whatever temp
+    # root it is handed; a later suite then walks up from its own scratch
+    # directory, reads those placeholders as a real repository, and fails on a
+    # tree nobody wrote. Sharing one root also leaks a hundred-odd directories
+    # per run.
+    command_tmp=$(mktemp -d "${TMPDIR:-/tmp}/elpis-verify-tmp.XXXXXX") ||
+        die "could not create command temporary directory"
     if [[ $kind == shell ]]; then
-        (cd "$REPO_ROOT" && "${argv[@]}") || die "command failed: $command_name"
+        (cd "$REPO_ROOT" && TMPDIR="$command_tmp" "${argv[@]}") || die "command failed: $command_name"
     elif [[ $mode == check ]]; then
         (
             cd "$REPO_ROOT/codex-rs"
             CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
+                TMPDIR="$command_tmp" \
                 CARGO_TARGET_DIR="$target_dir" nice -n 10 cargo "${argv[@]}"
         ) || die "command failed: $command_name"
     else
@@ -491,6 +502,7 @@ for command_name in "${selected_commands[@]}"; do
         (
             cd "$REPO_ROOT/codex-rs"
             CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 \
+                TMPDIR="$command_tmp" \
                 CARGO_TARGET_DIR="$target_dir" nice -n 10 cargo "${argv[@]}"
         ) 2>&1 | tee "$test_output"
         cargo_status=${PIPESTATUS[0]}
@@ -504,4 +516,6 @@ for command_name in "${selected_commands[@]}"; do
         rm -f -- "$test_output"
         test_output=
     fi
+    rm -rf -- "$command_tmp"
+    command_tmp=
 done
