@@ -258,7 +258,8 @@ pub(crate) fn anthropic_models(body: &serde_json::Value) -> Vec<ModelInfo> {
                 // them think, and Elpis does not put a thinking budget on the
                 // Messages wire yet. Claiming levels here would offer a choice
                 // that changes nothing.
-                /*reasons*/ false,
+                /*reasons*/
+                false,
             )
         })
         .collect()
@@ -310,7 +311,8 @@ pub(crate) fn gemini_models(body: &serde_json::Value) -> Vec<ModelInfo> {
                 index as i32,
                 // Same as Anthropic: the listing carries no thinking signal and
                 // the generateContent wire carries no thinking config yet.
-                /*reasons*/ false,
+                /*reasons*/
+                false,
             )
         })
         .collect()

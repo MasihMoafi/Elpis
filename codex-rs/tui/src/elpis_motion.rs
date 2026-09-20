@@ -61,8 +61,7 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
     let light = is_light(background);
     let half_width = (width * 0.1).max(3.0);
     let sweep = 2.5 / SPEED;
-    let position =
-        (time.as_secs_f64() % sweep) / sweep * (width + 2.0 * half_width) - half_width;
+    let position = (time.as_secs_f64() % sweep) / sweep * (width + 2.0 * half_width) - half_width;
     let mut column = 0.0;
     text.graphemes(true)
         .map(|glyph| {

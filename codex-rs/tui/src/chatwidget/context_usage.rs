@@ -1803,5 +1803,4 @@ mod tests {
         assert!(!text.contains("Request Composition"));
         assert!(text.contains("9.3% of context window"));
     }
-
 }

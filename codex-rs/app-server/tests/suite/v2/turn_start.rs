@@ -666,9 +666,9 @@ async fn turn_start_emits_thread_scoped_warning_notification_for_trimmed_skills(
     // The omitted count follows however many skills Elpis bundles, so assert the
     // warning's shape rather than a number that rots whenever one is added.
     assert!(
-        warning
-            .message
-            .starts_with("Exceeded skills context budget of 2%. All skill descriptions were removed and "),
+        warning.message.starts_with(
+            "Exceeded skills context budget of 2%. All skill descriptions were removed and "
+        ),
         "unexpected skills warning: {}",
         warning.message
     );
@@ -3162,10 +3162,8 @@ async fn turn_start_streams_apply_patch_change_updates_v2() -> Result<()> {
         ]),
     )?;
     write_models_cache(&codex_home)?;
-    let cache_path = codex_models_manager::manager::models_cache_path(
-        &codex_home,
-        "https://api.openai.com/v1",
-    );
+    let cache_path =
+        codex_models_manager::manager::models_cache_path(&codex_home, "https://api.openai.com/v1");
     let mut cache: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&cache_path)?)?;
     let models = cache["models"]

@@ -294,7 +294,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-
 /// If the pasted content exceeds this number of characters, replace it with a
 /// placeholder in the UI.
 const LARGE_PASTE_CHAR_THRESHOLD: usize = 1000;

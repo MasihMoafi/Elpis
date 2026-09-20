@@ -1792,10 +1792,7 @@ const MAIN_RESERVED_BINDINGS: &[(&str, KeyBinding)] = &[
     ("fixed.quit", key_hint::ctrl(KeyCode::Char('d'))),
     ("fixed.paste_image", key_hint::ctrl(KeyCode::Char('v'))),
     ("fixed.paste_image", key_hint::ctrl_alt(KeyCode::Char('v'))),
-    (
-        "fixed.cycle_approval_preset",
-        key_hint::shift(KeyCode::Tab),
-    ),
+    ("fixed.cycle_approval_preset", key_hint::shift(KeyCode::Tab)),
     ("fixed.backtrack", key_hint::plain(KeyCode::Esc)),
     ("fixed.previous_agent", key_hint::alt(KeyCode::Left)),
     ("fixed.next_agent", key_hint::alt(KeyCode::Right)),

@@ -481,7 +481,11 @@ async fn a_third_partys_catalog_is_not_redownloaded_on_the_refresh_timer() {
             .await;
     }
 
-    assert_eq!(endpoint.fetch_count(), 1, "the cache should absorb the second");
+    assert_eq!(
+        endpoint.fetch_count(),
+        1,
+        "the cache should absorb the second"
+    );
 }
 
 #[tokio::test]

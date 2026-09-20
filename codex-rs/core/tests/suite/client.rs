@@ -789,8 +789,7 @@ async fn resume_includes_initial_messages_and_sends_prior_items() {
         .with_home(codex_home.clone())
         .with_pre_build_hook(|home| {
             std::fs::write(home.join("AGENTS.md"), "be nice").expect("write global instructions");
-        })
-;
+        });
     let test = builder
         .resume(&server, codex_home, session_path.clone())
         .await
@@ -1644,8 +1643,7 @@ async fn includes_user_instructions_message_in_request() {
         .with_auth(CodexAuth::from_api_key("Test API Key"))
         .with_pre_build_hook(|home| {
             std::fs::write(home.join("AGENTS.md"), "be nice").expect("write global instructions");
-        })
-;
+        });
     let test = builder
         .build(&server)
         .await
@@ -2964,8 +2962,7 @@ async fn includes_developer_instructions_message_in_request() {
         })
         .with_config(|config| {
             config.developer_instructions = Some("be useful".to_string());
-        })
-;
+        });
     let test = builder
         .build(&server)
         .await

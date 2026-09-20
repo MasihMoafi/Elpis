@@ -2663,7 +2663,10 @@ async fn the_cursor_marks_one_row_at_a_time() -> anyhow::Result<()> {
     chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let on_a_source = render_ledger(&chat, 80);
     assert_eq!(
-        on_a_source.lines().filter(|line| line.contains('\u{203a}')).count(),
+        on_a_source
+            .lines()
+            .filter(|line| line.contains('\u{203a}'))
+            .count(),
         1,
         "a source row should carry the only mark:\n{on_a_source}"
     );

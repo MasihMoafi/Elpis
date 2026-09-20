@@ -479,8 +479,7 @@ impl ModelClient {
     /// same pool walks off with the turn loop's connection, so the next turn has to
     /// open a fresh one and loses its `previous_response_id` continuity with it.
     pub(crate) fn for_background_work(&self, provider_info: Option<ModelProviderInfo>) -> Self {
-        let mut provider_info =
-            provider_info.unwrap_or_else(|| self.state.provider.info().clone());
+        let mut provider_info = provider_info.unwrap_or_else(|| self.state.provider.info().clone());
         provider_info.supports_websockets = false;
         self.with_provider(provider_info)
     }

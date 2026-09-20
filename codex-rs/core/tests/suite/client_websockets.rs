@@ -1524,13 +1524,12 @@ async fn responses_websocket_usage_limit_error_emits_rate_limit_event() {
         .await
         .expect("submission should succeed while emitting usage limit error events");
 
-    let token_event =
-        wait_for_event(&test.codex, |msg| {
-            // Elpis emits a context-attribution token count first; this test is
-            // about the one carrying rate limits.
-            matches!(msg, EventMsg::TokenCount(ev) if ev.rate_limits.is_some())
-        })
-        .await;
+    let token_event = wait_for_event(&test.codex, |msg| {
+        // Elpis emits a context-attribution token count first; this test is
+        // about the one carrying rate limits.
+        matches!(msg, EventMsg::TokenCount(ev) if ev.rate_limits.is_some())
+    })
+    .await;
     let EventMsg::TokenCount(event) = token_event else {
         unreachable!();
     };

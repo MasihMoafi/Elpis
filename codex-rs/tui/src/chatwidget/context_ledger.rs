@@ -784,9 +784,8 @@ impl ChatWidget {
             )
             .max(1);
         let subagents_line = lines.len();
-        let subagents_column_start = subagents_label.chars().count()
-            + subagents_pad
-            + subagents_cursor.chars().count();
+        let subagents_column_start =
+            subagents_label.chars().count() + subagents_pad + subagents_cursor.chars().count();
         let subagents_columns =
             subagents_column_start..subagents_column_start + subagents_button.chars().count();
         let subagents_switch_spans = if subagents_enabled {
