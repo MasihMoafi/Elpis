@@ -1721,6 +1721,7 @@ mod tests {
         assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".git"));
         assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".agents"));
         assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".codex"));
+        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".elpis"));
         assert_eq!(args.preserved_files.len(), 1);
         assert_eq!(
             synthetic_mount_target_paths(&args),
@@ -1729,6 +1730,7 @@ mod tests {
                 workspace.join(".git"),
                 workspace.join(".agents"),
                 workspace.join(".codex"),
+                workspace.join(".elpis"),
             ]
         );
         assert!(
@@ -1762,12 +1764,14 @@ mod tests {
         assert_empty_file_bound_without_perms(&args.args, &dot_git);
         assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".agents"));
         assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".codex"));
+        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".elpis"));
         assert_eq!(
             synthetic_mount_target_paths(&args),
             vec![
                 dot_git.clone(),
                 workspace.join(".agents"),
                 workspace.join(".codex"),
+                workspace.join(".elpis"),
             ]
         );
         assert!(
@@ -2026,9 +2030,11 @@ mod tests {
                 PathBuf::from("/.git"),
                 PathBuf::from("/.agents"),
                 PathBuf::from("/.codex"),
+                PathBuf::from("/.elpis"),
                 PathBuf::from("/dev/.git"),
                 PathBuf::from("/dev/.agents"),
                 PathBuf::from("/dev/.codex"),
+                PathBuf::from("/dev/.elpis"),
             ]
         );
         assert_eq!(
@@ -2066,6 +2072,12 @@ mod tests {
                 "/.codex".to_string(),
                 "--remount-ro".to_string(),
                 "/.codex".to_string(),
+                "--perms".to_string(),
+                "555".to_string(),
+                "--tmpfs".to_string(),
+                "/.elpis".to_string(),
+                "--remount-ro".to_string(),
+                "/.elpis".to_string(),
                 // Rebind /dev after the root bind so device nodes remain
                 // writable/usable inside the writable root.
                 "--bind".to_string(),
@@ -2091,6 +2103,12 @@ mod tests {
                 "/dev/.codex".to_string(),
                 "--remount-ro".to_string(),
                 "/dev/.codex".to_string(),
+                "--perms".to_string(),
+                "555".to_string(),
+                "--tmpfs".to_string(),
+                "/dev/.elpis".to_string(),
+                "--remount-ro".to_string(),
+                "/dev/.elpis".to_string(),
             ]
         );
     }
