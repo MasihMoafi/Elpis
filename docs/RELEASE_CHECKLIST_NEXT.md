@@ -29,14 +29,6 @@ v0.2.1.
 - [ ] **Smarter session names in resume** — open `/resume` after a few chats,
   see if sessions have short auto-generated names instead of raw IDs, and
   whether any are flagged as safe to delete.
-- [ ] **Escape queues instead of killing your message** — while it's mid
-  response, type something and hit Escape; it should queue your text for the
-  next turn instead of throwing it away.
-- [ ] **Escape closes overlays cleanly** — open `/context` or `/usage` while a
-  response is streaming, press Escape, and confirm it closes the report
-  without stopping or pausing the reply underneath.
-- [ ] **Faster exit** — quit Elpis and see whether it closes right away
-  instead of pausing.
 - [ ] **Clean mouse selection** — drag-select text in the terminal while
   Elpis is still responding, copy it, and check the pasted text has no stray
   borders, prompts, or decoration mixed in.
@@ -62,6 +54,23 @@ v0.2.1.
 - [ ] **Elpis's name stops pulsing when idle** — after a response finishes,
   check that the animated "Elpising…" name goes still instead of continuing
   to animate while nothing is happening.
+
+## Known missing — do not spend a test pass on these
+
+Diagnosed, not built. Listed so a failing result is not mistaken for a
+regression.
+
+- **Escape with messages queued still interrupts the turn** rather than
+  delivering them. Codex interrupts here too, so this is a deliberate
+  divergence from Codex and only your spec governs it.
+- **`/context` does not close on Escape.** `/usage` does, because its chart is
+  an overlay; the context report is written into the transcript instead.
+  Giving it the same behavior means rebuilding how the report renders, which
+  is not a change to make in the hours before a test pass.
+- **Exit is not immediate.** The teardown-before-terminal-release order is
+  Codex's own, unchanged, so copying Codex yields no fix here; what is slower
+  is how much more Elpis has to tear down. That needs a measurement nobody has
+  taken yet.
 
 ## Already accepted, not to re-test
 
