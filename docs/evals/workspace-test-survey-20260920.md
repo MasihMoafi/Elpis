@@ -41,6 +41,21 @@ Still open:
   handed, so the test reads his personal `~/.elpis/config.toml` and its extra
   skill roots. It passes anywhere `HOME` is clean, including CI.
 
+## Where the repository markers come from
+
+Measured directly: running the engine integration suite with a clean `/tmp` and
+`TMPDIR=/var/tmp/probe` afterwards leaves `.git`, `.codex` and `.elpis` in
+**both** `/tmp` and `/var/tmp/probe`. `/var/tmp` itself stays clean. The sandbox
+materialises protected-metadata placeholders in every writable root it is
+handed, and `/tmp` is always one of them — behavior inherited from Codex, which
+does the same.
+
+The consequence is only for verification: anything that later walks up from a
+scratch directory under `/tmp` reads those as a real repository. Five engine
+tests fail that way, reproducibly, and only after an integration run.
+`scripts/verify-elpis` now keeps its scratch space under `/var/tmp` and gives
+each command its own directory, which closes both halves.
+
 ## What this changes
 
 The honest coverage number for this repository is the workspace number, not the

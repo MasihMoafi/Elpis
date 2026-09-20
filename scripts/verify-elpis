@@ -457,6 +457,11 @@ mkdir -p -- "$target_dir" 2>/dev/null || die "Cargo target is not writable: $tar
 [[ -w $target_dir ]] || die "Cargo target is not writable: $target_dir"
 [[ -d $REPO_ROOT/codex-rs ]] || die "codex-rs directory not found"
 
+verify_tmp_root=${ELPIS_VERIFY_TMP_ROOT:-/var/tmp/elpis-verify}
+[[ $verify_tmp_root == /* ]] || die "ELPIS_VERIFY_TMP_ROOT must be absolute"
+mkdir -p -- "$verify_tmp_root" 2>/dev/null || die "scratch root is not writable: $verify_tmp_root"
+[[ -w $verify_tmp_root ]] || die "scratch root is not writable: $verify_tmp_root"
+
 join_by_comma() {
     local IFS=,
     printf '%s' "$*"
@@ -478,13 +483,15 @@ for command_name in "${selected_commands[@]}"; do
     kind=${command_kind[$command_name]}
     mode=${command_mode[$command_name]}
     printf 'Elpis verification: running=%s\n' "$command_name"
-    # Every command gets an empty temporary directory of its own. The sandbox
-    # materialises `.git`, `.codex` and `.elpis` placeholders in whatever temp
-    # root it is handed; a later suite then walks up from its own scratch
-    # directory, reads those placeholders as a real repository, and fails on a
-    # tree nobody wrote. Sharing one root also leaks a hundred-odd directories
-    # per run.
-    command_tmp=$(mktemp -d "${TMPDIR:-/tmp}/elpis-verify-tmp.XXXXXX") ||
+    # Every command gets an empty temporary directory of its own, and none of
+    # them live under `/tmp`. The sandbox materialises `.git`, `.codex` and
+    # `.elpis` placeholders in every writable root it is handed, and `/tmp` is
+    # always one of them, so a suite that walks up from its own scratch
+    # directory reads those placeholders as a real repository and fails against
+    # a tree nobody wrote. A private root keeps the walk clean; the per-command
+    # directory keeps one suite's leftovers away from the next, and stops the
+    # hundred-odd directories a shared root leaked every run.
+    command_tmp=$(mktemp -d "$verify_tmp_root/command.XXXXXX") ||
         die "could not create command temporary directory"
     if [[ $kind == shell ]]; then
         (cd "$REPO_ROOT" && TMPDIR="$command_tmp" "${argv[@]}") || die "command failed: $command_name"
