@@ -32,6 +32,8 @@
 //!   [`PasteBurst::flush_before_modified_input`] to avoid leaving buffered text "stuck", and then
 //!   [`PasteBurst::clear_window_after_non_char`] so subsequent typing does not get grouped into a
 //!   previous burst.
+//! - Callers that give a lone typed character special meaning before a non-char input can inspect
+//!   [`PasteBurst::pending_typed_char`] without mistaking an active paste buffer for typed input.
 //! - Direct-insert callers can skip buffering, use
 //!   [`PasteBurst::direct_insert_newline_should_insert`] in their Enter handler, and call
 //!   [`PasteBurst::extend_window`] when Enter or [`PasteBurst::on_plain_char_no_hold`] reports a
@@ -421,6 +423,17 @@ impl PasteBurst {
             out.push(ch);
         }
         Some(out)
+    }
+
+    /// Returns the lone ASCII character held for flicker suppression, if no paste buffer is
+    /// active. This lets callers distinguish normal typed input from paste content before deciding
+    /// whether a following non-character key gives the held character special meaning.
+    pub fn pending_typed_char(&self) -> Option<char> {
+        if self.is_active_internal() {
+            None
+        } else {
+            self.pending_first_char.map(|(ch, _)| ch)
+        }
     }
 
     /// Clear only the timing window and any pending first-char.

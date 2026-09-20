@@ -63,6 +63,9 @@
 //! `Enter` submits immediately. `Tab` requests queuing while a task is running; if no task is
 //! running, `Tab` submits just like Enter so input is never dropped.
 //! `Tab` does not submit when entering a `!` shell command.
+//! A plain `Enter` immediately after a backslash replaces that marker with a newline before
+//! submission or queuing is considered. The replacement uses the same [`TextArea`] edit primitive
+//! as the editor newline path. Active paste bursts keep backslashes literal.
 //!
 //! On submit/queue paths, the composer:
 //!
@@ -3301,6 +3304,9 @@ impl ChatComposer {
         } else {
             self.footer.mode = reset_mode_after_activity(self.footer.mode);
         }
+        if self.try_insert_backslash_newline(key_event) {
+            return (InputResult::None, true);
+        }
         if self.queue_keys.is_pressed(key_event) && self.should_queue_input() {
             return self.handle_submission(true);
         }
@@ -3359,6 +3365,47 @@ impl ChatComposer {
         }
 
         self.handle_input_basic(key_event)
+    }
+
+    /// Turns a trailing backslash followed by plain Enter into a newline without submitting.
+    ///
+    /// A lone ASCII character may still be held by [`PasteBurst`] when Enter arrives. Flush only
+    /// that normal typed-character state; an active paste buffer must retain its literal
+    /// backslashes and its existing multiline handling.
+    fn try_insert_backslash_newline(&mut self, key_event: KeyEvent) -> bool {
+        if !matches!(
+            key_event,
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }
+        ) {
+            return false;
+        }
+
+        match self.draft.paste_burst.pending_typed_char() {
+            Some('\\') => {
+                if let Some(typed) = self.draft.paste_burst.flush_before_modified_input() {
+                    self.insert_str(&typed);
+                }
+            }
+            Some(_) => return false,
+            None if self.draft.paste_burst.is_active() => return false,
+            None => {}
+        }
+
+        let cursor = self.draft.textarea.cursor();
+        let text = self.draft.textarea.text();
+        if cursor == 0 || !text[..cursor].ends_with('\\') {
+            return false;
+        }
+
+        self.draft
+            .textarea
+            .replace_range(cursor - '\\'.len_utf8()..cursor, "\n");
+        true
     }
 
     /// Queue during an active turn or before the initial session is ready.
@@ -9464,6 +9511,77 @@ mod tests {
                 .0,
             InputResult::Submitted { .. }
         ));
+    }
+
+    #[test]
+    fn backslash_enter_replaces_marker_with_newline_instead_of_queueing() {
+        let (mut composer, _rx) = new_test_composer();
+        composer.set_task_running(/*running*/ true);
+        composer
+            .draft
+            .textarea
+            .set_text_clearing_elements("first line");
+        composer
+            .draft
+            .textarea
+            .set_cursor(composer.draft.textarea.text().len());
+
+        let (backslash_result, _) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Char('\\'), KeyModifiers::NONE));
+        assert_eq!(InputResult::None, backslash_result);
+
+        let (enter_result, needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(InputResult::None, enter_result);
+        assert!(needs_redraw);
+        assert_eq!("first line\n", composer.draft.textarea.text());
+    }
+
+    #[test]
+    fn backslash_enter_requires_marker_immediately_before_cursor() {
+        let (mut composer, _rx) = new_test_composer();
+        composer.set_task_running(/*running*/ true);
+        composer
+            .draft
+            .textarea
+            .set_text_clearing_elements("keep \\ literal");
+
+        let (result, _) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(
+            InputResult::Queued {
+                text: "keep \\ literal".to_string(),
+                text_elements: Vec::new(),
+                action: QueuedInputAction::Plain,
+                pending_pastes: Vec::new(),
+            },
+            result
+        );
+    }
+
+    #[test]
+    fn backslash_enter_keeps_backslash_literal_in_active_paste_burst() {
+        let (mut composer, _rx) = new_test_composer();
+        composer
+            .draft
+            .paste_burst
+            .begin_with_retro_grabbed(String::new(), Instant::now());
+
+        for ch in ['a', '\\'] {
+            let (result, _) =
+                composer.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+            assert_eq!(InputResult::None, result);
+        }
+
+        let (enter_result, _) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(InputResult::None, enter_result);
+        assert!(composer.draft.textarea.text().is_empty());
+
+        assert!(flush_after_paste_burst(&mut composer));
+        assert_eq!("a\\\n", composer.draft.textarea.text());
     }
 
     #[test]
