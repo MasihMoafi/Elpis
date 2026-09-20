@@ -9,4 +9,4 @@ export type TokenUsageBreakdown = { totalTokens: number, inputTokens: number, ca
  * `None` means the provider did not report the field, which is not the same as a reported
  * zero.
  */
-cacheWriteTokens?: number | null, outputTokens: number, reasoningOutputTokens: number, };
+cacheWriteTokens?: number, outputTokens: number, reasoningOutputTokens: number, };

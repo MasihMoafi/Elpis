@@ -1574,7 +1574,7 @@ pub struct ThreadSmartPruneAdmissionSnapshot {
     #[ts(type = "number")]
     pub approx_saved_tokens: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "number | null", optional)]
+    #[ts(type = "number", optional)]
     pub request_sequence: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -1663,7 +1663,7 @@ pub struct TokenUsageBreakdown {
     /// `None` means the provider did not report the field, which is not the same as a reported
     /// zero.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "number | null", optional)]
+    #[ts(type = "number", optional)]
     pub cache_write_tokens: Option<i64>,
     #[ts(type = "number")]
     pub output_tokens: i64,
