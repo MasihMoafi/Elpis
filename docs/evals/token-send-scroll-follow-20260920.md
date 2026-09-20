@@ -50,3 +50,12 @@ Raw local evidence:
 The comparison supports no production scroll patch: Elpis already matches Codex, and forcing the
 viewport down after manual scrolling would regress intentional reading and the accepted native
 two-finger scroll path.
+
+## Optimized candidate
+
+The guarded two-job optimized build completed at a 79 C peak with one cooling pause. The installed
+`elpis 0.2.0` and build artifact are both 225,699,840 bytes and share SHA-256
+`4b2e49c0fd4f069d6b0f07c32e04777efb5900798ab8bd10b90748de62b9ce8f`. The replaced executable
+and bundled sandbox are recoverable under
+`~/.local/share/elpis/release-recovery/token-count-20260920/`. Running clients and local-server
+processes were not interrupted and must be restarted before visual acceptance.
