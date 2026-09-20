@@ -541,6 +541,12 @@ fn main() -> anyhow::Result<()> {
             ..LoaderOverrides::default()
         };
         let exit_info = run_main(inner, arg0_paths, loader_overrides, remote_endpoint).await?;
+        // Accepting the startup update prompt used to leave the process with
+        // nowhere to send that answer, so the update silently did not happen.
+        if exit_info.update_action.is_some() {
+            println!("{}", elpis_update::run().await?);
+            return Ok(());
+        }
         let is_fatal = match &exit_info.exit_reason {
             ExitReason::Fatal(message) => {
                 eprintln!("ERROR: {message}");

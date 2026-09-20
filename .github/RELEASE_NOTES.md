@@ -19,8 +19,9 @@ Already running Elpis? Use `elpis --update`.
 - **`/usage` draws the token activity chart again**, with daily, weekly, and cumulative views.
 - **`/yolo` sticks** — Full Access survives into the next session.
 - **Long conversations stay responsive** — typing and queueing keep up in a long chat, and the context count holds its last provider-reported figure instead of jumping to an estimate the moment you press Enter.
-- **Terminal selection survives an active response** — drag-select and copy while Elpis is still answering.
+- **The composer holds still while a turn runs** — it no longer repaints itself, which is how Codex behaves and what native drag-selection needs. The identity and status names still animate, as they do in Codex.
 - **A backslash before Enter starts a new line** instead of sending.
+- **Updating updates Elpis** — the update notice and the startup update prompt both run `elpis --update`, which replaces the installed binary with the latest Elpis release. The prompt previously carried package-manager commands inherited from upstream, which would have installed a different product.
 
 **Known limits**
 

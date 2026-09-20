@@ -3811,7 +3811,6 @@ dependencies = [
  "codex-features",
  "codex-file-search",
  "codex-git-utils",
- "codex-install-context",
  "codex-login",
  "codex-mcp",
  "codex-message-history",
