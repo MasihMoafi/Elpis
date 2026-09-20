@@ -575,6 +575,17 @@ impl ChatWidget {
             smart_prune_column_start..smart_prune_column_start + smart_prune_button.chars().count();
         let [violet, teal, emerald, green] =
             smart_prune_on_colors(default_bg(), stdout_color_level());
+        let toggle_label_spans = |label, enabled| {
+            if enabled {
+                let mut spans = crate::elpis_motion::animated_text(label, self.config.animations);
+                for span in &mut spans {
+                    span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
+                }
+                spans
+            } else {
+                vec![Span::styled(label, Style::default().fg(teal).bold())]
+            }
+        };
         let switch_spans = if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
             vec![Span::styled(
                 smart_prune_button,
@@ -591,14 +602,11 @@ impl ChatWidget {
         } else {
             vec![Span::styled(smart_prune_button, muted)]
         };
-        let mut smart_prune_spans = if smart_prune_cursor.is_empty() {
-            vec![Span::styled(
-                smart_prune_label,
-                Style::default().fg(teal).bold(),
-            )]
-        } else {
-            crate::elpis_motion::animated_text(smart_prune_label, self.config.animations)
-        };
+        let mut smart_prune_spans = toggle_label_spans(
+            smart_prune_label,
+            smart_prune_enabled
+                && (self.smart_prune_synced || pending_smart_prune_enabled.is_some()),
+        );
         smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
         if !smart_prune_cursor.is_empty() {
             smart_prune_spans.push(Span::styled(smart_prune_cursor, brand.bold()));
@@ -792,14 +800,7 @@ impl ChatWidget {
         } else {
             vec![Span::styled(subagents_button, muted)]
         };
-        let mut subagents_spans = if subagents_cursor.is_empty() {
-            vec![Span::styled(
-                subagents_label,
-                Style::default().fg(teal).bold(),
-            )]
-        } else {
-            crate::elpis_motion::animated_text(subagents_label, self.config.animations)
-        };
+        let mut subagents_spans = toggle_label_spans(subagents_label, subagents_enabled);
         subagents_spans.push(Span::raw(" ".repeat(subagents_pad)));
         if !subagents_cursor.is_empty() {
             subagents_spans.push(Span::styled(subagents_cursor, brand.bold()));

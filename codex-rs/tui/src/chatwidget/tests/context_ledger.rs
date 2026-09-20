@@ -368,6 +368,75 @@ fn render_ledger_buffer(chat: &ChatWidget, height: u16) -> ratatui::buffer::Buff
     buf
 }
 
+fn ledger_label_styles(
+    buffer: &ratatui::buffer::Buffer,
+    label: &str,
+) -> Vec<(char, Color, Modifier)> {
+    for y in 0..buffer.area.height {
+        let row = (0..buffer.area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>();
+        if let Some(byte_start) = row.find(label) {
+            let start = row[..byte_start].chars().count();
+            return label
+                .chars()
+                .enumerate()
+                .map(|(offset, character)| {
+                    let cell = &buffer[(start as u16 + offset as u16, y)];
+                    (character, cell.fg, cell.modifier)
+                })
+                .collect();
+        }
+    }
+    panic!("missing ledger label {label}");
+}
+
+#[tokio::test]
+async fn enabled_ledger_switches_own_the_motion_effect() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.animations = true;
+    chat.smart_prune_synced = true;
+    chat.smart_prune.enabled = false;
+    assert!(!chat.set_feature_enabled(Feature::Collab, false));
+    assert!(!chat.context_ledger_has_focus());
+
+    let colors = |chat: &ChatWidget| {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (222, 222, 219),
+                bg: (17, 18, 20),
+            },
+            || {
+                let buffer = render_ledger_buffer(chat, 45);
+                (
+                    ledger_label_styles(&buffer, "SMART PRUNE"),
+                    ledger_label_styles(&buffer, "SUBAGENTS"),
+                )
+            },
+        )
+    };
+
+    let off = colors(&chat);
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+    assert_eq!(off, colors(&chat), "disabled switches must stay still");
+
+    chat.smart_prune.enabled = true;
+    assert!(chat.set_feature_enabled(Feature::Collab, true));
+    let on = colors(&chat);
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+    let advanced = colors(&chat);
+    assert_ne!(on.0, advanced.0, "enabled Smart Prune must animate");
+    assert_ne!(on.1, advanced.1, "enabled Subagents must animate");
+    assert!(
+        advanced
+            .0
+            .iter()
+            .chain(&advanced.1)
+            .filter(|(character, _, _)| !character.is_whitespace())
+            .all(|(_, _, modifier)| modifier.contains(Modifier::BOLD))
+    );
+}
+
 #[tokio::test]
 async fn light_ledger_failures_and_expanded_sources_remain_readable() -> anyhow::Result<()> {
     let root = tempdir()?;
