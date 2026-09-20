@@ -365,9 +365,9 @@ impl ChatWidget {
                 .goal_status_active_turn_started_at
                 .map(|started| started.elapsed())
                 .unwrap_or_else(crate::elpis_motion::elapsed);
-            let (sample_at, next_frame_in) = crate::elpis_motion::paced_motion(elapsed);
-            self.frame_requester.schedule_frame_in(next_frame_in);
-            crate::elpis_motion::animated_text_at(" Elpis ", sample_at)
+            self.frame_requester
+                .schedule_frame_in(crate::elpis_motion::FRAME_TICK);
+            crate::elpis_motion::animated_text_at(" Elpis ", elapsed)
         } else {
             crate::elpis_motion::animated_text(" Elpis ", /*animated*/ false)
         };
