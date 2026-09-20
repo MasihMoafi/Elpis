@@ -2470,6 +2470,108 @@ async fn recompute_token_usage_updates_model_context_window() {
 }
 
 #[tokio::test]
+async fn current_context_snapshot_preserves_provider_usage_until_next_provider_report() {
+    let (session, turn_context, rx_event) = make_session_and_context_with_rx().await;
+    let provider_usage = TokenUsageInfo {
+        total_token_usage: TokenUsage {
+            total_tokens: 42_000,
+            ..TokenUsage::default()
+        },
+        last_token_usage: TokenUsage {
+            total_tokens: 10_000,
+            ..TokenUsage::default()
+        },
+        model_context_window: Some(20_000),
+    };
+    session
+        .state
+        .lock()
+        .await
+        .set_token_info(Some(provider_usage.clone()));
+    session
+        .record_conversation_items(
+            &turn_context,
+            &[
+                assistant_message("previous response"),
+                user_message("new request that is not included in the provider usage yet"),
+            ],
+        )
+        .await;
+    assert!(
+        session.get_total_token_usage().await > provider_usage.last_token_usage.total_tokens,
+        "the regression needs a local estimate that differs from the provider count"
+    );
+
+    let attribution = ContextAttributionSnapshot {
+        user_messages: 123,
+        estimated_total: 10_123,
+        ..Default::default()
+    };
+    session
+        .send_current_context_token_count_event(&turn_context, attribution.clone())
+        .await;
+
+    let event = loop {
+        let event = rx_event.recv().await.expect("current-context event");
+        if let EventMsg::TokenCount(event) = event.msg {
+            break event;
+        }
+    };
+    assert_eq!(event.info, Some(provider_usage));
+    assert_eq!(event.context_attribution, Some(attribution.clone()));
+
+    let next_provider_usage = TokenUsageInfo {
+        total_token_usage: TokenUsage {
+            total_tokens: 42_250,
+            ..TokenUsage::default()
+        },
+        last_token_usage: TokenUsage {
+            total_tokens: 10_250,
+            ..TokenUsage::default()
+        },
+        model_context_window: Some(20_000),
+    };
+    session
+        .state
+        .lock()
+        .await
+        .set_token_info(Some(next_provider_usage.clone()));
+    session
+        .send_token_count_event_with_attribution(&turn_context, Some(attribution.clone()))
+        .await;
+
+    let event = loop {
+        let event = rx_event.recv().await.expect("provider token-count event");
+        if let EventMsg::TokenCount(event) = event.msg {
+            break event;
+        }
+    };
+    assert_eq!(event.info, Some(next_provider_usage));
+    assert_eq!(event.context_attribution, Some(attribution));
+}
+
+#[tokio::test]
+async fn current_context_snapshot_does_not_fabricate_usage_before_first_provider_report() {
+    let (session, turn_context, rx_event) = make_session_and_context_with_rx().await;
+    let attribution = ContextAttributionSnapshot {
+        user_messages: 123,
+        estimated_total: 123,
+        ..Default::default()
+    };
+
+    session
+        .send_current_context_token_count_event(&turn_context, attribution.clone())
+        .await;
+
+    let event = rx_event.recv().await.expect("current-context event");
+    let EventMsg::TokenCount(event) = event.msg else {
+        panic!("expected token-count event");
+    };
+    assert_eq!(event.info, None);
+    assert_eq!(event.context_attribution, Some(attribution));
+}
+
+#[tokio::test]
 async fn record_token_usage_info_notifies_extension_contributors() {
     struct SessionTokenUsageMarker;
     struct ThreadTokenUsageMarker;
