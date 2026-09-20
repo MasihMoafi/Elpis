@@ -2,7 +2,7 @@
 
 ## Proposed version: v0.3.0
 
-244 commits since v0.2.0 add several new commands (`/memory-model`,
+Over 300 commits since v0.2.0 add several new commands (`/memory-model`,
 `/pruner-model`, `/yolo`), a visible subagent list, and a reworked dashboard —
 not just bug fixes — so this is a feature release, not a patch: **v0.3.0**, not
 v0.2.1.
@@ -69,3 +69,19 @@ v0.2.1.
   2026-09-16, tested on the installed binary. Mouse scrolling now stays with
   the terminal instead of hijacking the screen into the full-screen
   transcript.
+
+## Release steps, in order
+
+1. `codex-rs/tui/Cargo.toml` carries `0.3.0` and `.github/RELEASE_NOTES.md` is
+   written for it. Both are done on `feat/live-provider-model-lists`.
+2. Move `main` to the release commit, or tag this branch directly. Everything
+   from `v0.2.0` onward exists only here — `main` is 84 commits behind, and
+   tagging it would publish the old product under a new number.
+3. Tag `v0.3.0`. The tag build runs the full surface and the exhaustive
+   continuity regression, then publishes the binary, the sandbox helper, the
+   `.deb`, and their checksums. A failed tag publishes nothing and says
+   nothing, so confirm with `gh release list`.
+4. Update `readme.md` once the tag exists: the availability line, the versioned
+   guide and installer URLs, the paper link, the "current release" line, and the
+   shipping-checks run identifier, which is only knowable after the tag build
+   passes.
