@@ -139,12 +139,17 @@ async fn thread_settings_update(
         collaboration_mode,
         personality,
     } = thread_settings;
+    // Model and reasoning effort live in CollaborationMode settings today, so
+    // partial thread-settings updates refresh those fields on the active mode.
+    // A mode sent alongside an explicit model carries whatever model the client
+    // held when it built the request, which is the one being replaced; the
+    // explicit field is the answer, so it is applied either way.
     let collaboration_mode = match collaboration_mode {
-        Some(collaboration_mode) => collaboration_mode,
+        Some(collaboration_mode) => {
+            collaboration_mode.with_updates(model, effort, /*developer_instructions*/ None)
+        }
         None => {
             let state = sess.state.lock().await;
-            // Model and reasoning effort live in CollaborationMode settings today, so
-            // partial thread-settings updates refresh those fields on the active mode.
             state
                 .session_configuration
                 .collaboration_mode
