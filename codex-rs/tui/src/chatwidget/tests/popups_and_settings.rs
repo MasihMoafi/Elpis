@@ -3706,6 +3706,61 @@ async fn model_reasoning_selection_for_openai_emits_one_atomic_selection() {
 }
 
 #[tokio::test]
+async fn catalog_model_without_efforts_applies_once_and_closes_the_list() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.browse_model_provider(
+        crate::chatwidget::model_popups::ModelPickerRole::Chat,
+        codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+    );
+    // A live provider catalog publishes no reasoning efforts, so a pick has
+    // nothing further to ask and finishes where it stands. Nothing downstream
+    // will close the list on its behalf.
+    let mut listed = get_available_model(&chat, "gpt-5.4");
+    listed.id = "vendor/listed-model".to_string();
+    listed.model = "vendor/listed-model".to_string();
+    listed.display_name = "vendor/listed-model".to_string();
+    listed.default_reasoning_effort = ReasoningEffortConfig::Medium;
+    listed.supported_reasoning_efforts = Vec::new();
+    chat.open_all_models_popup(vec![listed]);
+
+    for _ in 0..chat.model_popup_model_ids.len() {
+        let selected = chat
+            .bottom_pane
+            .selected_index_for_active_view(
+                crate::chatwidget::model_popups::ALL_MODELS_SELECTION_VIEW_ID,
+            )
+            .and_then(|index| chat.model_popup_model_ids.get(index));
+        if selected.is_some_and(|model| model == "vendor/listed-model") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    assert!(
+        chat.bottom_pane
+            .selected_index_for_active_view(
+                crate::chatwidget::model_popups::ALL_MODELS_SELECTION_VIEW_ID,
+            )
+            .is_none(),
+        "the catalog stayed open, so the same model can be picked again"
+    );
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>() {
+        if let AppEvent::OpenReasoningPopup { model, provider_id } = event {
+            chat.open_reasoning_popup_for_provider(model, provider_id);
+        }
+    }
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    let selections = events
+        .iter()
+        .filter(|event| matches!(event, AppEvent::ApplyProviderModelSelection { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(selections.len(), 1, "events: {events:?}");
+}
+
+#[tokio::test]
 async fn ollama_model_selection_emits_one_atomic_selection() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());

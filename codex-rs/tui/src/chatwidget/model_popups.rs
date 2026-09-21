@@ -1249,7 +1249,17 @@ impl ChatWidget {
         for preset in presets.into_iter() {
             let description = Some(self.model_route_description(&preset.description));
             let is_current = preset.model.as_str() == self.current_model();
-            let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
+            // A pick opens a second step only when there is a real choice of
+            // effort left to make. A model that offers none - every entry in a
+            // live provider catalog - is applied on the spot, so the pick has to
+            // close this list itself: no child popup will ever open to do it.
+            let sole_effort = match preset.supported_reasoning_efforts.as_slice() {
+                [] => Some(preset.default_reasoning_effort.clone()),
+                [only] => Some(only.effort.clone()),
+                _ => None,
+            };
+            let single_supported_effort = sole_effort
+                .is_some_and(|effort| !Self::is_advanced_reasoning_effort(&effort));
             let preset_for_action = preset.clone();
             let provider_for_action = self.picker_target_provider();
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
