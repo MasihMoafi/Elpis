@@ -86,6 +86,7 @@ impl App {
             }
             AppServerEvent::Disconnected { message } => {
                 tracing::warn!("app-server event stream disconnected: {message}");
+                let message = disconnect_message(&message, self.active_thread_id);
                 self.chat_widget.add_error_message(message.clone());
                 self.app_event_tx.send(AppEvent::FatalExitRequest(message));
             }
@@ -394,5 +395,43 @@ fn goal_status_label(status: &codex_app_server_protocol::ThreadGoalStatus) -> &'
         ThreadGoalStatus::UsageLimited => "usage-limited",
         ThreadGoalStatus::BudgetLimited => "budget-limited",
         ThreadGoalStatus::Complete => "complete",
+    }
+}
+
+/// What the owner is told when the connection to the app server goes away.
+///
+/// The thread itself survives on disk, so name the one command that opens it
+/// again rather than leaving a transport error to read as lost work.
+fn disconnect_message(transport_error: &str, active_thread: Option<ThreadId>) -> String {
+    match active_thread {
+        Some(thread_id) => format!(
+            "{transport_error}\n\nThis session is saved. Reopen it with `elpis resume {thread_id}`."
+        ),
+        None => transport_error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dropped_connection_names_the_command_that_brings_the_session_back() {
+        let thread_id = ThreadId::new();
+        let message = disconnect_message(
+            "remote app server at `unix:///tmp/x.sock` transport failed",
+            Some(thread_id),
+        );
+        assert!(
+            message.contains(&format!("elpis resume {thread_id}")),
+            "a drop must not read as lost work: {message}"
+        );
+    }
+
+    #[test]
+    fn a_drop_before_any_thread_exists_says_only_what_happened() {
+        let message = disconnect_message("transport failed", None);
+        assert!(!message.contains("elpis resume"), "{message}");
+        assert!(message.contains("transport failed"), "{message}");
     }
 }
