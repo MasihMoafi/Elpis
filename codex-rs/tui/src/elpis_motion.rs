@@ -8,7 +8,10 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub(crate) const FRAME_TICK: Duration = Duration::from_millis(40);
-const MOTION_BURST: Duration = Duration::from_millis(800);
+/// One complete pass of the highlight, from just before the first glyph to
+/// just past the last. The paced cycle runs whole sweeps so the motion always
+/// comes to rest with the highlight off the text.
+const SWEEP: Duration = Duration::from_millis(800);
 const MOTION_WAIT: Duration = Duration::from_secs(4);
 
 pub(crate) fn elapsed() -> Duration {
@@ -51,20 +54,27 @@ pub(crate) fn animated_text_at(text: &str, time: Duration) -> Vec<Span<'static>>
     gradient_text_at(text, time)
 }
 
-/// Run one quick shimmer, then leave the terminal untouched long enough for
+/// Run one complete shimmer, then leave the terminal untouched long enough for
 /// native click-and-drag selection to remain stable.
+///
+/// The wait starts only once a whole sweep has finished, so the highlight has
+/// already left the text when the motion settles. The sample only ever moves
+/// forward, so the next sweep picks the colour up where the last one left it
+/// instead of snapping back to the start.
 pub(crate) fn paced_motion(elapsed: Duration) -> (Duration, Duration) {
-    let cycle = MOTION_BURST + MOTION_WAIT;
+    let cycle = SWEEP + MOTION_WAIT;
+    let swept = SWEEP
+        * u32::try_from(elapsed.as_nanos() / cycle.as_nanos()).unwrap_or(u32::MAX);
     let position_nanos = u64::try_from(elapsed.as_nanos() % cycle.as_nanos())
         .expect("motion cycle remainder fits in u64 nanoseconds");
     let position = Duration::from_nanos(position_nanos);
-    if position < MOTION_BURST {
+    if position < SWEEP {
         (
-            position,
-            FRAME_TICK.min(MOTION_BURST.saturating_sub(position)),
+            swept + position,
+            FRAME_TICK.min(SWEEP.saturating_sub(position)),
         )
     } else {
-        (MOTION_BURST, cycle.saturating_sub(position))
+        (swept + SWEEP, cycle.saturating_sub(position))
     }
 }
 
@@ -83,7 +93,7 @@ fn gradient_text_at(text: &str, time: Duration) -> Vec<Span<'static>> {
     let width = text.width().max(1) as f64;
     let light = is_light(background);
     let half_width = (width * 0.1).max(3.0);
-    let sweep = 2.5 / SPEED;
+    let sweep = SWEEP.as_secs_f64();
     let position = (time.as_secs_f64() % sweep) / sweep * (width + 2.0 * half_width) - half_width;
     let mut column = 0.0;
     text.graphemes(true)
@@ -514,19 +524,57 @@ mod tests {
     }
 
     #[test]
-    fn paced_motion_uses_a_fast_burst_and_a_four_second_wait() {
+    fn paced_motion_rests_on_a_finished_sweep_and_never_rewinds() {
         assert_eq!(paced_motion(Duration::ZERO), (Duration::ZERO, FRAME_TICK));
-        assert_eq!(
-            paced_motion(Duration::from_millis(800)),
-            (Duration::from_millis(800), Duration::from_secs(4))
-        );
+        assert_eq!(paced_motion(SWEEP), (SWEEP, MOTION_WAIT));
         assert_eq!(
             paced_motion(Duration::from_secs(1)),
-            (Duration::from_millis(800), Duration::from_millis(3_800))
+            (SWEEP, Duration::from_millis(3_800))
         );
+        // A new sweep resumes from the colour the last one settled on.
+        assert_eq!(paced_motion(SWEEP + MOTION_WAIT), (SWEEP, FRAME_TICK));
         assert_eq!(
-            paced_motion(Duration::from_millis(4_800)),
-            (Duration::ZERO, FRAME_TICK)
+            paced_motion(SWEEP + MOTION_WAIT + SWEEP),
+            (SWEEP * 2, MOTION_WAIT)
+        );
+        let mut previous = Duration::ZERO;
+        for millis in (0..20_000).step_by(37) {
+            let (sample, _) = paced_motion(Duration::from_millis(millis));
+            assert!(sample >= previous, "the motion rewound at {millis}ms");
+            previous = sample;
+        }
+    }
+
+    #[test]
+    fn the_paced_rest_leaves_no_highlight_sitting_on_the_text() {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (222, 222, 219),
+                bg: (17, 18, 20),
+            },
+            || {
+                let label = "Elpising…";
+                let (rest, wait) = paced_motion(SWEEP + Duration::from_secs(1));
+                assert!(wait > FRAME_TICK, "the sample must be taken during a wait");
+                let width = label.width().max(1) as f64;
+                let mut column = 0.0;
+                for (span, glyph) in gradient_text_at(label, rest)
+                    .iter()
+                    .zip(label.graphemes(true))
+                {
+                    let center = column + glyph.width() as f64 / 2.0;
+                    column += glyph.width() as f64;
+                    assert_eq!(
+                        span.style.fg,
+                        Some(best_color(pigment(
+                            center / width * 0.75,
+                            rest.as_secs_f64(),
+                            false
+                        ))),
+                        "{glyph} still wears the highlight where the motion stopped"
+                    );
+                }
+            },
         );
     }
 
