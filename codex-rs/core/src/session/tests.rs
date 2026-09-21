@@ -5166,6 +5166,70 @@ async fn session_configuration_apply_preserves_absolute_cwd_write_root_on_cwd_up
 }
 
 #[tokio::test]
+async fn thread_settings_apply_an_explicit_model_beside_a_collaboration_mode() {
+    let (session, _turn_context) = make_session_and_context().await;
+    let session = Arc::new(session);
+    // A client builds the mode from the model it is about to replace and sends
+    // the replacement in `model`, so the explicit field has to win.
+    let stale_mode = {
+        let state = session.state.lock().await;
+        state.session_configuration.collaboration_mode.clone()
+    };
+
+    super::handlers::update_thread_settings(
+        &session,
+        "test-sub".to_string(),
+        ThreadSettingsOverrides {
+            model: Some("vendor/replacement-model".to_string()),
+            collaboration_mode: Some(stale_mode.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let state = session.state.lock().await;
+    assert_eq!(
+        state.session_configuration.collaboration_mode.model(),
+        "vendor/replacement-model",
+        "the mode the client held overwrote the model it asked for"
+    );
+}
+
+#[tokio::test]
+async fn switching_provider_discards_the_startup_prewarm() {
+    let (session, _turn_context) = make_session_and_context().await;
+    let session = Arc::new(session);
+    let handle = tokio::spawn(async { Ok(test_model_client_session()) });
+    session
+        .set_session_startup_prewarm(
+            crate::session_startup_prewarm::SessionStartupPrewarmHandle::new(
+                handle,
+                std::time::Instant::now(),
+                crate::client::WEBSOCKET_CONNECT_TIMEOUT,
+            ),
+        )
+        .await;
+
+    // The prewarm opened a session on the provider the thread started on, and
+    // the first turn spends it before anything else. Keeping it would send the
+    // new model to the old endpoint exactly once.
+    session
+        .update_settings(SessionSettingsUpdate {
+            model_provider: Some(
+                codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
+            ),
+            ..Default::default()
+        })
+        .await
+        .expect("provider switch should succeed");
+
+    assert!(
+        session.take_session_startup_prewarm().await.is_none(),
+        "a turn after the switch would still reach the old provider"
+    );
+}
+
+#[tokio::test]
 async fn session_update_settings_does_not_rewrite_sticky_environment_cwds() {
     let (session, turn_context) = make_session_and_context().await;
     #[allow(deprecated)]

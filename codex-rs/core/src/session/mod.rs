@@ -1475,6 +1475,11 @@ impl Session {
                         .load()
                         .with_provider(updated.provider.clone()),
                 ));
+                // The startup prewarm holds a session opened against the provider the
+                // thread began on, and the first turn spends it in preference to the
+                // client above. Switching provider before sending anything would send
+                // the new model to the old endpoint exactly once.
+                drop(state.take_session_startup_prewarm());
             }
             state.session_configuration = updated;
             (previous_config, new_config, permission_profile_changed)
