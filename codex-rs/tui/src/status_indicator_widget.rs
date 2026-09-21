@@ -241,13 +241,9 @@ impl Renderable for StatusIndicatorWidget {
         let elapsed_duration = self.elapsed_duration_at(now);
         let pretty_elapsed = fmt_elapsed_compact(elapsed_duration.as_secs());
         let mut spans = if self.animations_enabled && !self.is_paused {
-            // Codex repaints this header every frame for its own shimmer, so a
-            // running turn already costs a steady stream of terminal updates
-            // there. Pacing it does not buy back native selection; it only
-            // makes the name look stalled.
-            self.frame_requester
-                .schedule_frame_in(crate::elpis_motion::FRAME_TICK);
-            crate::elpis_motion::animated_text_at(&self.header, elapsed_duration)
+            let (sample_at, next_frame_in) = crate::elpis_motion::paced_motion(elapsed_duration);
+            self.frame_requester.schedule_frame_in(next_frame_in);
+            crate::elpis_motion::animated_text_at(&self.header, sample_at)
         } else {
             crate::elpis_motion::animated_text(&self.header, /*animated*/ false)
         };
@@ -438,10 +434,10 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn status_motion_redraws_every_frame_while_it_animates() {
+    async fn status_motion_starts_fast_then_waits_without_redrawing() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(4);
-        let widget = StatusIndicatorWidget::new(
+        let mut widget = StatusIndicatorWidget::new(
             AppEventSender::new(tx_raw),
             FrameRequester::new(draw_tx),
             /*animations_enabled*/ true,
@@ -449,18 +445,30 @@ mod tests {
         let area = Rect::new(0, 0, 80, 1);
         let mut buffer = Buffer::empty(area);
 
-        // Codex keeps its own shimmer on a steady frame, so the name never
-        // looks stalled part-way through a turn.
-        for frame in 0..3 {
-            widget.render(area, &mut buffer);
-            tokio::task::yield_now().await;
-            tokio::time::advance(crate::elpis_motion::FRAME_TICK * 2).await;
-            tokio::task::yield_now().await;
-            assert!(
-                draw_rx.try_recv().is_ok(),
-                "shimmer frame {frame} was not scheduled"
-            );
-        }
+        widget.render(area, &mut buffer);
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            draw_rx.try_recv().is_ok(),
+            "initial shimmer frame was not fast"
+        );
+
+        widget.last_resume_at = Instant::now() - Duration::from_secs(1);
+        widget.render(area, &mut buffer);
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            draw_rx.try_recv().is_err(),
+            "status redrew during the selection-safe wait"
+        );
+        tokio::time::advance(Duration::from_secs(3)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            draw_rx.try_recv().is_ok(),
+            "next shimmer burst was not scheduled"
+        );
     }
 
     #[test]

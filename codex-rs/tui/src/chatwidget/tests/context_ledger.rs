@@ -567,7 +567,7 @@ async fn identity_animation_stops_after_agent_turn_even_with_other_tasks_running
 }
 
 #[tokio::test(start_paused = true)]
-async fn identity_motion_redraws_every_frame_while_the_turn_runs() {
+async fn identity_motion_does_not_redraw_during_the_selection_wait() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(4);
     chat.frame_requester = FrameRequester::new(draw_tx);
@@ -576,16 +576,15 @@ async fn identity_motion_redraws_every_frame_while_the_turn_runs() {
         .start(std::time::Instant::now() - std::time::Duration::from_secs(1));
 
     let area = Rect::new(0, 0, 196, 60);
-    for frame in 0..3 {
-        Renderable::render(&chat, area, &mut ratatui::buffer::Buffer::empty(area));
-        tokio::task::yield_now().await;
-        tokio::time::advance(crate::elpis_motion::FRAME_TICK * 2).await;
-        tokio::task::yield_now().await;
-        assert!(
-            draw_rx.try_recv().is_ok(),
-            "identity frame {frame} was not scheduled"
-        );
-    }
+    Renderable::render(&chat, area, &mut ratatui::buffer::Buffer::empty(area));
+    tokio::task::yield_now().await;
+    tokio::time::advance(std::time::Duration::from_secs(1)).await;
+    tokio::task::yield_now().await;
+
+    assert!(
+        draw_rx.try_recv().is_err(),
+        "identity line redrew during the selection-safe wait"
+    );
 }
 
 #[tokio::test]
