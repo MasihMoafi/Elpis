@@ -42,8 +42,47 @@ pub fn parse_decision(text: &str) -> anyhow::Result<MemoryDecision> {
 /// Parse a memory decision while treating an otherwise-valid oversized generation as a skipped
 /// save. The caller can then preserve the last valid snapshot instead of surfacing a maintenance
 /// error or truncating durable notes.
+/// Escape control characters that a generator left raw inside a JSON string.
+///
+/// A model writing prose into a string field emits its line breaks literally,
+/// which strict JSON rejects. The same bytes outside a string are ordinary
+/// whitespace and are left alone.
+fn escape_raw_control_characters(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for character in text.chars() {
+        if !in_string {
+            in_string = character == '"';
+            out.push(character);
+        } else if escaped {
+            escaped = false;
+            out.push(character);
+        } else {
+            match character {
+                '\\' => {
+                    escaped = true;
+                    out.push(character);
+                }
+                '"' => {
+                    in_string = false;
+                    out.push(character);
+                }
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                control if control.is_control() => {
+                    out.push_str(&format!("\\u{:04x}", control as u32));
+                }
+                character => out.push(character),
+            }
+        }
+    }
+    out
+}
+
 pub fn parse_decision_or_skip_oversized(text: &str) -> anyhow::Result<Option<MemoryDecision>> {
-    let decision: MemoryDecision = serde_json::from_str(text)?;
+    let decision: MemoryDecision = serde_json::from_str(&escape_raw_control_characters(text))?;
     anyhow::ensure!(!decision.checkpoint.trim().is_empty(), "empty checkpoint");
     for content in [&decision.checkpoint, &decision.memory] {
         anyhow::ensure!(
@@ -440,6 +479,19 @@ fn atomic_write(path: &Path, text: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_raw_newline_inside_the_generated_json_still_saves() {
+        // A background model writing prose into a JSON string emits the line
+        // break literally. Strict JSON forbids that, and the whole save was
+        // being thrown away over it.
+        let raw = "{\"checkpoint\":\"done\",\"memory\":\"first line\nsecond line\"}";
+        let decision = parse_decision_or_skip_oversized(raw)
+            .expect("a raw line break must not lose the save")
+            .expect("the decision is within budget");
+        assert_eq!(decision.memory, "first line\nsecond line");
+        assert_eq!(decision.checkpoint, "done");
+    }
 
     #[test]
     fn legacy_damaged_citations_are_shortened_without_claiming_validity() {
