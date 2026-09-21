@@ -577,7 +577,10 @@ impl ChatWidget {
             smart_prune_on_colors(default_bg(), stdout_color_level());
         let toggle_label_spans = |label, enabled| {
             if enabled {
-                let mut spans = crate::elpis_motion::animated_text(label, self.config.animations);
+                // These rows repaint only when the ledger's own state changes,
+                // so reading a clock here strands the label at whatever phase
+                // the last rebuild happened to catch. Hold the gradient still.
+                let mut spans = crate::elpis_motion::text(label);
                 for span in &mut spans {
                     span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
                 }

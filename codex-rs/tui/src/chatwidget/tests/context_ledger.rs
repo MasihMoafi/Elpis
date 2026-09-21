@@ -392,7 +392,7 @@ fn ledger_label_styles(
 }
 
 #[tokio::test]
-async fn enabled_ledger_switches_own_the_motion_effect() {
+async fn enabled_ledger_switches_wear_a_still_brand_gradient() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.animations = true;
     chat.smart_prune_synced = true;
@@ -423,15 +423,17 @@ async fn enabled_ledger_switches_own_the_motion_effect() {
     chat.smart_prune.enabled = true;
     assert!(chat.set_feature_enabled(Feature::Collab, true));
     let on = colors(&chat);
+    assert_ne!(off.0, on.0, "enabled Smart Prune must read as on");
+    assert_ne!(off.1, on.1, "enabled Subagents must read as on");
+    // These rows are rebuilt only when the ledger changes, so a moving
+    // gradient would strand them at whatever phase the last rebuild caught.
     tokio::time::sleep(std::time::Duration::from_millis(350)).await;
-    let advanced = colors(&chat);
-    assert_ne!(on.0, advanced.0, "enabled Smart Prune must animate");
-    assert_ne!(on.1, advanced.1, "enabled Subagents must animate");
+    let later = colors(&chat);
+    assert_eq!(on.0, later.0, "enabled Smart Prune must hold still");
+    assert_eq!(on.1, later.1, "enabled Subagents must hold still");
     assert!(
-        advanced
-            .0
-            .iter()
-            .chain(&advanced.1)
+        on.0.iter()
+            .chain(&on.1)
             .filter(|(character, _, _)| !character.is_whitespace())
             .all(|(_, _, modifier)| modifier.contains(Modifier::BOLD))
     );
