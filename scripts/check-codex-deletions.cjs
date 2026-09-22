@@ -12,6 +12,8 @@ for (const removed of [
   "analytics", "feedback", "cloud-tasks", "cloud-tasks-client",
   "realtime-webrtc", "v8-poc", "core/src/memories", "tui/src/pets",
   "memories/read", "memories/write", "ext/memories",
+  "external-agent-migration/src/memory_import.rs",
+  "external-agent-migration/src/detect/memory.rs",
 ]) {
   check(`deleted ${removed}`, () => assert(!fs.existsSync(path.join(root, "codex-rs", removed)),
     "removed subsystem is present"));
