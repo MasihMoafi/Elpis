@@ -86,6 +86,29 @@ function phaseRequests(name) {
   return matches;
 }
 
+function messageText(item) {
+  return typeof item.content === "string" ? item.content
+    : (item.content || []).map(part => part.text || "").join("\n");
+}
+
+function baseGuidance(body) {
+  // Responses Lite moves base guidance into the first developer message.
+  const text = body.instructions || messageText(
+    (body.input || []).find(item => item.type === "message" && item.role === "developer") || {},
+  );
+  assert(text.length > 0, "request has no base guidance");
+  return text;
+}
+
+function compactionRequest(name) {
+  const matches = requests.filter(request => request.phase === name && (remote
+    ? (remoteV2 ? request.body.input?.some(item => item.type === "compaction_trigger")
+      : request.path.endsWith("/responses/compact"))
+    : request.body.input?.some(item => item.role === "user" && messageText(item) === summaryPrompt)));
+  assert.equal(matches.length, 1, `${name} must contain exactly one compaction request`);
+  return matches[0].body;
+}
+
 async function run() {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   fs.writeFileSync(path.join(home, "config.toml"), [
@@ -110,24 +133,27 @@ async function run() {
   const { thread } = await rpc.request("thread/start", {
     model: "gpt-5.6-terra", cwd, approvalPolicy: "never", sandbox: "read-only",
   });
+  // Prevent unrelated background naming from racing the measured compaction phases.
+  await rpc.request("thread/name/set", { threadId: thread.id, name: "Compaction fixture" });
   await complete("turn/start", {
     threadId: thread.id, input: [{ type: "text", text: "Cedar needs a follow-up. Acknowledge." }],
   });
   phase = "bare-before";
   await complete("thread/compact/start", { threadId: thread.id });
-  const normal = tokenBudget ? phaseRequests("seed").at(-1) : phaseRequests(phase).at(-1);
+  const normal = tokenBudget ? phaseRequests("seed")[0] : compactionRequest(phase);
   if (tokenBudget) {
     assert(!requests.some(request => request.phase === phase), "bare token-budget compaction unexpectedly called the model");
   } else if (!remote) {
     assert(JSON.stringify(normal.input).includes(summaryPrompt), "bare compaction lost its summary prompt");
   }
-  assert(!String(normal.instructions).includes(instructions), "control already contains test instructions");
+  const normalGuidance = baseGuidance(normal);
+  assert(!JSON.stringify(normal).includes(instructions), "control already contains test instructions");
 
   phase = "custom";
   await complete("thread/compact/start", { threadId: thread.id, instructions });
-  const custom = phaseRequests(phase).at(-1);
-  assert(String(custom.instructions).includes(instructions), "custom compaction instructions never reached the provider");
-  assert(String(custom.instructions).startsWith(normal.instructions), "custom instructions replaced normal base guidance");
+  const custom = compactionRequest(phase);
+  assert(baseGuidance(custom).includes(instructions), "custom compaction instructions never reached the provider");
+  assert(baseGuidance(custom).startsWith(normalGuidance), "custom instructions replaced normal base guidance");
   if (!remote) assert(JSON.stringify(custom.input).includes(summaryPrompt), "custom compaction replaced the normal summary prompt");
   if (remote) {
     assert(requests.some(request => request.phase === phase && (remoteV2
@@ -140,15 +166,17 @@ async function run() {
   if (tokenBudget) {
     assert(!requests.some(request => request.phase === phase), "explicit instructions permanently changed token-budget behavior");
   } else {
-    assert.equal(phaseRequests(phase).at(-1).instructions, normal.instructions,
+    assert.equal(baseGuidance(compactionRequest(phase)), normalGuidance,
       "custom compaction instructions leaked into later bare compaction");
+    assert(phaseRequests(phase).every(body => !JSON.stringify(body).includes(instructions)),
+      "custom instructions leaked into later bare compaction input");
   }
   phase = "later-turn";
   await complete("turn/start", {
     threadId: thread.id, input: [{ type: "text", text: "Continue normally." }],
   });
   for (const body of phaseRequests(phase)) {
-    assert(!String(body.instructions).includes(instructions), "custom instructions leaked into a normal turn");
+    assert(!JSON.stringify(body).includes(instructions), "custom instructions leaked into a normal turn");
   }
   console.log(JSON.stringify({ passed: true, tokenBudget, remote, remoteV2, checks: [
     "bare compaction retains its normal prompt",
