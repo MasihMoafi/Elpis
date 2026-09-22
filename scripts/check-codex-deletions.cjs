@@ -23,6 +23,13 @@ check("removed upstream memory response hooks", () => {
     assert(!source.includes(removed), `${removed} remains in the live response path`);
   }
 });
+for (const file of ["hook_runtime.rs", "mcp_tool_call.rs", "tools/registry.rs", "session/mod.rs"]) {
+  check(`removed upstream memory bookkeeping: ${file}`, () => {
+    const source = fs.readFileSync(path.join(root, "codex-rs/core/src", file), "utf8");
+    assert(!source.includes("mark_thread_memory_mode_polluted"),
+      "removed memory pipeline still has a live bookkeeping hook");
+  });
+}
 for (const retained of ["code-mode", "connectors", "windows-sandbox-rs"]) {
   check(`retained ${retained}`, () => assert(fs.existsSync(path.join(root, "codex-rs", retained, "Cargo.toml")),
     "required subsystem is missing"));
