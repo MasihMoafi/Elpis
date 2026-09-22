@@ -84,7 +84,8 @@ RAG is off-limits by instruction.
 
 September 22 takeover amendment: Masih approved replacing the Luna/auxiliary saver
 mentioned above with guarded local `save_memory` calls by the responding root agent.
-The replacement candidate is under verification. Reattach that approved behavior,
+The replacement passed focused checks and is installed locally, not yet user-accepted.
+Reattach that approved behavior,
 not automatic post-response or pre-compaction model consolidation. `/memory-model`
 is a compatibility entry for the shared background setting used by pruning/naming;
 memory itself uses the responding agent. Do not change those other model routes.
@@ -102,10 +103,14 @@ Named surfaces: Context Ledger, Smart Prune, `/dashboard`, the per-role model pi
 
 `code-mode-runtime` enables `v8/v8_enable_sandbox`, and rusty_v8 **publishes no
 `ptrcomp_sandbox` prebuilt** for `v150.4.0` — all 32 release assets are plain, `ptrcomp`, or
-`simdutf`. The build script 404s, so `cargo check` cannot pass for that crate without
-`V8_FROM_SOURCE=1` (hours of compile, against the thermal rule). Options: drop the sandbox
-feature (weakens the code-mode isolation boundary — a product decision, not a build fix), or
-exclude the crate from local verification until Masih's own V8 investigation lands.
+`simdutf`. Building that crate requires a from-source V8 build or a trusted matching
+sandboxed archive. Do not weaken sandboxing to bypass the missing artifact.
+
+September 22 scoped audit: the main CLI/core/app-server use the code-mode client
+and protocol, not the V8 runtime. Package-scoped verification can proceed without
+building the separate `codex-code-mode-host` helper. This is partial evidence only:
+full code-mode packaging requires that helper. Missing-host ordinary CodeMode falls
+back to direct tools; CodeModeOnly fails closed. No fresh-main build is yet proven.
 
 ## Verification
 

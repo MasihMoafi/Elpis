@@ -256,7 +256,8 @@ September 22 memory decision: the responding root agent owns explicit guarded lo
 memory/checkpoint updates in opted-in workspaces. Do not restore a second-model
 consolidation call after responses or before compaction. Global preferences belong
 in MEMORY, project progress in ES; saving and Ledger admission remain independent.
-The replacement candidate is under verification, not user-accepted.
+The replacement passed focused automated checks and was installed locally on
+September 22; running sessions need restart. It is not yet user-accepted.
 
 At the product-contract level:
 
