@@ -31,4 +31,14 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Near-term outcome
 
-Ship an evidence-backed public website, validate it at desktop and mobile sizes, and make the early-access install path and source repository easy to inspect.
+September 22, 2026: stabilize a current-Codex-based local release candidate while
+preserving explicit Elpis additions and deletions. Shared behavior and responsiveness
+need parity evidence; the imported newer foundation is not yet a proven build.
+The responding-agent memory candidate is installed with focused automated evidence,
+but user acceptance remains open. Compaction instructions are under repair.
+
+Refresh README visuals/features and website posts only after functional recovery,
+then prepare version 3 for Masih's testing. API-cost dashboard improvements and the
+documented agentic direction follow that version. The live website has a known
+source/deployment mismatch: do not overwrite it from this checkout. Current execution
+and acceptance gates live in `TASKS.md`; requested outcomes in `docs/USER_REQUESTS.md`.

@@ -9,6 +9,20 @@ This file records what Masih asked Elpis to become. It is deliberately separate 
 - New implementation ideas belong in `TASKS.md`, not here, unless Masih asks for the
   user-visible outcome itself.
 
+## September 22 release-recovery direction
+
+Masih requested continued work toward a stable release candidate, with current
+Codex features retaining their quality, speed and functionality and all approved
+Elpis features/deletions preserved. Tell Masih when the candidate is ready to test;
+no automated check substitutes for that acceptance.
+
+Requested order: fix/stabilize and clean source/documentation; then refreshed README
+visuals/features and website posts; then version 3. After version 3, improve the
+existing agent dashboard with measured API costs (OpenRouter and other providers),
+then the already-documented agentic direction. Record features, changes and cleanup
+in the existing task list. Remove unnecessary leftovers that confuse future agents,
+without erasing unresolved outcomes or claiming unsupported cost/usage figures.
+
 ## Requested outcomes
 
 September 12 follow-up: record each newly requested change here; cross-project
