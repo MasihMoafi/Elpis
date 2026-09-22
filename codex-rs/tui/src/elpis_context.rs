@@ -385,8 +385,11 @@ mod tests {
             r#"{{"evidence":[{{"id":"{id}:1","item":{{"role":"user"}}}},{{"id":"{id}:10","item":{{"role":"user"}}}}]}}"#
         );
         for _ in 0..2 {
+            let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd)?
+                .context("enabled memory baseline")?;
             let snapshot = MemorySnapshot::open(&root, &cwd)?.context("enabled saver")?;
             snapshot.commit(
+                &baseline,
                 &MemoryDecision {
                     checkpoint: "Work remains".into(),
                     memory: original.clone(),
@@ -427,6 +430,8 @@ mod tests {
             r#"{"enabled":true}"#,
         )
         .await?;
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd)?
+            .context("enabled memory baseline")?;
         let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
         assert!(
             clear_session_checkpoint(Some(&root), cwd, "thread")
@@ -439,6 +444,7 @@ mod tests {
             "the saver's snapshot source must survive a concurrent clear"
         );
         snapshot.commit(
+            &baseline,
             &MemoryDecision {
                 checkpoint: "- Thread: `thread`\nConsolidated plan.".into(),
                 memory: "Retain the verified lesson.".into(),
@@ -461,7 +467,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tui_checkpoint_does_not_race_enabled_memory_consolidation() -> Result<()> {
+    async fn tui_checkpoint_does_not_race_enabled_agent_memory_save() -> Result<()> {
         use crate::legacy_core::memory_save::{MemoryDecision, MemorySaveTiming, MemorySnapshot};
 
         let home = tempdir()?;
@@ -475,12 +481,14 @@ mod tests {
             r#"{"enabled":true}"#,
         )
         .await?;
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd)?
+            .context("enabled memory baseline")?;
         let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
         let turn = Turn {
             id: "current-turn".into(),
             items: vec![ThreadItem::AgentMessage {
                 id: "result".into(),
-                text: "Response finished while Luna consolidates.".into(),
+                text: "Response finished while the responding agent saves memory.".into(),
                 phase: None,
             }],
             items_view: TurnItemsView::Full,
@@ -507,6 +515,7 @@ mod tests {
             memory: "Retain the user's verified correction.".into(),
         };
         snapshot.commit(
+            &baseline,
             &decision,
             "gpt-5.6-luna",
             "thread",
@@ -517,7 +526,7 @@ mod tests {
         )?;
         assert!(
             result.is_none(),
-            "TUI must leave the enabled saver in control"
+            "TUI must leave the enabled memory writer in control"
         );
         drop(snapshot);
         assert!(
@@ -527,7 +536,7 @@ mod tests {
         );
         let mirrored = tokio::fs::read_to_string(workspace.join("ES.md")).await?;
         assert!(mirrored.contains(&decision.checkpoint));
-        assert!(mirrored.contains("Response finished while Luna consolidates."));
+        assert!(mirrored.contains("Response finished while the responding agent saves memory."));
         Ok(())
     }
 
@@ -576,10 +585,13 @@ mod tests {
             r#"{"enabled":true}"#,
         )
         .await?;
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, cwd)?
+            .context("enabled memory baseline")?;
         let snapshot = MemorySnapshot::open(&root, cwd)?.context("enabled saver")?;
         tokio::fs::write(workspace.join("ES.md"), "Newer manual correction").await?;
         let error = snapshot
             .commit(
+                &baseline,
                 &MemoryDecision {
                     checkpoint: "Stale proposed checkpoint".into(),
                     memory: "Lesson".into(),
