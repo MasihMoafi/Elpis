@@ -41,6 +41,34 @@ response to it.
 
 ## 2b. The `v8` crate downloads, and the proxy breaks that download
 
+### Current Codex foundation: sandbox-enabled V8 150.4.0
+
+The September 22 foundation pinned at `286d4ecf` uses V8 `150.4.0` with
+`v8_enable_sandbox`. Keep that feature. Its matching Linux archive is published
+by **OpenAI's Codex release**, not the older Denoland recipe below. Follow the
+pinned upstream `.github/actions/setup-rusty-v8/action.yml` and authenticate the
+release manifest against `third_party/v8/rusty_v8_150_4_0_release_manifests.sha256`.
+Both files are present in the pinned upstream source archive; a `codex-rs`-only
+import does not include them.
+
+The verified local cache is `.tmp/rusty-v8-150.4.0/`. The archive is
+`librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz`
+(29,366,352 bytes), with companion
+`src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs`.
+Before reusing them, run `sha256sum --check` against their authenticated
+`rusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.sha256` manifest from
+inside that cache directory. The manifest's own SHA256 is
+`6774b42c9424c098c72a805c08d4e94be17c591cf02b1dc2633060255a8a61be`.
+
+Pass the absolute archive path as `RUSTY_V8_ARCHIVE` and the absolute bindings
+path as `RUSTY_V8_SRC_BINDING_PATH` to the bounded build service. This keeps the
+build script offline without weakening the sandbox. Cargo's `--offline` alone
+does not prevent a build script download. Do not substitute the legacy archive
+or redownload verified files. Other platforms need their own upstream manifest
+and artifacts; this Linux cache is not cross-platform release evidence.
+
+### Legacy checkout only: V8 149.2.0
+
 `code-mode` depends on `v8`, whose build script fetches a ~38 MB prebuilt archive from
 GitHub releases. `--offline` does not cover build scripts, and `target/` caches the
 archive, so the fetch returns whenever `target/` has been cleared.
