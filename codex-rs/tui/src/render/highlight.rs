@@ -675,7 +675,8 @@ fn highlight_to_line_spans_with_theme(
 /// Each inner Vec represents one source line.  Returns None when the language
 /// is not recognized or the input exceeds safety limits.
 fn highlight_to_line_spans(code: &str, lang: &str) -> Option<Vec<Vec<Span<'static>>>> {
-    let theme_guard = match theme_lock().read() {
+    let lock = theme_lock();
+    let theme_guard = match lock.read() {
         Ok(theme_guard) => theme_guard,
         Err(poisoned) => poisoned.into_inner(),
     };
