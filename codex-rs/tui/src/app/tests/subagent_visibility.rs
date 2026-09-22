@@ -63,6 +63,8 @@ async fn replayed_subagents_restore_navigation_without_claiming_they_are_running
     let child = ThreadId::new();
     app.primary_thread_id = Some(primary);
     app.active_thread_id = Some(primary);
+    app.agent_navigation
+        .upsert(primary, None, None, /*is_closed*/ false);
     let item = codex_app_server_protocol::ThreadItem::SubAgentActivity {
         id: "past-start".to_string(),
         kind: SubAgentActivityKind::Started,
@@ -77,7 +79,7 @@ async fn replayed_subagents_restore_navigation_without_claiming_they_are_running
     assert_eq!(
         app.agent_navigation
             .active_agent_label(Some(primary), Some(primary)),
-        Some("Main · 1 subagent · /agent".to_string())
+        Some("Main [default]".to_string())
     );
     app.agent_navigation.set_running(child, true);
     app.handle_thread_event_replay(ThreadBufferedEvent::Notification(
@@ -98,6 +100,8 @@ async fn canonical_subagent_activity_reaches_history_and_navigation() {
     let child = ThreadId::new();
     app.primary_thread_id = Some(primary);
     app.active_thread_id = Some(primary);
+    app.agent_navigation
+        .upsert(primary, None, None, /*is_closed*/ false);
     for (index, kind, expected, running) in [
         (0, SubAgentActivityKind::Started, "Started", true),
         (1, SubAgentActivityKind::Interacted, "Interacted with", true),
@@ -135,7 +139,7 @@ async fn canonical_subagent_activity_reaches_history_and_navigation() {
         assert_eq!(
             app.agent_navigation
                 .active_agent_label(Some(primary), Some(primary)),
-            Some("Main · 1 subagent · /agent".to_string()),
+            Some("Main [default]".to_string()),
         );
     }
 }
