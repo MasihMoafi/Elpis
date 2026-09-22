@@ -11,10 +11,18 @@ function check(label, fn) {
 for (const removed of [
   "analytics", "feedback", "cloud-tasks", "cloud-tasks-client",
   "realtime-webrtc", "v8-poc", "core/src/memories", "tui/src/pets",
+  "memories/read", "memories/write", "ext/memories",
 ]) {
   check(`deleted ${removed}`, () => assert(!fs.existsSync(path.join(root, "codex-rs", removed)),
     "removed subsystem is present"));
 }
+check("removed upstream memory response hooks", () => {
+  const source = fs.readFileSync(path.join(root, "codex-rs/core/src/stream_events_utils.rs"), "utf8");
+  for (const removed of ["codex_memories_read", "memories_for_version",
+    "record_stage1_output_usage", "mark_thread_memory_mode_polluted"]) {
+    assert(!source.includes(removed), `${removed} remains in the live response path`);
+  }
+});
 for (const retained of ["code-mode", "connectors", "windows-sandbox-rs"]) {
   check(`retained ${retained}`, () => assert(fs.existsSync(path.join(root, "codex-rs", retained, "Cargo.toml")),
     "required subsystem is missing"));
