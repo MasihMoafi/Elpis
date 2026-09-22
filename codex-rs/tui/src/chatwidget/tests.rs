@@ -298,6 +298,7 @@ fn next_goal_draft(
     }
 }
 
+mod active_cell_layout_cache;
 mod agent_ledger;
 mod app_server;
 mod approval_requests;
