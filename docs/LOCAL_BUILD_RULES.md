@@ -68,6 +68,33 @@ the `release` profile with no feature suffix is needed: Elpis enables just v8's 
 
 ## 3. Throttle every local Rust build and test
 
+### Desktop resource isolation after the September 22 freeze
+
+Temperature and job limits alone do not bound memory or swap. After a reported
+desktop freeze, the active build was stopped; recent memory/I/O pressure was
+observed, but its cause was not established. While recovering this workstation,
+run builds inside a bounded user service as well as the existing thermal guard:
+
+```bash
+systemd-run --user --wait --pipe --collect --working-directory="$PWD" \
+  -p MemoryHigh=6G -p MemoryMax=8G -p MemorySwapMax=0 \
+  -p CPUQuota=100% -p IOWeight=10 -p Nice=15 \
+  env ELPIS_BUILD_JOBS=1 CARGO_BUILD_JOBS=1 RUST_TEST_THREADS=1 \
+  CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 scripts/build-elpis-local core-check
+```
+
+Use the appropriate existing build mode. For a linked worktree, pass the existing
+`ELPIS_BUILD_REPO_ROOT` and shared `CARGO_TARGET_DIR` explicitly after `env`.
+Keep one compiler owner. The service must successfully apply its limits; do not
+silently fall back to an unbounded build if systemd is unavailable. A memory-limit
+failure is incomplete verification, not a reason to raise the limit automatically.
+These limits protect against this build consuming unbounded resources; they do not
+control other sessions or guarantee desktop responsiveness.
+
+A lightweight service probe on September 22 confirmed kernel values
+`memory.high=6442450944`, `memory.max=8589934592`, `memory.swap.max=0`, and
+`cpu.max=100000 100000`. This was a limits check, not a successful Rust build.
+
 **The ceiling is a temperature, not a job count: this CPU must never pass 80 C.**
 Above that the build is killed, and the machine idles around 64 C, so the headroom
 is small. `scripts/build-elpis-local` enforces it (`ELPIS_MAX_TEMP_C`, default and
