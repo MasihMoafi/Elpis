@@ -20,8 +20,10 @@ into the new tree as `f2d08119`. Official archive SHA256:
 `a410396b4417a54d9057cff6df9dce288be83e90ef7dda778cfe3b63f20a7915`.
 Do not chase changing upstream HEAD during this verification cycle or mistake a
 source import for verified parity. Current execution/evidence lives in `TASKS.md`.
-Only the Rust source was imported; distribution license/notice files and root product
-docs must be retained from the appropriate upstream/Elpis sources before shipping.
+Only the Rust source was imported initially. `a2d144b3` restores `codex-rs/LICENSE`
+and `NOTICE` byte-identically from the official archive, plus current provenance.
+Current Elpis root product docs still need integration before shipping; the fresh
+source-drop checkout's older root docs are not authoritative.
 
 ## The governing rule
 
