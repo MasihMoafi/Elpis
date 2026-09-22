@@ -23,6 +23,14 @@ then the already-documented agentic direction. Record features, changes and clea
 in the existing task list. Remove unnecessary leftovers that confuse future agents,
 without erasing unresolved outcomes or claiming unsupported cost/usage figures.
 
+September 22 follow-up: typing and Enter-to-queue still feel slow; treat both as
+open responsiveness defects. Restore browser capability from current Codex rather
+than substituting web search. In parallel, compare the user-identified local book
+with Elpis/Codex and extract practical lessons; the title/link is still missing.
+Lowest priority: improve light mode and offer purple/gray and other palettes while
+preserving the existing layout and readable contrast. These are requests, not accepted
+or implemented outcomes.
+
 ## Requested outcomes
 
 September 12 follow-up: record each newly requested change here; cross-project
