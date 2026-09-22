@@ -151,15 +151,17 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
     let mut character_samples = Vec::with_capacity(REPETITIONS);
     for _ in 0..REPETITIONS {
         replenish_active_event_backlog(&mut app);
-        let pending_key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+        // Non-ASCII input bypasses the intentional ASCII paste-burst hold; this experiment measures
+        // event-drain plus render cost, not the separate paste-flush timer.
+        let pending_key = KeyEvent::new(KeyCode::Char('Ω'), KeyModifiers::NONE);
         let started = Instant::now();
         app.drain_active_thread_events(&mut tui).await?;
         app.chat_widget.handle_key_event(pending_key);
         let rendered = render_chat_for_latency(&app.chat_widget);
         character_samples.push(started.elapsed());
-        assert!(rendered.contains('z'), "typed character was not rendered");
+        assert!(rendered.contains('Ω'), "typed character was not rendered");
         assert!(
-            app.chat_widget.composer_text_with_pending().ends_with('z'),
+            app.chat_widget.composer_text_with_pending().ends_with('Ω'),
             "typed character did not reach the composer"
         );
     }
@@ -214,7 +216,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
     );
 
     let mut unbounded_character_app = backlogged_running_app().await;
-    let pending_key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+    let pending_key = KeyEvent::new(KeyCode::Char('Ω'), KeyModifiers::NONE);
     let started = Instant::now();
     drain_active_thread_events_without_frame_deadline(&mut unbounded_character_app);
     unbounded_character_app
@@ -222,12 +224,12 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
         .handle_key_event(pending_key);
     let rendered = render_chat_for_latency(&unbounded_character_app.chat_widget);
     let unbounded_character = started.elapsed();
-    assert!(rendered.contains('z'), "typed character was not rendered");
+    assert!(rendered.contains('Ω'), "typed character was not rendered");
     assert!(
         unbounded_character_app
             .chat_widget
             .composer_text_with_pending()
-            .ends_with('z'),
+            .ends_with('Ω'),
         "typed character did not reach the composer"
     );
     assert!(
