@@ -1,10 +1,7 @@
 // Background maintenance on a non-OpenAI provider, end to end.
 //
-// Memory saving and session naming used to be pinned to a model that only
-// exists on OpenAI, and structured output was only ever attached to Responses
-// requests. This drives a real app-server against a chat-protocol fixture and
-// asserts both halves: the background work reaches the configured model, and it
-// arrives carrying a strict JSON schema rather than as free-form prose.
+// Session naming uses the configured background model even on a chat provider.
+// Memory belongs to the responding agent and must not launch a second model call.
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -67,13 +64,6 @@ const server = http.createServer(async (request, response) => {
   const required = schemaOf(body)?.schema?.required ?? [];
   if (required.includes("title")) {
     sse(response, JSON.stringify({ title: "Background model routing" }));
-    return;
-  }
-  if (required.includes("checkpoint")) {
-    sse(
-      response,
-      JSON.stringify({ checkpoint: "Verify background routing.", memory: "- Port is 5823." }),
-    );
     return;
   }
   sse(response, "Acknowledged.");
@@ -157,17 +147,6 @@ async function until(check, message) {
   assert.equal(main[0].model, MAIN_MODEL, "the user's turn must keep the main model");
 
   await until(
-    () => requests.some(body => schemaOf(body)?.schema?.required?.includes("checkpoint")),
-    "no memory save arrived",
-  );
-  const save = requests.find(body =>
-    schemaOf(body)?.schema?.required?.includes("checkpoint"),
-  );
-  assert.equal(save.model, BACKGROUND_MODEL, "the saver ignored background_model");
-  assert.equal(schemaOf(save).strict, true, "the saver's schema was not strict");
-  assert.equal(schemaOf(save).schema.additionalProperties, false);
-
-  await until(
     () => requests.some(body => schemaOf(body)?.schema?.required?.includes("title")),
     "no session naming arrived",
   );
@@ -175,20 +154,11 @@ async function until(check, message) {
   assert.equal(title.model, BACKGROUND_MODEL, "naming ignored background_model");
   assert.equal(schemaOf(title).strict, true, "the naming schema was not strict");
 
-  await until(() => fs.existsSync(memoryFile), "memory was never written");
-  assert.match(fs.readFileSync(memoryFile, "utf8"), /5823/);
-
-  // The receipt is the audit trail for what actually ran, so it must name the
-  // model that did the work rather than a hardcoded default.
-  const receiptDir = path.join(workspace, "memory-saves");
-  await until(
-    () => fs.existsSync(receiptDir) && fs.readdirSync(receiptDir).length > 0,
-    "no save receipt was written",
+  assert(
+    !requests.some(body => schemaOf(body)?.schema?.required?.includes("checkpoint")),
+    "memory still launched an auxiliary model request",
   );
-  const receipt = JSON.parse(
-    fs.readFileSync(path.join(receiptDir, fs.readdirSync(receiptDir).sort().at(-1)), "utf8"),
-  );
-  assert.equal(receipt.model, BACKGROUND_MODEL, "the receipt misreports the model");
+  assert(!fs.existsSync(memoryFile), "an auxiliary model unexpectedly wrote memory");
 
   console.log(
     JSON.stringify(
@@ -197,11 +167,9 @@ async function until(check, message) {
         background_model: BACKGROUND_MODEL,
         checks: [
           "the user's turn keeps the main model",
-          "memory saving uses background_model on a chat provider",
           "session naming uses background_model on a chat provider",
-          "both carry a strict json schema on the chat wire",
-          "the saved memory reaches MEMORY.md",
-          "the save receipt names the model that ran",
+          "session naming carries a strict json schema on the chat wire",
+          "memory launches no auxiliary model request",
         ],
       },
       null,

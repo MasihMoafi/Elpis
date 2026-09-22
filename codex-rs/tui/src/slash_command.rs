@@ -131,7 +131,7 @@ impl SlashCommand {
                 "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>"
             }
             SlashCommand::MemoryModel => {
-                "view or set the model that saves memory: /memory-model <id|provider:id|default>"
+                "set background tasks (pruning and session naming); memory uses the responding agent: /memory-model <id|provider:id|default>"
             }
             SlashCommand::Personality => "choose a communication style for Elpis",
             SlashCommand::Plan => "switch to Plan mode",

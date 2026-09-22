@@ -386,7 +386,7 @@ impl ChatWidget {
         self.refresh_pruner_model_popup();
     }
 
-    /// Choose the model used for memory saving, pruning and session naming.
+    /// Choose the model used for pruning and session naming.
     ///
     /// Sibling of [`Self::open_pruner_model_popup`]: that one overrides the
     /// pruner alone, this one moves all background maintenance together.
@@ -535,7 +535,7 @@ impl ChatWidget {
                             match crate::legacy_core::config::edit::apply_blocking(&home, &edits) {
                                 Ok(()) => history_cell::new_info_event(
                                     format!(
-                                        "Memory and pruning model saved: {}. Chat model unchanged.",
+                                        "Background task model saved: {}. Pruning and session naming use it; memory uses the responding agent.",
                                         model.as_deref().unwrap_or("built-in default")
                                     ),
                                     None,
@@ -560,9 +560,9 @@ impl ChatWidget {
         self.show_model_selection_view(SelectionViewParams {
             view_id: Some(BACKGROUND_MODEL_SELECTION_VIEW_ID),
             initial_selected_idx,
-            title: Some("Choose memory and pruning model".into()),
+            title: Some("Choose background task model".into()),
             subtitle: Some(format!(
-                "Provider: {provider_id} · Current: {} · Chat model unchanged",
+                "Provider: {provider_id} · Current: {} · Memory uses responding agent",
                 current.as_deref().unwrap_or("built-in default")
             )),
             items,
@@ -1258,8 +1258,8 @@ impl ChatWidget {
                 [only] => Some(only.effort.clone()),
                 _ => None,
             };
-            let single_supported_effort = sole_effort
-                .is_some_and(|effort| !Self::is_advanced_reasoning_effort(&effort));
+            let single_supported_effort =
+                sole_effort.is_some_and(|effort| !Self::is_advanced_reasoning_effort(&effort));
             let preset_for_action = preset.clone();
             let provider_for_action = self.picker_target_provider();
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
