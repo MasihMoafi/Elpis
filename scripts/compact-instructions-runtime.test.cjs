@@ -12,6 +12,7 @@ const cwd = path.join(root, "project");
 for (const directory of [home, cwd]) fs.mkdirSync(directory);
 const instructions = "Preserve unresolved Cedar blockers and exact evidence — ۳ نکته.";
 const summaryPrompt = "Summarize the conversation for continuation; preserve unresolved work.";
+const tokenBudget = process.argv[3] === "token-budget";
 const requests = [];
 let phase = "seed";
 let rpc;
@@ -81,6 +82,7 @@ async function run() {
   fs.writeFileSync(path.join(home, "config.toml"), [
     'model = "gpt-5.6-terra"', 'model_provider = "fixture"',
     `compact_prompt = ${JSON.stringify(summaryPrompt)}`,
+    ...(tokenBudget ? ["[features]", "token_budget = true"] : []),
     "[model_providers.fixture]", 'name = "Fixture"',
     `base_url = "http://127.0.0.1:${server.address().port}/v1"`,
     'wire_api = "responses"', "requires_openai_auth = false", "",
@@ -104,8 +106,12 @@ async function run() {
   });
   phase = "bare-before";
   await complete("thread/compact/start", { threadId: thread.id });
-  const normal = phaseRequests(phase).at(-1);
-  assert(JSON.stringify(normal.input).includes(summaryPrompt), "bare compaction lost its summary prompt");
+  const normal = tokenBudget ? phaseRequests("seed").at(-1) : phaseRequests(phase).at(-1);
+  if (tokenBudget) {
+    assert(!requests.some(request => request.phase === phase), "bare token-budget compaction unexpectedly called the model");
+  } else {
+    assert(JSON.stringify(normal.input).includes(summaryPrompt), "bare compaction lost its summary prompt");
+  }
   assert(!String(normal.instructions).includes(instructions), "control already contains test instructions");
 
   phase = "custom";
@@ -117,8 +123,12 @@ async function run() {
 
   phase = "bare-after";
   await complete("thread/compact/start", { threadId: thread.id });
-  assert.equal(phaseRequests(phase).at(-1).instructions, normal.instructions,
-    "custom compaction instructions leaked into later bare compaction");
+  if (tokenBudget) {
+    assert(!requests.some(request => request.phase === phase), "explicit instructions permanently changed token-budget behavior");
+  } else {
+    assert.equal(phaseRequests(phase).at(-1).instructions, normal.instructions,
+      "custom compaction instructions leaked into later bare compaction");
+  }
   phase = "later-turn";
   await complete("turn/start", {
     threadId: thread.id, input: [{ type: "text", text: "Continue normally." }],
@@ -126,7 +136,7 @@ async function run() {
   for (const body of phaseRequests(phase)) {
     assert(!String(body.instructions).includes(instructions), "custom instructions leaked into a normal turn");
   }
-  console.log(JSON.stringify({ passed: true, checks: [
+  console.log(JSON.stringify({ passed: true, tokenBudget, checks: [
     "bare compaction retains its normal prompt",
     "exact Unicode instructions reach the local compaction request",
     "custom instructions supplement rather than replace summary guidance",
