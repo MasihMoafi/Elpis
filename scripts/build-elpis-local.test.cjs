@@ -64,6 +64,13 @@ test('model catalog verification also builds protocol wire-format tests', () => 
   assert(result.args.includes('--offline'));
 });
 
+test('workspace check reports independent failures without stopping at the first crate', () => {
+  const result = runGuard(50000, 'workspace-check', 'candidate');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(result.args,
+    ['check', '--workspace', '--all-targets', '--keep-going', '--locked', '--offline']);
+});
+
 test('background warmth below the ceiling does not stall builds', () => {
   const result = runGuard(70000);
   assert.equal(result.status, 0, result.stdout + result.stderr);
