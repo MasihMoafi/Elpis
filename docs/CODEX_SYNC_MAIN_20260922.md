@@ -114,6 +114,11 @@ back to direct tools; CodeModeOnly fails closed. No fresh-main build is yet prov
 
 ## Verification
 
+- September 22 recovery: `eb4ab181` restores the disabled metrics-exporter default
+  and corresponding missing-config regression test in the migration branch. The
+  root `scripts/check-codex-deletions.cjs /var/tmp/elpis-sync` source gate failed
+  before and passes after this change. Rust execution and runtime network/privacy
+  checks remain pending; existing uncommitted migration work was preserved.
 - Per crate, cheapest first; never a whole-workspace build as the first check.
 - `scripts/build-elpis-local` only, two jobs, `ELPIS_MAX_TEMP_C` under 80.
 - The deletions above are verified by absence, not by compilation — a green build proves
