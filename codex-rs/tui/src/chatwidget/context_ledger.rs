@@ -554,23 +554,26 @@ impl ChatWidget {
                 "[●━━━] OFF"
             };
         let smart_prune_label = "SMART PRUNE";
+        // The cursor leads the row, as it does on every source below. Placed
+        // after the label it sat against the switch and read as part of it,
+        // which is why a selected switch looked no different from an idle one.
         let smart_prune_cursor =
             if self.context_ledger.focused && self.context_ledger.smart_prune_selected {
                 "› "
             } else {
-                ""
+                "  "
             };
         let smart_prune_pad = content_width
             .saturating_sub(
-                smart_prune_label.chars().count()
-                    + smart_prune_cursor.chars().count()
+                smart_prune_cursor.chars().count()
+                    + smart_prune_label.chars().count()
                     + smart_prune_button.chars().count(),
             )
             .max(1);
         let smart_prune_line = lines.len();
-        let smart_prune_column_start = smart_prune_label.chars().count()
-            + smart_prune_pad
-            + smart_prune_cursor.chars().count();
+        let smart_prune_column_start = smart_prune_cursor.chars().count()
+            + smart_prune_label.chars().count()
+            + smart_prune_pad;
         let smart_prune_columns =
             smart_prune_column_start..smart_prune_column_start + smart_prune_button.chars().count();
         let [violet, teal, emerald, green] =
@@ -605,15 +608,13 @@ impl ChatWidget {
         } else {
             vec![Span::styled(smart_prune_button, muted)]
         };
-        let mut smart_prune_spans = toggle_label_spans(
+        let mut smart_prune_spans = vec![Span::styled(smart_prune_cursor, brand.bold())];
+        smart_prune_spans.extend(toggle_label_spans(
             smart_prune_label,
             smart_prune_enabled
                 && (self.smart_prune_synced || pending_smart_prune_enabled.is_some()),
-        );
+        ));
         smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
-        if !smart_prune_cursor.is_empty() {
-            smart_prune_spans.push(Span::styled(smart_prune_cursor, brand.bold()));
-        }
         smart_prune_spans.extend(switch_spans);
         lines.push(Line::from(smart_prune_spans));
         let smart_prune_detail = if pending_smart_prune_enabled.is_some() {
@@ -777,18 +778,19 @@ impl ChatWidget {
             if self.context_ledger.focused && self.context_ledger.subagents_selected {
                 "› "
             } else {
-                ""
+                "  "
             };
         let subagents_pad = content_width
             .saturating_sub(
-                subagents_label.chars().count()
-                    + subagents_cursor.chars().count()
+                subagents_cursor.chars().count()
+                    + subagents_label.chars().count()
                     + subagents_button.chars().count(),
             )
             .max(1);
         let subagents_line = lines.len();
-        let subagents_column_start =
-            subagents_label.chars().count() + subagents_pad + subagents_cursor.chars().count();
+        let subagents_column_start = subagents_cursor.chars().count()
+            + subagents_label.chars().count()
+            + subagents_pad;
         let subagents_columns =
             subagents_column_start..subagents_column_start + subagents_button.chars().count();
         let subagents_switch_spans = if subagents_enabled {
@@ -802,11 +804,9 @@ impl ChatWidget {
         } else {
             vec![Span::styled(subagents_button, muted)]
         };
-        let mut subagents_spans = toggle_label_spans(subagents_label, subagents_enabled);
+        let mut subagents_spans = vec![Span::styled(subagents_cursor, brand.bold())];
+        subagents_spans.extend(toggle_label_spans(subagents_label, subagents_enabled));
         subagents_spans.push(Span::raw(" ".repeat(subagents_pad)));
-        if !subagents_cursor.is_empty() {
-            subagents_spans.push(Span::styled(subagents_cursor, brand.bold()));
-        }
         subagents_spans.extend(subagents_switch_spans);
         lines.push(Line::from(subagents_spans));
         // One line, not a block: the ledger's own height is what the owner sees
