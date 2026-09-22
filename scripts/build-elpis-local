@@ -2,9 +2,16 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
+    if [[ "$ELPIS_BUILD_REPO_ROOT" != /* ]] || [ ! -f "$ELPIS_BUILD_REPO_ROOT/codex-rs/Cargo.toml" ]; then
+        printf 'ELPIS_BUILD_REPO_ROOT must be an absolute repository path containing codex-rs/Cargo.toml\n' >&2
+        exit 2
+    fi
+    repo_root=$(cd "$ELPIS_BUILD_REPO_ROOT" && pwd -P)
+fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|dev|optimized|schema-build|test-build|core-test-build|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|core-check|dev|optimized|schema-build|test-build|core-test-build|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -12,6 +19,11 @@ case "$mode" in
     check)
         profile=check
         cargo_args=(check --locked --offline -p codex-tui --bin elpis)
+        artifact=
+        ;;
+    core-check)
+        profile=check
+        cargo_args=(check --locked --offline -p codex-core --all-targets)
         artifact=
         ;;
     dev)
@@ -80,7 +92,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, dev, optimized, schema-build, test-build, core-test-build, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, test-build, core-test-build, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
