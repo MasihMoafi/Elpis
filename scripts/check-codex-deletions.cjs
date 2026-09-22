@@ -34,6 +34,13 @@ for (const retained of ["code-mode", "connectors", "windows-sandbox-rs"]) {
   check(`retained ${retained}`, () => assert(fs.existsSync(path.join(root, "codex-rs", retained, "Cargo.toml")),
     "required subsystem is missing"));
 }
+check("removed cloud-task and upstream-memory CLI entrypoints", () => {
+  const source = fs.readFileSync(path.join(root, "codex-rs/cli/src/main.rs"), "utf8");
+  for (const removed of ["codex_cloud_tasks", "CloudTasksCli", "ClearMemories",
+    "clear_memory_roots_contents"]) {
+    assert(!source.includes(removed), `${removed} remains in CLI routing`);
+  }
+});
 check("telemetry defaults", () => {
   const text = fs.readFileSync(path.join(root, "codex-rs/config/src/types.rs"), "utf8");
   const defaults = text.match(/impl Default for OtelConfig\s*\{([\s\S]*?)\n\}/)?.[1];
