@@ -14,9 +14,26 @@ for (const removed of [
   "memories/read", "memories/write", "ext/memories",
   "external-agent-migration/src/memory_import.rs",
   "external-agent-migration/src/detect/memory.rs",
+  "tui/src/bottom_pane/feedback_view.rs",
+  "tui/src/bottom_pane/feedback_note_view.rs",
 ]) {
   check(`deleted ${removed}`, () => assert(!fs.existsSync(path.join(root, "codex-rs", removed)),
     "removed subsystem is present"));
+}
+const feedbackRoutingFiles = ["lib.rs", "app.rs", "app_event.rs", "app_server_session.rs",
+  "app/background_requests.rs"];
+// Newer Codex splits startup out of lib.rs; older Elpis keeps it inline.
+if (fs.existsSync(path.join(root, "codex-rs/tui/src/startup_orchestration.rs"))) {
+  feedbackRoutingFiles.push("startup_orchestration.rs");
+}
+for (const file of feedbackRoutingFiles) {
+  check(`removed TUI feedback upload wiring: ${file}`, () => {
+    const source = fs.readFileSync(path.join(root, "codex-rs/tui/src", file), "utf8");
+    for (const removed of ["CodexFeedback", "FeedbackUpload", "FeedbackAudience",
+      "FeedbackSubmitted", "submit_feedback"]) {
+      assert(!source.includes(removed), `${removed} remains in TUI routing`);
+    }
+  });
 }
 check("removed upstream memory response hooks", () => {
   const source = fs.readFileSync(path.join(root, "codex-rs/core/src/stream_events_utils.rs"), "utf8");
