@@ -69,6 +69,19 @@ fn percentile(samples: &mut [Duration], percentile: usize) -> Duration {
     samples[(samples.len() - 1) * percentile / 100]
 }
 
+fn render_chat_for_latency(chat: &ChatWidget) -> String {
+    let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    Renderable::render(chat, area, &mut buffer);
+    (0..area.height)
+        .flat_map(|row| {
+            (0..area.width)
+                .map(|column| buffer[(column, row)].symbol().to_string())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 async fn backlogged_running_app() -> App {
     let mut app = make_test_app().await;
     let thread_id = ThreadId::new();
@@ -142,7 +155,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
         let started = Instant::now();
         app.drain_active_thread_events(&mut tui).await?;
         app.chat_widget.handle_key_event(pending_key);
-        let rendered = render_bottom_popup(&app.chat_widget, /*width*/ 80);
+        let rendered = render_chat_for_latency(&app.chat_widget);
         character_samples.push(started.elapsed());
         assert!(rendered.contains('z'), "typed character was not rendered");
         assert!(
@@ -160,7 +173,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
         let started = Instant::now();
         app.drain_active_thread_events(&mut tui).await?;
         app.chat_widget.handle_key_event(pending_enter);
-        let rendered = render_bottom_popup(&app.chat_widget, /*width*/ 80);
+        let rendered = render_chat_for_latency(&app.chat_widget);
         queue_samples.push(started.elapsed());
         assert!(
             app.chat_widget.composer_text_with_pending().is_empty(),
@@ -207,7 +220,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
     unbounded_character_app
         .chat_widget
         .handle_key_event(pending_key);
-    let rendered = render_bottom_popup(&unbounded_character_app.chat_widget, /*width*/ 80);
+    let rendered = render_chat_for_latency(&unbounded_character_app.chat_widget);
     let unbounded_character = started.elapsed();
     assert!(rendered.contains('z'), "typed character was not rendered");
     assert!(
@@ -233,7 +246,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
     unbounded_queue_app
         .chat_widget
         .handle_key_event(pending_enter);
-    let rendered = render_bottom_popup(&unbounded_queue_app.chat_widget, /*width*/ 80);
+    let rendered = render_chat_for_latency(&unbounded_queue_app.chat_widget);
     let unbounded_queue = started.elapsed();
     assert!(
         unbounded_queue_app
