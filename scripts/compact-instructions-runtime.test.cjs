@@ -15,6 +15,8 @@ const summaryPrompt = "Summarize the conversation for continuation; preserve unr
 const tokenBudget = process.argv[3] === "token-budget";
 const remote = process.argv[3] === "remote" || process.argv[3] === "remote-v2";
 const remoteV2 = process.argv[3] === "remote-v2";
+// Negative control simulates the reported bug: drop the suffix before dispatch.
+const dropInstructions = process.argv.includes("--drop-instructions");
 const requests = [];
 let phase = "seed";
 let rpc;
@@ -150,7 +152,9 @@ async function run() {
   assert(!JSON.stringify(normal).includes(instructions), "control already contains test instructions");
 
   phase = "custom";
-  await complete("thread/compact/start", { threadId: thread.id, instructions });
+  await complete("thread/compact/start", {
+    threadId: thread.id, ...(dropInstructions ? {} : { instructions }),
+  });
   const custom = compactionRequest(phase);
   assert(baseGuidance(custom).includes(instructions), "custom compaction instructions never reached the provider");
   assert(baseGuidance(custom).startsWith(normalGuidance), "custom instructions replaced normal base guidance");
