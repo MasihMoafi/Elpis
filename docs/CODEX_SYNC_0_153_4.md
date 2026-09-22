@@ -1,5 +1,11 @@
 # Re-importing Codex 0.153.4
 
+Historical September 21 investigation, **not current implementation instructions**.
+Superseded by [the current migration record](CODEX_SYNC_MAIN_20260922.md).
+The memory choice below is resolved: do not restore upstream memory; preserve the
+approved responding-agent `save_memory` replacement. Builds are no longer suspended.
+The symptom-to-file table was a hypothesis map, not evidence of fixes.
+
 Elpis forked Codex at `f37fc774` (2026-07-15). Upstream is now `rust-v0.153.4`
 (built 2026-09-05). Everything reported broken in Elpis on 2026-09-21 —
 conversation naming, click-and-drag selection, sessions dying on a dropped

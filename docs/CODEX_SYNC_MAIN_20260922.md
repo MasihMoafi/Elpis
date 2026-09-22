@@ -4,15 +4,24 @@ Supersedes `CODEX_SYNC_0_153_4.md`. That import targeted `rust-v0.153.4`, which 
 published **2026-09-04** and was already three minor versions stale when it was taken on
 2026-09-21 — latest stable was `rust-v0.155.1`, with `0.157.0-alpha` tags shipping daily.
 
-- **New base:** `vendor/codex-main-20260922` — codex `main` @ `064e701b0`, 2026-09-22 06:36.
+- **Pinned base for this verification cycle:** official Codex `main` @
+  `286d4ecf44b4e9daba0a9fdd229a4047b770a71a`.
+- **Pure source drop:** `vendor/codex-main-286d4ecf`, commit `6d9f64aa`.
+- **Integration branch/worktree:** `sync/codex-main-286d4ecf`,
+  `/var/tmp/elpis-sync-latest`. Not installed; compilation and Elpis feature
+  reintegration remain pending.
 - **Fork point:** `f37fc774` (2026-07-15), unchanged.
 - **Elpis tip:** `5d0f091a` plus the fixes since.
 
-Freshness check later September 22: official `openai/codex` main advanced to
-`286d4ecf44b4e9daba0a9fdd229a4047b770a71a`, 29 commits beyond this import (verified
-with `git ls-remote` and GitHub's compare endpoint). This document describes the
-existing import, not completed latest-main parity. Preserve its work while accounting
-for the newer agent-control, compaction, daemon and TUI changes before release.
+This pin is 29 commits beyond the previous `064e701b0` import, verified September 22
+using official Git refs and GitHub's compare endpoint. The previous worktree
+`/var/tmp/elpis-sync` remains intact; its useful 26-file unfinished patch was recovered
+into the new tree as `f2d08119`. Official archive SHA256:
+`a410396b4417a54d9057cff6df9dce288be83e90ef7dda778cfe3b63f20a7915`.
+Do not chase changing upstream HEAD during this verification cycle or mistake a
+source import for verified parity. Current execution/evidence lives in `TASKS.md`.
+Only the Rust source was imported; distribution license/notice files and root product
+docs must be retained from the appropriate upstream/Elpis sources before shipping.
 
 ## The governing rule
 
@@ -61,9 +70,9 @@ These are cheap to lose and expensive to notice.
   Upstream main still defaults this to `Statsig`, which `resolve_exporter` turns into a live
   OTLP POST to `https://ab.chatgpt.com/otlp/v1/metrics` with a baked-in client key — in
   **release builds only**, forced to `None` under `debug_assertions`, so local debug testing
-  never reveals it. This single default is what makes the "no analytics uploaded" claim in
-  the readme and `SECURITY.md` true. The crate deletion is a supply-chain and binary-size
-  win; this is the network fix.
+  never reveals it. Disabling this default closes that particular automatic export
+  path; it does not by itself prove the full no-upload boundary or account/app
+  monitoring behavior. Verify all paths separately. Normal provider usage still counts.
 - **`config_tests.rs::metrics_exporter_defaults_to_none_when_missing`** — the regression guard
   for the line above. It was **lost** in the 0.153.4 merge and must be restored.
 - **`SlashCommand::is_visible`** allow-list (`tui/src/slash_command.rs`). Upstream is `_ => true`.
