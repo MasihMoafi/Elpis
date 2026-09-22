@@ -561,7 +561,8 @@ impl ChatWidget {
             if self.context_ledger.focused && self.context_ledger.smart_prune_selected {
                 "› "
             } else {
-                "  "
+                // Paragraph wrapping trims leading blanks; do not count an invisible cursor.
+                ""
             };
         let smart_prune_pad = content_width
             .saturating_sub(
@@ -778,7 +779,7 @@ impl ChatWidget {
             if self.context_ledger.focused && self.context_ledger.subagents_selected {
                 "› "
             } else {
-                "  "
+                ""
             };
         let subagents_pad = content_width
             .saturating_sub(
@@ -788,9 +789,8 @@ impl ChatWidget {
             )
             .max(1);
         let subagents_line = lines.len();
-        let subagents_column_start = subagents_cursor.chars().count()
-            + subagents_label.chars().count()
-            + subagents_pad;
+        let subagents_column_start =
+            subagents_cursor.chars().count() + subagents_label.chars().count() + subagents_pad;
         let subagents_columns =
             subagents_column_start..subagents_column_start + subagents_button.chars().count();
         let subagents_switch_spans = if subagents_enabled {

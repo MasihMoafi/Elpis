@@ -2466,6 +2466,46 @@ async fn ledger_switch_mouse_hitbox_only_covers_the_switch() {
 }
 
 #[tokio::test]
+async fn ledger_switch_hitboxes_match_both_visible_edges() {
+    for (label, feature) in [
+        ("SMART PRUNE", Feature::AutomaticContextPruning),
+        ("SUBAGENTS", Feature::Collab),
+    ] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+        chat.smart_prune_synced = true;
+        let buffer = render_ledger_buffer(&chat, 30);
+        let row = (0..buffer.area.height)
+            .find(|row| {
+                (0..buffer.area.width)
+                    .map(|column| buffer[(column, *row)].symbol())
+                    .collect::<String>()
+                    .contains(label)
+            })
+            .expect("switch row");
+        let start = (0..buffer.area.width)
+            .find(|column| buffer[(*column, row)].symbol() == "[")
+            .expect("visible switch start");
+        let end = (0..buffer.area.width)
+            .rfind(|column| buffer[(*column, row)].symbol() != " ")
+            .expect("visible switch end")
+            + 1;
+
+        assert!(!chat.handle_context_ledger_mouse_click(row, start - 1));
+        assert!(!chat.handle_context_ledger_mouse_click(row, end));
+        assert!(
+            rx.try_recv().is_err(),
+            "outside clicks must not toggle {label}"
+        );
+        assert!(chat.handle_context_ledger_mouse_click(row, start));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(AppEvent::UpdateFeatureFlags { updates })
+                if updates.len() == 1 && updates[0].0 == feature
+        ));
+    }
+}
+
+#[tokio::test]
 async fn ledger_switch_is_not_interactive_after_the_terminal_hides_it() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.smart_prune_synced = true;
