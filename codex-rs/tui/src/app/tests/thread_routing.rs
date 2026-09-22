@@ -17,7 +17,7 @@ fn token_usage_with_output(thread_id: ThreadId, output_tokens: i64) -> ServerNot
 }
 
 fn assert_token_usage_output(app: &App, output_tokens: i64) {
-    assert_eq!(
+    std::assert_eq!(
         app.chat_widget.token_usage(),
         crate::token_usage::TokenUsage {
             input_tokens: 4,
@@ -52,7 +52,7 @@ async fn active_thread_drain_yields_at_frame_deadline_without_dropping_or_reorde
         app.drain_active_thread_events_until(&mut tui, Instant::now())
             .await?;
         assert_token_usage_output(&app, expected_output);
-        assert_eq!(
+        std::assert_eq!(
             app.active_thread_rx
                 .as_ref()
                 .map(tokio::sync::mpsc::Receiver::len),
@@ -106,7 +106,7 @@ fn replenish_active_event_backlog(app: &mut App) {
             .try_send(ThreadBufferedEvent::Notification(notification.clone()))
             .expect("full-size test backlog should fit its channel");
     }
-    assert_eq!(
+    std::assert_eq!(
         app.active_thread_rx
             .as_ref()
             .expect("active receiver")
@@ -166,7 +166,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
             app.chat_widget.composer_text_with_pending().is_empty(),
             "Enter did not clear the composer"
         );
-        assert_eq!(
+        std::assert_eq!(
             app.chat_widget
                 .queued_user_message_texts()
                 .last()
@@ -242,7 +242,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
             .is_empty(),
         "Enter did not clear the composer"
     );
-    assert_eq!(
+    std::assert_eq!(
         unbounded_queue_app
             .chat_widget
             .queued_user_message_texts()
