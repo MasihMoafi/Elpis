@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
@@ -53,8 +54,53 @@ impl HistoryCell for DisplayCountingCell {
     }
 }
 
+#[derive(Debug)]
+struct MutableLinesCell {
+    lines: Arc<RwLock<Vec<String>>>,
+    display_calls: Arc<AtomicUsize>,
+}
+
+impl HistoryCell for MutableLinesCell {
+    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        self.display_calls.fetch_add(1, Ordering::Relaxed);
+        self.lines
+            .read()
+            .expect("mutable cell lines")
+            .iter()
+            .cloned()
+            .map(Line::from)
+            .collect()
+    }
+
+    fn raw_lines(&self) -> Vec<Line<'static>> {
+        self.lines
+            .read()
+            .expect("mutable cell lines")
+            .iter()
+            .cloned()
+            .map(Line::from)
+            .collect()
+    }
+}
+
 fn measure(chat: &ChatWidget, width: u16) {
     let _ = Renderable::desired_height(chat, width);
+}
+
+fn render_text(chat: &ChatWidget, width: u16, height: u16) -> String {
+    let area = Rect::new(0, 0, width, height);
+    let mut buffer = Buffer::empty(area);
+    Renderable::render(chat, area, &mut buffer);
+    (0..height)
+        .map(|y| {
+            let mut line = String::new();
+            for x in 0..width {
+                line.push_str(buffer[(x, y)].symbol());
+            }
+            line
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[tokio::test]
@@ -165,4 +211,90 @@ async fn composite_active_cell_is_remeasured_each_frame() {
         "composite cells can change through their parts and must not reuse height",
     );
     assert!(chat.transcript.active_cell_layout.get().is_none());
+}
+
+#[tokio::test]
+async fn warmed_layout_keeps_text_live_and_revision_reveals_a_grown_tail() {
+    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
+    let lines = Arc::new(RwLock::new(vec!["initial active line".to_string()]));
+    let display_calls = Arc::new(AtomicUsize::new(0));
+    chat.transcript.active_cell = Some(Box::new(MutableLinesCell {
+        lines: Arc::clone(&lines),
+        display_calls: Arc::clone(&display_calls),
+    }));
+    chat.bump_active_cell_revision();
+
+    let first = render_text(&chat, /*width*/ 60, /*height*/ 12);
+    assert!(first.contains("initial active line"));
+    let warm_layout = chat
+        .transcript
+        .active_cell_layout
+        .get()
+        .expect("render should warm layout cache");
+    let calls_after_first = display_calls.load(Ordering::Relaxed);
+
+    let second = render_text(&chat, /*width*/ 60, /*height*/ 12);
+    assert!(second.contains("initial active line"));
+    assert!(
+        display_calls.load(Ordering::Relaxed) > calls_after_first,
+        "display lines must still be regenerated when height is cached",
+    );
+    assert_eq!(chat.transcript.active_cell_layout.get(), Some(warm_layout));
+
+    *lines.write().expect("mutable cell lines") = (0..16)
+        .map(|index| {
+            if index == 15 {
+                "latest-tail-after-growth".to_string()
+            } else {
+                format!("grown active line {index:02}")
+            }
+        })
+        .collect();
+
+    let stale = render_text(&chat, /*width*/ 60, /*height*/ 12);
+    assert!(
+        !stale.contains("latest-tail-after-growth"),
+        "negative control: withholding the revision should retain the stale one-row layout",
+    );
+
+    chat.bump_active_cell_revision();
+    let refreshed = render_text(&chat, /*width*/ 60, /*height*/ 12);
+    assert!(
+        refreshed.contains("latest-tail-after-growth"),
+        "revision invalidation must keep the newest grown tail visible",
+    );
+}
+
+#[tokio::test]
+async fn width_resize_reflows_cached_active_cell_and_keeps_tail_visible() {
+    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
+    let content = format!("wrap-start-{}-wrap-tail", "x".repeat(48));
+    chat.transcript.active_cell = Some(Box::new(history_cell::PlainHistoryCell::new(vec![
+        Line::from(content),
+    ])));
+    chat.bump_active_cell_revision();
+
+    let wide = render_text(&chat, /*width*/ 80, /*height*/ 12);
+    let wide_layout = chat
+        .transcript
+        .active_cell_layout
+        .get()
+        .expect("wide layout cache");
+    assert!(wide.contains("wrap-tail"));
+
+    let narrow = render_text(&chat, /*width*/ 24, /*height*/ 12);
+    let narrow_layout = chat
+        .transcript
+        .active_cell_layout
+        .get()
+        .expect("narrow layout cache");
+    assert_ne!(wide_layout.key.width, narrow_layout.key.width);
+    assert!(
+        narrow_layout.rendered_height > wide_layout.rendered_height,
+        "narrow width should increase the wrapped row count",
+    );
+    assert!(
+        narrow.contains("wrap-tail"),
+        "resized viewport must keep the wrapped tail visible",
+    );
 }
