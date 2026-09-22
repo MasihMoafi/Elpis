@@ -61,6 +61,11 @@ check("no client-specific analytics opt-in", () => {
   assert(otel.includes("to_otel_exporter(&config.otel.metrics_exporter)"),
     "explicit local/opt-in metrics configuration was lost");
 });
+check("no raw MCP result telemetry capture", () => {
+  const source = fs.readFileSync(path.join(root, "codex-rs/core/src/tools/context.rs"), "utf8");
+  assert(!source.includes("result_metadata_capture_allowed"),
+    "MCP result telemetry capture survives the analytics deletion");
+});
 check("default regression coverage", () => {
   const text = fs.readFileSync(path.join(root, "codex-rs/core/src/config/config_tests.rs"), "utf8");
   assert(text.includes("fn metrics_exporter_defaults_to_none_when_missing("),
