@@ -791,8 +791,10 @@ impl App {
                 );
                 Ok(true)
             }
-            AppCommand::Compact => {
-                app_server.thread_compact_start(thread_id).await?;
+            AppCommand::Compact { instructions } => {
+                app_server
+                    .thread_compact_start(thread_id, instructions.clone())
+                    .await?;
                 Ok(true)
             }
             AppCommand::Prune { target_pct } => {

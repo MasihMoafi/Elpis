@@ -581,7 +581,10 @@ async fn run_compact_preservation_scenario(compact: bool) -> CompactPreservation
     }
 
     if compact {
-        codex.submit(Op::Compact).await.expect("trigger compact");
+        codex
+            .submit(Op::Compact { instructions: None })
+            .await
+            .expect("trigger compact");
         wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
     }
 
@@ -737,7 +740,10 @@ async fn summarize_context_three_requests_and_instructions() {
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     // 2) Summarize – second hit should include the summarization prompt.
-    codex.submit(Op::Compact).await.unwrap();
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .unwrap();
     let warning_event = wait_for_event(&codex, |ev| matches!(ev, EventMsg::Warning(_))).await;
     let EventMsg::Warning(WarningEvent { message }) = warning_event else {
         panic!("expected warning event after compact");
@@ -931,7 +937,10 @@ async fn manual_pre_compact_block_decision_does_not_block_compaction() {
         .expect("submit first user turn");
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.expect("trigger compact");
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .expect("trigger compact");
 
     let completed = wait_for_event_match(&codex, |ev| match ev {
         EventMsg::HookCompleted(completed)
@@ -1004,7 +1013,10 @@ async fn compact_hooks_respect_matchers_and_post_runs_after_compaction() {
         .expect("submit first user turn");
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.expect("trigger compact");
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .expect("trigger compact");
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::Warning(_))).await;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -1074,7 +1086,10 @@ async fn manual_compact_uses_custom_prompt() {
         .expect("submit first user turn");
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.expect("trigger compact");
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .expect("trigger compact");
     let warning_event = wait_for_event(&codex, |ev| matches!(ev, EventMsg::Warning(_))).await;
     let EventMsg::Warning(WarningEvent { message }) = warning_event else {
         panic!("expected warning event after compact");
@@ -1148,7 +1163,10 @@ async fn manual_compact_emits_api_and_local_token_usage_events() {
     let codex = builder.build(&server).await.unwrap().codex;
 
     // Trigger manual compact and collect TokenCount events for the compact turn.
-    codex.submit(Op::Compact).await.unwrap();
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .unwrap();
 
     // First TokenCount: from the compact API call (usage.total_tokens = 0).
     let first = wait_for_event_match(&codex, |ev| match ev {
@@ -1221,7 +1239,10 @@ async fn manual_compact_emits_context_compaction_items() {
         .unwrap();
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.unwrap();
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .unwrap();
 
     let mut started_item = None;
     let mut completed_item = None;
@@ -3918,7 +3939,10 @@ async fn manual_compact_retries_after_context_window_error() {
         .unwrap();
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.unwrap();
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .unwrap();
     let warning_event = wait_for_event(&codex, |ev| matches!(ev, EventMsg::Warning(_))).await;
     let EventMsg::Warning(WarningEvent { message }) = warning_event else {
         panic!("expected warning event after compact retry");
@@ -4022,7 +4046,10 @@ async fn manual_compact_non_context_failure_retries_then_emits_task_error() {
         .expect("submit user input");
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.expect("trigger compact");
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .expect("trigger compact");
 
     let reconnect_message = wait_for_event_match(&codex, |event| match event {
         EventMsg::StreamError(stream_error) => Some(stream_error.message.clone()),
@@ -4117,7 +4144,10 @@ async fn manual_compact_twice_preserves_latest_user_messages() {
         .unwrap();
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.unwrap();
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .unwrap();
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     codex
@@ -4135,7 +4165,10 @@ async fn manual_compact_twice_preserves_latest_user_messages() {
         .unwrap();
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await.unwrap();
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .unwrap();
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     codex
@@ -5378,7 +5411,10 @@ async fn snapshot_request_shape_manual_compact_without_previous_user_messages() 
         .expect("build codex")
         .codex;
 
-    codex.submit(Op::Compact).await.expect("run /compact");
+    codex
+        .submit(Op::Compact { instructions: None })
+        .await
+        .expect("run /compact");
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     codex
@@ -5471,7 +5507,9 @@ async fn manual_compaction_keeps_the_creation_time_global_instructions() -> Resu
     )?;
     assert_eq!(source, rewritten_source);
 
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
@@ -5617,7 +5655,9 @@ async fn remote_v2_compaction_keeps_creation_time_instructions_after_same_path_m
         NEW_GLOBAL_INSTRUCTIONS,
     )?;
     assert_eq!(source, rewritten_source);
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })

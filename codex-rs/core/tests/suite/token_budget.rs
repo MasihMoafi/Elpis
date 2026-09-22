@@ -684,7 +684,9 @@ async fn token_budget_context_uses_new_window_after_compaction() -> Result<()> {
         .await?;
 
     test.submit_turn("before compact").await?;
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     assert_context_compaction_item_lifecycle(&test.codex).await;
     test.submit_turn("after compact").await?;
 
@@ -749,7 +751,9 @@ async fn token_budget_compaction_runs_compact_hooks() -> Result<()> {
         .build(&server)
         .await?;
 
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
 
     let pre_compact = wait_for_event_match(&test.codex, |event| match event {
         EventMsg::HookCompleted(completed)

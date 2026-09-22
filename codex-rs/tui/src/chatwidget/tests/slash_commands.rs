@@ -15,7 +15,7 @@ async fn pressure_compaction_command_persists_threshold_without_compacting_immed
             .unwrap()
             .should_compact(900, Some(1000))
     );
-    for value in ["0.5", "1", "25", "30%", "69.99"] {
+    for value in ["0.5", "1", "25", "30%", "25%%", "69.99"] {
         chat.dispatch_command_with_args(SlashCommand::Compact, value.into(), Vec::new());
         let settings = PressureCompaction::load(home.path()).unwrap();
         let threshold = value.trim_end_matches('%').parse::<f64>().unwrap();
@@ -27,14 +27,14 @@ async fn pressure_compaction_command_persists_threshold_without_compacting_immed
         assert!(!chat.bottom_pane.is_task_running());
         assert!(
             !std::iter::from_fn(|| rx.try_recv().ok())
-                .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact)))
+                .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact { .. })))
         );
     }
     PressureCompaction::parse("25")
         .unwrap()
         .save(home.path())
         .unwrap();
-    for invalid in ["0", "-1", "70", "100", "NaN", "inf", "text", "25 30"] {
+    for invalid in ["0", "-1", "70", "100", "NaN", "inf"] {
         chat.dispatch_command_with_args(SlashCommand::Compact, invalid.into(), Vec::new());
         assert_eq!(
             PressureCompaction::load(home.path())
@@ -49,6 +49,42 @@ async fn pressure_compaction_command_persists_threshold_without_compacting_immed
     assert!(settings.should_compact(751, Some(1000)));
     std::fs::write(home.path().join("compaction.json"), "{bad settings}").unwrap();
     assert!(PressureCompaction::load(home.path()).is_err());
+}
+
+#[tokio::test]
+async fn compact_text_dispatches_compaction_without_changing_pressure_settings() {
+    use crate::legacy_core::pressure_compaction::PressureCompaction;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let home = tempfile::tempdir().unwrap();
+    chat.config.codex_home =
+        codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(home.path()).unwrap();
+    PressureCompaction::parse("25")
+        .unwrap()
+        .save(home.path())
+        .unwrap();
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Compact,
+        "3 bullet points preserving unresolved blockers and exact evidence".into(),
+        Vec::new(),
+    );
+
+    assert_eq!(
+        PressureCompaction::load(home.path())
+            .unwrap()
+            .remaining_percent,
+        Some(25.0)
+    );
+    match rx.try_recv() {
+        Ok(AppEvent::CodexOp(Op::Compact {
+            instructions: Some(instructions),
+        })) => assert_eq!(
+            instructions,
+            "3 bullet points preserving unresolved blockers and exact evidence"
+        ),
+        other => panic!("expected compact op with textual instructions, got {other:?}"),
+    }
 }
 
 fn fast_tier_command() -> ServiceTierCommand {
@@ -176,7 +212,7 @@ async fn slash_compact_eagerly_queues_follow_up_before_turn_start() {
 
     assert!(chat.bottom_pane.is_task_running());
     match rx.try_recv() {
-        Ok(AppEvent::CodexOp(Op::Compact)) => {}
+        Ok(AppEvent::CodexOp(Op::Compact { instructions: None })) => {}
         other => panic!("expected compact op to be submitted, got {other:?}"),
     }
 
@@ -468,9 +504,63 @@ async fn queued_slash_compact_dispatches_after_active_turn() {
     assert!(
         events
             .iter()
-            .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact))),
+            .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact { instructions: None }))),
         "expected queued /compact to submit compact op; events: {events:?}"
     );
+}
+
+#[tokio::test]
+async fn queued_slash_compact_preserves_textual_instructions() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+
+    queue_composer_text(&mut chat, "/compact preserve exact evidence");
+    complete_turn_with_message(&mut chat, "turn-1", Some("done"));
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::CodexOp(Op::Compact { instructions: Some(instructions) })
+            if instructions == "preserve exact evidence"
+    )));
+}
+
+#[tokio::test]
+async fn queued_pressure_setting_continues_to_follow_up_message() {
+    use crate::legacy_core::pressure_compaction::PressureCompaction;
+
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let home = tempfile::tempdir().unwrap();
+    chat.config.codex_home =
+        codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(home.path()).unwrap();
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+
+    queue_composer_text(&mut chat, "/compact 25");
+    queue_composer_text(&mut chat, "continue after pressure setting");
+    complete_turn_with_message(&mut chat, "turn-1", Some("done"));
+
+    assert_eq!(
+        PressureCompaction::load(home.path())
+            .unwrap()
+            .remaining_percent,
+        Some(25.0)
+    );
+    assert!(
+        !std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact { .. })))
+    );
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => assert_eq!(
+            items,
+            vec![UserInput::Text {
+                text: "continue after pressure setting".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ),
+        other => panic!("expected follow-up after pressure setting, got {other:?}"),
+    }
 }
 
 #[tokio::test]

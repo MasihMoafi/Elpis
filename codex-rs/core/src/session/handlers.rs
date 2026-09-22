@@ -461,11 +461,15 @@ pub async fn reload_user_config(sess: &Arc<Session>) {
     sess.reload_user_config_layer().await;
 }
 
-pub async fn compact(sess: &Arc<Session>, sub_id: String) {
+pub async fn compact(sess: &Arc<Session>, sub_id: String, instructions: Option<String>) {
     let turn_context = sess.new_default_turn_with_sub_id(sub_id).await;
 
-    sess.spawn_task(Arc::clone(&turn_context), Vec::new(), CompactTask)
-        .await;
+    sess.spawn_task(
+        Arc::clone(&turn_context),
+        Vec::new(),
+        CompactTask::new(instructions),
+    )
+    .await;
 }
 
 pub async fn prune(sess: &Arc<Session>, sub_id: String, target_pct: Option<i64>) {
@@ -798,8 +802,8 @@ pub(super) async fn submission_loop(
                     reload_user_config(&sess).await;
                     false
                 }
-                Op::Compact => {
-                    compact(&sess, sub.id.clone()).await;
+                Op::Compact { instructions } => {
+                    compact(&sess, sub.id.clone(), instructions).await;
                     false
                 }
                 Op::Prune { target_pct } => {

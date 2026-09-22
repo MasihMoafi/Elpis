@@ -929,6 +929,9 @@ pub struct ThreadUnarchiveResponse {
 #[ts(export_to = "v2/")]
 pub struct ThreadCompactStartParams {
     pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub instructions: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1760,4 +1763,36 @@ pub struct ThreadGoalClearedNotification {
 pub struct ContextCompactedNotification {
     pub thread_id: String,
     pub turn_id: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ThreadCompactStartParams;
+    use pretty_assertions::assert_eq;
+    use serde_json::json;
+
+    #[test]
+    fn thread_compact_start_params_preserve_legacy_wire_shape() {
+        let params: ThreadCompactStartParams =
+            serde_json::from_value(json!({ "threadId": "thread-1" })).unwrap();
+        assert_eq!(params.instructions, None);
+        assert_eq!(
+            serde_json::to_value(params).unwrap(),
+            json!({ "threadId": "thread-1" })
+        );
+    }
+
+    #[test]
+    fn thread_compact_start_params_round_trip_instructions() {
+        let value = json!({
+            "threadId": "thread-1",
+            "instructions": "preserve exact evidence"
+        });
+        let params: ThreadCompactStartParams = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            params.instructions.as_deref(),
+            Some("preserve exact evidence")
+        );
+        assert_eq!(serde_json::to_value(params).unwrap(), value);
+    }
 }

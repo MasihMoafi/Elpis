@@ -26,6 +26,7 @@ use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
+use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 use codex_protocol::models::ResponseInputItem;
@@ -48,6 +49,22 @@ use codex_model_provider_info::ModelProviderInfo;
 pub use codex_prompts::SUMMARIZATION_PROMPT;
 pub use codex_prompts::SUMMARY_PREFIX;
 const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
+const ADDITIONAL_COMPACTION_INSTRUCTIONS_HEADER: &str = "Additional compaction instructions:";
+
+pub(crate) fn with_additional_compaction_instructions(
+    mut base_instructions: BaseInstructions,
+    instructions: Option<&str>,
+) -> BaseInstructions {
+    if let Some(instructions) = instructions {
+        base_instructions.text.push_str("\n\n");
+        base_instructions
+            .text
+            .push_str(ADDITIONAL_COMPACTION_INSTRUCTIONS_HEADER);
+        base_instructions.text.push('\n');
+        base_instructions.text.push_str(instructions);
+    }
+    base_instructions
+}
 
 /// Controls whether compaction replacement history must include initial context.
 ///
@@ -109,6 +126,7 @@ pub(crate) async fn run_inline_auto_compact_task(
         turn_context,
         input,
         initial_context_injection,
+        /*additional_instructions*/ None,
         CompactionTrigger::Auto,
         reason,
         phase,
@@ -121,6 +139,7 @@ pub(crate) async fn run_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
+    additional_instructions: Option<&str>,
 ) -> CodexResult<()> {
     let start_event = EventMsg::TurnStarted(TurnStartedEvent {
         turn_id: turn_context.sub_id.clone(),
@@ -135,6 +154,7 @@ pub(crate) async fn run_compact_task(
         turn_context,
         input,
         InitialContextInjection::DoNotInject,
+        additional_instructions,
         CompactionTrigger::Manual,
         CompactionReason::UserRequested,
         CompactionPhase::StandaloneTurn,
@@ -148,6 +168,7 @@ async fn run_compact_task_inner(
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
     initial_context_injection: InitialContextInjection,
+    additional_instructions: Option<&str>,
     trigger: CompactionTrigger,
     reason: CompactionReason,
     phase: CompactionPhase,
@@ -166,6 +187,7 @@ async fn run_compact_task_inner(
         Arc::clone(&turn_context),
         input,
         initial_context_injection,
+        additional_instructions,
         compaction_metadata,
     )
     .await;
@@ -183,6 +205,7 @@ async fn run_compact_task_inner_impl(
     turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
     initial_context_injection: InitialContextInjection,
+    additional_instructions: Option<&str>,
     compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<String> {
     let compaction_item = TurnItem::ContextCompaction(ContextCompactionItem::new());
@@ -217,7 +240,10 @@ async fn run_compact_task_inner_impl(
         let turn_input_len = turn_input.len();
         let prompt = Prompt {
             input: turn_input,
-            base_instructions: sess.get_base_instructions().await,
+            base_instructions: with_additional_compaction_instructions(
+                sess.get_base_instructions().await,
+                additional_instructions,
+            ),
             ..Default::default()
         };
         let attempt_result = drain_to_completed(

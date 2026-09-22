@@ -63,6 +63,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
         fallback_step_context.as_ref(),
         Some(turn_state),
         initial_context_injection,
+        /*additional_instructions*/ None,
         compaction_metadata,
     )
     .await?;
@@ -72,6 +73,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
 pub(crate) async fn run_remote_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
+    additional_instructions: Option<&str>,
 ) -> CodexResult<()> {
     // Standalone compaction is its own request boundary, so it captures a fresh step.
     let step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
@@ -96,6 +98,7 @@ pub(crate) async fn run_remote_compact_task(
         /*fallback_step_context*/ None,
         /*turn_state*/ None,
         InitialContextInjection::DoNotInject,
+        additional_instructions,
         compaction_metadata,
     )
     .await?;
@@ -108,6 +111,7 @@ async fn run_remote_compact_task_inner(
     fallback_step_context: Option<&Arc<StepContext>>,
     turn_state: Option<Arc<OnceLock<String>>>,
     initial_context_injection: InitialContextInjection,
+    additional_instructions: Option<&str>,
     compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
@@ -131,6 +135,7 @@ async fn run_remote_compact_task_inner(
         fallback_step_context,
         turn_state,
         initial_context_injection,
+        additional_instructions,
         compaction_metadata,
     )
     .await;
@@ -162,6 +167,7 @@ async fn run_remote_compact_task_inner_impl(
     fallback_step_context: Option<&Arc<StepContext>>,
     turn_state: Option<Arc<OnceLock<String>>>,
     initial_context_injection: InitialContextInjection,
+    additional_instructions: Option<&str>,
     compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
@@ -183,6 +189,7 @@ async fn run_remote_compact_task_inner_impl(
         step_context,
         turn_state.clone(),
         &compaction_trace,
+        additional_instructions,
         compaction_metadata,
     )
     .await;
@@ -208,6 +215,7 @@ async fn run_remote_compact_task_inner_impl(
                 fallback_step_context,
                 turn_state,
                 &fallback_compaction_trace,
+                additional_instructions,
                 compaction_metadata,
             )
             .await;

@@ -76,6 +76,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
         fallback_step_context.as_ref(),
         Some(client_session),
         initial_context_injection,
+        /*additional_instructions*/ None,
         compaction_metadata,
     )
     .await
@@ -84,6 +85,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
 pub(crate) async fn run_remote_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
+    additional_instructions: Option<&str>,
 ) -> CodexResult<()> {
     // Standalone compaction is its own request boundary, so it captures a fresh step.
     let step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
@@ -108,6 +110,7 @@ pub(crate) async fn run_remote_compact_task(
         /*fallback_step_context*/ None,
         /*client_session*/ None,
         InitialContextInjection::DoNotInject,
+        additional_instructions,
         compaction_metadata,
     )
     .await
@@ -119,6 +122,7 @@ async fn run_remote_compact_task_inner(
     fallback_step_context: Option<&Arc<StepContext>>,
     client_session: Option<&mut ModelClientSession>,
     initial_context_injection: InitialContextInjection,
+    additional_instructions: Option<&str>,
     compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
@@ -136,6 +140,7 @@ async fn run_remote_compact_task_inner(
         fallback_step_context,
         client_session,
         initial_context_injection,
+        additional_instructions,
         compaction_metadata,
     )
     .await;
@@ -164,6 +169,7 @@ async fn run_remote_compact_task_inner_impl(
     fallback_step_context: Option<&Arc<StepContext>>,
     mut client_session: Option<&mut ModelClientSession>,
     initial_context_injection: InitialContextInjection,
+    additional_instructions: Option<&str>,
     compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
@@ -184,6 +190,7 @@ async fn run_remote_compact_task_inner_impl(
         step_context,
         client_session.as_deref_mut(),
         &compaction_trace,
+        additional_instructions,
         compaction_metadata,
     )
     .await;
@@ -209,6 +216,7 @@ async fn run_remote_compact_task_inner_impl(
                 fallback_step_context,
                 client_session,
                 &fallback_compaction_trace,
+                additional_instructions,
                 compaction_metadata,
             )
             .await;

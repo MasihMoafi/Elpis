@@ -87,7 +87,10 @@ pub(crate) enum AppCommand {
         cwds: Vec<PathBuf>,
         force_reload: bool,
     },
-    Compact,
+    Compact {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        instructions: Option<String>,
+    },
     Prune {
         target_pct: Option<i64>,
     },
@@ -232,8 +235,8 @@ impl AppCommand {
         Self::ListSkills { cwds, force_reload }
     }
 
-    pub(crate) fn compact() -> Self {
-        Self::Compact
+    pub(crate) fn compact(instructions: Option<String>) -> Self {
+        Self::Compact { instructions }
     }
 
     pub(crate) fn set_thread_name(name: String) -> Self {

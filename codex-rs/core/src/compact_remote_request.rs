@@ -27,12 +27,16 @@ pub(super) async fn run_remote_compact_attempt(
     step_context: &Arc<StepContext>,
     turn_state: Option<Arc<OnceLock<String>>>,
     compaction_trace: &CompactionTraceContext,
+    additional_instructions: Option<&str>,
     compaction_metadata: CompactionTurnMetadata,
 ) -> CodexResult<RemoteCompactAttempt> {
     let preparation_started = std::time::Instant::now();
     let turn_context = &step_context.turn;
     let mut history = sess.clone_history().await;
-    let base_instructions = sess.get_base_instructions().await;
+    let base_instructions = crate::compact::with_additional_compaction_instructions(
+        sess.get_base_instructions().await,
+        additional_instructions,
+    );
     let (rewritten_outputs, _estimated_deleted_tokens) =
         trim_function_call_history_to_fit_context_window(
             &mut history,

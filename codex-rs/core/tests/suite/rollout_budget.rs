@@ -322,7 +322,9 @@ async fn compaction_budget_exhaustion_fails_without_retry(remote_v2: bool) -> Re
         .build(&server)
         .await?;
 
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |event| {
         matches!(
             event,
@@ -377,7 +379,9 @@ async fn restates_the_current_remainder_after_compaction() -> Result<()> {
         .await?;
 
     test.submit_turn("first turn").await?;
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })

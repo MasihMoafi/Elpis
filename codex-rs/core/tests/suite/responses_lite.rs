@@ -317,7 +317,9 @@ async fn responses_lite_compact_request_uses_lite_transport_contract() -> Result
     let test = builder.build(&server).await?;
 
     test.submit_turn("Compact this conversation").await?;
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })

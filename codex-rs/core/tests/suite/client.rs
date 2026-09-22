@@ -511,7 +511,9 @@ async fn response_item_ids_are_sent_for_all_remote_v2_compaction_requests() -> a
         .await?;
 
     test.submit_turn("before compaction").await?;
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })

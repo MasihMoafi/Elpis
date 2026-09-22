@@ -46,8 +46,8 @@ impl AppEventSender {
         self.send(AppEvent::CodexOp(AppCommand::interrupt()));
     }
 
-    pub(crate) fn compact(&self) {
-        self.send(AppEvent::CodexOp(AppCommand::compact()));
+    pub(crate) fn compact(&self, instructions: Option<String>) {
+        self.send(AppEvent::CodexOp(AppCommand::compact(instructions)));
     }
 
     pub(crate) fn prune(&self, target_pct: Option<i64>) {

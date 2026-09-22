@@ -278,7 +278,7 @@ impl ChatWidget {
                 if !self.bottom_pane.is_task_running() {
                     self.bottom_pane.set_task_running(/*running*/ true);
                 }
-                self.app_event_tx.compact();
+                self.app_event_tx.compact(None);
             }
             SlashCommand::Review => {
                 self.open_review_popup();
@@ -547,22 +547,6 @@ impl ChatWidget {
         }
 
         let trimmed = args.trim();
-        if cmd == SlashCommand::Compact && !trimmed.is_empty() {
-            let result =
-                crate::legacy_core::pressure_compaction::PressureCompaction::parse(trimmed)
-                    .and_then(|settings| {
-                        settings.save(&self.config.codex_home)?;
-                        Ok(settings.remaining_percent.unwrap_or_default())
-                    });
-            match result {
-                Ok(percent) => self.add_info_message(
-                    format!("Pressure compaction saved: {percent}% remaining. Checked before each turn. /compact alone compacts now."),
-                    None,
-                ),
-                Err(error) => self.add_error_message(format!("Compaction setting was not changed: {error}")),
-            }
-            return;
-        }
         if cmd == SlashCommand::MemoryModel && !trimmed.is_empty() {
             let result = self
                 .background_model_edits(trimmed)
@@ -714,6 +698,30 @@ impl ChatWidget {
         } = prepared;
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Compact if is_pressure_compaction_arg(trimmed) => {
+                let result =
+                    crate::legacy_core::pressure_compaction::PressureCompaction::parse(trimmed)
+                        .and_then(|settings| {
+                            settings.save(&self.config.codex_home)?;
+                            Ok(settings.remaining_percent.unwrap_or_default())
+                        });
+                match result {
+                    Ok(percent) => self.add_info_message(
+                        format!("Pressure compaction saved: {percent}% remaining. Checked before each turn. /compact alone compacts now."),
+                        None,
+                    ),
+                    Err(error) => self.add_error_message(format!(
+                        "Compaction setting was not changed: {error}"
+                    )),
+                }
+            }
+            SlashCommand::Compact if !trimmed.is_empty() => {
+                self.clear_token_usage();
+                if !self.bottom_pane.is_task_running() {
+                    self.bottom_pane.set_task_running(/*running*/ true);
+                }
+                self.app_event_tx.compact(Some(trimmed.to_string()));
+            }
             SlashCommand::Add => {
                 if self.reject_manual_memory_writer_conflict() {
                     return;
@@ -1101,6 +1109,8 @@ impl ChatWidget {
             rest_offset + leading_trimmed,
             &text_elements,
         );
+        let changes_pressure =
+            cmd == SlashCommand::Compact && is_pressure_compaction_arg(trimmed_rest);
         self.dispatch_prepared_command_with_args(
             cmd,
             PreparedSlashCommandArgs {
@@ -1113,7 +1123,11 @@ impl ChatWidget {
                 source: SlashCommandDispatchSource::Queued,
             },
         );
-        self.queued_command_drain_result(cmd)
+        if changes_pressure {
+            QueueDrain::Continue
+        } else {
+            self.queued_command_drain_result(cmd)
+        }
     }
 
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
@@ -1249,4 +1263,12 @@ impl ChatWidget {
         self.bottom_pane.drain_pending_submission_state();
         false
     }
+}
+
+fn is_pressure_compaction_arg(value: &str) -> bool {
+    let mut parts = value.split_whitespace();
+    let Some(token) = parts.next() else {
+        return false;
+    };
+    parts.next().is_none() && token.trim_end_matches('%').parse::<f64>().is_ok()
 }

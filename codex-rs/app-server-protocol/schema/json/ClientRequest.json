@@ -3623,6 +3623,12 @@
     },
     "ThreadCompactStartParams": {
       "properties": {
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "threadId": {
           "type": "string"
         }

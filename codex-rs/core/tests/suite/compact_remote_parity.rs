@@ -313,7 +313,7 @@ async fn run_manual_session(
         submit_user_input(&codex, user_input_for_step(scenario.name, idx, *step)).await?;
     }
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     submit_user_input(
@@ -471,7 +471,7 @@ async fn run_manual_hook_session(mode: Mode) -> Result<Value> {
         }],
     )
     .await?;
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     if let Some(compact_mock) = compact_mock {

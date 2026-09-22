@@ -362,7 +362,7 @@ async fn remote_compact_replaces_history_for_followups() -> Result<()> {
         .await?;
     wait_for_turn_complete(&codex).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     codex
@@ -593,7 +593,7 @@ async fn remote_compact_uses_agent_identity_assertion() -> Result<()> {
         .await?;
     wait_for_turn_complete(&codex).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     let compact_request = compact_mock.single_request();
@@ -766,7 +766,7 @@ async fn assert_remote_manual_compact_request_parity(
         .await?;
     wait_for_turn_complete(&codex).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     let response_requests = responses_mock.requests();
@@ -934,7 +934,7 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
         .await?;
     wait_for_turn_complete(&codex).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     codex
@@ -1082,7 +1082,7 @@ async fn remote_compact_v2_retries_failures_with_stream_retry_budget() -> Result
         .await?;
     wait_for_turn_complete(&codex).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     codex
@@ -1185,7 +1185,7 @@ async fn remote_compact_v2_accepts_additional_output_items_before_compaction() -
         .await?;
     wait_for_turn_complete(&codex).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     codex
@@ -1291,7 +1291,7 @@ async fn remote_compact_filters_deferred_dynamic_tools() -> Result<()> {
         .await?;
     wait_for_turn_complete(&codex).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     let first_response_body = responses_mock.single_request().body_json();
@@ -1520,7 +1520,7 @@ async fn remote_compact_trims_function_call_history_to_fit_context_window() -> R
     )
     .await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let compact_request = compact_mock.single_request();
@@ -1648,7 +1648,7 @@ async fn remote_compact_rewrites_multiple_trailing_function_call_outputs() -> Re
     )
     .await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let compact_request = compact_mock.single_request();
@@ -1920,7 +1920,7 @@ async fn remote_compact_trims_tool_search_output_to_empty_tools_array() -> Resul
         responses::mount_compact_user_history_with_summary_once(&server, "REMOTE_COMPACT_SUMMARY")
             .await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_turn_complete(&codex).await;
 
     let compact_request = compact_mock.single_request();
@@ -2130,7 +2130,9 @@ async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result
     )
     .await;
 
-    baseline_codex.submit(Op::Compact).await?;
+    baseline_codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&baseline_codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
@@ -2243,7 +2245,9 @@ async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result
     )
     .await;
 
-    override_codex.submit(Op::Compact).await?;
+    override_codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&override_codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
@@ -2310,7 +2314,7 @@ async fn remote_manual_compact_emits_context_compaction_items() -> Result<()> {
         .await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
 
     let mut started_item = None;
     let mut completed_item = None;
@@ -2391,7 +2395,7 @@ async fn remote_manual_compact_failure_emits_task_error_event() -> Result<()> {
         .await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
 
     let error_message = wait_for_event_match(&codex, |event| match event {
         EventMsg::Error(err) => Some(err.message.clone()),
@@ -2478,7 +2482,7 @@ async fn remote_compact_persists_replacement_history_in_rollout() -> Result<()> 
         .await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     codex.submit(Op::Shutdown).await?;
@@ -2626,7 +2630,10 @@ async fn remote_compact_and_resume_refresh_stale_developer_instructions() -> Res
         .await?;
     wait_for_event(&initial.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    initial.codex.submit(Op::Compact).await?;
+    initial
+        .codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&initial.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     initial
@@ -2768,7 +2775,9 @@ async fn remote_compact_refreshes_stale_developer_instructions_without_resume() 
         .await?;
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     test.codex
@@ -3090,7 +3099,9 @@ async fn snapshot_request_shape_remote_manual_compact_restates_realtime_start() 
         .await?;
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    test.codex.submit(Op::Compact).await?;
+    test.codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     test.codex
@@ -3299,7 +3310,10 @@ async fn snapshot_request_shape_remote_compact_resume_restates_realtime_end() ->
 
     close_realtime_conversation(initial.codex.as_ref()).await?;
 
-    initial.codex.submit(Op::Compact).await?;
+    initial
+        .codex
+        .submit(Op::Compact { instructions: None })
+        .await?;
     wait_for_event(&initial.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     initial.codex.submit(Op::Shutdown).await?;
@@ -4260,7 +4274,7 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_multi_summary_reinjec
         .await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     codex
@@ -4342,7 +4356,7 @@ async fn snapshot_request_shape_remote_manual_compact_without_previous_user_mess
         responses::mount_compact_json_once(harness.server(), serde_json::json!({ "output": [] }))
             .await;
 
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     codex

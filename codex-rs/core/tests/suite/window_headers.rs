@@ -117,7 +117,7 @@ async fn submit_user_turn(codex: &Arc<CodexThread>, text: &str) -> Result<()> {
 }
 
 async fn submit_compact_turn(codex: &Arc<CodexThread>) -> Result<()> {
-    codex.submit(Op::Compact).await?;
+    codex.submit(Op::Compact { instructions: None }).await?;
     let warning_event = wait_for_event(codex, |event| matches!(event, EventMsg::Warning(_))).await;
     let EventMsg::Warning(WarningEvent { message }) = warning_event else {
         panic!("expected warning event after compact");

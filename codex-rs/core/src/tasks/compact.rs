@@ -12,8 +12,19 @@ use codex_protocol::error::CodexErr;
 use codex_protocol::user_input::UserInput;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Clone, Copy, Default)]
-pub(crate) struct CompactTask;
+#[derive(Clone, Default)]
+pub(crate) struct CompactTask {
+    instructions: Option<String>,
+}
+
+impl CompactTask {
+    pub(crate) fn new(instructions: Option<String>) -> Self {
+        let instructions = instructions
+            .map(|instructions| instructions.trim().to_string())
+            .filter(|instructions| !instructions.is_empty());
+        Self { instructions }
+    }
+}
 
 impl SessionTask for CompactTask {
     fn kind(&self) -> TaskKind {
@@ -33,7 +44,7 @@ impl SessionTask for CompactTask {
     ) -> SessionTaskResult {
         let _profile_guard = ctx.turn_timing_state.begin_compaction();
         let session = session.clone_session();
-        if ctx.config.features.enabled(Feature::TokenBudget) {
+        if self.instructions.is_none() && ctx.config.features.enabled(Feature::TokenBudget) {
             crate::compact_token_budget::run_manual_compact_task(session, ctx).await?;
             return Ok(None);
         }
@@ -49,14 +60,24 @@ impl SessionTask for CompactTask {
                     "remote_v2",
                     /*manual*/ true,
                 );
-                crate::compact_remote_v2::run_remote_compact_task(session.clone(), ctx).await
+                crate::compact_remote_v2::run_remote_compact_task(
+                    session.clone(),
+                    ctx,
+                    self.instructions.as_deref(),
+                )
+                .await
             } else {
                 emit_compact_metric(
                     &session.services.session_telemetry,
                     "remote",
                     /*manual*/ true,
                 );
-                crate::compact_remote::run_remote_compact_task(session.clone(), ctx).await
+                crate::compact_remote::run_remote_compact_task(
+                    session.clone(),
+                    ctx,
+                    self.instructions.as_deref(),
+                )
+                .await
             }
         } else {
             emit_compact_metric(
@@ -74,7 +95,13 @@ impl SessionTask for CompactTask {
                 // Compaction prompt is synthesized; no UI element ranges to preserve.
                 text_elements: Vec::new(),
             }];
-            crate::compact::run_compact_task(session.clone(), ctx, input).await
+            crate::compact::run_compact_task(
+                session.clone(),
+                ctx,
+                input,
+                self.instructions.as_deref(),
+            )
+            .await
         };
         if let Err(err @ CodexErr::TurnAborted) = result {
             return Err(err);

@@ -789,7 +789,7 @@ async fn user_turn(conversation: &Arc<CodexThread>, text: &str) {
 
 async fn compact_conversation(conversation: &Arc<CodexThread>) {
     conversation
-        .submit(Op::Compact)
+        .submit(Op::Compact { instructions: None })
         .await
         .expect("compact conversation");
     let warning_event = wait_for_event(conversation, |ev| {
