@@ -13,13 +13,15 @@ for (const directory of [home, cwd]) fs.mkdirSync(directory);
 const instructions = "Preserve unresolved Cedar blockers and exact evidence — ۳ نکته.";
 const summaryPrompt = "Summarize the conversation for continuation; preserve unresolved work.";
 const tokenBudget = process.argv[3] === "token-budget";
+const remote = process.argv[3] === "remote" || process.argv[3] === "remote-v2";
+const remoteV2 = process.argv[3] === "remote-v2";
 const requests = [];
 let phase = "seed";
 let rpc;
 
 const server = http.createServer(async (request, response) => {
   try {
-    if (!request.url.endsWith("/responses")) {
+    if (!request.url.endsWith("/responses") && !request.url.endsWith("/responses/compact")) {
       response.writeHead(404);
       response.end();
       return;
@@ -27,10 +29,17 @@ const server = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
-    requests.push({ phase, body });
+    requests.push({ phase, path: request.url, body });
+    if (request.url.endsWith("/responses/compact")) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ output: [{ type: "compaction", encrypted_content: "fixture-summary" }] }));
+      return;
+    }
     const id = `response-${requests.length}`;
     // Never echo the instructions into history: later checks detect actual leakage.
-    const item = {
+    const item = remoteV2 && body.input?.some(item => item.type === "compaction_trigger") ? {
+      type: "compaction", encrypted_content: "fixture-summary",
+    } : {
       type: "message", id: `message-${id}`, role: "assistant", status: "completed",
       content: [{ type: "output_text", text: "Cedar work remains open.", annotations: [] }],
     };
@@ -82,8 +91,8 @@ async function run() {
   fs.writeFileSync(path.join(home, "config.toml"), [
     'model = "gpt-5.6-terra"', 'model_provider = "fixture"',
     `compact_prompt = ${JSON.stringify(summaryPrompt)}`,
-    ...(tokenBudget ? ["[features]", "token_budget = true"] : []),
-    "[model_providers.fixture]", 'name = "Fixture"',
+    "[features]", `token_budget = ${tokenBudget}`, `remote_compaction_v2 = ${remoteV2}`,
+    "[model_providers.fixture]", `name = "${remote ? "OpenAI" : "Fixture"}"`,
     `base_url = "http://127.0.0.1:${server.address().port}/v1"`,
     'wire_api = "responses"', "requires_openai_auth = false", "",
   ].join("\n"));
@@ -109,7 +118,7 @@ async function run() {
   const normal = tokenBudget ? phaseRequests("seed").at(-1) : phaseRequests(phase).at(-1);
   if (tokenBudget) {
     assert(!requests.some(request => request.phase === phase), "bare token-budget compaction unexpectedly called the model");
-  } else {
+  } else if (!remote) {
     assert(JSON.stringify(normal.input).includes(summaryPrompt), "bare compaction lost its summary prompt");
   }
   assert(!String(normal.instructions).includes(instructions), "control already contains test instructions");
@@ -119,7 +128,12 @@ async function run() {
   const custom = phaseRequests(phase).at(-1);
   assert(String(custom.instructions).includes(instructions), "custom compaction instructions never reached the provider");
   assert(String(custom.instructions).startsWith(normal.instructions), "custom instructions replaced normal base guidance");
-  assert(JSON.stringify(custom.input).includes(summaryPrompt), "custom compaction replaced the normal summary prompt");
+  if (!remote) assert(JSON.stringify(custom.input).includes(summaryPrompt), "custom compaction replaced the normal summary prompt");
+  if (remote) {
+    assert(requests.some(request => request.phase === phase && (remoteV2
+      ? request.body.input?.some(item => item.type === "compaction_trigger")
+      : request.path.endsWith("/responses/compact"))), "remote compaction path was not exercised");
+  }
 
   phase = "bare-after";
   await complete("thread/compact/start", { threadId: thread.id });
@@ -136,9 +150,9 @@ async function run() {
   for (const body of phaseRequests(phase)) {
     assert(!String(body.instructions).includes(instructions), "custom instructions leaked into a normal turn");
   }
-  console.log(JSON.stringify({ passed: true, tokenBudget, checks: [
+  console.log(JSON.stringify({ passed: true, tokenBudget, remote, remoteV2, checks: [
     "bare compaction retains its normal prompt",
-    "exact Unicode instructions reach the local compaction request",
+    "exact Unicode instructions reach the selected compaction request",
     "custom instructions supplement rather than replace summary guidance",
     "later bare compaction and normal turns do not inherit the instructions",
   ] }, null, 2));
