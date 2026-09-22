@@ -11,6 +11,7 @@ mod safety_buffering;
 mod session_summary;
 mod startup;
 mod subagent_visibility;
+mod thread_routing;
 
 use super::*;
 use crate::app_backtrack::BacktrackSelection;
