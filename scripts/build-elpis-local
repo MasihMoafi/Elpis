@@ -78,7 +78,7 @@ case "$mode" in
         # The model catalog crates: which models a provider lists, and how its
         # answer is read.
         cargo_args=(test --profile dev-small --locked --offline --lib --no-run)
-        cargo_args+=(-p codex-models-manager -p codex-model-provider -p codex-model-provider-info)
+        cargo_args+=(-p codex-protocol -p codex-models-manager -p codex-model-provider -p codex-model-provider-info)
         artifact=
         ;;
     config-test-build)

@@ -54,6 +54,16 @@ test('invalid worktree selection refuses compiler startup', () => {
   assert.equal(result.compilerStarted, false);
 });
 
+test('model catalog verification also builds protocol wire-format tests', () => {
+  const result = runGuard(50000, 'models-test-build');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(result.args.flatMap((arg, i) => arg === '-p' ? [result.args[i + 1]] : []),
+    ['codex-protocol', 'codex-models-manager', 'codex-model-provider', 'codex-model-provider-info']);
+  assert(result.args.includes('--no-run'));
+  assert(result.args.includes('--locked'));
+  assert(result.args.includes('--offline'));
+});
+
 test('background warmth below the ceiling does not stall builds', () => {
   const result = runGuard(70000);
   assert.equal(result.status, 0, result.stdout + result.stderr);
