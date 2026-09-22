@@ -253,6 +253,14 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
         plain_hyperlink_lines(self.transcript_lines(width))
     }
 
+    /// Whether a cached viewport height remains valid across later frames.
+    ///
+    /// Cells backed by external mutable state should return `false` so they are
+    /// remeasured instead of reusing a height that may now clip their content.
+    fn has_stable_transcript_height(&self) -> bool {
+        true
+    }
+
     /// Returns the number of viewport rows for the transcript overlay.
     ///
     /// Uses the same `Paragraph::line_count` measurement as

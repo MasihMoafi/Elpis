@@ -1,8 +1,11 @@
 // Modified from OpenAI Codex (Apache-2.0) by the Elpis project.
 //! Render composition for the main chat widget surface.
 
+use super::transcript::ActiveCellLayoutCache;
+use super::transcript::ActiveCellLayoutCacheKey;
 use super::*;
 use ratatui::text::Span;
+use std::cell::Cell;
 
 #[cfg(test)]
 mod selection_tests {
@@ -22,6 +25,7 @@ mod selection_tests {
             displayed: &displayed,
             top: 0,
             right: 0,
+            persistent_layout: None,
         }
         .render(area, &mut buffer);
         let snapshot = displayed.borrow_mut().pop().expect("displayed cell");
@@ -50,6 +54,7 @@ mod selection_tests {
             displayed: &displayed,
             top: 0,
             right: 0,
+            persistent_layout: None,
         }
         .render(area, &mut Buffer::empty(area));
         assert!(displayed.borrow().is_empty());
@@ -57,15 +62,32 @@ mod selection_tests {
 }
 
 impl ChatWidget {
+    fn active_cell_renderable<'a>(
+        &'a self,
+        cell: &'a dyn HistoryCell,
+    ) -> TranscriptAreaRenderable<'a> {
+        TranscriptAreaRenderable {
+            child: cell,
+            displayed: &self.displayed_live_cells,
+            top: 0,
+            right: 0,
+            persistent_layout: cell.has_stable_transcript_height().then_some(
+                PersistentActiveCellLayout {
+                    cache: &self.transcript.active_cell_layout,
+                    cell_identity: cell as *const dyn HistoryCell as *const () as usize,
+                    revision: self.transcript.active_cell_revision,
+                    render_mode: self.history_render_mode(),
+                },
+            ),
+        }
+    }
+
     pub(super) fn as_renderable(&self) -> RenderableItem<'_> {
         let active_cell_right_reserve = 0;
         let active_cell_renderable = match &self.transcript.active_cell {
-            Some(cell) => RenderableItem::Owned(Box::new(TranscriptAreaRenderable {
-                child: cell.as_ref(),
-                displayed: &self.displayed_live_cells,
-                top: 0,
-                right: active_cell_right_reserve,
-            })),
+            Some(cell) => {
+                RenderableItem::Owned(Box::new(self.active_cell_renderable(cell.as_ref())))
+            }
             None => RenderableItem::Owned(Box::new(())),
         };
         let active_hook_cell_renderable = match &self.active_hook_cell {
@@ -75,6 +97,7 @@ impl ChatWidget {
                     displayed: &self.displayed_live_cells,
                     top: 0,
                     right: active_cell_right_reserve,
+                    persistent_layout: None,
                 }))
             }
             _ => RenderableItem::Owned(Box::new(())),
@@ -90,6 +113,7 @@ impl ChatWidget {
                     displayed: &self.displayed_live_cells,
                     top: 0,
                     right: active_cell_right_reserve,
+                    persistent_layout: None,
                 })),
             );
         }
@@ -162,6 +186,14 @@ struct TranscriptAreaRenderable<'a> {
     displayed: &'a std::cell::RefCell<Vec<DisplayedLiveCell>>,
     top: u16,
     right: u16,
+    persistent_layout: Option<PersistentActiveCellLayout<'a>>,
+}
+
+struct PersistentActiveCellLayout<'a> {
+    cache: &'a Cell<Option<ActiveCellLayoutCache>>,
+    cell_identity: usize,
+    revision: u64,
+    render_mode: HistoryRenderMode,
 }
 
 pub(super) struct DisplayedLiveCell {
@@ -181,9 +213,19 @@ impl Renderable for TranscriptAreaRenderable<'_> {
         let y = if area.height == 0 {
             0
         } else {
-            let overflow = paragraph
-                .line_count(area.width)
-                .saturating_sub(usize::from(area.height));
+            let rendered_height = if let Some((cache, mut layout)) = self.layout(area.width) {
+                if let Some(height) = layout.rendered_height {
+                    height
+                } else {
+                    let height = paragraph.line_count(area.width);
+                    layout.rendered_height = Some(height);
+                    cache.set(Some(layout));
+                    height
+                }
+            } else {
+                paragraph.line_count(area.width)
+            };
+            let overflow = rendered_height.saturating_sub(usize::from(area.height));
             u16::try_from(overflow).unwrap_or(u16::MAX)
         };
         Clear.render(area, buf);
@@ -199,11 +241,47 @@ impl Renderable for TranscriptAreaRenderable<'_> {
 
     fn desired_height(&self, width: u16) -> u16 {
         let child_width = width.saturating_sub(self.right).max(1);
-        HistoryCell::desired_height(self.child, child_width) + self.top
+        let desired_height = if let Some((cache, mut layout)) = self.layout(child_width) {
+            if let Some(height) = layout.desired_height {
+                height
+            } else {
+                let height = HistoryCell::desired_height(self.child, child_width);
+                layout.desired_height = Some(height);
+                cache.set(Some(layout));
+                height
+            }
+        } else {
+            HistoryCell::desired_height(self.child, child_width)
+        };
+        desired_height + self.top
     }
 }
 
 impl TranscriptAreaRenderable<'_> {
+    fn layout(
+        &self,
+        width: u16,
+    ) -> Option<(&Cell<Option<ActiveCellLayoutCache>>, ActiveCellLayoutCache)> {
+        let persistent = self.persistent_layout.as_ref()?;
+        let key = ActiveCellLayoutCacheKey {
+            cell_identity: persistent.cell_identity,
+            revision: persistent.revision,
+            width,
+            render_mode: persistent.render_mode,
+            syntax_theme_revision: crate::render::highlight::syntax_theme_revision(),
+        };
+        let layout = persistent
+            .cache
+            .get()
+            .filter(|layout| layout.key == key)
+            .unwrap_or(ActiveCellLayoutCache {
+                key,
+                desired_height: None,
+                rendered_height: None,
+            });
+        Some((persistent.cache, layout))
+    }
+
     fn child_area(&self, area: Rect) -> Rect {
         let y = area.y.saturating_add(self.top);
         let height = area.height.saturating_sub(self.top);
@@ -266,7 +344,10 @@ impl Renderable for ChatWidget {
             .transcript
             .active_cell
             .as_ref()
-            .map(|cell| cell.desired_height(chat_area.width))
+            .map(|cell| {
+                self.active_cell_renderable(cell.as_ref())
+                    .desired_height(chat_area.width)
+            })
             .unwrap_or(0)
             .min(self.composer_top_offset(chat_area.width).saturating_sub(1));
         let stream_area = Rect::new(chat_area.x, chat_area.y, chat_area.width, stream_height);
