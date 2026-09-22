@@ -53,6 +53,14 @@ check("telemetry defaults", () => {
   }
   assert(/log_user_prompt:\s*false/.test(defaults), "prompt logging is not explicitly disabled");
 });
+check("no client-specific analytics opt-in", () => {
+  const config = fs.readFileSync(path.join(root, "codex-rs/core/src/config/mod.rs"), "utf8");
+  const otel = fs.readFileSync(path.join(root, "codex-rs/core/src/otel_init.rs"), "utf8");
+  assert(!config.includes("pub analytics_enabled:"), "removed analytics config field remains");
+  assert(!otel.includes("default_analytics_enabled"), "client analytics default remains");
+  assert(otel.includes("to_otel_exporter(&config.otel.metrics_exporter)"),
+    "explicit local/opt-in metrics configuration was lost");
+});
 check("default regression coverage", () => {
   const text = fs.readFileSync(path.join(root, "codex-rs/core/src/config/config_tests.rs"), "utf8");
   assert(text.includes("fn metrics_exporter_defaults_to_none_when_missing("),
