@@ -8,6 +8,12 @@ published **2026-09-04** and was already three minor versions stale when it was 
 - **Fork point:** `f37fc774` (2026-07-15), unchanged.
 - **Elpis tip:** `5d0f091a` plus the fixes since.
 
+Freshness check later September 22: official `openai/codex` main advanced to
+`286d4ecf44b4e9daba0a9fdd229a4047b770a71a`, 29 commits beyond this import (verified
+with `git ls-remote` and GitHub's compare endpoint). This document describes the
+existing import, not completed latest-main parity. Preserve its work while accounting
+for the newer agent-control, compaction, daemon and TUI changes before release.
+
 ## The governing rule
 
 > Where Codex already implements a behaviour, copy Codex exactly unless a requirement in
