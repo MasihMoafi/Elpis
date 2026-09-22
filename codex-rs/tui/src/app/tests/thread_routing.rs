@@ -193,7 +193,7 @@ async fn experiment_pending_character_and_enter_render_within_budget_under_full_
             rendered.contains(&message),
             "queued input was not visibly rendered"
         );
-        app.chat_widget.input_queue.queued_user_messages.pop_back();
+        app.chat_widget.pop_last_queued_user_message_for_test();
     }
 
     eprintln!("typing latency raw character samples: {character_samples:?}");

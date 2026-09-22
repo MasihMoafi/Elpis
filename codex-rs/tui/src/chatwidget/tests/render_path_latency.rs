@@ -231,11 +231,7 @@ fn measure_enter_samples(chat: &mut ChatWidget) -> Vec<Duration> {
             "queued message was not visible after render"
         );
 
-        chat.input_queue.queued_user_messages.pop_back();
-        chat.input_queue
-            .queued_user_message_history_records
-            .pop_back();
-        chat.refresh_pending_input_preview();
+        chat.pop_last_queued_user_message_for_test();
         assert!(!chat.queued_user_message_texts().contains(&message));
     }
     samples

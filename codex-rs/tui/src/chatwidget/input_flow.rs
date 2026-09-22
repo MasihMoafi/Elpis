@@ -261,4 +261,13 @@ impl ChatWidget {
             )
             .collect()
     }
+
+    #[cfg(test)]
+    pub(crate) fn pop_last_queued_user_message_for_test(&mut self) {
+        self.input_queue.queued_user_messages.pop_back();
+        self.input_queue
+            .queued_user_message_history_records
+            .pop_back();
+        self.refresh_pending_input_preview();
+    }
 }
