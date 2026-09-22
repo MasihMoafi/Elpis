@@ -51,9 +51,10 @@ Prefer behavioral evidence over plumbing-only tests: plant something only the fe
 ## Durable Memory Status
 
 The old promotion pipeline was removed in `0c105e3` after it failed to demonstrate
-durable promotion. Masih subsequently approved a simple Luna-only replacement.
-The opt-in replacement saves ES and MEMORY after normal responses and before
-compaction; Ledger admission independently controls loading. See `docs/context.md`.
+durable promotion. The later Luna saver is also superseded by Masih's September 22
+approval: the responding root agent explicitly saves through a guarded local tool,
+without auxiliary consolidation after responses or before compaction. This candidate
+is under verification; Ledger admission independently controls loading. See `docs/context.md`.
 
 Do not change other workspaces' memory defaults without explicit approval. Keep
 claims scoped to the observed save, correction, recall and failure-mode evidence;

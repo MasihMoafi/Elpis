@@ -1,4 +1,4 @@
-//! Local persistence for explicitly enabled automatic memory.
+//! Guarded local persistence for explicitly enabled agent-owned memory.
 
 use std::fs::File;
 use std::io::Write;
@@ -27,6 +27,18 @@ pub struct MemorySaveTiming {
 pub struct MemoryDecision {
     pub checkpoint: String,
     pub memory: String,
+}
+
+#[derive(Debug, Default)]
+pub struct MemoryUpdate {
+    pub checkpoint: Option<String>,
+    pub memory: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MemoryBaseline {
+    memory: String,
+    checkpoint: String,
 }
 
 #[derive(Deserialize)]
@@ -144,6 +156,22 @@ fn read_optional(path: &Path) -> anyhow::Result<String> {
 }
 
 impl MemorySnapshot {
+    pub fn baseline_when_enabled(
+        root: &Path,
+        cwd: &Path,
+    ) -> anyhow::Result<Option<MemoryBaseline>> {
+        let workspace = crate::elpis_context::workspace_context_dir(Some(root), cwd)
+            .context("workspace memory path unavailable")?;
+        let settings = read_optional(&workspace.join("memory-autosave.json"))?;
+        if settings.is_empty() || !serde_json::from_str::<Settings>(&settings)?.enabled {
+            return Ok(None);
+        }
+        Ok(Some(MemoryBaseline {
+            memory: read_optional(&root.join("MEMORY.md"))?,
+            checkpoint: read_optional(&workspace.join("ES.md"))?,
+        }))
+    }
+
     pub async fn open_when_available(root: &Path, cwd: &Path) -> anyhow::Result<Option<Self>> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
         loop {
@@ -208,8 +236,35 @@ impl MemorySnapshot {
 
     pub fn commit(
         &self,
+        baseline: &MemoryBaseline,
         decision: &MemoryDecision,
         model: &str,
+        thread: &str,
+        turn: &str,
+        usage: Option<&codex_protocol::protocol::TokenUsage>,
+        evidence: Option<&str>,
+        timing: MemorySaveTiming,
+    ) -> anyhow::Result<(String, String)> {
+        self.commit_update(
+            baseline,
+            &MemoryUpdate {
+                checkpoint: Some(decision.checkpoint.clone()),
+                memory: Some(decision.memory.clone()),
+            },
+            model,
+            thread,
+            turn,
+            usage,
+            evidence,
+            timing,
+        )
+    }
+
+    pub fn commit_update(
+        &self,
+        baseline: &MemoryBaseline,
+        update: &MemoryUpdate,
+        writer: &str,
         thread: &str,
         turn: &str,
         usage: Option<&codex_protocol::protocol::TokenUsage>,
@@ -217,6 +272,7 @@ impl MemorySnapshot {
         mut timing: MemorySaveTiming,
     ) -> anyhow::Result<(String, String)> {
         let commit_started = std::time::Instant::now();
+        self.validate_baseline(baseline)?;
         let memory_path = self.root.join("MEMORY.md");
         let checkpoint_path = self.workspace.join("ES.md");
         anyhow::ensure!(
@@ -227,19 +283,42 @@ impl MemorySnapshot {
             read_optional(&checkpoint_path)? == self.checkpoint,
             "checkpoint changed during consolidation"
         );
-        anyhow::ensure!(
-            self.memory
-                .trim()
-                .trim_start_matches("# Elpis Memory")
-                .trim()
-                .is_empty()
-                || !decision.memory.trim().is_empty(),
-            "refusing to erase existing memory"
-        );
-        let checkpoint = format!(
-            "# Elpis Session Checkpoint\n\n- Thread: `{thread}`\n- Turn: `{turn}`\n\n## Consolidated State\n\n{}\n",
-            decision.checkpoint
-        );
+        let memory = update.memory.as_deref().unwrap_or(&self.memory);
+        let checkpoint = update.checkpoint.as_ref().map(|checkpoint| {
+            format!(
+                "# Elpis Session Checkpoint\n\n- Thread: `{thread}`\n- Turn: `{turn}`\n\n## Consolidated State\n\n{checkpoint}\n"
+            )
+        });
+        if update.memory.is_some() {
+            anyhow::ensure!(
+                self.memory
+                    .trim()
+                    .trim_start_matches("# Elpis Memory")
+                    .trim()
+                    .is_empty()
+                    || !memory.trim().is_empty(),
+                "refusing to erase existing memory"
+            );
+            anyhow::ensure!(
+                memory.chars().count() <= OUTPUT_CHARS,
+                "memory output exceeds character budget"
+            );
+            anyhow::ensure!(
+                !memory.contains('\0'),
+                "memory output contains a NUL character"
+            );
+        }
+        if let Some(checkpoint) = update.checkpoint.as_deref() {
+            anyhow::ensure!(!checkpoint.trim().is_empty(), "empty checkpoint");
+            anyhow::ensure!(
+                checkpoint.chars().count() <= OUTPUT_CHARS,
+                "checkpoint output exceeds character budget"
+            );
+            anyhow::ensure!(
+                !checkpoint.contains('\0'),
+                "checkpoint output contains a NUL character"
+            );
+        }
         let references_path = self.root.join("memory-references/sources.md");
         let references = read_optional(&references_path)?;
         let parsed_evidence: Option<serde_json::Value> =
@@ -255,10 +334,14 @@ impl MemorySnapshot {
         let previous_ids: std::collections::HashSet<&str> = evidence_citations(&self.memory)
             .chain(evidence_citations(&self.checkpoint))
             .collect();
-        validate_unchanged_memory_citations(&self.memory, &decision.memory, &references)?;
-        for citation in
-            evidence_citations(&decision.memory).chain(evidence_citations(&decision.checkpoint))
-        {
+        validate_unchanged_memory_citations(&self.memory, memory, &references)?;
+        for citation in evidence_citations(memory).chain(
+            update
+                .checkpoint
+                .as_deref()
+                .into_iter()
+                .flat_map(|text| evidence_citations(text)),
+        ) {
             anyhow::ensure!(
                 evidence_ids.contains(citation)
                     || previous_ids.contains(citation)
@@ -266,14 +349,18 @@ impl MemorySnapshot {
                 "unsupported evidence citation; previous notes preserved"
             );
         }
-        let (memory, updated_references) = shorten_memory_references(&decision.memory, &references);
+        let (memory, updated_references) = if update.memory.is_some() {
+            shorten_memory_references(memory, &references)
+        } else {
+            (self.memory.clone(), references.clone())
+        };
         // Save recovery evidence before replacing either human-readable file.
         let mut receipt = serde_json::json!({
-            "status": "prepared", "evidence": evidence,
-            "model": model, "thread": thread, "turn": turn,
+            "status": "prepared", "evidence": parsed_evidence,
+            "model": writer, "thread": thread, "turn": turn,
             "previous_checkpoint": self.checkpoint, "previous_memory": self.memory,
-            "checkpoint": decision.checkpoint, "memory": memory,
-            "model_memory": decision.memory, "usage": usage,
+            "checkpoint": update.checkpoint, "memory": memory,
+            "model_memory": update.memory, "usage": usage,
         });
         let receipt_dir = self.workspace.join("memory-saves");
         std::fs::create_dir_all(&receipt_dir)?;
@@ -289,17 +376,38 @@ impl MemorySnapshot {
             // but never a saved citation whose source was not written.
             atomic_write(&references_path, &updated_references)?;
         }
-        atomic_write(&memory_path, &memory)?;
-        if let Err(error) = atomic_write(&checkpoint_path, &checkpoint) {
-            atomic_write(&memory_path, &self.memory)
-                .context("restore memory after checkpoint write failure")?;
+        if update.memory.is_some() {
+            atomic_write(&memory_path, &memory)?;
+        }
+        if let Some(checkpoint) = &checkpoint
+            && let Err(error) = atomic_write(&checkpoint_path, checkpoint)
+        {
+            if update.memory.is_some() {
+                atomic_write(&memory_path, &self.memory)
+                    .context("restore memory after checkpoint write failure")?;
+            }
             return Err(error);
         }
         receipt["status"] = "committed".into();
         timing.commit_ms = commit_started.elapsed().as_millis() as u64;
         receipt["timing"] = serde_json::to_value(timing)?;
         atomic_write(&receipt_path, &serde_json::to_string_pretty(&receipt)?)?;
-        Ok((memory, checkpoint))
+        Ok((
+            memory,
+            checkpoint.unwrap_or_else(|| self.checkpoint.clone()),
+        ))
+    }
+
+    pub fn validate_baseline(&self, baseline: &MemoryBaseline) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.memory == baseline.memory,
+            "memory changed after this turn began"
+        );
+        anyhow::ensure!(
+            self.checkpoint == baseline.checkpoint,
+            "checkpoint changed after this turn began"
+        );
+        Ok(())
     }
 }
 
@@ -480,6 +588,13 @@ fn atomic_write(path: &Path, text: &str) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    fn baseline(snapshot: &MemorySnapshot) -> MemoryBaseline {
+        MemoryBaseline {
+            memory: snapshot.memory.clone(),
+            checkpoint: snapshot.checkpoint.clone(),
+        }
+    }
+
     #[test]
     fn a_raw_newline_inside_the_generated_json_still_saves() {
         // A background model writing prose into a JSON string emits the line
@@ -608,6 +723,7 @@ mod tests {
         assert!(prompt_checkpoint.contains(OMITTED_CHECKPOINT_MARKER));
 
         snapshot.commit(
+            &baseline(&snapshot),
             &MemoryDecision {
                 checkpoint: "bounded replacement".into(),
                 memory: String::new(),
@@ -643,6 +759,7 @@ mod tests {
         let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
         assert!(MemorySnapshot::open(&root, &cwd).is_err());
         snapshot.commit(
+            &baseline(&snapshot),
             &MemoryDecision {
                 checkpoint: "- [ ] Verify release".into(),
                 memory: "- Cedar port 4812 [u1]".into(),
@@ -670,6 +787,7 @@ mod tests {
         let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
         assert!(snapshot.memory.contains("4812"));
         snapshot.commit(
+            &baseline(&snapshot),
             &MemoryDecision {
                 checkpoint: "- [ ] Verify release".into(),
                 memory: "- Cedar port 5823 [u2]".into(),
@@ -692,6 +810,7 @@ mod tests {
         assert!(
             snapshot
                 .commit(
+                    &baseline(&snapshot),
                     &MemoryDecision {
                         checkpoint: "pending".into(),
                         memory: "replacement".into()
@@ -709,6 +828,52 @@ mod tests {
             std::fs::read_to_string(root.join("MEMORY.md"))?,
             "User edit"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn turn_start_baseline_rejects_external_edits_without_touching_any_file() -> anyhow::Result<()>
+    {
+        let dir = tempfile::tempdir()?;
+        let root = dir.path().join("memories");
+        let cwd = dir.path().join("project");
+        let workspace = crate::elpis_context::workspace_context_dir(Some(&root), &cwd).unwrap();
+        std::fs::create_dir_all(root.join("memory-references"))?;
+        std::fs::create_dir_all(&workspace)?;
+        std::fs::write(workspace.join("memory-autosave.json"), "{\"enabled\":true}")?;
+        std::fs::write(root.join("MEMORY.md"), "memory A")?;
+        std::fs::write(workspace.join("ES.md"), "checkpoint A")?;
+        std::fs::write(root.join("memory-references/sources.md"), "references A")?;
+        let baseline = MemorySnapshot::baseline_when_enabled(&root, &cwd)?.unwrap();
+
+        std::fs::write(root.join("MEMORY.md"), "memory B")?;
+        std::fs::write(workspace.join("ES.md"), "checkpoint B")?;
+        let snapshot = MemorySnapshot::open(&root, &cwd)?.unwrap();
+        let result = snapshot.commit_update(
+            &baseline,
+            &MemoryUpdate {
+                memory: Some("memory C".to_string()),
+                checkpoint: Some("checkpoint C".to_string()),
+            },
+            "responding-agent",
+            "thread",
+            "turn",
+            None,
+            None,
+            MemorySaveTiming::default(),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(root.join("MEMORY.md"))?, "memory B");
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("ES.md"))?,
+            "checkpoint B"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("memory-references/sources.md"))?,
+            "references A"
+        );
+        assert!(!workspace.join("memory-saves").exists());
         Ok(())
     }
 }

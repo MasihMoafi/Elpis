@@ -82,6 +82,13 @@ RAG is off-limits by instruction.
 
 ## Elpis's own features to re-attach
 
+September 22 takeover amendment: Masih approved replacing the Luna/auxiliary saver
+mentioned above with guarded local `save_memory` calls by the responding root agent.
+The replacement candidate is under verification. Reattach that approved behavior,
+not automatic post-response or pre-compaction model consolidation. `/memory-model`
+is a compatibility entry for the shared background setting used by pruning/naming;
+memory itself uses the responding agent. Do not change those other model routes.
+
 147 files added over the fork point: `tui/src` 48, `core/src` 25, `app-server-protocol` 25,
 `agent-grep` 19, `core/tests` 6, `state` 4, `skills` 4, `app-server/src` 4, `prompts` 3,
 `model-provider` 3, plus `backend-client`, `model-provider-info`, `core/templates`,

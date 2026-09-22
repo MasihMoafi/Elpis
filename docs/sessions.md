@@ -85,6 +85,14 @@ Written by `write_session_checkpoint` in the same module, from the completed tur
 
 Both files are written to a temporary path and renamed into place, so a crash mid-write cannot leave a truncated checkpoint.
 
+When workspace saving is explicitly enabled, the responding root agent may also
+call `save_memory` before its final answer to replace ES's Consolidated State with
+the current decisions, verification, blockers, and next action. The caller cannot
+choose the file path. A turn-start baseline, workspace lock, size checks, and a
+final concurrent-edit check reject a newer checkpoint detected before commit.
+This save path is independent of Context Ledger admission and does not run in a
+background model, after the response, or at a compaction boundary.
+
 An interrupted turn with no result or file/command evidence leaves an existing
 checkpoint from the same thread intact. Its original turn and status remain
 attached to that evidence. A first interruption still creates a checkpoint;

@@ -125,6 +125,7 @@ pub struct TurnContext {
     pub(crate) reasoning_effort: Option<ReasoningEffortConfig>,
     pub(crate) reasoning_summary: ReasoningSummaryConfig,
     pub(crate) session_source: SessionSource,
+    pub(crate) memory_save_baseline: Option<crate::memory_save::MemoryBaseline>,
     pub(crate) history_mode: ThreadHistoryMode,
     pub(crate) parent_thread_id: Option<ThreadId>,
     pub(crate) originator: String,
@@ -290,6 +291,7 @@ impl TurnContext {
             reasoning_effort,
             reasoning_summary: self.reasoning_summary,
             session_source: self.session_source.clone(),
+            memory_save_baseline: self.memory_save_baseline.clone(),
             history_mode: self.history_mode,
             parent_thread_id: self.parent_thread_id,
             originator: self.originator.clone(),
@@ -540,6 +542,23 @@ impl Session {
             &model_info,
         );
         let permission_profile = per_turn_config.permissions.effective_permission_profile();
+        let memory_save_baseline = if session_source.is_non_root_agent() {
+            None
+        } else {
+            match crate::memory_save::MemorySnapshot::baseline_when_enabled(
+                per_turn_config.memory_dir.as_path(),
+                cwd.as_path(),
+            ) {
+                Ok(baseline) => baseline,
+                Err(error) => {
+                    tracing::warn!(
+                        error = %format!("{error:#}"),
+                        "could not capture the turn-start memory baseline"
+                    );
+                    None
+                }
+            }
+        };
         let per_turn_config = Arc::new(per_turn_config);
         let turn_metadata_state = Arc::new(TurnMetadataState::new(
             session_id.to_string(),
@@ -571,6 +590,7 @@ impl Session {
             reasoning_effort,
             reasoning_summary,
             session_source,
+            memory_save_baseline,
             history_mode: session_configuration.history_mode,
             parent_thread_id: session_configuration.parent_thread_id,
             originator: session_configuration.originator.clone(),

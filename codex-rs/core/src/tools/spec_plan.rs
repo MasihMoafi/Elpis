@@ -23,6 +23,7 @@ use crate::tools::handlers::ReadMcpResourceHandler;
 use crate::tools::handlers::RequestPermissionsHandler;
 use crate::tools::handlers::RequestPluginInstallHandler;
 use crate::tools::handlers::RequestUserInputHandler;
+use crate::tools::handlers::SaveMemoryHandler;
 use crate::tools::handlers::ShellCommandHandler;
 use crate::tools::handlers::ShellCommandHandlerOptions;
 use crate::tools::handlers::SleepHandler;
@@ -722,6 +723,20 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut
     let environment_mode = tool_environment_mode(context.step_context);
 
     planned_tools.add(PlanHandler);
+
+    if let Some(baseline) = turn_context.memory_save_baseline.clone()
+        && let Some(cwd) = context
+            .step_context
+            .environments
+            .primary()
+            .and_then(|environment| environment.cwd().to_abs_path().ok())
+    {
+        planned_tools.add(SaveMemoryHandler::new(
+            turn_context.config.memory_dir.as_path(),
+            cwd.as_path(),
+            baseline,
+        ));
+    }
 
     if features.enabled(Feature::DeferredExecutor) {
         planned_tools.add(WaitForEnvironmentHandler);

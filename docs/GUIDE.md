@@ -252,6 +252,12 @@ Routes, credentials, BYOK setup, wire-protocol translation, compatibility aliase
 
 Context is a budgeted working set, not the session archive. The detailed implementation, pruning triggers, audit records, context lifetimes, Context Ledger behavior, and accounting contract live in [context.md](context.md).
 
+September 22 memory decision: the responding root agent owns explicit guarded local
+memory/checkpoint updates in opted-in workspaces. Do not restore a second-model
+consolidation call after responses or before compaction. Global preferences belong
+in MEMORY, project progress in ES; saving and Ledger admission remain independent.
+The replacement candidate is under verification, not user-accepted.
+
 At the product-contract level:
 
 - load the smallest stable routing layer and only the detailed rules required by the task;

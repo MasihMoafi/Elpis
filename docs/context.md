@@ -112,13 +112,13 @@ The memory loop has three human-readable files and one admission control. It doe
 not require an embedding service, vector database, or autonomous memory agent.
 
 In plain terms: **GOAL says what to achieve; ES says where work stands; MEMORY
-says what should help next time.** Luna proposes shorter notes after a response
-and before compaction. Elpis validates their format and saves them. The Ledger
-then decides whether later requests receive them. Format validation cannot prove
-that a lesson is true or that the model will apply it to the correct project.
+says what should help next time.** When workspace saving is enabled, the responding
+root agent can call a guarded local tool before its final answer. The Ledger then
+decides whether later requests receive the saved files. Format validation cannot
+prove that a lesson is true or that the model will apply it to the correct project.
 
-For example, “use Luna for saving” is a reusable preference; “this project's
-generic test skips parser fixtures” is a project lesson; “the build is running”
+For example, “use literal checklists” is a reusable preference; “this project's
+generic test skips parser fixtures” is project state; “the build is running”
 is temporary ES state. A verified correction should replace the obsolete lesson.
 An agent's untested guess should not become a fact. These are the saving policy,
 not guarantees established by the current implementation.
@@ -126,10 +126,9 @@ not guarantees established by the current implementation.
 ```mermaid
 flowchart LR
     U[User objective] --> G[GOAL.md]
-    H[Conversation and tool evidence] --> S[Luna consolidation]
-    B[Completed response or pre-compaction boundary] --> S
-    E[ES: unfinished work] --> S
-    M[MEMORY: durable facts] --> S
+    H[Current root turn evidence] --> S[Responding agent calls save_memory]
+    E[ES: workspace state] --> S
+    M[MEMORY: global preferences] --> S
     S --> V{Validate and check concurrent edits}
     V --> E
     V --> M
@@ -143,54 +142,51 @@ flowchart LR
 
 | Source | Purpose and writer | Scope and admission limit |
 | --- | --- | --- |
-| `GOAL.md` | Explicit objective and goal state; the goal runtime owns it. Luna does not rewrite the objective. | Workspace, 6,000 characters |
-| Generated `ES.md` | Current decisions, unfinished work and evidence. The CLI writes turn details; enabled Luna saving consolidates working state. Later same-thread CLI writes retain that consolidated state. | Workspace, 8,000 characters |
-| `MEMORY.md` | Explicit preferences, stable project facts and reusable verified lessons. Users can edit it; enabled Luna saving can consolidate it. | Shared memory directory, 8,000 characters; project facts must name their project |
+| `GOAL.md` | Explicit objective and goal state; the goal runtime owns it. `save_memory` does not rewrite the objective. | Workspace, 6,000 characters |
+| Generated `ES.md` | Current decisions, unfinished work, verification, blockers and next action. The CLI writes turn details; enabled `save_memory` can replace its consolidated state. Later same-thread CLI writes retain that consolidated state. | Workspace, 8,000 characters |
+| `MEMORY.md` | Explicit, stable global user preferences. Users can edit it; enabled `save_memory` can apply exact append, replace, or remove edits without replacing unseen text. | Shared memory directory, 8,000 characters |
 | Repository `ES.md` | Ordinary project notes maintained by a person or agent. It is a separate file from the generated checkpoint. | Ordinary file admission, when selected |
 
 A correction belongs in memory when it teaches a reusable lesson: what was
 misunderstood, the correction, and when it applies. Current progress and unfinished
-tasks belong in ES; the objective belongs in GOAL. There is one shared memory file,
-not a separate memory database per project. Project lessons must explicitly name
-their project; global preferences can apply across projects. These labels and the
-admission prompt guide the model, so scope still needs behavioral testing.
+tasks and project-specific lessons belong in ES; the objective belongs in GOAL.
+There is one shared memory file, not a separate memory database per project, so
+agent-saved MEMORY content is limited to global preferences. These labels
+and the admission prompt guide the model, so scope still needs behavioral testing.
 
 **Saving and loading are independent.** A workspace opts into saving through
 `context/workspaces/<workspace>/memory-autosave.json` containing
 `{"enabled":true}`. The Ledger's Memory row controls whether saved notes enter a
 request. Neither switch implies the other. The implementation remains off unless
-explicitly enabled; Masih authorized enabling the tested Luna path for Elpis.
+explicitly enabled. Saving does not enable admission, and admission does not enable
+saving.
 
-When enabled, a root conversation response with a final assistant message and each
-pre-compaction boundary checks whether saving is needed. A successful save can be
-reused within that session only when selected evidence, workspace, memory root,
-goal and the persisted MEMORY/ES contents are unchanged. Otherwise it invokes one
-tool-free `gpt-5.6-luna` call at low reasoning. Failed saves remain retryable;
-resumed sessions start without this optimization state. Skipping a duplicate call
-does not create another receipt or refresh the checkpoint metadata.
-The input contains the workspace goal, previous notes and up to 64,000 characters of whole recent
-history items; reasoning and system/developer messages are excluded. Oversized
-items can be omitted. Up to half of that evidence budget is reserved for recent
-user messages before filling unused capacity from the remaining history. This
-prevents large responses from taking the entire budget before user corrections
-are considered. Selected items retain their original order; oversized messages
-still may not fit. Internal and subagent sessions do not run the saver: the
-root owns consolidation, using worker evidence returned to its conversation.
-The CLI also excludes child-thread notifications from workspace GOAL/ES mirroring,
-so a child finishing cannot replace the primary conversation's checkpoint.
-Each output is capped at 6,000 characters. The prompt asks for supported facts,
-explicit corrections, retention of unrelated knowledge and unresolved tasks,
-and evidence citations. A 60-second timeout bounds the request; no expensive
-model fallback is allowed. Completed-turn saving is cancellable and newly queued
-input is checked again afterward.
+When enabled for a root conversation, the runtime offers the responding agent a
+`save_memory` tool in its normal tool loop. There is no post-response,
+pre-compaction, background-model, or other auxiliary save request. The agent calls
+the tool before its final answer when durable state changed; if it does not call
+the tool, nothing is saved. Internal, review, and subagent sessions cannot receive
+or invoke it. The runtime fixes the memory root and workspace paths; the caller
+cannot choose a write path.
 
-The runtime, not Luna, performs file writes. It rejects invalid or oversized JSON,
-empty checkpoints, attempted erasure of existing memory, and changes made by
-another writer while the model was running. An OS lock coordinates automatic
-writers. Each save retains its input, previous notes, proposed notes, usage, and
-prepared/committed state in a unique recovery receipt. Individual file replacements
-are atomic; the two-file update is not a crash-atomic transaction. Failures warn
-the user. Existing manual edits are not replaced by a stale model snapshot.
+The tool accepts exact edits to `MEMORY.md` and either a complete replacement for
+ES's Consolidated State or no ES change. The runtime captures the previous
+MEMORY/ES state at the start of that turn and applies exact edits to the locked
+snapshot, preserving content the agent did not change. New output is capped at
+6,000 characters. Recovery receipts retain the old and proposed state plus up to
+64,000 characters of current-turn
+user and assistant evidence; half of that evidence capacity is reserved for user
+messages so a large assistant response cannot displace the correction being saved.
+
+The runtime rechecks the saving opt-in and fixed paths, acquires the global memory
+and workspace checkpoint locks, and rejects invalid or oversized content, empty ES,
+attempted erasure of existing memory, unsupported evidence citations, or any
+MEMORY/ES change since the turn began. Each save records prepared/committed state
+in a unique recovery receipt. Individual file replacements are atomic; the
+two-file update is not a crash-atomic transaction. A failed tool call returns the
+failure to the responding agent for explicit disclosure. Existing manual edits
+detected before commit reject the stale turn snapshot; the locks coordinate Elpis
+writers but cannot make unrelated writers cooperate.
 
 Memory persistence converts full session/turn evidence citations into stable
 numeric references. Their full identifiers are retained in
@@ -219,12 +215,15 @@ inspection; they do not prove semantic fidelity. The live memory file previously
 stayed heading-only because automatic promotion had been removed and Memory
 admission was off. Merely creating the file could not make it learn.
 
-The repeatable local runtime check is `node scripts/memory-runtime.test.cjs`
-against a built app-server. It covers saving after a response, compaction,
-restart admission, malformed replies, concurrent manual edits, and disabled
-behavior. Live-model recall and correction checks are separate from plumbing
-tests. Neither establishes a general improvement in coding quality, lower total
-cost, or scientific novelty.
+The candidate runtime check is `node scripts/memory-runtime.test.cjs` against a
+built app-server. It covers the responding agent's tool call, guarded MEMORY/ES
+writes, absence of an auxiliary request, saving/admission independence, and
+disabled behavior. Focused Rust tests cover stale baselines, concurrent edits,
+root-only access, exact edits, limits, and evidence attribution. These checks are
+not functional acceptance, and the replacement remains unverified until Masih
+accepts its user-visible behavior. Live-model recall and correction checks remain
+separate from plumbing tests. Neither establishes a general improvement in coding
+quality, lower total cost, or scientific novelty.
 
 OpenClaw documents a pre-compaction memory flush and a separate promotion process.
 Jcode describes embedding turns and retrieving related memories from a graph.
@@ -233,9 +232,9 @@ implementation of Jcode's retrieval architecture. Sources:
 [OpenClaw memory](https://docs.openclaw.ai/concepts/memory),
 [Jcode memory description](https://jcode.sh/#a-good-built-in-memory-system).
 
-### Verified memory behavior, September 13
+### Historical Luna behavior, verified September 13 and no longer current
 
-The local fake-provider runtime test passed response-completion saving,
+The retired Luna implementation's local fake-provider runtime test passed response-completion saving,
 pre-compaction saving, receipt evidence, restart admission, malformed-output
 preservation, concurrent manual-edit protection, and disabled behavior.
 The previous installed runtime failed the new response-completion assertion,
@@ -250,7 +249,7 @@ the main acknowledgement and memory call; recall/control turns took 3.31 and
 Evidence: `.tmp/final-candidate/memory-live-runtime-result.json` and
 `.tmp/final-candidate/memory-completion-runtime.log`.
 
-Elpis workspace saving and Memory admission are now enabled locally. Six explicit
+At that time, Elpis workspace saving and Memory admission were enabled locally. Six explicit
 user preferences were consolidated by Luna in an isolated bootstrap, reviewed,
 and copied into the actual MEMORY file; synthetic test facts were not promoted.
 The saved notes cover Luna-only memory, simplicity, literal checklists, user-led
@@ -275,17 +274,17 @@ trigger runs in the actual workspace, beyond the isolated tests. It does not mea
 every response should add a new memory: unchanged durable notes are an explicit
 valid result, while temporary work belongs in ES.
 
-### Memory search and automatic saving are separate
+### Memory search and agent-owned saving are separate
 
-Automatically saved memories are activated by the user clicking or toggling
+Saved memories are activated by the user clicking or toggling
 `MEMORY.md` in the Context Ledger. Saving and activation are separate: the
 Ledger controls whether the saved file is supplied to later requests. Turning
 it off does not erase the saved file or remove text from previous requests.
 
 The configured RAG MCP can search `MEMORY.md` using API embeddings and its local
-index. This does not change the saver or Ledger admission: Luna still consolidates
-the files, and admitting Memory still supplies the file rather than automatically
-selecting passages with RAG. Retrieved passages become context when the agent
+index. This does not change the saver or Ledger admission: the responding agent
+still owns explicit saves, and admitting Memory still supplies the file rather
+than automatically selecting passages with RAG. Retrieved passages become context when the agent
 calls the search tool. Vectors help locate text; they do not expand the context
 window or establish that a saved claim is true.
 
@@ -302,7 +301,7 @@ general RAG benchmark.
 
 Masih's September 13 clarification emphasizes verified, reusable lessons that
 prevent repeated mistakes. The current categories remain provisional while he
-decides which information should persist. Automatic saving is a timing mechanism,
+decides which information should persist. Agent-owned saving is a persistence mechanism,
 not permission to retain every conversation detail.
 
 A useful evaluation tests behavior, not just file population:
@@ -460,9 +459,9 @@ render.
 - The dashboard receives only phase, admission state, counts, cap, truncation, pending state, and
   a fixed failure code. It never receives the memory path, body, file metadata, or raw I/O error.
 
-Without automatic saving enabled, only explicit user edits change the notes after template
-creation. With saving enabled, the Luna path described above may consolidate them. The Ledger
-admission switch controls loading and does not disable saving.
+Without workspace saving enabled, only explicit user edits change the notes after template
+creation. With saving enabled, the responding root agent may call `save_memory` before its final
+answer. The Ledger admission switch controls loading and does not disable saving.
 
 ### Development rules and curated skills
 
@@ -536,5 +535,5 @@ reasoning output tokens in `/usage` are a separate quantity.
 ## 5. Systemic Inter-Dependencies
 
 - **Integration with Sessions:** the admitted `GOAL.md` and `ES.md` sources are exactly what lean continuation carries into a fresh thread; see [Sessions](sessions.md).
-- **Integration with Memory:** the opt-in Luna path consolidates ES and MEMORY at response completion and before compaction. Ledger admission separately controls whether those files enter later requests; see section 3.
+- **Integration with Memory:** the opt-in root `save_memory` tool applies guarded exact edits to global MEMORY and may replace workspace ES state before the final answer. Ledger admission separately controls whether those files enter later requests; see section 3.
 - **Integration with Providers:** admitted context is normalized across provider wire formats while evidence pointers are preserved; see [Providers](providers.md).
