@@ -9,6 +9,34 @@ use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 
+#[test]
+fn additional_compaction_instructions_extend_base_guidance_exactly() {
+    let base = BaseInstructions {
+        text: "normal base guidance".to_string(),
+    };
+
+    let augmented = with_additional_compaction_instructions(
+        base,
+        Some("Preserve unresolved blockers — ۳ نکته."),
+    );
+
+    assert_eq!(
+        augmented.text,
+        "normal base guidance\n\nAdditional compaction instructions:\nPreserve unresolved blockers — ۳ نکته."
+    );
+}
+
+#[test]
+fn bare_compaction_leaves_base_guidance_unchanged() {
+    let base = BaseInstructions {
+        text: "normal base guidance".to_string(),
+    };
+
+    let unchanged = with_additional_compaction_instructions(base.clone(), None);
+
+    assert_eq!(unchanged, base);
+}
+
 async fn process_compacted_history_with_test_session(
     compacted_history: Vec<ResponseItem>,
     previous_turn_settings: Option<&PreviousTurnSettings>,
