@@ -9,9 +9,16 @@ const readline = require("node:readline");
 const { spawn } = require("node:child_process");
 
 const MEMORY_SENTINEL = "ELPIS_MEMORY_SENTINEL_9bf259b96d";
+const GLOBAL_AGENTS_SENTINEL = "ELPIS_GLOBAL_AGENTS_SENTINEL_934fc08c8a";
+const PROJECT_AGENTS_SENTINEL = "ELPIS_PROJECT_AGENTS_SENTINEL_13a0a94236";
+const DEV_RULE_SENTINEL = "ELPIS_DEV_RULE_SENTINEL_841c87ce04";
 const USER_SENTINEL = "ELPIS_NEIGHBOR_USER_SENTINEL_a329510b8e";
 const DEVELOPER_SENTINEL = "ELPIS_NEIGHBOR_DEVELOPER_SENTINEL_786ed03a7f";
-const NEGATIVE_CONTROL = "disable-on-admission";
+const NEGATIVE_CONTROLS = new Set([
+  "disable-memory-on-admission",
+  "disable-agents-on-admission",
+  "disable-dev-on-admission",
+]);
 const REQUEST_TIMEOUT_MS = 30_000;
 const STAGES = ["default", "off", "on", "withdrawn", "malformed"];
 
@@ -23,8 +30,8 @@ assert(fs.statSync(binary).isFile(), `ELPIS_APP_SERVER_BIN is not a file: ${bina
 
 const negativeControl = process.env.ELPIS_CONTINUITY_NEGATIVE_CONTROL;
 assert(
-  negativeControl === undefined || negativeControl === NEGATIVE_CONTROL,
-  `ELPIS_CONTINUITY_NEGATIVE_CONTROL must be ${NEGATIVE_CONTROL} when set`,
+  negativeControl === undefined || NEGATIVE_CONTROLS.has(negativeControl),
+  `ELPIS_CONTINUITY_NEGATIVE_CONTROL must be one of ${[...NEGATIVE_CONTROLS].join(", ")} when set`,
 );
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-continuity-admission-"));
@@ -37,10 +44,15 @@ const workspace = path.join(
 );
 const memoryFile = path.join(home, "memories/MEMORY.md");
 const admissionFile = path.join(workspace, "admission.toml");
-for (const directory of [cwd, workspace, path.dirname(memoryFile)]) {
+const devRules = path.join(root, "dev-rules");
+const devRuleName = "RUNTIME.md";
+for (const directory of [cwd, workspace, path.dirname(memoryFile), devRules]) {
   fs.mkdirSync(directory, { recursive: true });
 }
 fs.writeFileSync(memoryFile, `# Elpis Memory\n\n- ${MEMORY_SENTINEL}\n`);
+fs.writeFileSync(path.join(home, "AGENTS.md"), `${GLOBAL_AGENTS_SENTINEL}\n`);
+fs.writeFileSync(path.join(cwd, "AGENTS.md"), `${PROJECT_AGENTS_SENTINEL}\n`);
+fs.writeFileSync(path.join(devRules, devRuleName), `${DEV_RULE_SENTINEL}\n`);
 fs.writeFileSync(path.join(home, "hooks.json"), "{}");
 
 class AppServer extends EventEmitter {
@@ -246,7 +258,17 @@ async function complete(threadId, text) {
 }
 
 async function runStage(threadId, stage, admission, text) {
-  if (negativeControl === NEGATIVE_CONTROL && stage === "on") admission = "memory = false\n";
+  if (negativeControl === "disable-memory-on-admission" && stage === "on") {
+    admission = admission.replace("memory = true", "memory = false");
+  }
+  if (negativeControl === "disable-agents-on-admission" && stage === "on") {
+    admission = admission
+      .replace("global_rules = true", "global_rules = false")
+      .replace("project_rules = true", "project_rules = false");
+  }
+  if (negativeControl === "disable-dev-on-admission" && stage === "withdrawn") {
+    admission = admission.replace(`"${devRuleName}" = true`, `"${devRuleName}" = false`);
+  }
   if (admission === null) fs.rmSync(admissionFile, { force: true });
   else fs.writeFileSync(admissionFile, admission);
   activeStage = stage;
@@ -274,6 +296,8 @@ async function run() {
     `base_url = "http://127.0.0.1:${server.address().port}/v1"`,
     'wire_api = "responses"',
     "requires_openai_auth = false",
+    "[skills]",
+    `dev_rule_roots = [${JSON.stringify(devRules)}]`,
     "",
   ].join("\n"));
 
@@ -300,18 +324,49 @@ async function run() {
     `Keep this unrelated user fact in history: ${USER_SENTINEL}`,
   );
   await runStage(thread, "off", "memory = false\n", "Admission is explicitly off.");
-  await runStage(thread, "on", "memory = true\n", "Admission is now on.");
-  await runStage(thread, "withdrawn", "memory = false\n", "Admission was withdrawn.");
+  await runStage(thread, "on", [
+    "memory = true",
+    "global_rules = true",
+    "project_rules = true",
+    "[dev_sources]",
+    `"${devRuleName}" = false`,
+    "",
+  ].join("\n"), "Memory and AGENTS are on while the dev rule is off.");
+  await runStage(thread, "withdrawn", [
+    "memory = false",
+    "global_rules = false",
+    "project_rules = false",
+    "[dev_sources]",
+    `"${devRuleName}" = true`,
+    "",
+  ].join("\n"), "AGENTS were withdrawn and the dev rule was restored.");
   await runStage(thread, "malformed", "memory = [\n", "Malformed admission must fail closed.");
 
   assert.equal(requests.length, STAGES.length, "unexpected auxiliary provider request count");
   assert.deepEqual(requests.map(entry => entry.stage), STAGES, "provider request stages changed");
   for (const { stage, body } of requests) {
     const expectedMemoryCount = stage === "on" ? 1 : 0;
+    const expectedAgentsCount = stage === "on" ? 1 : 0;
+    const expectedDevRuleCount = stage === "default" || stage === "off" || stage === "withdrawn" ? 1 : 0;
     assert.equal(
       occurrenceCount(body, MEMORY_SENTINEL),
       expectedMemoryCount,
       `${stage} request had the wrong MEMORY sentinel count`,
+    );
+    assert.equal(
+      occurrenceCount(body, GLOBAL_AGENTS_SENTINEL),
+      expectedAgentsCount,
+      `${stage} request had the wrong global AGENTS sentinel count`,
+    );
+    assert.equal(
+      occurrenceCount(body, PROJECT_AGENTS_SENTINEL),
+      expectedAgentsCount,
+      `${stage} request had the wrong project AGENTS sentinel count`,
+    );
+    assert.equal(
+      occurrenceCount(body, DEV_RULE_SENTINEL),
+      expectedDevRuleCount,
+      `${stage} request had the wrong dev-rule sentinel count`,
     );
     assert.match(JSON.stringify(body), new RegExp(DEVELOPER_SENTINEL), `${stage} lost developer context`);
   }
@@ -323,6 +378,9 @@ async function run() {
   const observations = requests.map(({ stage, body }) => ({
     stage,
     memorySentinelCount: occurrenceCount(body, MEMORY_SENTINEL),
+    globalAgentsSentinelCount: occurrenceCount(body, GLOBAL_AGENTS_SENTINEL),
+    projectAgentsSentinelCount: occurrenceCount(body, PROJECT_AGENTS_SENTINEL),
+    devRuleSentinelCount: occurrenceCount(body, DEV_RULE_SENTINEL),
     userSentinelCount: occurrenceCount(body, USER_SENTINEL),
     developerSentinelCount: occurrenceCount(body, DEVELOPER_SENTINEL),
   }));
@@ -337,6 +395,8 @@ async function run() {
       "MEMORY is admitted exactly once when enabled",
       "disabling admission removes MEMORY on the next turn in the same thread",
       "malformed admission fails closed",
+      "global and project AGENTS are absent by default, admitted once when enabled, then withdrawn",
+      "the configured dev rule is admitted by default, excluded explicitly, then restored",
       "neighboring user and developer context survives slot replacement",
       "one provider request occurs per turn with no auxiliary request",
     ],
