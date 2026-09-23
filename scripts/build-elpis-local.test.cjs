@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-function runGuard(temperature, mode = 'check', selectedRepo, testFilter) {
+function runGuard(temperature, mode = 'check', selectedRepo, testFilter, extraEnv = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-build-guard-test-'));
   try {
     for (const directory of ['scripts', 'codex-rs', 'bin', 'thermal/hwmon/hwmon0']) {
@@ -30,7 +30,10 @@ function runGuard(temperature, mode = 'check', selectedRepo, testFilter) {
         ELPIS_GUARD_TEST_MARKER: marker,
         ELPIS_TEST_FILTER: literalFilter || '',
         CARGO_TARGET_DIR: `${root}/shared-target`,
-        ELPIS_BUILD_REPO_ROOT: selectedRepo === undefined ? '' : path.join(root, selectedRepo) },
+        ELPIS_BUILD_REPO_ROOT: selectedRepo === undefined ? '' : path.join(root, selectedRepo),
+        CODEX_APP_SERVER_SCHEMA_ROOT: '',
+        CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL: '',
+        ...extraEnv },
     });
     return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n').map((arg) => arg.replaceAll(root, 'FIXTURE')) : [], flags:fs.existsSync(`${marker}.flags`)?fs.readFileSync(`${marker}.flags`,'utf8').replaceAll(root,'FIXTURE'):'', cwd:fs.existsSync(`${marker}.cwd`)?fs.readFileSync(`${marker}.cwd`,'utf8').trim().replaceAll(root,'FIXTURE'):'', filterSideEffect:fs.existsSync(filterSideEffect) };
   } finally {
@@ -149,11 +152,36 @@ test('app-server runtime uses the guarded local-release build and shared target 
   assert.equal(result.flags, optimized.flags);
 });
 
-test('schema export reuses optimized runtime compiler flags and packages',()=>{
-  const optimized=runGuard(50000,'optimized'),schema=runGuard(50000,'schema-build');
-  assert.equal(optimized.status,0,optimized.stdout+optimized.stderr);
-  assert.equal(schema.status,0,schema.stdout+schema.stderr);
-  assert.equal(schema.flags,optimized.flags);
-  assert.deepEqual(schema.args.slice(0,optimized.args.length),optimized.args);
-  assert(schema.args.includes('write_schema_fixtures'));
+test('schema modes use the protocol library tests and stable optimized flags', () => {
+  const optimized = runGuard(50000, 'optimized');
+  const build = runGuard(50000, 'schema-build');
+  const write = runGuard(50000, 'schema-write', undefined, undefined, {
+    CODEX_APP_SERVER_SCHEMA_ROOT: '/tmp/schema-output',
+    CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL: '0',
+  });
+  const tests = runGuard(50000, 'schema-tests');
+  for (const result of [build, write, tests]) {
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(result.flags, optimized.flags);
+  }
+  assert.deepEqual(build.args,
+    ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server-protocol', '--lib', '--no-run']);
+  assert.deepEqual(write.args,
+    ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server-protocol', '--lib',
+      'schema_fixtures_tests::write_schema_fixtures_from_env', '--', '--exact', '--ignored', '--test-threads=1']);
+  assert.deepEqual(tests.args,
+    ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server-protocol', '--lib',
+      'schema_fixtures_tests::', '--', '--test-threads=1']);
+});
+
+test('schema writer rejects missing or invalid output controls before Cargo', () => {
+  for (const extraEnv of [
+    {},
+    { CODEX_APP_SERVER_SCHEMA_ROOT: '/tmp/schema-output' },
+    { CODEX_APP_SERVER_SCHEMA_ROOT: '/tmp/schema-output', CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL: 'yes' },
+  ]) {
+    const result = runGuard(50000, 'schema-write', undefined, undefined, extraEnv);
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.equal(result.compilerStarted, false);
+  }
 });

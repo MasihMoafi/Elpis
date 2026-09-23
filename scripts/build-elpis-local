@@ -11,7 +11,7 @@ if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
 fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|core-check|dev|optimized|schema-build|app-server-build|test-build|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|app-server-build|test-build|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -31,14 +31,35 @@ case "$mode" in
         cargo_args=(build --profile dev-small --locked --offline -p codex-tui --bin elpis)
         artifact="$repo_root/codex-rs/target/dev-small/elpis"
         ;;
-    optimized|schema-build)
+    optimized)
         profile=local-release
         cargo_args=(build --profile local-release --locked --offline -p codex-tui --bin elpis -p codex-app-server --bin codex-app-server)
         artifact="$repo_root/codex-rs/target/local-release/elpis"
-        if [ "$mode" = schema-build ]; then
-            cargo_args+=(-p codex-app-server-protocol --bin write_schema_fixtures)
-            artifact="$repo_root/codex-rs/target/local-release/write_schema_fixtures"
+        ;;
+    schema-build)
+        profile=local-release
+        cargo_args=(test --profile local-release --locked --offline -p codex-app-server-protocol --lib --no-run)
+        artifact=
+        ;;
+    schema-write)
+        if [ -z "${CODEX_APP_SERVER_SCHEMA_ROOT:-}" ]; then
+            printf 'CODEX_APP_SERVER_SCHEMA_ROOT must be set explicitly for schema-write\n' >&2
+            exit 2
         fi
+        if [[ "${CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL:-}" != 0 && "${CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL:-}" != 1 ]]; then
+            printf 'CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL must be set explicitly to 0 or 1 for schema-write\n' >&2
+            exit 2
+        fi
+        profile=local-release
+        cargo_args=(test --profile local-release --locked --offline -p codex-app-server-protocol --lib)
+        cargo_args+=(schema_fixtures_tests::write_schema_fixtures_from_env -- --exact --ignored --test-threads=1)
+        artifact=
+        ;;
+    schema-tests)
+        profile=local-release
+        cargo_args=(test --profile local-release --locked --offline -p codex-app-server-protocol --lib)
+        cargo_args+=('schema_fixtures_tests::' -- --test-threads=1)
+        artifact=
         ;;
     app-server-build)
         profile=local-release
@@ -113,7 +134,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, app-server-build, test-build, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, app-server-build, test-build, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
@@ -240,7 +261,7 @@ fi
 # Freeze path-remapping flags for both locally optimized profiles so repeats
 # reuse the same Cargo fingerprint and installed artifacts do not expose the
 # workstation path. Dev/check retain the caller's normal fingerprint.
-if [ "$mode" = optimized ] || [ "$mode" = schema-build ] || [ "$mode" = app-server-build ] || [ "$mode" = test-build ] || [ "$mode" = core-test-build ] || [ "$mode" = core-tests ] || [ "$mode" = app-server-test-build ] || [ "$mode" = app-server-tests ] || [ "$mode" = config-test-build ] || [ "$mode" = shipping ]; then
+if [ "$mode" = optimized ] || [ "$mode" = schema-build ] || [ "$mode" = schema-write ] || [ "$mode" = schema-tests ] || [ "$mode" = app-server-build ] || [ "$mode" = test-build ] || [ "$mode" = core-test-build ] || [ "$mode" = core-tests ] || [ "$mode" = app-server-test-build ] || [ "$mode" = app-server-tests ] || [ "$mode" = config-test-build ] || [ "$mode" = shipping ]; then
     remap_from=${ELPIS_REMAP_PATH_FROM:-/home/masih}
     append_rustflag "--remap-path-prefix=$remap_from=/build"
     export CFLAGS="-ffile-prefix-map=$remap_from=/build -fdebug-prefix-map=$remap_from=/build"
