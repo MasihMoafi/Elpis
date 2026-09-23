@@ -93,6 +93,13 @@ test('TUI, core and config tests use separate Cargo feature graphs', () => {
   }
 });
 
+test('app-server library tests use the guarded local-release build', () => {
+  const result = runGuard(50000, 'app-server-test-build');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(result.args,
+    ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server', '--lib', '--no-run']);
+});
+
 test('schema export reuses optimized runtime compiler flags and packages',()=>{
   const optimized=runGuard(50000,'optimized'),schema=runGuard(50000,'schema-build');
   assert.equal(optimized.status,0,optimized.stdout+optimized.stderr);
