@@ -67,7 +67,7 @@ case "$mode" in
             exit 2
         fi
         profile=local-release
-        cargo_args=(run --profile local-release --locked --offline -p codex-core)
+        cargo_args=(run --profile local-release --locked --offline -p codex-config-schema)
         cargo_args+=(--bin codex-write-config-schema -- --out "$ELPIS_CONFIG_SCHEMA_OUT")
         artifact=
         ;;
