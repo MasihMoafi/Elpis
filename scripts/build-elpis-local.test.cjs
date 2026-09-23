@@ -117,6 +117,24 @@ test('focused Elpis app-server tests run under the guarded compile-only feature 
   assert.equal(result.flags, build.flags);
 });
 
+test('focused TUI tests reuse test-build flags and default to empty Enter regressions', () => {
+  const build = runGuard(50000, 'test-build');
+  const result = runGuard(50000, 'tui-tests');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(result.args,
+    ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-tui', '--lib',
+      'empty_enter', '--', '--test-threads=1']);
+  assert.equal(result.flags, build.flags);
+});
+
+test('focused TUI test filter remains one literal Cargo argument', () => {
+  const filter = 'queued enter; $(touch {SENTINEL})';
+  const result = runGuard(50000, 'tui-tests', undefined, filter);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.args[8], filter.replace('{SENTINEL}', 'FIXTURE/filter-side-effect'));
+  assert.equal(result.filterSideEffect, false, 'test filter was evaluated by a shell');
+});
+
 test('focused core tests reuse core-test-build flags and default to Smart Prune', () => {
   const build = runGuard(50000, 'core-test-build');
   const result = runGuard(50000, 'core-tests');

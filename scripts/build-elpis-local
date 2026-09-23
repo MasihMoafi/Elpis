@@ -11,7 +11,7 @@ if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
 fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -81,6 +81,12 @@ case "$mode" in
         cargo_args=(test --profile local-release --locked --offline -p codex-tui --lib --bins --no-run)
         artifact=
         ;;
+    tui-tests)
+        profile=local-release
+        test_filter=${ELPIS_TEST_FILTER:-empty_enter}
+        cargo_args=(test --profile local-release --locked --offline -p codex-tui --lib "$test_filter" -- --test-threads=1)
+        artifact=
+        ;;
     core-test-build)
         profile=local-release
         cargo_args=(test --profile local-release --locked --offline -p codex-core --lib --no-run)
@@ -144,7 +150,7 @@ case "$mode" in
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
@@ -271,7 +277,7 @@ fi
 # Freeze path-remapping flags for both locally optimized profiles so repeats
 # reuse the same Cargo fingerprint and installed artifacts do not expose the
 # workstation path. Dev/check retain the caller's normal fingerprint.
-if [ "$mode" = optimized ] || [ "$mode" = schema-build ] || [ "$mode" = schema-write ] || [ "$mode" = schema-tests ] || [ "$mode" = config-schema-write ] || [ "$mode" = app-server-build ] || [ "$mode" = test-build ] || [ "$mode" = core-test-build ] || [ "$mode" = core-tests ] || [ "$mode" = app-server-test-build ] || [ "$mode" = app-server-tests ] || [ "$mode" = config-test-build ] || [ "$mode" = shipping ]; then
+if [ "$mode" = optimized ] || [ "$mode" = schema-build ] || [ "$mode" = schema-write ] || [ "$mode" = schema-tests ] || [ "$mode" = config-schema-write ] || [ "$mode" = app-server-build ] || [ "$mode" = test-build ] || [ "$mode" = tui-tests ] || [ "$mode" = core-test-build ] || [ "$mode" = core-tests ] || [ "$mode" = app-server-test-build ] || [ "$mode" = app-server-tests ] || [ "$mode" = config-test-build ] || [ "$mode" = shipping ]; then
     remap_from=${ELPIS_REMAP_PATH_FROM:-/home/masih}
     append_rustflag "--remap-path-prefix=$remap_from=/build"
     export CFLAGS="-ffile-prefix-map=$remap_from=/build -fdebug-prefix-map=$remap_from=/build"
