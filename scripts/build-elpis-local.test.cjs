@@ -101,6 +101,15 @@ test('app-server library tests use the guarded local-release build', () => {
     ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server', '--lib', '--no-run']);
 });
 
+test('focused Elpis app-server tests run under the guarded compile-only feature graph', () => {
+  const build = runGuard(50000, 'app-server-test-build');
+  const result = runGuard(50000, 'app-server-tests');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(result.args,
+    ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server', '--lib', 'elpis_', '--', '--test-threads=1']);
+  assert.equal(result.flags, build.flags);
+});
+
 test('app-server runtime uses the guarded local-release build and shared target directory', () => {
   const result = runGuard(50000, 'app-server-build');
   const optimized = runGuard(50000, 'optimized');
