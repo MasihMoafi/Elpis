@@ -33,6 +33,7 @@ function runGuard(temperature, mode = 'check', selectedRepo, testFilter, extraEn
         ELPIS_BUILD_REPO_ROOT: selectedRepo === undefined ? '' : path.join(root, selectedRepo),
         CODEX_APP_SERVER_SCHEMA_ROOT: '',
         CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL: '',
+        ELPIS_CONFIG_SCHEMA_OUT: '',
         ...extraEnv },
     });
     return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n').map((arg) => arg.replaceAll(root, 'FIXTURE')) : [], flags:fs.existsSync(`${marker}.flags`)?fs.readFileSync(`${marker}.flags`,'utf8').replaceAll(root,'FIXTURE'):'', cwd:fs.existsSync(`${marker}.cwd`)?fs.readFileSync(`${marker}.cwd`,'utf8').trim().replaceAll(root,'FIXTURE'):'', filterSideEffect:fs.existsSync(filterSideEffect) };
@@ -181,6 +182,28 @@ test('schema writer rejects missing or invalid output controls before Cargo', ()
     { CODEX_APP_SERVER_SCHEMA_ROOT: '/tmp/schema-output', CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL: 'yes' },
   ]) {
     const result = runGuard(50000, 'schema-write', undefined, undefined, extraEnv);
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.equal(result.compilerStarted, false);
+  }
+});
+
+test('config schema writer runs the native core binary with an explicit destination', () => {
+  const optimized = runGuard(50000, 'optimized');
+  const result = runGuard(50000, 'config-schema-write', undefined, undefined, {
+    ELPIS_CONFIG_SCHEMA_OUT: '/tmp/config.schema.json',
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(result.args,
+    ['run', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-core',
+      '--bin', 'codex-write-config-schema', '--', '--out', '/tmp/config.schema.json']);
+  assert.equal(result.flags, optimized.flags);
+});
+
+test('config schema writer rejects missing or relative destinations before Cargo', () => {
+  for (const output of ['', 'relative/config.schema.json']) {
+    const result = runGuard(50000, 'config-schema-write', undefined, undefined, {
+      ELPIS_CONFIG_SCHEMA_OUT: output,
+    });
     assert.equal(result.status, 2, result.stdout + result.stderr);
     assert.equal(result.compilerStarted, false);
   }
