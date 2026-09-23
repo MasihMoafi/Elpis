@@ -8,27 +8,15 @@ const {AppServer} = require('../editors/vscode/src/rpc');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-pressure-runtime-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'project');
 fs.mkdirSync(home); fs.mkdirSync(cwd);
+const negativeControl = process.argv[3];
+assert(negativeControl === undefined || negativeControl === '--drop-pressure',
+  'optional third argument must be --drop-pressure');
 const requests = [];
 let mode = 'unset', mainCalls = 0, rpc;
 const server = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk;
   if (!req.url.includes('/responses')) {res.writeHead(404); res.end(); return;}
   const body = JSON.parse(raw);
-  // Session naming is a separate background call; answer it without consuming a
-  // main-call slot or entering the asserted request sequence.
-  if (body.text?.format?.schema?.required?.includes('title')) {
-    const item = {type:'message', id:'msg_title', role:'assistant', status:'completed',
-      content:[{type:'output_text', text:JSON.stringify({title:'Fixture session task'}), annotations:[]}]};
-    res.writeHead(200, {'content-type':'text/event-stream'});
-    for (const event of [
-      {type:'response.created',response:{id:'resp_title',status:'in_progress',output:[]}},
-      {type:'response.output_item.done',output_index:0,item},
-      {type:'response.completed',response:{id:'resp_title',status:'completed',output:[item],
-        usage:{input_tokens:10,output_tokens:5,total_tokens:15}}},
-    ]) res.write('data: '+JSON.stringify(event)+'\n\n');
-    res.end();
-    return;
-  }
   requests.push(body);
   const optimizer = req.url.endsWith('/compact') || body.input?.some(item=>item.type==='compaction_trigger');
   body.fixture_is_compact = optimizer;
@@ -58,27 +46,39 @@ async function runCase(nextMode) {
   mode = nextMode; mainCalls = 0;
   const settings = path.join(home,'compaction.json');
   if(mode==='unset') fs.rmSync(settings,{force:true});
+  else if(mode==='malformed') fs.writeFileSync(settings,'{"remaining_percent":');
+  else if(negativeControl === '--drop-pressure' && mode === 'pressure') {
+    fs.writeFileSync(settings,JSON.stringify({remaining_percent:null}));
+  }
   else fs.writeFileSync(settings,JSON.stringify({remaining_percent:mode==='off'?null:30}));
   const start = requests.length;
-  const {thread} = await rpc.request('thread/start', {model:'gpt-5.6-terra',cwd,approvalPolicy:'never',sandbox:'danger-full-access'});
+  const config = mode === 'auto-disabled' ? {model_auto_compact_enabled:false} : undefined;
+  const {thread} = await rpc.request('thread/start', {model:'gpt-5.6-terra',cwd,
+    approvalPolicy:'never',sandbox:'danger-full-access',config});
+  await rpc.request('thread/name/set',{threadId:thread.id,name:'Pressure compaction fixture'});
   let timer, listener;
   const done = new Promise((resolve,reject) => {
     listener = event => {
-      if(event.method === 'turn/completed' && event.params.threadId === thread.id) resolve();
+      if(event.method === 'turn/completed' && event.params.threadId === thread.id) resolve(event.params);
     };
     rpc.on('notification', listener);
     timer = setTimeout(()=>reject(Error('turn timed out '+mode)),20000);
   });
+  let completed;
   try {
     await rpc.request('turn/start',{threadId:thread.id,input:[{type:'text',text:'Generate the diagnostic output.'}]});
-    await done;
+    completed = await done;
   } finally {clearTimeout(timer);rpc.removeListener('notification',listener);}
+  assert.equal(completed.turn.status,'completed','turn did not complete successfully: '+mode);
+  assert.equal(completed.turn.error,null,'turn completed with an error: '+mode);
   const calls = requests.slice(start);
   const sequence = calls.map(call=>call.fixture_is_compact?'compact':'sample');
   const expected = mode==='ineffective' ? ['sample','compact','sample','sample']
     : mode==='pressure' ? ['sample','compact','sample'] : ['sample','sample'];
   assert.deepEqual(sequence,expected, 'pressure boundary failed: '+mode);
-  return {mode,sequence,reportedInputTokens:72000,configuredWindow:100000,nativeThreshold:90000};
+  return {mode,sequence,requestCount:calls.length,
+    turnStatus:completed.turn.status,turnError:completed.turn.error,
+    reportedInputTokens:72000,configuredWindow:100000,nativeThreshold:90000};
 }
 
 (async()=>{
@@ -99,7 +99,7 @@ async function runCase(nextMode) {
   await rpc.request('initialize',{clientInfo:{name:'prune_fixture',version:'1'},capabilities:{experimentalApi:true}});
   rpc.send({method:'initialized'});
   const results = [];
-  for(const selected of ['unset','off','pressure','ineffective']) {
+  for(const selected of ['unset','off','malformed','pressure','ineffective','auto-disabled']) {
     const result = await runCase(selected);
     results.push(result);
     console.log(JSON.stringify(result));
