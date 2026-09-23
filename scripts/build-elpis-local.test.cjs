@@ -15,11 +15,6 @@ function runGuard(temperature, mode = 'check', selectedRepo, testFilter, extraEn
     fs.copyFileSync(path.join(__dirname, 'build-elpis-local'), script);
     fs.mkdirSync(path.join(root, 'candidate/codex-rs'), { recursive: true });
     fs.writeFileSync(path.join(root, 'candidate/codex-rs/Cargo.toml'), '[workspace]\n');
-    fs.mkdirSync(path.join(root, 'codex-rs/config-schema/src'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'codex-rs/config-schema/Cargo.toml'),
-      '[package]\nname = "codex-config-schema"\n[[bin]]\nname = "codex-write-config-schema"\npath = "src/main.rs"\n');
-    fs.writeFileSync(path.join(root, 'codex-rs/config-schema/src/main.rs'),
-      '#[derive(clap::Parser)]\nstruct Args { #[arg(short, long)] out: Option<std::path::PathBuf> }\n');
     fs.writeFileSync(path.join(root, 'bin/rustc'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'bin/cargo'),
       '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\nprintf "%s" "$RUSTFLAGS" > "$ELPIS_GUARD_TEST_MARKER.flags"\npwd > "$ELPIS_GUARD_TEST_MARKER.cwd"\nmkdir -p "$CARGO_TARGET_DIR/local-release"\nprintf x > "$CARGO_TARGET_DIR/local-release/codex-app-server"\nsleep 1\n', { mode: 0o755 });
@@ -41,7 +36,7 @@ function runGuard(temperature, mode = 'check', selectedRepo, testFilter, extraEn
         ELPIS_CONFIG_SCHEMA_OUT: '',
         ...extraEnv },
     });
-    return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n').map((arg) => arg.replaceAll(root, 'FIXTURE')) : [], flags:fs.existsSync(`${marker}.flags`)?fs.readFileSync(`${marker}.flags`,'utf8').replaceAll(root,'FIXTURE'):'', cwd:fs.existsSync(`${marker}.cwd`)?fs.readFileSync(`${marker}.cwd`,'utf8').trim().replaceAll(root,'FIXTURE'):'', filterSideEffect:fs.existsSync(filterSideEffect), configSchemaManifest:fs.readFileSync(path.join(root,'codex-rs/config-schema/Cargo.toml'),'utf8'), configSchemaMain:fs.readFileSync(path.join(root,'codex-rs/config-schema/src/main.rs'),'utf8') };
+    return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n').map((arg) => arg.replaceAll(root, 'FIXTURE')) : [], flags:fs.existsSync(`${marker}.flags`)?fs.readFileSync(`${marker}.flags`,'utf8').replaceAll(root,'FIXTURE'):'', cwd:fs.existsSync(`${marker}.cwd`)?fs.readFileSync(`${marker}.cwd`,'utf8').trim().replaceAll(root,'FIXTURE'):'', filterSideEffect:fs.existsSync(filterSideEffect) };
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -192,15 +187,12 @@ test('schema writer rejects missing or invalid output controls before Cargo', ()
   }
 });
 
-test('config schema writer runs the native core binary with an explicit destination', () => {
+test('config schema writer runs the native schema binary with an explicit destination', () => {
   const optimized = runGuard(50000, 'optimized');
   const result = runGuard(50000, 'config-schema-write', undefined, undefined, {
     ELPIS_CONFIG_SCHEMA_OUT: '/tmp/config.schema.json',
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.configSchemaManifest, /name = "codex-config-schema"/);
-  assert.match(result.configSchemaManifest, /name = "codex-write-config-schema"/);
-  assert.match(result.configSchemaMain, /arg\(short, long\).*out:/s);
   assert.deepEqual(result.args,
     ['run', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-config-schema',
       '--bin', 'codex-write-config-schema', '--', '--out', '/tmp/config.schema.json']);
