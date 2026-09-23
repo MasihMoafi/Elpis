@@ -11,7 +11,7 @@ const { spawn } = require("node:child_process");
 const MEMORY_SENTINEL = "ELPIS_MEMORY_SENTINEL_9bf259b96d";
 const USER_SENTINEL = "ELPIS_NEIGHBOR_USER_SENTINEL_a329510b8e";
 const DEVELOPER_SENTINEL = "ELPIS_NEIGHBOR_DEVELOPER_SENTINEL_786ed03a7f";
-const NEGATIVE_CONTROL = "drop-admitted-sentinel";
+const NEGATIVE_CONTROL = "disable-on-admission";
 const REQUEST_TIMEOUT_MS = 30_000;
 const STAGES = ["default", "off", "on", "withdrawn", "malformed"];
 
@@ -57,6 +57,14 @@ class AppServer extends EventEmitter {
     this.stderr = "";
     this.child.stderr.on("data", chunk => {
       this.stderr = (this.stderr + chunk.toString()).slice(-16_384);
+    });
+    this.child.on("error", error => {
+      for (const waiter of this.pending.values()) {
+        clearTimeout(waiter.timer);
+        waiter.reject(Error(`could not start app-server: ${error.message}`));
+      }
+      this.pending.clear();
+      if (!this.closed) this.emit("unexpectedExit", error);
     });
     readline.createInterface({ input: this.child.stdout }).on("line", line => {
       let message;
@@ -136,6 +144,7 @@ class AppServer extends EventEmitter {
 
 let rpc;
 let activeStage;
+let providerFailure;
 const requests = [];
 
 function sendEvents(response, id) {
@@ -173,9 +182,15 @@ const server = http.createServer(async (request, response) => {
 
   let raw = "";
   for await (const chunk of request) raw += chunk;
-  assert(activeStage, "provider request arrived without an active test stage");
-  if (negativeControl === NEGATIVE_CONTROL && activeStage === "on") {
-    raw = raw.replaceAll(MEMORY_SENTINEL, "ELPIS_DROPPED_MEMORY_SENTINEL");
+  if (!activeStage || requests.at(-1)?.stage === activeStage) {
+    providerFailure = Error(
+      activeStage
+        ? `auxiliary provider request arrived during ${activeStage}`
+        : "provider request arrived without an active test stage",
+    );
+    response.writeHead(500, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: providerFailure.message }));
+    return;
   }
   const body = JSON.parse(raw);
   requests.push({ stage: activeStage, body });
@@ -231,11 +246,17 @@ async function complete(threadId, text) {
 }
 
 async function runStage(threadId, stage, admission, text) {
+  if (negativeControl === NEGATIVE_CONTROL && stage === "on") admission = "memory = false\n";
   if (admission === null) fs.rmSync(admissionFile, { force: true });
   else fs.writeFileSync(admissionFile, admission);
   activeStage = stage;
   const before = requests.length;
-  await complete(threadId, text);
+  try {
+    await complete(threadId, text);
+  } finally {
+    activeStage = undefined;
+  }
+  if (providerFailure) throw providerFailure;
   assert.equal(requests.length, before + 1, `${stage} turn made an auxiliary or missing provider request`);
   assert.equal(requests.at(-1).stage, stage, `${stage} provider request was misattributed`);
 }
