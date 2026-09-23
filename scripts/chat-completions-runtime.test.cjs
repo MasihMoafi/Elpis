@@ -229,7 +229,7 @@ async function runTurn(caseMode) {
   rpc = new AppServer(binary, cwd, {
     args: path.basename(binary) === "elpis" ? ["app-server"] : [],
     env: {
-      ...process.env,
+      PATH: process.env.PATH,
       HOME: home,
       CODEX_HOME: home,
       CODEX_AUTH_HOME: home,
