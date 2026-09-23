@@ -17,7 +17,7 @@ function runGuard(temperature, mode = 'check', selectedRepo) {
     fs.writeFileSync(path.join(root, 'candidate/codex-rs/Cargo.toml'), '[workspace]\n');
     fs.writeFileSync(path.join(root, 'bin/rustc'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'bin/cargo'),
-      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\nprintf "%s" "$RUSTFLAGS" > "$ELPIS_GUARD_TEST_MARKER.flags"\npwd > "$ELPIS_GUARD_TEST_MARKER.cwd"\nsleep 1\n', { mode: 0o755 });
+      '#!/bin/sh\nprintf "%s\\n" "$@" > "$ELPIS_GUARD_TEST_MARKER"\nprintf "%s" "$RUSTFLAGS" > "$ELPIS_GUARD_TEST_MARKER.flags"\npwd > "$ELPIS_GUARD_TEST_MARKER.cwd"\nmkdir -p "$CARGO_TARGET_DIR/local-release"\nprintf x > "$CARGO_TARGET_DIR/local-release/codex-app-server"\nsleep 1\n', { mode: 0o755 });
     fs.writeFileSync(path.join(root, 'thermal/hwmon/hwmon0/temp1_input'), `${temperature}\n`);
     const marker = path.join(root, 'compiler-started');
     const result = spawnSync('timeout', ['4s', 'bash', script, mode], {
@@ -26,6 +26,7 @@ function runGuard(temperature, mode = 'check', selectedRepo) {
         ELPIS_BUILD_JOBS: '1', ELPIS_RUSTC_THREADS: '1', ELPIS_MAX_TEMP_C: '75',
         ELPIS_THERMAL_ROOT: `${root}/thermal`, ELPIS_TEMP_POLL_SECONDS: '0.1',
         ELPIS_GUARD_TEST_MARKER: marker,
+        CARGO_TARGET_DIR: `${root}/shared-target`,
         ELPIS_BUILD_REPO_ROOT: selectedRepo === undefined ? '' : path.join(root, selectedRepo) },
     });
     return { ...result, compilerStarted: fs.existsSync(marker), args: fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim().split('\n') : [], flags:fs.existsSync(`${marker}.flags`)?fs.readFileSync(`${marker}.flags`,'utf8').replaceAll(root,'FIXTURE'):'', cwd:fs.existsSync(`${marker}.cwd`)?fs.readFileSync(`${marker}.cwd`,'utf8').trim().replaceAll(root,'FIXTURE'):'' };
@@ -98,6 +99,16 @@ test('app-server library tests use the guarded local-release build', () => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.deepEqual(result.args,
     ['test', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server', '--lib', '--no-run']);
+});
+
+test('app-server runtime uses the guarded local-release build and shared target directory', () => {
+  const result = runGuard(50000, 'app-server-build');
+  const optimized = runGuard(50000, 'optimized');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(result.args,
+    ['build', '--profile', 'local-release', '--locked', '--offline', '-p', 'codex-app-server', '--bin', 'codex-app-server']);
+  assert.match(result.stdout, /artifact_bytes=1/);
+  assert.equal(result.flags, optimized.flags);
 });
 
 test('schema export reuses optimized runtime compiler flags and packages',()=>{
