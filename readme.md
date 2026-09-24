@@ -137,7 +137,7 @@ already-sent history. `/force-prune <1-100>` is an explicit emergency action tha
 prompt-cache reuse. `/compact` immediately runs Codex native compaction, independent of Smart
 Prune. Automatic native compaction uses the model-window threshold and usable-window headroom.
 Smart Prune is Experimental and off by default; `/settings` saves its value for the next
-conversation.
+turn while leaving any turn already in flight unchanged.
 
 ![Ace pruning lifecycle from a retired automatic threshold-triggered configuration](docs/assets/diagram_ace_lifecycle.svg)
 

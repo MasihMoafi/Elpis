@@ -28,7 +28,8 @@
 //! the bulk of an agent transcript. The epoch marker is a `Message` carrying `input_text`
 //! precisely so that this boundary is addressable at all.
 //!
-//! See `docs/prompt-caching.md` and `docs/cache-friendly-pruning.md`.
+//! See `docs/prompt-caching.md`. Smart Prune runs before first admission and does not
+//! use the retrospective epoch boundary described here.
 
 use crate::context_pruner;
 use codex_api::PromptCacheBreakpointPosition;

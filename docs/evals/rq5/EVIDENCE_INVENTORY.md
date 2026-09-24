@@ -11,7 +11,7 @@
 | **Ace Model Usage** | Complete | Server / Proxy logs, session cost summaries | Record of sub-call API requests for memory extraction / summarizing models. |
 | **Replacement History** | Partial | `docs/sessions.md`, session history files | State updates and summary replacement events stored in session state files (`~/.elpis/sessions/`). |
 | **Context Trajectory** | Complete | `elpis-rq1-rq4-analysis.html`, `elpis-rq4-final-forensics.zip` | Per-step context size trajectory tracking over long-horizon runs. |
-| **Compaction** | Complete | `cache-friendly-pruning.md`, pruning benchmark data | Compaction ratio and message collapsing metadata preserved. |
+| **Compaction** | Complete | `docs/context.md`, `docs/prompt-caching.md`, pruning benchmark data | Compaction ratio and message collapsing metadata preserved. |
 | **Session Provenance** | Partial | Session metadata headers (`~/.elpis/sessions/*.json`) | Recorded session ID, timestamp, initial parameters, commit hash. |
 
 ---

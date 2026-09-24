@@ -55,10 +55,10 @@ pub(crate) struct SessionState {
     /// nothing, so the next turn rebuilds the identical batch; this drives the
     /// backoff that stops one bad batch from retrying on every turn forever.
     pub(crate) context_prune_consecutive_failures: u32,
-    /// Earliest instant an automatic pruning pass may run again. `/prune` ignores it.
+    /// Earliest instant the legacy retrospective mechanism may retry after failure.
     pub(crate) context_prune_retry_after: Option<Instant>,
-    /// Hysteresis gate for automatic pruning: which phase of the 30% -> 20% -> regrow
-    /// cycle the session is in. See `crate::context_pruner::PruneCycle`.
+    /// Dormant legacy hysteresis state retained by the retrospective implementation.
+    /// Smart Prune does not read it. See `crate::context_pruner::PruneCycle`.
     pub(crate) context_prune_cycle: crate::context_pruner::PruneCycle,
     /// Admission-time Smart Prune counters and bounded latest evidence.
     pub(crate) smart_prune: SmartPruneSnapshot,
@@ -105,7 +105,7 @@ impl SessionState {
         }
     }
 
-    /// True when automatic pruning is still inside the backoff left by a failed pass.
+    /// True when the legacy retrospective mechanism is inside its failure backoff.
     pub(crate) fn context_prune_backoff_active(&self) -> bool {
         self.context_prune_retry_after
             .is_some_and(|retry_after| Instant::now() < retry_after)

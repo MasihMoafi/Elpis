@@ -23,13 +23,17 @@ flowchart TD
     Provider --> Runtime
     Runtime --> Tools[Tools within effective permissions]
     Tools --> Workspace[Workspace changes and command results]
-    Workspace --> Runtime
+    Workspace --> Pending[Fresh tool results]
+    Pending --> Smart[Optional Smart Prune before first admission]
+    Smart --> Runtime
     Runtime --> Evidence[Transcript and verification artifacts]
     Runtime --> Checkpoint[CLI turn checkpoint]
     Checkpoint --> Ledger
     Runtime --> History[Conversation history]
-    History --> Reduction[Native compaction / optional pruning]
-    Reduction --> Runtime
+    History --> Compact[Native compaction]
+    Compact --> Runtime
+    History -. explicit legacy force-prune .-> Rewrite[Retrospective history rewrite]
+    Rewrite -.-> Runtime
     Runtime -. optional experimental dispatch .-> Graph[Persisted work graph]
     Graph --> Workers[Scoped workers and dependent verification]
     Workers --> Evidence
@@ -37,10 +41,12 @@ flowchart TD
 
 The model proposes actions; the runtime executes allowed tools and feeds their
 results back. More results improve observability but consume context and time.
-Pruning reduces selected output while native compaction summarizes history;
-either can lose useful detail. The transcript and artifacts remain the place to
-verify a shortened claim. A checkpoint carries continuity into later turns, but
-can also carry stale assumptions. Admission is a user control, not a truth check.
+Smart Prune can reduce selected tool output before its first admission, while
+native compaction summarizes existing history. The legacy force-prune path can
+rewrite already-admitted tool output. Any reduction can lose useful detail. The
+transcript and artifacts remain the place to verify a shortened claim. A checkpoint
+carries continuity into later turns, but can also carry stale assumptions. Admission
+is a user control, not a truth check.
 
 Elpis's distinctive product direction is this combination of visible admission,
 goal continuity, optional pruning and inspectable work graphs around a
@@ -58,26 +64,31 @@ restrict writes; it cannot prove that a permitted edit is correct.
 
 ---
 
-## 2. Three context-control mechanisms and native compaction
+## 2. Context-control mechanisms and native compaction
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
-Elpis has three context-control mechanisms. Ace pruning is optional; native Codex compaction
-is independent of it rather than a fourth pruning layer or fallback.
+Elpis has three normal context-control mechanisms. Smart Prune is optional; native Codex
+compaction is independent of it rather than a pruning fallback. A separate legacy forced
+rewrite remains exposed for emergency recovery and compatibility, but is not Smart Prune.
 
 | Mechanism | Trigger | Scope | Behavior | Failure Recovery |
 | :--- | :--- | :--- | :--- | :--- |
 | **RTK filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **Safety cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
-| **Ace pruning — Experimental** | Explicit `/prune` or `/force-prune`; automatic pressure cycling only when enabled for this conversation | Eligible old tool evidence | Manual actions sweep eligible evidence. Automatic mode targets roughly 20% use, protects the newest 10%, allows at most two back-to-back passes, and seals regions with epoch markers. | A failed pass changes nothing. Native compaction keeps its own threshold/headroom lifecycle. |
+| **Smart Prune — Experimental** | Enabled with `/prune`, `/smart-prune on`, the Context Ledger, or settings | Eligible fresh tool results | Optimizes a completed tool result before that result's first admission to model-visible history. It never revisits already-admitted history. | Fails open: the original tool result is admitted unchanged. |
+| **Legacy forced rewrite** | Explicit `/force-prune <1-100>` or app-server `thread/prune/start` | Eligible tool output already in history | Replaces selected old output and therefore changes the reusable prompt prefix. This is a separate retrospective mechanism, not Smart Prune. | A failed pass leaves history unchanged. |
 
 RTK is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
-Automatic Ace pruning is **off by default**. `/settings` labels it `Automatic pruning — Experimental` and uses this exact warning: `Distills completed tool output before native compaction. Uses an extra AI call and may slow a turn, reduce prompt cache reuse, or remove useful detail.` Saving that setting affects the **next conversation**, not the already-running one.
+Smart Prune is **off by default**. `/prune` is a one-way convenience command that enables it;
+`/smart-prune` toggles it and `/smart-prune on|off` sets it explicitly. A change applies to
+subsequent turns, not a turn already in flight. Smart Prune sees fresh eligible output before
+`record_conversation_items`, so it does not rewrite a prefix the main model has already seen.
 
-`/prune` and `/force-prune <pct>` are explicit manual Ace actions. Both work while automatic
-pruning is off. `/force-prune` records `pressure` in its audit to name the targeted selection
-strategy; that value does not establish automatic invocation.
+`/force-prune <pct>` is different: it immediately starts the legacy retrospective operation
+and may reduce prompt-cache reuse. The app-server's `thread/prune/start` method reaches that
+same legacy operation; clients must not treat it as the admission-time Smart Prune switch.
 
 `/compact N` saves a pressure threshold checked before user turns and between
 model/tool iterations during ongoing work. When remaining usable context is at
@@ -93,16 +104,22 @@ This does not enable Smart Prune or automatic memory.
 `/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
 does not run Ace first. Separately, automatic native compaction uses the donor model-window
 threshold and usable-window headroom. The Context Ledger's exact used-token number is
-authoritative after either mechanism. Ace saved-token totals are cumulative and origin-neutral:
-they do not identify a pass as manual or automatic.
+authoritative after either mechanism. Legacy retrospective totals and Smart Prune admission
+snapshots are separate; neither should be presented as native-compaction savings.
 
-### Ace pass audit trail
+### Pruning audit trails
 
-Every applied Ace pass writes an immutable audit before the working history changes. If that audit cannot be written, Elpis keeps the working history and does not record the pass as applied.
+Every applied Smart Prune admission writes its source and admitted form to a durable audit
+before the compact form enters history. Every applied legacy retrospective pass writes an
+immutable audit before changing working history. If the relevant audit cannot be written,
+Elpis retains the original output.
 
 ![Elpis immutable audit trail](assets/elpis-audit-trail-template.svg)
 
-You do not have to go looking for these: `prune_report.md` renders `ace.json` and `manifest.json` as clickable links (`context_prune_audit.rs`). The audit deliberately omits the system prompt, skills, and transcript, so it stays readable.
+Legacy `prune_report.md` renders `ace.json` and `manifest.json` as clickable links
+(`context_prune_audit.rs`). Smart Prune keeps separate admission and attempt records under
+`logs/smart-prune`. These audits deliberately omit the system prompt, skills, and transcript,
+so they stay readable.
 
 ---
 
@@ -164,8 +181,9 @@ saving.
 When enabled for a root conversation, the runtime offers the responding agent a
 `save_memory` tool in its normal tool loop. There is no post-response,
 pre-compaction, background-model, or other auxiliary save request. The agent calls
-the tool before its final answer when durable state changed; if it does not call
-the tool, nothing is saved. Internal, review, and subagent sessions cannot receive
+the tool before its final answer when durable state changed; without that call,
+no curated memory or new Consolidated State is saved. Deterministic turn evidence
+in ES is separate (see [Sessions](sessions.md)). Internal, review, and subagent sessions cannot receive
 or invoke it. The runtime fixes the memory root and workspace paths; the caller
 cannot choose a write path.
 

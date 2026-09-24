@@ -254,7 +254,7 @@ async fn manual_prune_survives_session_resume() -> Result<()> {
 async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() -> Result<()> {
     skip_if_host_windows!(Ok(()));
 
-    // Regression test for three compounding bugs in manual `/prune`:
+    // Regression test for three compounding bugs in the legacy targetless prune operation:
     //   1. `ContextManager::replace` (called by every prune pass) unconditionally
     //      cleared the live world-state baseline without restoring it, so the very
     //      next turn saw AGENTS.md as "Unknown" and reinjected a replacement notice
@@ -276,7 +276,7 @@ async fn manual_prune_does_not_duplicate_agents_md_instructions_across_resume() 
     // `CONTEXT_WINDOW` (10,000) after the very first round and trigger an unrelated
     // automatic compaction attempt (there is no mock for the compact endpoint, so it
     // would fail and consume a response meant for a later request in the sequence).
-    // Only the manual `/prune` path under test should run here.
+    // Only the legacy targetless prune operation under test should run here.
     let server = start_mock_server().await;
     // The Context Ledger governs AGENTS.md and is keyed per workspace, so this pins the
     // workspace across build and resume and admits the row the assertions are about.

@@ -1,7 +1,8 @@
-//! Runs the Ace pass (`crate::context_pruner`) for explicit manual
-//! `/prune`/`/force-prune`; `pressure` is the selection strategy for manual
-//! `/force-prune`. Smart Prune admission lives in `super::smart_prune` and does not
-//! invoke this retrospective pass. Mirrors
+//! Runs the legacy retrospective Ace pass (`crate::context_pruner`) for
+//! `/force-prune` and the app-server `thread/prune/start` operation. A targetless
+//! protocol call still selects the old full-backlog sweep; the TUI `/prune` command
+//! does not reach this module. Smart Prune admission lives in `super::smart_prune`
+//! and does not invoke this retrospective pass. Mirrors
 //! `super::token_budget::maybe_record`: a small, independent, isolated step called
 //! from the turn loop. Any failure here is swallowed and never propagated — a broken,
 //! slow, or unavailable pruning pass must never break or stall the user's actual
@@ -28,8 +29,8 @@ use codex_rollout_trace::InferenceTraceContext;
 use futures::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-/// Upper bound on the passes one `/prune` sweep will run, so an explicit sweep is
-/// bounded even if the backlog keeps producing eligible batches.
+/// Upper bound on a targetless legacy protocol sweep, so it stays bounded even if
+/// the backlog keeps producing eligible batches.
 const MAX_MANUAL_PRUNE_PASSES: usize = 12;
 
 use super::context_prune_audit;
@@ -125,9 +126,9 @@ pub(crate) async fn run_manual_context_prune_with_target(
         .await;
         return;
     }
-    // A single pass is capped so one model call stays bounded, but a bare `/prune` is
-    // an explicit request to clear the backlog — so sweep it in bounded passes rather
-    // than leaving the user with a partial reclaim and no indication why.
+    // A single pass is capped so one model call stays bounded, but a targetless legacy
+    // protocol request means to clear the backlog. Sweep it in bounded passes rather
+    // than leaving a partial reclaim with no indication why.
     for _ in 0..MAX_MANUAL_PRUNE_PASSES {
         if !run_context_prune(
             sess,

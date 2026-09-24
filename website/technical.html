@@ -1,4 +1,4 @@
-<!-- README/template SHA256: 0ab947192973d51b2c635b942681f08e53f44aa06ae7529f4ade7e4fbe690054 -->
+<!-- README/template SHA256: b43f76dc8724600a3d08f2b87a2bfb1cb98125cb482c9488ec60be55dcd40870 -->
 <!doctype html>
 <html lang="en" data-theme="elpis">
 <head>
@@ -267,7 +267,8 @@ that may reduce prompt-cache reuse. <code>/compact</code> immediately
 runs Codex native compaction, independent of Smart Prune. Automatic
 native compaction uses the model-window threshold and usable-window
 headroom. Smart Prune is Experimental and off by default;
-<code>/settings</code> saves its value for the next conversation.</p>
+<code>/settings</code> saves its value for the next turn while leaving
+any turn already in flight unchanged.</p>
 <p><img src="./assets/technical/diagram_ace_lifecycle.svg"
 alt="Ace pruning lifecycle from a retired automatic threshold-triggered configuration" /></p>
 <p>This diagram illustrates the automatic, threshold-triggered

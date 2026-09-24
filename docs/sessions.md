@@ -54,7 +54,14 @@ Written by `write_goal` (`codex-rs/tui/src/elpis_context.rs`):
 
 ### `ES.md`
 
-Written by `write_session_checkpoint` in the same module, from the completed turn's own items — command executions and patch applications — rather than from a model-generated summary:
+The installed implementation uses `write_session_checkpoint` in the TUI. The
+September 23 candidate moves this responsibility into the app-server's
+`extensions/elpis_checkpoint.rs`, using completed turn items rather than a
+model-generated summary. It awaits the write before publishing turn completion;
+hosted run `35859835403` passed the checkpoint unit and consecutive-turn integration
+checks. This removes the client-side completion write from the next turn's
+save-baseline window in the candidate. It is not installed, and Masih's acceptance
+of the user-visible behavior remains open.
 
 ```markdown
 # Elpis Session Checkpoint
@@ -93,6 +100,13 @@ final concurrent-edit check reject a newer checkpoint detected before commit.
 This save path is independent of Context Ledger admission and does not run in a
 background model, after the response, or at a compaction boundary.
 
+In the candidate, an explicit checkpoint saved during the current turn remains
+authoritative: automatic completion preserves that file byte-for-byte, without
+appending the later final answer. Otherwise automatic completion retains the
+previous same-thread Consolidated State and records bounded result, file and
+command evidence. A changed file from another writer is preserved with a warning,
+not overwritten. These guards do not make unrelated writers obey Elpis locks.
+
 An interrupted turn with no result or file/command evidence leaves an existing
 checkpoint from the same thread intact. Its original turn and status remain
 attached to that evidence. A first interruption still creates a checkpoint;
@@ -103,7 +117,10 @@ earlier results or protect concurrent threads sharing a workspace path.
 
 ## 4. Failure Behavior
 
-If writing `ES.md` fails, the turn still completes: Elpis logs a warning and surfaces `Turn completed, but Elpis could not save ES.md: <error>` in the transcript (`codex-rs/tui/src/app/app_server_events.rs`). Continuity degrades visibly rather than silently, but it does not abort the turn.
+If writing `ES.md` fails, the turn still completes. The installed TUI surfaces
+`Turn completed, but Elpis could not save ES.md: <error>`; the candidate emits
+`Elpis could not save ES.md: <error>` through the server extension warning sink.
+Continuity degrades visibly rather than silently, but it does not abort the turn.
 
 
 

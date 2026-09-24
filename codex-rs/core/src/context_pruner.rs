@@ -7,9 +7,10 @@
 //! model-visible trace.
 //!
 //! Elpis no longer schedules this retrospective pass automatically. Smart Prune handles
-//! optional automatic optimization before first model exposure; `/force-prune` is the
-//! user-visible retrospective recovery command. The legacy pressure trigger and hysteresis
-//! types remain here for compatibility with the internal pruning operation and its tests.
+//! optional optimization before first model exposure; `/prune` enables that separate path.
+//! `/force-prune` and app-server `thread/prune/start` reach this retrospective mechanism.
+//! The legacy pressure trigger and hysteresis types remain for compatibility with the
+//! internal pruning operation and its tests.
 //!
 //! The historical "steady" trigger was removed; it once fired whenever completed turns held a
 //! few percent of the window in uncovered tool output, independent of how full the window was.
@@ -70,8 +71,8 @@ pub(crate) const PRESSURE_KEEP_RECENT_PERCENT: i64 = 10;
 /// which on a large window can be smaller than the distance from 30% down to 20%, so a
 /// cycle is allowed more than one pass to reach its target. Those passes are one logical
 /// cycle: they run back-to-back without waiting for regrowth, and when they are spent the
-/// cycle closes rather than continuing to nibble at the boundary. Manual `/prune` sweeps
-/// are not subject to this budget.
+/// cycle closes rather than continuing to nibble at the boundary. Targetless legacy
+/// protocol sweeps are not subject to this budget.
 pub(crate) const MAX_PRESSURE_PRUNE_PASSES_PER_CYCLE: u32 = 2;
 
 /// Luna is sufficient for the pass's bounded keep/delete classification and avoids
@@ -202,7 +203,7 @@ impl PruneRecord {
 /// Which trigger a pass is running under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PruneTrigger {
-    /// The user explicitly requested a selective pass with `/prune`.
+    /// A targetless legacy protocol request selected a full-backlog sweep.
     Manual,
     /// Targeted pressure selection, used by automatic pressure and manual `/force-prune`.
     Pressure,
@@ -242,8 +243,8 @@ pub(crate) fn select_trigger(
 ///
 /// That is what makes 20–30% a healthy band instead of a place where a session saws
 /// against the boundary, and it is what bounds how often model-visible history — and with
-/// it the reusable prompt-cache prefix — is rewritten. Manual `/prune` never consults or
-/// mutates this; it only gates the automatic path.
+/// it the reusable prompt-cache prefix — is rewritten. A targetless legacy protocol sweep
+/// never consults or mutates this; the type only gates the dormant automatic path.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum PruneCycle {
     /// No cycle has run yet, or a closed cycle has since seen use return to the trigger.
@@ -585,9 +586,9 @@ pub(crate) fn uncovered_pressure_tokens(
         .sum()
 }
 
-/// The whole uncovered backlog for an explicit `/prune`. Unlike automatic pruning,
-/// this runs as a standalone task between turns, so the latest finished turn is also
-/// eligible. Sealed epochs stay off limits here too.
+/// The whole uncovered backlog for a targetless legacy protocol request. This runs as a
+/// standalone task between turns, so the latest finished turn is also eligible. Sealed
+/// epochs stay off limits here too.
 pub(crate) fn build_manual_prune_batch(
     input: &[ResponseItem],
     covered_call_ids: &HashSet<String>,
@@ -1154,9 +1155,9 @@ mod tests {
 
     #[test]
     fn manual_pruning_is_never_gated_by_the_cycle() {
-        // Existing manual behaviour is unchanged: `/prune` passes a requested trigger, so
-        // `run_context_prune` never consults the cycle at all. Guard the property the
-        // gate depends on -- a cooling cycle blocks only the automatic path.
+        // A targetless legacy protocol request passes an explicit trigger, so
+        // `run_context_prune` never consults the cycle. Guard the property the gate
+        // depends on -- a cooling cycle blocks only the dormant automatic path.
         let mut cycle = PruneCycle::default();
         cycle.close();
         assert!(!cycle.may_run());

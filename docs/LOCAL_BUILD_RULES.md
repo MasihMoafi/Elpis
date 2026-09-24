@@ -3,6 +3,20 @@
 Read this before running any `cargo` command on Masih's workstation. These are
 machine facts, not preferences — ignoring them has already cost a near-full disk.
 
+## Local builds are allowed — September 24, 2026
+
+Local Cargo builds and Rust tests are permitted. The limits are Masih's machine, not
+policy: never take the CPU past 80 °C and never freeze his desktop. Use
+`scripts/build-elpis-local <mode>`, which caps the job count and enforces the
+temperature ceiling, in preference to a bare cargo line. Hosted CI is still the better
+place for a full workspace suite.
+
+Measured on 2026-09-23 at two jobs, with no thermal pauses: a cold `dev-small` TUI
+build took 13m38s and peaked at 72 °C; the optimized `local-release` build took
+44m57s and peaked at 76 °C.
+
+No push, tag, release or deployment is authorized by this.
+
 ## 1. Check disk before a big build
 
 `codex-rs/target/` grows without bound and nothing prunes it. On 2026-07-25 it had
@@ -41,33 +55,7 @@ response to it.
 
 ## 2b. The `v8` crate downloads, and the proxy breaks that download
 
-### Current Codex foundation: sandbox-enabled V8 150.4.0
-
-The September 22 foundation pinned at `286d4ecf` uses V8 `150.4.0` with
-`v8_enable_sandbox`. Keep that feature. Its matching Linux archive is published
-by **OpenAI's Codex release**, not the older Denoland recipe below. Follow the
-pinned upstream `.github/actions/setup-rusty-v8/action.yml` and authenticate the
-release manifest against `third_party/v8/rusty_v8_150_4_0_release_manifests.sha256`.
-Both files are present in the pinned upstream source archive; a `codex-rs`-only
-import does not include them.
-
-The verified local cache is `.tmp/rusty-v8-150.4.0/`. The archive is
-`librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz`
-(29,366,352 bytes), with companion
-`src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs`.
-Before reusing them, run `sha256sum --check` against their authenticated
-`rusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.sha256` manifest from
-inside that cache directory. The manifest's own SHA256 is
-`6774b42c9424c098c72a805c08d4e94be17c591cf02b1dc2633060255a8a61be`.
-
-Pass the absolute archive path as `RUSTY_V8_ARCHIVE` and the absolute bindings
-path as `RUSTY_V8_SRC_BINDING_PATH` to the bounded build service. This keeps the
-build script offline without weakening the sandbox. Cargo's `--offline` alone
-does not prevent a build script download. Do not substitute the legacy archive
-or redownload verified files. Other platforms need their own upstream manifest
-and artifacts; this Linux cache is not cross-platform release evidence.
-
-### Legacy checkout only: V8 149.2.0
+### This checkout pins V8 149.2.0
 
 `code-mode` depends on `v8`, whose build script fetches a ~38 MB prebuilt archive from
 GitHub releases. `--offline` does not cover build scripts, and `target/` caches the
@@ -140,8 +128,9 @@ CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2 CODEX_SKIP_BWRAP_BUILD=1 nice -n 10 cargo
 
 The same variables and `nice` wrapper apply to `scripts/verify-elpis`. Do not raise
 the job/thread counts to shorten a run. Hosted CI is preferable when an authorized
-branch/push workflow exists; the current no-push candidate must stay local and
-throttled. Source-only and fake-Cargo checks do not need this wrapper because they
+branch/push workflow exists, but the local recipes above are usable within the
+temperature ceiling.
+Source-only and fake-Cargo checks do not need this wrapper because they
 do not compile or execute Rust.
 
 For the locally optimized workflow, `scripts/build-elpis-local test-build` builds

@@ -1,8 +1,8 @@
 # Prompt caching
 
 How Elpis uses the OpenAI Responses API prompt cache, where it places breakpoints, and what
-it measures. For *why* the pruning layer is shaped the way it is, see
-`docs/cache-friendly-pruning.md`.
+it measures. `docs/context.md` distinguishes admission-time Smart Prune from the legacy
+retrospective rewrite.
 
 ## Implicit vs explicit
 
@@ -145,22 +145,20 @@ extending that type means regenerating its TypeScript and JSON schema artifacts.
 
 ## How pruning interacts with cached prefixes
 
-A pruning pass rewrites the oldest rewritable items, so every prefix past its first
-rewritten item diverges. **No breakpoint can prevent that** — removing content from the
-middle of a prompt changes every prefix after it. Two things are done about it instead, both
-described in `docs/cache-friendly-pruning.md`:
+Smart Prune operates on a fresh tool result before that result's first admission to
+model-visible history. The main model therefore sees only one version of the item, and later
+requests retain that exact prefix. `/prune` merely enables this admission-time behavior for
+subsequent turns; it does not rewrite prior messages.
 
-1. **Keep automatic Ace pruning optional and, when enabled, prune far less often.** It runs
-   as a hysteresis cycle: 30% used → one cycle → ~20% used → no further pass until use
-   regrows to 30%. The backlog-sized "steady" trigger, which fired independently of how full
-   the window was, is gone. The default path uses manual `/prune` plus native compaction.
-2. **Raise the floor each pass falls back to.** Each applied pass seals its region with a
-   byte-stable epoch marker and a breakpoint is placed on it, so the *next* pass falls back
-   to that boundary instead of to the initial prefix.
+The legacy `/force-prune <1-100>` command and app-server `thread/prune/start` operation are
+different. They replace eligible output that is already in history, so every cached prefix
+past the first changed item diverges. No breakpoint can prevent that invalidation. The legacy
+implementation inserts an epoch marker and may place a cache breakpoint at that boundary to
+raise the surviving cache floor, but it still rewrites an already-seen suffix.
 
-### The measurement that motivated this
+### Historical measurement behind the legacy epoch boundary
 
-Session `019fe741` (2026-08-09, `gpt-5.6-sol`), before either change:
+Session `019fe741` (2026-08-09, `gpt-5.6-sol`), before the epoch breakpoint was added:
 
 | | |
 |---|---|
@@ -176,8 +174,8 @@ that prefix and the divergence point was already large and already stable across
 it simply had never been *written* as a cache entry, because implicit caching only writes
 near the end of each prompt. The epoch breakpoint is what makes that region an entry.
 
-**Both effects are predictions, not results.** No run has been made against the new
-layout. See "What to inspect" below for how to check.
+The epoch breakpoint's cache benefit remains a prediction, not a measured result. No run has
+been made against that legacy layout. See "What to inspect" below for how to check it.
 
 ## What to inspect
 
@@ -196,10 +194,9 @@ Signals worth watching:
   to the newest epoch boundary, not to a fixed initial prefix. A *constant* plateau across
   many passes means the epoch breakpoint is not being written — check that the frozen prefix
   exceeds 1,024 tokens and that the marker is present in the request body.
-- **Automatic pruning events should be roughly (peak use − 20%) / 10% per session**, not one
-  per turn, when the Experimental setting was enabled for that conversation. A manifest
-  `"trigger": "pressure"` records the targeted selection strategy; manual `/force-prune` uses
-  the same value, so it cannot by itself establish automatic invocation.
+- **A retrospective manifest with `"trigger": "pressure"`** records the legacy targeted
+  selection strategy. It does not identify Smart Prune, whose admission audits are stored
+  separately under `logs/smart-prune`.
 - **`cached_input_tokens: 0` on pruning calls** is expected: each pruning batch is unique
   content, so it can never hit. The namespaced key keeps that miss from costing the turn
   loop its slot.
