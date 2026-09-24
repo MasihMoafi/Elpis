@@ -16,6 +16,7 @@ Already running Elpis? Use `elpis --update`.
 - **Memory and pruning are separate jobs** — `/memory-model` and `/pruner-model` choose them independently, and background work no longer borrows the model you are talking to.
 - **Continuity saving got out of the way** — a turn now ends when the model stops speaking rather than when maintenance finishes, so the next message is a message and not an interruption. Saves that overlap each other settle quietly instead of warning.
 - **The Context Ledger turns subagents off** — press `s` to stop the model delegating, alongside Smart Prune. Escape closes the ledger, and the row under the cursor is the only row marked.
+- **Escape steps back one page, not out of the screen** — in the model catalog, the provider list, the API key prompt and both `/skills` pages, Escape now returns to the page you came from. Each of those used to close the whole screen. A provider whose catalog is fetched live, such as OpenRouter, also lists its models directly instead of offering a single row to open.
 - **`/usage` draws the token activity chart again**, with daily, weekly, and cumulative views.
 - **`/yolo` sticks** — Full Access survives into the next session.
 - **Long conversations stay responsive** — typing and queueing keep up in a long chat, and the context count holds its last provider-reported figure instead of jumping to an estimate the moment you press Enter.
@@ -29,6 +30,6 @@ Already running Elpis? Use `elpis --update`.
 - Escape with messages queued still interrupts the turn rather than delivering them.
 - `/context` does not close on Escape.
 - Exit is not yet immediate.
-- Continuity saving on a third-party provider has been corrected but not yet observed end to end on a slow route.
+- Continuity saving on a third-party provider is proven against a protocol fixture, not yet against a live provider on a slow route.
 
 Verify each download with its matching `.sha256` asset. Full docs are in the [README](https://github.com/MasihMoafi/Elpis#readme).
