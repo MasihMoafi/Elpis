@@ -49,7 +49,9 @@ impl ChatWidget {
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenSkillsList);
                 })],
-                dismiss_on_select: true,
+                // Escape on either page returns to this menu rather than
+                // closing out of the skills screens entirely.
+                dismiss_parent_on_child_accept: true,
                 ..Default::default()
             },
             SelectionItem {
@@ -58,7 +60,7 @@ impl ChatWidget {
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenManageSkillsPopup);
                 })],
-                dismiss_on_select: true,
+                dismiss_parent_on_child_accept: true,
                 ..Default::default()
             },
         ];

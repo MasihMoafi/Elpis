@@ -4365,6 +4365,110 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     assert!(!after_escape.contains("Select Reasoning Level"));
 }
 
+/// Build a catalog of `count` plain models, optionally led by an auto model.
+fn many_models(chat: &ChatWidget, count: usize, with_auto: bool) -> Vec<ModelPreset> {
+    let template = get_available_model(chat, "gpt-5.4");
+    let mut names: Vec<String> = Vec::new();
+    if with_auto {
+        names.push("codex-auto-fast".to_string());
+    }
+    names.extend((0..count).map(|index| format!("test-model-{index}")));
+    names
+        .into_iter()
+        .map(|name| {
+            let mut preset = template.clone();
+            preset.id = name.clone();
+            preset.display_name = name.clone();
+            preset.model = name;
+            preset.show_in_picker = true;
+            preset
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn provider_without_auto_models_lists_its_catalog_inline() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    // More models than the inline row limit, but none of them an auto model:
+    // the shape of a live catalog such as OpenRouter's.
+    let models = many_models(&chat, 20, false);
+
+    chat.open_model_popup_with_presets(models);
+
+    let popup = render_bottom_popup(&chat, /*width*/ 160);
+    assert!(
+        !popup.contains("All models"),
+        "a page with no models of its own must not hide them behind a hop; got:\n{popup}"
+    );
+    assert!(popup.contains("test-model-0"), "got:\n{popup}");
+}
+
+#[tokio::test]
+async fn escaping_the_full_catalog_returns_to_the_provider_page() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+    let models = many_models(&chat, 20, true);
+
+    chat.open_model_popup_with_presets(models.clone());
+    let popup = render_bottom_popup(&chat, /*width*/ 160);
+    assert!(popup.contains("All models"), "got:\n{popup}");
+
+    let selected_row = |chat: &ChatWidget| {
+        render_bottom_popup(chat, /*width*/ 160)
+            .lines()
+            .find(|line| line.trim_start().starts_with('\u{203a}'))
+            .unwrap_or_default()
+            .to_string()
+    };
+    for _ in 0..10 {
+        if selected_row(&chat).contains("All models") {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
+    assert!(
+        selected_row(&chat).contains("All models"),
+        "could not move onto the All models row"
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    // Stand in for the app dispatcher, which turns the row's event into a page.
+    chat.open_all_models_popup(models);
+    assert!(
+        render_bottom_popup(&chat, /*width*/ 160).contains("Choose a mind and effort"),
+        "expected the full catalog to be open"
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    let after_escape = render_bottom_popup(&chat, /*width*/ 160);
+    assert!(
+        after_escape.contains("Choose a mind") && !after_escape.contains("and effort"),
+        "escape should step back to the provider page, not close the picker; got:\n{after_escape}"
+    );
+}
+
+#[tokio::test]
+async fn escaping_the_provider_list_returns_to_the_model_page() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.open_model_popup_with_presets(many_models(&chat, 3, false));
+    chat.open_model_provider_popup(crate::chatwidget::model_popups::ModelPickerRole::Chat);
+    assert!(
+        render_bottom_popup(&chat, /*width*/ 160).contains("Choose a provider"),
+        "expected the provider list to be open"
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    let after_escape = render_bottom_popup(&chat, /*width*/ 160);
+    assert!(
+        after_escape.contains("Choose a mind") && !after_escape.contains("Choose a provider"),
+        "escape should step back to the model page; got:\n{after_escape}"
+    );
+}
+
 #[test]
 fn openrouter_catalogue_keeps_top_tier_models_with_live_prices() {
     use crate::chatwidget::model_popups::openrouter_models_from_response;

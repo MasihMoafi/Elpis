@@ -355,7 +355,9 @@ impl ChatWidget {
                     then_model: None,
                 });
             })],
-            dismiss_on_select: true,
+            // Abandoning the key entry should land back on the picker that
+            // asked for it, not on an empty composer.
+            dismiss_parent_on_child_accept: true,
             ..Default::default()
         })
     }
@@ -375,7 +377,9 @@ impl ChatWidget {
             actions: vec![Box::new(move |tx| {
                 tx.send(AppEvent::OpenModelProviderPopup { role });
             })],
-            dismiss_on_select: true,
+            // Escape on the provider list means "keep the provider I had", so
+            // this page stays underneath it.
+            dismiss_parent_on_child_accept: true,
             ..Default::default()
         }
     }
@@ -1172,7 +1176,10 @@ impl ChatWidget {
                 description,
                 is_current,
                 actions,
-                dismiss_on_select: true,
+                // Keep this page on the stack underneath the catalog so Escape
+                // steps back to it, the way "More reasoning..." does. It closes
+                // with the catalog once a model is actually chosen.
+                dismiss_parent_on_child_accept: true,
                 ..Default::default()
             });
         }
@@ -1303,12 +1310,6 @@ impl ChatWidget {
             footer_hint: Some(self.bottom_pane.standard_popup_hint_line()),
             items,
             header,
-            // Escape here means "I did not want this list", not "close the
-            // picker": step back to the provider's page the way the rest of
-            // the settings screens do.
-            on_cancel: Some(Box::new(|tx| {
-                tx.send(AppEvent::ReopenModelPopup);
-            })),
             ..Default::default()
         });
     }

@@ -1463,9 +1463,6 @@ impl App {
             AppEvent::OpenAllModelsPopup { models } => {
                 self.chat_widget.open_all_models_popup(models);
             }
-            AppEvent::ReopenModelPopup => {
-                self.chat_widget.open_model_popup();
-            }
             AppEvent::OpenFullAccessConfirmation {
                 preset,
                 return_to_permissions,
