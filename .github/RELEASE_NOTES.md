@@ -42,4 +42,4 @@ Subagent work in this release is repair, not new capability: another window's th
 - Continuity saving on a third-party provider is proven against a protocol fixture, not yet against a live provider on a slow route.
 - Smart Prune remains experimental and off by default. This release makes no new quality, latency, or cost claim.
 
-Verify each download with its matching `.sha256` asset. Full docs are in the [README](https://github.com/MasihMoafi/Elpis#readme).
+Verify each download with its matching `.sha256` asset. Full docs are in the [README](https://github.com/MasihMoafi/Elpis/blob/v0.3.0/readme.md).
