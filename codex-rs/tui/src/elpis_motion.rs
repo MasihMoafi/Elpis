@@ -63,8 +63,7 @@ pub(crate) fn animated_text_at(text: &str, time: Duration) -> Vec<Span<'static>>
 /// instead of snapping back to the start.
 pub(crate) fn paced_motion(elapsed: Duration) -> (Duration, Duration) {
     let cycle = SWEEP + MOTION_WAIT;
-    let swept = SWEEP
-        * u32::try_from(elapsed.as_nanos() / cycle.as_nanos()).unwrap_or(u32::MAX);
+    let swept = SWEEP * u32::try_from(elapsed.as_nanos() / cycle.as_nanos()).unwrap_or(u32::MAX);
     let position_nanos = u64::try_from(elapsed.as_nanos() % cycle.as_nanos())
         .expect("motion cycle remainder fits in u64 nanoseconds");
     let position = Duration::from_nanos(position_nanos);

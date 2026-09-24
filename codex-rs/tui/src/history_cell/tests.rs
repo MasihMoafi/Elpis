@@ -1162,8 +1162,7 @@ fn web_search_history_cell_snapshot() {
 
 #[test]
 fn update_available_history_cell_snapshot() {
-    let cell =
-        UpdateAvailableHistoryCell::new("9.9.9".to_string(), Some(UpdateAction::SelfUpdate));
+    let cell = UpdateAvailableHistoryCell::new("9.9.9".to_string(), Some(UpdateAction::SelfUpdate));
     let rendered = render_lines(&cell.display_lines(/*width*/ 110)).join("\n");
 
     insta::assert_snapshot!(rendered);

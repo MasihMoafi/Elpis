@@ -5215,9 +5215,7 @@ async fn switching_provider_discards_the_startup_prewarm() {
     // new model to the old endpoint exactly once.
     session
         .update_settings(SessionSettingsUpdate {
-            model_provider: Some(
-                codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string(),
-            ),
+            model_provider: Some(codex_model_provider_info::OPENROUTER_PROVIDER_ID.to_string()),
             ..Default::default()
         })
         .await
