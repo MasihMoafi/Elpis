@@ -878,6 +878,10 @@ pub(crate) enum AppEvent {
         models: Vec<ModelPreset>,
     },
 
+    /// Reopen the active provider's model page. Escaping out of the full
+    /// catalog steps back here rather than closing the whole picker.
+    ReopenModelPopup,
+
     /// Open the confirmation prompt before enabling full access mode.
     OpenFullAccessConfirmation {
         preset: ApprovalPreset,

@@ -1072,8 +1072,14 @@ impl ChatWidget {
 
         auto_presets.sort_by_key(|preset| Self::auto_model_order(&preset.model));
         // Choosing a provider should put its models on screen, not one more row
-        // to open. Only a catalogue too long to read stays behind "All models".
-        if auto_presets.len() + other_presets.len() <= INLINE_MODEL_ROW_LIMIT {
+        // to open. A catalogue too long to read stays behind "All models", but
+        // only when the page has models of its own to show instead. A provider
+        // with no auto models -- a live catalogue such as OpenRouter -- would
+        // otherwise get a page whose only choice is "All models": a hop with
+        // nothing on it.
+        let inline_everything = auto_presets.is_empty()
+            || auto_presets.len() + other_presets.len() <= INLINE_MODEL_ROW_LIMIT;
+        if inline_everything {
             auto_presets.append(&mut other_presets);
         }
         let mut items: Vec<SelectionItem> = auto_presets
@@ -1297,6 +1303,12 @@ impl ChatWidget {
             footer_hint: Some(self.bottom_pane.standard_popup_hint_line()),
             items,
             header,
+            // Escape here means "I did not want this list", not "close the
+            // picker": step back to the provider's page the way the rest of
+            // the settings screens do.
+            on_cancel: Some(Box::new(|tx| {
+                tx.send(AppEvent::ReopenModelPopup);
+            })),
             ..Default::default()
         });
     }
