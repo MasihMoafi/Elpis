@@ -14,10 +14,11 @@
 
 </div>
 
-[Elpis v0.2.0 is available for Linux x86_64](https://github.com/MasihMoafi/Elpis/releases/tag/v0.2.0).
-Start with the [versioned guide](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/readme.md)
+[Elpis v0.3.0 is available for Linux x86_64](https://github.com/MasihMoafi/Elpis/releases/tag/v0.3.0).
+Start with the [versioned guide](https://github.com/MasihMoafi/Elpis/blob/v0.3.0/readme.md)
 or [interactive demo](https://elpis.masihmoafi.com).
-The accepted release passed its [exact-source shipping checks](https://github.com/MasihMoafi/Elpis/actions/runs/33965914155).
+A tag publishes nothing unless its shipping checks pass; inspect
+[this release's run](https://github.com/MasihMoafi/Elpis/actions?query=branch%3Av0.3.0).
 The release tag, not this development branch, identifies the shipped runtime.
 
 ![Elpis interactive terminal demo](docs/assets/demo.gif)
@@ -29,7 +30,7 @@ result before the main model sees it (illustrated with fixture data, not a captu
 
 ![Elpis concept walkthrough — launch, Context Ledger, and Smart Prune admission, illustrated](docs/assets/elpis-scroll-demo.gif)
 
-<details><summary>Current development interface · September 9</summary>
+<details><summary>Interface captures · September 9</summary>
 
 ![Elpis startup, Elpising, streaming text, and Context Ledger animations — development widget captures](docs/assets/elpis-context-motion-20260909.gif)
 
@@ -39,10 +40,10 @@ result before the main model sees it (illustrated with fixture data, not a captu
 
 ![Elpis Context Ledger with matching category colors and the Quiet Rail composer](docs/assets/elpis-context-ledger-20260909.png)
 
-**September 9 development preview · local visual updates to UI commit `40838f83`.** Native Rust widget captures
+**Captured September 9 from UI commit `40838f83`.** Native Rust widget captures
 with illustrative session data: matching context colors, visible unused capacity, readable Elpising motion, startup
-dissolve, and coalescing responses. These changes are newer than the September 5
-`v0.2.0` release; the screenshots are not a promise that the release contains them.
+dissolve, and coalescing responses. These shipped in `v0.3.0`; they were not in
+the September 5 `v0.2.0` release.
 
 </details>
 
@@ -71,10 +72,10 @@ dissolve, and coalescing responses. These changes are newer than the September 5
 
 ## Quickstart
 
-Linux x86_64; macOS and Windows are not included in v0.2.0. Review the installer before running it:
+Linux x86_64; macOS and Windows are not included in v0.3.0. Review the installer before running it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.2.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.3.0/scripts/install-elpis.sh | bash && ~/.local/bin/elpis
 ```
 
 The installer downloads the latest published Elpis Linux binary and verifies its
@@ -82,7 +83,7 @@ SHA-256 sidecar. [RTK](https://github.com/rtk-ai/rtk) is an optional, separate
 shell-output filter; this installer does not install it. On first launch, choose
 a provider and sign in or enter its API key.
 
-`v0.2.0` is the current release.
+`v0.3.0` is the current release.
 
 ## What is Elpis
 
@@ -184,7 +185,8 @@ Findings:
 
 The **Context Ledger** (`Tab`; during an active turn, `Alt+C` always toggles it) lists admitted goals, rules,
 memory, and other portable sources with their byte sizes and capped character-derived estimates. Toggling a row
-writes `admission.toml`, which controls what the next turn receives.
+writes `admission.toml`, which controls what the next turn receives. Smart Prune and
+whether this session may delegate to subagents are switched from the same panel.
 
 Development rules are ordinary Markdown Ledger rows, not skills: newly discovered rules start included and an
 explicit exclusion persists. A nonempty configured development-rule root list replaces the managed fallback; an
@@ -196,15 +198,18 @@ its per-source estimates are not tokenizer measurements.
 
 ![Current Context Ledger with distinct amber and pale-yellow source rows](docs/assets/elpis-ui-20260909.png)
 
-In v0.2.0, Ledger and `/context` share category colors and a full-window scale.
+In v0.3.0, Ledger and `/context` share category colors and a full-window scale.
 They distinguish active context usage from locally estimated request categories:
 user and agent messages, reasoning, tool calls/results, instructions, developer
 messages, and tool definitions. Category estimates are not provider-billed counts.
 Available backtrack checkpoints and local evidence links remain inspectable.
 
+`/usage` reports this session's token accounting, and takes `daily`, `weekly`,
+or `cumulative` to chart account-wide token activity over time.
+
 <img src="docs/assets/elpis-context-slash.webp" alt="The /context view showing token usage by category and available backtrack checkpoints" width="720">
 
-Earlier category-view capture; this image is retained to explain `/context`, not the September 9 appearance.
+Earlier category-view capture; this image is retained to explain `/context`, not the current appearance.
 
 ### Live session dashboard
 
@@ -213,9 +218,9 @@ leaves the machine. It gives the same context and token accounting as the Ledger
 `/context`, plus what a turn is doing right now and, when Smart Prune (the ACE pruning
 layer above) is on, its admission and optimizer-cost accounting:
 
-The September 9 development dashboard also supports authorized pruner settings edits.
-The captures below use the checked-in **illustrative fixture**, with preview settings
-disabled. Their counters are demonstration data, not experiment results.
+The dashboard also supports authorized pruner settings edits and holds the provider
+API keys. The captures below use the checked-in **illustrative fixture**, with preview
+settings disabled. Their counters are demonstration data, not experiment results.
 
 ![Current dashboard Activity tab](docs/assets/dashboard-activity-20260909.png)
 
@@ -297,15 +302,18 @@ command. Full rules and the graph schema are in [docs/WORK_GRAPHS.md](docs/WORK_
 
 ### Bring your own provider
 
-Elpis is not tied to a single model vendor:
+Elpis is not tied to a single model vendor. Seven providers ship with it — OpenAI,
+Anthropic, Google Gemini, OpenRouter, Amazon Bedrock, Ollama, and LM Studio — alongside
+any OpenAI-compatible server you add in `config.toml`.
 
-- **OpenAI:** GPT-4o, GPT-5.6-Luna, o1, o3, and compatible endpoints.
-- **Anthropic:** Claude 3.5 Sonnet, Claude 3 Opus, Claude 3.5 Haiku.
-- **Google:** Gemini 2.0 Flash, Gemini 1.5 Pro.
-- **Local & self-hosted:** Ollama, vLLM, and any OpenAI-compatible server.
+Elpis does not carry a hand-written list of each vendor's models. `/model` asks the
+provider what it serves and lists the answer, so a model released this week appears
+without an Elpis update; Ollama's list is whatever you have pulled locally. Add a
+provider's API key from the picker or from `/dashboard → Keys`, and pick a thinking
+effort on the providers that accept one.
 
-Switch models mid-session without restarting. The working context, goal, and session memory are
-preserved across provider boundaries.
+Switch provider or model mid-session without restarting. The working context, goal, and
+session memory are preserved across provider boundaries.
 
 ### Integrations and tools
 
@@ -430,7 +438,7 @@ test scope, chart provenance, and public-content checks.
 - [Providers](docs/providers.md) — provider adapters, BYOK, and protocol limitations
 - [Evals & benchmarks](docs/evals/) — source data, procedures, scorers, and results
 - [Technical guide](docs/GUIDE.md) — product thesis, requirements, and architecture
-- [Research paper](https://github.com/MasihMoafi/Elpis/blob/v0.2.0/paper/paper.md) — technical preprint draft, not a completed comparative-results paper
+- [Research paper](https://github.com/MasihMoafi/Elpis/blob/v0.3.0/paper/paper.md) — technical preprint draft, not a completed comparative-results paper
 
 ## License
 
