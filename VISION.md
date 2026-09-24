@@ -31,14 +31,19 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Near-term outcome
 
-September 22, 2026: stabilize a current-Codex-based local release candidate while
-preserving explicit Elpis additions and deletions. Shared behavior and responsiveness
-need parity evidence; the imported newer foundation is not yet a proven build.
-The responding-agent memory candidate is installed with focused automated evidence,
-but user acceptance remains open. Compaction instructions are under repair.
+September 24, 2026: explain and sharpen the build that exists.
 
-Refresh README visuals/features and website posts only after functional recovery,
-then prepare version 3 for Masih's testing. API-cost dashboard improvements and the
-documented agentic direction follow that version. The live website has a known
-source/deployment mismatch: do not overwrite it from this checkout. Current execution
-and acceptance gates live in `TASKS.md`; requested outcomes in `docs/USER_REQUESTS.md`.
+Rebuilding Elpis on a newer Codex foundation was attempted and abandoned. Masih
+tested the ported build on September 23: it reproduced Codex's engine without
+Elpis's identity, `/dashboard`, `/agent`, or its added commands, and the Elpis he
+had been using was restored. Do not restart that port.
+
+Current work: the technical write-up and presentation of the installed build
+(`docs/posts/how-elpis-works.md`), a readme refresh, and the two defects Masih can
+feel — exit is not immediate, and Escape does not dismiss the `/context` report.
+The responding-agent memory candidate is installed with automated evidence; user
+acceptance remains open. Compaction instructions are under repair. The live website
+has a known source/deployment mismatch: do not overwrite it from this checkout.
+API-cost dashboard improvements and the documented agentic direction come later.
+Current execution and acceptance gates live in `TASKS.md`; requested outcomes in
+`docs/USER_REQUESTS.md`.
