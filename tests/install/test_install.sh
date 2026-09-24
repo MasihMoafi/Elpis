@@ -7,7 +7,7 @@ failures=0
 
 release="$work/release"
 mkdir -p "$release"
-for asset in elpis-linux-x86_64 elpis-macos-arm64 elpis-bwrap-linux-x86_64; do
+for asset in elpis-linux-x86_64 elpis-bwrap-linux-x86_64; do
   printf 'payload-for-%s\n' "$asset" > "$release/$asset"
   (cd "$release" && sha256sum "$asset" > "$asset.sha256")
 done
@@ -103,7 +103,9 @@ reject() {
 }
 
 check linux-x86_64 Linux x86_64 gnu elpis-linux-x86_64
-check darwin-arm64 Darwin arm64 bsd elpis-macos-arm64
+# Releases carry Linux x86_64 only, so every macOS shape must be refused with
+# an explanation rather than sent after an asset that would 404.
+reject darwin-arm64 Darwin arm64 bsd
 reject darwin-x86_64 Darwin x86_64 bsd
 reject linux-aarch64 Linux aarch64 gnu
 
