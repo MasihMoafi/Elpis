@@ -2471,6 +2471,10 @@ impl App {
             AppEvent::SelectPermissionProfile(selection) => {
                 self.select_permission_profile(app_server, selection).await;
             }
+            // Elpis: Elpis-owned events (app/elpis_events.rs).
+            AppEvent::Elpis(event) => {
+                Box::pin(self.handle_elpis_event(app_server, event)).await;
+            }
             AppEvent::UpdateApprovalsReviewer(policy) => {
                 if self.reject_pending_permission_change() {
                     return Ok(AppRunControl::Continue);

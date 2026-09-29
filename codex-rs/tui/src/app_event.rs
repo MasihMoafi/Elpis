@@ -1328,6 +1328,9 @@ pub(crate) enum AppEvent {
     /// Select a named permission profile, optionally applying built-in mode settings too.
     SelectPermissionProfile(PermissionProfileSelection),
 
+    /// Elpis: every Elpis-owned event; handled in app/elpis_events.rs.
+    Elpis(crate::elpis_app_event::ElpisAppEvent),
+
     /// Update the current approvals reviewer in the running app and widget.
     UpdateApprovalsReviewer(ApprovalsReviewer),
 
