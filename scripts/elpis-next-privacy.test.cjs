@@ -13,8 +13,14 @@
 //                   outside connections and still complete the turn.
 //   exec-reenabled  negative control: the same binary with analytics and plugins
 //                   switched back on in the user config must show connections.
+//   exec-chatgpt    `exec` with a fake (unsigned, never-sent-upstream) ChatGPT
+//                   login: must also make zero outside connections.
 //   tui-defaults    the TUI starts in a fresh home, exits cleanly on Ctrl+C, and
 //                   makes zero outside connections.
+//
+// ELPIS_PRIVACY_CASES=a,b runs a subset. ELPIS_PRIVACY_EXTRA_CONFIG=<file> appends
+// a TOML file to every case's config, to compare a binary without the Elpis
+// defaults (for example the pristine upstream build) on equal terms.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -46,8 +52,28 @@ plugins = true
 const CASES = {
   "exec-defaults": { mode: "exec", config: CONFIG },
   "exec-reenabled": { mode: "exec", config: CONFIG + REENABLE },
+  "exec-chatgpt": { mode: "exec", config: CONFIG, chatgptLogin: true },
   "tui-defaults": { mode: "tui", config: CONFIG },
 };
+
+// A made-up ChatGPT login: unsigned JWTs with fake ids, fresh so no refresh runs.
+function fakeChatgptAuth() {
+  const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
+  const claims = { chatgpt_plan_type: "plus", chatgpt_user_id: "user-EVALFAKE", chatgpt_account_id: "acct-EVALFAKE" };
+  const jwt = (payload) => `${b64({ alg: "none", typ: "JWT" })}.${b64(payload)}.ZmFrZXNpZw`;
+  return JSON.stringify({
+    auth_mode: "chatgpt",
+    OPENAI_API_KEY: null,
+    tokens: {
+      id_token: jwt({ email: "eval@example.invalid", exp, "https://api.openai.com/auth": claims }),
+      access_token: jwt({ exp, "https://api.openai.com/auth": { ...claims, chatgpt_account_user_id: "user-EVALFAKE__acct-EVALFAKE" } }),
+      refresh_token: "rt-EVALFAKE-not-real",
+      account_id: "acct-EVALFAKE",
+    },
+    last_refresh: new Date().toISOString(),
+  });
+}
 
 function log(file, obj) {
   fs.appendFileSync(file, JSON.stringify({ t: Date.now(), ...obj }) + "\n");
@@ -196,7 +222,9 @@ async function inner(caseName, binary, out) {
   const spec = CASES[caseName];
   spawnSync("ip", ["link", "set", "lo", "up"]);
   for (const dir of ["home", "work", "fakehome", "tmp"]) fs.mkdirSync(`${out}/${dir}`, { recursive: true });
-  fs.writeFileSync(`${out}/home/config.toml`, `${spec.config}\n[projects."${out}/work"]\ntrust_level = "trusted"\n`);
+  const extra = process.env.ELPIS_PRIVACY_EXTRA_CONFIG ? `\n${fs.readFileSync(process.env.ELPIS_PRIVACY_EXTRA_CONFIG, "utf8")}\n` : "";
+  fs.writeFileSync(`${out}/home/config.toml`, `${spec.config}${extra}\n[projects."${out}/work"]\ntrust_level = "trusted"\n`);
+  if (spec.chatgptLogin) fs.writeFileSync(`${out}/home/auth.json`, fakeChatgptAuth());
   const servers = await startServers(out);
   const env = childEnv(out);
   let exit;
@@ -264,7 +292,7 @@ function outer(binary) {
     try {
       assert.equal(s.direct.length, 0, "a connection skipped the proxy");
       assert.equal(s.dns, 0, "a DNS lookup skipped the proxy");
-      if (caseName === "exec-defaults") {
+      if (caseName === "exec-defaults" || caseName === "exec-chatgpt") {
         assert.equal(s.exit.code, 0, `exec failed: ${s.stderr.slice(-400)}`);
         assert(s.provider.some((x) => x.sawShellOutput === true), "the turn did not complete through the fake provider");
         assert.deepEqual(hosts, [], "outside connections with Elpis defaults");
