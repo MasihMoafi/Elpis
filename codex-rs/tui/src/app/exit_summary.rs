@@ -136,14 +136,15 @@ impl AppExitInfo {
             lines.push(format!("Session archived: {thread_id}"));
         } else if let Some(thread) = self.resume_hint {
             lines.push("To continue this session, run:".to_string());
+            // Elpis: the resume command is `elpis resume`.
             lines.push(format!(
                 "  {}",
-                color_command(format!("codex resume {}", thread.thread_id)),
+                color_command(format!("elpis resume {}", thread.thread_id)),
             ));
             if let Some(thread_name) = thread.thread_name.filter(|name| !name.is_empty()) {
                 lines.push(format!(
                     "Or run {} and select {}.",
-                    color_command("codex resume".to_string()),
+                    color_command("elpis resume".to_string()),
                     color_command(thread_name),
                 ));
             }
