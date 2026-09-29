@@ -161,7 +161,11 @@ impl CollaborationModeIndicator {
     }
 
     fn styled_line(self, show_cycle_hint: bool) -> Line<'static> {
-        let mut line = Line::from(self.label(/*show_cycle_hint*/ false).magenta());
+        // Elpis: footer mode indicators wear the Elpis accent.
+        let mut line = Line::from(
+            self.label(/*show_cycle_hint*/ false)
+                .set_style(crate::elpis_motion::accent_style()),
+        );
         if show_cycle_hint {
             line.push_span(" (".set_style(secondary_text_style()));
             line.extend(key_hint::shift(KeyCode::Tab).spans());
@@ -607,7 +611,8 @@ pub(crate) fn goal_status_indicator_line(
         }
     };
 
-    Some(Line::from(vec![Span::from(label).magenta()]))
+    // Elpis: the goal line in the Elpis gradient.
+    Some(Line::from(crate::elpis_motion::text(&label)))
 }
 
 pub(crate) fn status_line_right_indicator_line(
@@ -641,7 +646,13 @@ pub(crate) fn status_line_right_indicator_line(
 pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
     let mut line = Line::default();
     let rest = if let Some(rest) = label.strip_prefix("Side ") {
-        line.extend(["Side".magenta().bold(), " ".into()]);
+        // Elpis: accent, not magenta.
+        line.extend([
+            Span::from("Side")
+                .style(crate::elpis_motion::accent_style())
+                .bold(),
+            " ".into(),
+        ]);
         rest
     } else {
         label
@@ -657,7 +668,8 @@ pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
             line.extend(key_hint::key_label_spans(keys));
             line.push_span(action.set_style(secondary_text_style()));
         } else {
-            line.push_span(part.to_owned().magenta());
+            // Elpis: accent, not magenta.
+            line.push_span(Span::from(part.to_owned()).style(crate::elpis_motion::accent_style()));
         }
     }
     line

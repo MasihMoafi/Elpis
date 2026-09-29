@@ -29,7 +29,12 @@ impl ExecCell {
             let cmd_display = adaptive_wrap_hyperlink_lines(
                 &plain_hyperlink_lines(highlighted_script),
                 RtOptions::new(width as usize)
-                    .initial_indent("$ ".magenta().into())
+                    // Elpis: accent prompt.
+                    .initial_indent(
+                        Span::from("$ ")
+                            .style(crate::elpis_motion::accent_style())
+                            .into(),
+                    )
                     .subsequent_indent("    ".into()),
             );
             lines.extend(cmd_display);
@@ -50,10 +55,13 @@ impl ExecCell {
                 }
                 if call.duration.is_some() || output.exit_code != 0 {
                     let mut result: Line = if output.exit_code == 0 {
-                        Line::from("✓".green().bold())
+                        // Elpis: success in the accent, failure as a warning.
+                        Line::from(Span::from("✓").style(crate::elpis_motion::accent_style()))
                     } else {
                         Line::from(vec![
-                            "✗".red().bold(),
+                            Span::from("✗").style(crate::style::status_style(
+                                crate::style::StatusTone::Attention,
+                            )),
                             format!(" ({})", output.exit_code).into(),
                         ])
                     };

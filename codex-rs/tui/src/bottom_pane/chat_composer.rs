@@ -300,6 +300,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
+// Elpis: the composer rail border.
+use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::Widget;
@@ -440,6 +442,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
+// Elpis: only the tests name colors directly now; the accents come from elpis_motion.
+#[cfg(test)]
 use ratatui::style::Color;
 
 /// If the pasted content exceeds this number of characters, replace it with a
@@ -2976,7 +2980,8 @@ impl ChatComposer {
                 if !binding.path.starts_with("plugin://") || !snapshot.text.starts_with('@') {
                     return None;
                 }
-                Some((snapshot.range, Style::default().fg(Color::Magenta)))
+                // Elpis: plugin mentions wear the Elpis accent.
+                Some((snapshot.range, crate::elpis_motion::accent_style()))
             })
             .collect()
     }
@@ -3587,7 +3592,12 @@ impl ChatComposer {
     fn shell_mode_footer_line(&self) -> Option<Line<'static>> {
         self.is_bang_shell_command()
             .then_some(())
-            .map(|_| Line::from(vec![Span::from("Shell mode").light_red()]))
+            // Elpis: accent, not red.
+            .map(|_| {
+                Line::from(vec![
+                    Span::from("Shell mode").style(crate::elpis_motion::accent_style()),
+                ])
+            })
     }
 
     /// Handles keys that mutate the textarea, including paste-burst detection.
@@ -4922,8 +4932,18 @@ impl ChatComposer {
         if let Some((warning_area, line)) = warning_notice {
             line.render(warning_area, buf);
         }
-        let style = user_message_style();
-        Block::default().style(style).render(composer_rect, buf);
+        // Elpis: the Quiet Rail composer: an orange left rail over a fading wash.
+        let style = crate::style::composer_style();
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(crate::style::composer_border_style())
+            .render(composer_rect, buf);
+        crate::elpis_motion::paint_frame(
+            composer_rect,
+            buf,
+            Duration::ZERO,
+            /*animated*/ false,
+        );
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
                 .style(style)
@@ -4932,7 +4952,10 @@ impl ChatComposer {
         if !textarea_rect.is_empty() {
             let prompt = if self.draft.input_enabled {
                 if self.draft.is_bash_mode {
-                    Span::from("!").light_red().bold()
+                    // Elpis: accent, not red.
+                    Span::from("!")
+                        .style(crate::elpis_motion::accent_style())
+                        .bold()
                 } else if self.luna_reserve_active {
                     // Reserve keeps one arrow at every reasoning effort; only its foreground changes.
                     "›"
@@ -5009,6 +5032,8 @@ impl ChatComposer {
                 Line::from(vec![placeholder]).render(textarea_rect.inner(Margin::new(0, 0)), buf);
             }
         }
+        // Elpis: the composer wash, painted under the text and before the ignition.
+        crate::elpis_motion::paint_surface(composer_rect, buf);
         if matches!(self.popups.active, ActivePopup::None)
             && let Some(ignition) = &self.effort_ignition
             && !ignition.is_finished()

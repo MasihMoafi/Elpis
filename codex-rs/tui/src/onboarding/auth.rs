@@ -732,7 +732,8 @@ impl AuthModeWidget {
                     .title("API key")
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Cyan)),
+                    // Elpis: popup border in the Elpis palette.
+                    .border_style(crate::style::popup_border_style()),
             )
             .render(input_area, buf);
 

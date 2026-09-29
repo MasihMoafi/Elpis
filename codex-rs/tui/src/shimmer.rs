@@ -36,8 +36,13 @@ pub(super) fn shimmer_spans(text: &str) -> Vec<Span<'static>> {
     let band_half_width = 5.0;
 
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(chars.len());
-    let base_color = default_fg().unwrap_or((128, 128, 128));
-    let highlight_color = default_bg().unwrap_or((255, 255, 255));
+    // Elpis: a white sweep over text dimmed toward the background (v0.3.0 shimmer).
+    let highlight_color = (255, 255, 255);
+    let base_color = blend(
+        default_fg().unwrap_or(highlight_color),
+        default_bg().unwrap_or((0, 0, 0)),
+        0.6,
+    );
     for (i, ch) in chars.iter().enumerate() {
         let i_pos = i as isize + padding as isize;
         let pos = pos as isize;
@@ -75,6 +80,9 @@ fn color_for_level(intensity: f32) -> Style {
     } else if intensity < 0.6 {
         Style::default()
     } else {
-        Style::default().add_modifier(Modifier::BOLD)
+        // Elpis: the band peak is white.
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
     }
 }
