@@ -56,6 +56,7 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
             "yolo",
             Some("save Full Access as the default for future chats"),
         ),
+        ("add", Some("add a file to the Context Ledger: /add <path>")),
         ("compact", None),
         ("prune", Some("turn Smart Prune on for subsequent turns")),
         (
@@ -69,6 +70,10 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         ("agent", Some("switch the active agent thread")),
         ("agents", None),
         ("usage", None),
+        (
+            "context",
+            Some("show context usage as a grid, by category, with checkpoints and system files"),
+        ),
         (
             "dashboard",
             Some("show the current context window, admitted sources, and pruning evidence"),
@@ -100,6 +105,8 @@ fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
         ("smart-prune", SlashCommand::SmartPrune),
         ("force-prune", SlashCommand::ForcePrune),
         ("dashboard", SlashCommand::Dashboard),
+        ("add", SlashCommand::Add),
+        ("context", SlashCommand::Context),
     ] {
         assert_eq!(SlashCommand::from_str(name), Ok(cmd));
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");

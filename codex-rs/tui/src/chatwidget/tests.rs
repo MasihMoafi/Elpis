@@ -248,6 +248,8 @@ mod config_errors;
 mod copy_export_picker_tests;
 #[path = "tests/dynamic_activity_tests.rs"]
 mod dynamic_activity_tests;
+// Elpis: Context Ledger evals.
+mod elpis_context_ledger;
 // Elpis: evals for the Elpis look.
 mod elpis_look;
 // Elpis: evals for the Elpis slash commands.
