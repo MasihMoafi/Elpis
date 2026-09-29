@@ -733,6 +733,8 @@ impl App {
             && self.chat_widget.is_normal_backtrack_mode()
             && self.chat_widget.composer_is_empty()
             && !self.chat_widget.should_handle_vim_insert_escape(key_event)
+            // Elpis: Esc on a focused Context Ledger closes it instead of priming backtrack.
+            && !self.chat_widget.context_ledger_has_focus()
     }
 
     pub(super) fn should_reject_side_backtrack_esc(&self, key_event: KeyEvent) -> bool {

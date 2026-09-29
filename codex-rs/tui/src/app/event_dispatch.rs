@@ -2481,7 +2481,7 @@ impl App {
             }
             // Elpis: Elpis-owned events (app/elpis_events.rs).
             AppEvent::Elpis(event) => {
-                Box::pin(self.handle_elpis_event(app_server, event)).await;
+                Box::pin(self.handle_elpis_event(tui, app_server, event)).await?;
             }
             AppEvent::UpdateApprovalsReviewer(policy) => {
                 if self.reject_pending_permission_change() {
@@ -2522,7 +2522,12 @@ impl App {
                     .await;
             }
             AppEvent::UpdateFeatureFlags { updates } => {
+                // Elpis: the Context Ledger's SUBAGENTS switch waits for this write.
+                let subagents = updates.iter().any(|(feature, _)| *feature == Feature::Collab);
                 self.update_feature_flags(app_server, updates).await;
+                if subagents {
+                    self.chat_widget.cancel_pending_subagents_update();
+                }
             }
             AppEvent::UpdateMemorySettings {
                 use_memories,

@@ -64,6 +64,10 @@ impl ChatWidget {
         if self.handle_question_key(key_event) {
             return KeyEventAction::None;
         }
+        // Elpis: Tab and Alt+C open, focus and hide the Context Ledger.
+        if self.handle_context_ledger_pre_modal_key(key_event) {
+            return KeyEventAction::None;
+        }
         if self.bottom_pane.has_active_view()
             && !matches!(
                 key_event,
@@ -118,6 +122,11 @@ impl ChatWidget {
             self.bottom_pane.clear_quit_shortcut_hint();
             self.quit_shortcut_expires_at = None;
             self.quit_shortcut_key = None;
+            return KeyEventAction::None;
+        }
+
+        // Elpis: keys for a focused Context Ledger.
+        if self.handle_context_ledger_key_event(key_event) {
             return KeyEventAction::None;
         }
 

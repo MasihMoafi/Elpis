@@ -219,6 +219,8 @@ mod connector_mentions;
 mod daemon_menu;
 // Elpis: Elpis-owned event handling.
 mod elpis_events;
+// Elpis: the App side of the Context Ledger.
+mod elpis_ledger;
 mod empty_state_policy;
 mod event_dispatch;
 mod exit_summary;
@@ -623,6 +625,8 @@ pub(crate) struct App {
     thread_event_listener_tasks: HashMap<ThreadId, JoinHandle<()>>,
     agent_navigation: AgentNavigationState,
     agents_overview: agents_overview::AgentsOverviewState,
+    // Elpis: the Context Ledger's Manual Memory loader and writers.
+    manual_memory_status: elpis_ledger::ManualMemoryStatusCoordinator,
     side_threads: HashMap<ThreadId, SideThreadState>,
     abandoned_side_threads: HashSet<ThreadId>,
     active_thread_id: Option<ThreadId>,

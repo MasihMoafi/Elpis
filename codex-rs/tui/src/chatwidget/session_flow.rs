@@ -94,6 +94,7 @@ impl ChatWidget {
                 backend_banners::AutomaticModelSwitchState::default();
             self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
             self.clear_thread_usage_state();
+            self.reset_context_ledger_for_thread_change(); // Elpis
         }
         self.turn_lifecycle.reset_thread();
         self.clear_safety_buffering();
