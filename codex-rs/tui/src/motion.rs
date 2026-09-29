@@ -31,6 +31,8 @@ impl MotionMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReducedMotionIndicator {
+    // Elpis: the status row, its only user, now shows the Elpising gradient instead.
+    #[cfg_attr(not(test), expect(dead_code, reason = "Elpis: no production caller"))]
     Hidden,
     StaticBullet,
 }
