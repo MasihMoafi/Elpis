@@ -2043,12 +2043,16 @@ async fn run_debug_prompt_input_command(
     let auth_manager =
         AuthManager::shared_from_config(&config, /*enable_codex_api_key_env*/ false).await?;
     let mut extensions = codex_extension_api::ExtensionRegistryBuilder::new();
-    codex_git_attribution::install(
-        &mut extensions,
-        auth_manager,
-        config.chatgpt_base_url.clone(),
-        config.http_client_factory(),
-    );
+    // Elpis: the elpis binary (which always sets ELPIS_HOME) makes no
+    // unconditional network calls; this one asks ChatGPT for attribution settings.
+    if std::env::var_os("ELPIS_HOME").is_none() {
+        codex_git_attribution::install(
+            &mut extensions,
+            auth_manager,
+            config.chatgpt_base_url.clone(),
+            config.http_client_factory(),
+        );
+    }
     codex_skills_extension::install(&mut extensions, |config: &Config| {
         codex_skills_extension::SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
