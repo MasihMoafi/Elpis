@@ -8,6 +8,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
+// Elpis: popup menus carry the Elpis border.
+use ratatui::widgets::Borders;
 use ratatui::widgets::Widget;
 
 use crate::key_hint::ShortcutHint;
@@ -109,7 +111,10 @@ pub(crate) fn render_menu_surface(area: Rect, buf: &mut Buffer) -> Rect {
     if area.is_empty() {
         return area;
     }
+    // Elpis: an orange border around the popup surface.
     Block::default()
+        .borders(Borders::ALL)
+        .border_style(crate::style::popup_border_style())
         .style(user_message_style())
         .render(area, buf);
     menu_surface_inset(area)

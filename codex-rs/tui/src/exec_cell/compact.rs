@@ -78,8 +78,11 @@ impl ExecCell {
             return Vec::new();
         }
         let failed = call.output.as_ref().filter(|output| output.exit_code != 0);
+        // Elpis: success in the accent, failure as a warning.
         let marker = if failed.is_some() {
-            "•".red().bold()
+            ratatui::text::Span::from("•").style(crate::style::status_style(
+                crate::style::StatusTone::Attention,
+            ))
         } else if self.is_active() {
             activity_indicator(
                 call.start_time,
@@ -88,7 +91,7 @@ impl ExecCell {
             )
             .unwrap_or_else(|| "•".dim())
         } else {
-            "•".green().bold()
+            ratatui::text::Span::from("•").style(crate::elpis_motion::accent_style())
         };
         let title = if let Some(output) = failed {
             format!("Failed (exit {})", output.exit_code)
