@@ -1,6 +1,8 @@
 [package]
 name = "codex-cli"
-version.workspace = true
+# Elpis: the product version `--version` prints. The workspace version stays
+# upstream's, because the models client_version and user agent come from it.
+version = "0.4.0-dev"
 edition.workspace = true
 license.workspace = true
 build = "build.rs"
@@ -79,6 +81,8 @@ codex-utils-path-uri = { workspace = true }
 codex-utils-redacted-string = { workspace = true }
 codex-websocket-auth = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
+# Elpis: dirs resolves the Elpis home; sqlx reads a state DB's migrations.
+dirs = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 libc = { workspace = true }
@@ -87,6 +91,7 @@ owo-colors = { workspace = true }
 regex-lite = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sqlx = { workspace = true }
 supports-color = { workspace = true }
 sys-locale = { workspace = true }
 tempfile = { workspace = true }
@@ -131,7 +136,6 @@ jsonwebtoken = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
 sha2 = { workspace = true }
-sqlx = { workspace = true }
 tar = { workspace = true }
 tokio-tungstenite = { workspace = true }
 vt100 = { workspace = true }
