@@ -11,7 +11,7 @@ if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
 fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|next-dev|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -144,13 +144,20 @@ case "$mode" in
         cargo_args=(test --profile local-release --locked --offline -p codex-config --lib --no-run)
         artifact=
         ;;
+    next-dev)
+        # The vendored upstream base ships one multitool binary from codex-cli;
+        # Elpis builds that binary. dev-small keeps the edit/build loop short.
+        profile=dev-small
+        cargo_args=(build --profile dev-small --locked --offline -p codex-cli --bin codex)
+        artifact="$repo_root/codex-rs/target/dev-small/codex"
+        ;;
     shipping)
         profile=release
         cargo_args=(build --release --locked --offline -p codex-tui --bin elpis)
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, next-dev, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
