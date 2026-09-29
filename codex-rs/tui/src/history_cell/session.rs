@@ -46,9 +46,16 @@ pub(crate) fn with_border_with_inner_width(
 
 /// Brand title shared by the session header and the status card; each owns its own indentation.
 pub(crate) fn codex_title(version: &str) -> Vec<Span<'static>> {
+    // Elpis: the ember, the Elpis name and the Elpis release, not ">_ OpenAI Codex". This one
+    // title serves the session header and the /status card.
+    let version = if version == crate::version::CODEX_CLI_VERSION {
+        crate::branding::ELPIS_VERSION
+    } else {
+        version
+    };
     vec![
-        ">_ ".fg(accent_color()),
-        "OpenAI Codex".bold(),
+        Span::from("◆ ").style(crate::elpis_motion::accent_style()),
+        Span::from(crate::branding::CODEX_RUNTIME_TITLE).style(crate::elpis_motion::accent_style()),
         format!(" (v{version})").dim(),
     ]
 }
@@ -217,7 +224,8 @@ pub(crate) fn new_session_info(
             Line::from(vec![
                 "  ".into(),
                 "/init".into(),
-                " - create an AGENTS.md file with instructions for Codex".dim(),
+                // Elpis: product name in the help copy.
+                " - create an AGENTS.md file with instructions for Elpis".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
@@ -227,7 +235,7 @@ pub(crate) fn new_session_info(
             Line::from(vec![
                 "  ".into(),
                 "/permissions".into(),
-                " - choose what Codex is allowed to do".dim(),
+                " - choose what Elpis is allowed to do".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
@@ -303,7 +311,8 @@ impl SessionHeaderHistoryCell {
         version: &'static str,
     ) -> Self {
         Self {
-            version,
+            // Elpis: titles show the Elpis release, not the vendored Codex version.
+            version: crate::branding::title_version(version),
             model,
             reasoning_effort,
             directory,
@@ -368,7 +377,10 @@ impl HistoryCell for SessionHeaderHistoryCell {
         if self.yolo_mode {
             lines.push(Line::from(vec![
                 "  permissions: ".dim(),
-                "YOLO mode".magenta().bold(),
+                // Elpis: YOLO reads as a warning, as in v0.3.0.
+                Span::from("YOLO mode").style(crate::style::status_style(
+                    crate::style::StatusTone::Attention,
+                )),
             ]));
         }
         if let Some(greeting) = self.greeting.get() {
@@ -393,7 +405,12 @@ impl HistoryCell for SessionHeaderHistoryCell {
                 .collect();
         }
         let mut lines = vec![
-            Line::from(format!("OpenAI Codex (v{})", self.version)),
+            // Elpis: product title.
+            Line::from(format!(
+                "{} (v{})",
+                crate::branding::CODEX_RUNTIME_TITLE,
+                self.version
+            )),
             Line::from(format!(
                 "model: {}{}",
                 self.model,
