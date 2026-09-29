@@ -250,6 +250,8 @@ mod copy_export_picker_tests;
 mod dynamic_activity_tests;
 // Elpis: evals for the Elpis look.
 mod elpis_look;
+// Elpis: evals for the Elpis slash commands.
+mod elpis_slash_commands;
 mod exec_flow;
 mod goal_menu;
 mod goal_validation;
