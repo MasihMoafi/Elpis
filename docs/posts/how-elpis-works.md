@@ -7,33 +7,17 @@ type: technical post for engineers who already use a coding agent
 
 Every coding agent you have used — Claude Code, Codex, Cursor — is a loop around a
 list of messages. The list is the agent's entire memory. It grows every turn, and
-when it gets too big something has to go. In every mainstream tool, a second model
-decides what goes, while the task is running, and you find out what it kept only
+when it gets too big something has to go. In every mainstream tool, a separate
+summarization request decides what goes, while the task is running, and you find out what it kept only
 afterwards — if you look.
 
 Elpis is a fork of OpenAI's Codex CLI that makes that list a thing you can see and
 edit. It keeps Codex's execution engine and adds one idea: **admission is a user
 control.**
 
-This post builds the loop from scratch in about twenty lines of Python, shows where
-it breaks, and then shows what Elpis does at exactly that point. The Python is here
-so you can run it. Elpis itself is Rust.
-
-## Run the small version first
-
-```bash
-export OPENROUTER_API_KEY=...        # or any OpenAI-compatible provider
-python tiny_agent.py "how many lines does tiny_agent.py have?"
-```
-
-```
-   $ wc -l tiny_agent.py
--- step 1: 317 tokens of context sent
-`tiny_agent.py` has 62 lines.
-```
-
-Sixty-two lines, one file, no framework. It chose to run `wc -l`, read the output,
-and answered. That is the whole mechanism every coding agent is built on.
+This post sketches the loop in a few lines of Python, shows where it breaks, and
+then shows what Elpis does at exactly that point. The Python is illustrative; Elpis
+itself is Rust.
 
 ## 1. The loop
 
@@ -64,8 +48,7 @@ That last fact is the one this post is about.
 
 ## 2. The list is the context, and it only grows
 
-Watch the token count in the demo above: 317 tokens on step one. Add a `Read` of a
-2,000-line file and the next request carries all of it — and carries it again on
+Add a `Read` of a 2,000-line file and the next request carries all of it — and carries it again on
 every later step in that session, long after the agent has finished with it.
 
 A one-hour session on a real repository ends up sending, on every single request:
@@ -79,8 +62,8 @@ Nothing in the loop removes anything. The list is append-only by construction.
 
 ## 3. Where it breaks
 
-When the list approaches the model's limit, mainstream agents compact: a second
-model summarizes the conversation so far and the summary replaces it. This works,
+When the list approaches the model's limit, mainstream agents compact: a separate
+summarization request condenses the conversation so far and the summary replaces it. This works,
 and it has three properties you did not choose:
 
 1. **It is invisible.** You are told it happened, not what was dropped.
@@ -99,7 +82,7 @@ Elpis attacks the same list at two different points.
 
 A panel beside the composer listing every source that can enter the list, grouped by
 what kind of thing it is, each with a token estimate and a checkbox. This is the
-real panel from the build on my machine, in this repository:
+real panel from the installed build, opened in this repository:
 
 ```
 CONTEXT LEDGER  context not measured · ≈5.6k source estimates
@@ -176,7 +159,7 @@ All costs are published-rate estimates, not invoices.):**
 | --- | --- | --- |
 | 3 requests | Max | **+163%** |
 | 3 requests | Low | **+54%** |
-| 3 requests | Medium | **+25%** |
+| 3 requests | None | **+25%** |
 | 11 requests | Low | −3% |
 | 35 requests | Low | −9.8% (7 of 8 cases) |
 | 35 requests | None | −20.9% (8 of 8 cases, sign test p = 0.0078) |
@@ -209,8 +192,8 @@ established at all. Protocol, raw metrics and the kept failure log are in
 | | |
 | --- | --- |
 | **Implemented and verified** | Context Ledger admission; Codex-derived execution engine; provider-neutral model selection; telemetry off by default |
-| **Implemented, under acceptance** | Smart Prune (experimental, off by default); explicit guarded memory save; the v0.3.0 development build |
-| **Released** | [v0.2.0](https://github.com/MasihMoafi/Elpis/releases/tag/v0.2.0), Linux x86_64 |
+| **Implemented, under acceptance** | Smart Prune (experimental, off by default); explicit guarded memory save |
+| **Released** | [v0.3.0](https://github.com/MasihMoafi/Elpis/releases/tag/v0.3.0), Linux x86_64 |
 | **Planned** | API-cost dashboard; documented agentic direction |
 | **Intentionally unsupported** | Bundled retrieval or ML runtimes — retrieval is an MCP server you register |
 
