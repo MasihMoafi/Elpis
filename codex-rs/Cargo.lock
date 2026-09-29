@@ -2492,7 +2492,7 @@ dependencies = [
 
 [[package]]
 name = "codex-cli"
-version = "0.158.0"
+version = "0.4.0-dev"
 dependencies = [
  "anyhow",
  "app_test_support",
@@ -2555,6 +2555,7 @@ dependencies = [
  "codex-websocket-auth",
  "codex-windows-sandbox",
  "crossterm",
+ "dirs",
  "flate2",
  "futures",
  "http 1.4.0",
