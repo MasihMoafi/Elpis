@@ -11,7 +11,7 @@ if [ -n "${ELPIS_BUILD_REPO_ROOT:-}" ]; then
 fi
 mode=${1:-}
 if [ "$#" -ne 1 ]; then
-    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|next-dev|shipping}\n' "$0" >&2
+    printf 'usage: %s {check|core-check|dev|optimized|schema-build|schema-write|schema-tests|config-schema-write|app-server-build|test-build|tui-tests|core-test-build|core-tests|app-server-test-build|app-server-tests|core-suite-build|core-suite-tests|workspace-check|models-test-build|config-test-build|next-dev|next-cargo|shipping}\n' "$0" >&2
     exit 2
 fi
 
@@ -151,13 +151,20 @@ case "$mode" in
         cargo_args=(build --profile dev-small --locked --offline -p codex-cli --bin codex)
         artifact="$repo_root/codex-rs/target/dev-small/codex"
         ;;
+    next-cargo)
+        # Any cargo command on the vendored base, under the same thermal guard.
+        # Example: ELPIS_NEXT_CARGO_ARGS="test --profile dev-small --locked --offline -p codex-tui --lib elpis_"
+        profile=${ELPIS_NEXT_PROFILE:-dev-small}
+        read -r -a cargo_args <<< "${ELPIS_NEXT_CARGO_ARGS:?set ELPIS_NEXT_CARGO_ARGS to the cargo arguments}"
+        artifact=
+        ;;
     shipping)
         profile=release
         cargo_args=(build --release --locked --offline -p codex-tui --bin elpis)
         artifact="$repo_root/codex-rs/target/release/elpis"
         ;;
     *)
-        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, next-dev, or shipping\n' "$mode" >&2
+        printf 'unknown build mode %q; expected check, core-check, dev, optimized, schema-build, schema-write, schema-tests, config-schema-write, app-server-build, test-build, tui-tests, core-test-build, core-tests, app-server-test-build, app-server-tests, core-suite-build, core-suite-tests, workspace-check, models-test-build, config-test-build, next-dev, next-cargo, or shipping\n' "$mode" >&2
         exit 2
         ;;
 esac
