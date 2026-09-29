@@ -103,8 +103,11 @@ fn accent_is_elpis_orange_not_upstream_blue() {
             .fg
             .expect("accent color");
         assert!(is_orange(accent), "{accent:?}");
-        let (r, g, b) = crate::style::CHATGPT_BLUE_200;
-        assert_ne!(accent, ratatui::style::Color::Rgb(r, g, b));
+        assert!(
+            !matches!(accent, ratatui::style::Color::Rgb(r, g, b)
+                if (r, g, b) == crate::style::CHATGPT_BLUE_200),
+            "{accent:?}"
+        );
     });
 }
 
