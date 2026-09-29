@@ -45,3 +45,5 @@ exclude = ["CODEX_HOME"]
 
 [tui]
 fullscreen_transcript = false
+# Elpis: no upstream startup tips; they advertise the Codex apps (v0.3.0 had none).
+show_tooltips = false
