@@ -31,19 +31,15 @@ The public website may borrow RAG Studio's standard of polish, but not its compo
 
 ## Near-term outcome
 
-September 24, 2026: explain and sharpen the build that exists.
+September 29, 2026: move Elpis onto the latest Codex by copying, not rebuilding.
 
-Rebuilding Elpis on a newer Codex foundation was attempted and abandoned. Masih
-tested the ported build on September 23: it reproduced Codex's engine without
-Elpis's identity, `/dashboard`, `/agent`, or its added commands, and the Elpis he
-had been using was restored. Do not restart that port.
-
-Current work: the technical write-up and presentation of the installed build
-(`docs/posts/how-elpis-works.md`), a readme refresh, and the two defects Masih can
-feel — exit is not immediate, and Escape does not dismiss the `/context` report.
-The responding-agent memory candidate is installed with automated evidence; user
-acceptance remains open. Compaction instructions are under repair. The live website
-has a known source/deployment mismatch: do not overwrite it from this checkout.
-API-cost dashboard improvements and the documented agentic direction come later.
-Current execution and acceptance gates live in `TASKS.md`; requested outcomes in
-`docs/USER_REQUESTS.md`.
+The September 23 port reproduced Codex's engine without Elpis's identity and was
+rolled back. On September 29 Masih lifted "do not restart that port" for a
+different method: vendor the latest Codex release unmodified and carry Elpis as
+copied files plus small marked seams (`docs/GUIDE.md`, Source Map). The look comes
+first: the first week ends when Masih recognizes `elpis-next` as Elpis on sight, or
+the move stops. The installed `elpis` v0.3.0 stays the daily build until he accepts
+the new one. Anthropic, Gemini and OpenRouter through their APIs are required.
+The live website has a known source/deployment mismatch: do not overwrite it from
+this checkout. Current execution and acceptance gates live in `TASKS.md`; requested
+outcomes in `docs/USER_REQUESTS.md`.

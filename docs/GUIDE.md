@@ -150,7 +150,7 @@ Important areas:
 
 Codex is the contained implementation foundation for thread/turn semantics, streaming, file changes, commands, approvals, sandboxing, sessions, and TUI ergonomics. Elpis does not load code from or require the separate donor clone at runtime.
 
-The foundation strategy is **fork and subtract**: preserve proven execution/TUI behavior and tests, remove unwanted product surfaces in bounded steps, and add Elpis-owned provider, context, continuity, memory, and control layers without reviving the archived hand-grown prototype.
+The foundation strategy, adopted September 29, 2026, is **vendor and carry**: pin an unmodified upstream Codex release; carry Elpis as copied Elpis-owned modules and crates plus a few small, marked seams in upstream files; switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, rather than deleting them; and absorb a new release by rebasing the Elpis commits onto a new vendor commit. Non-Responses providers reach Codex through an Elpis-owned local Responses gateway. The installed v0.3.0 build still uses the earlier fork-and-subtract import until Masih accepts the new one.
 
 ### OpenClaw: Context and Continuity Reference
 
@@ -172,7 +172,7 @@ No capability becomes an Elpis feature merely because an upstream project has it
 
 ### Codex Import Provenance
 
-The contained Codex workspace was imported from `openai/codex` revision `2e1607ee2fa8099a233df7437adee5f16a741905` under Apache-2.0, with notices retained under `codex-rs/`. `codex-rs/ELPIS_UPSTREAM.md` records provenance. Only committed donor content was imported; the donor working tree's unrelated local edits were not.
+The contained Codex workspace was imported from `openai/codex` revision `2e1607ee2fa8099a233df7437adee5f16a741905` under Apache-2.0, with notices retained under `codex-rs/`. `codex-rs/ELPIS_UPSTREAM.md` records provenance. The move to the latest release records its pin there as well. Only committed donor content was imported; the donor working tree's unrelated local edits were not.
 
 ### Preserve-First Behaviors
 
