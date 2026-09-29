@@ -8,14 +8,27 @@ const { once } = require('node:events');
 // This is a controlled Responses provider, not a substitute for the editor or Elpis.
 // It records exactly what the real Elpis runtime sends to inference and emits fixed
 // tool calls/conclusions. Live-model quality is a separate, explicitly labelled check.
+// The runtime asks once per thread for a short session title (session_title.rs).
+// Answer those requests here, outside the scripted turn actions and `requests`,
+// so a test's queued replies and request counts cover only the conversation.
+const isTitleRequest = request => Boolean(request.text?.format?.schema?.required?.includes('title'));
 class Provider {
-  constructor() { this.requests = []; this.actions = []; this.hanging = new Set(); }
+  constructor() { this.requests = []; this.titleRequests = []; this.actions = []; this.hanging = new Set(); }
   async start() {
     this.server = http.createServer(async (req, res) => {
       try {
         const chunks = [];
         for await (const chunk of req) chunks.push(chunk);
         const request = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (isTitleRequest(request)) {
+          this.titleRequests.push({ path: req.url, body: request });
+          const item = { type: 'message', id: `title_${this.titleRequests.length}`, role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify({ title: 'Editor test session' }) }] };
+          const id = `title_response_${this.titleRequests.length}`;
+          const events = [{ type: 'response.created', response: { id } }, { type: 'response.output_item.done', output_index: 0, item }, { type: 'response.completed', response: { id, usage: { input_tokens: 50, output_tokens: 5, total_tokens: 55 } } }];
+          res.writeHead(200, { 'content-type': 'text/event-stream' });
+          res.end(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''));
+          return;
+        }
         this.requests.push({ path: req.url, body: request });
         const action = this.actions.shift();
         if (!action) throw new Error('Unexpected provider request');
