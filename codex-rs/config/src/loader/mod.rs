@@ -11,6 +11,10 @@ mod tests;
 #[cfg(test)]
 #[path = "projectless_directory_tests.rs"]
 mod projectless_directory_tests;
+// Elpis: tests for the Elpis product defaults in config/defaults.toml.
+#[cfg(test)]
+#[path = "elpis_defaults_tests.rs"]
+mod elpis_defaults_tests;
 #[cfg(windows)]
 mod windows;
 

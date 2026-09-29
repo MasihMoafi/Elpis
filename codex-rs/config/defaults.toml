@@ -12,6 +12,36 @@ file_opener = "vscode"
 hide_agent_reasoning = false
 chatgpt_base_url = "https://chatgpt.com/backend-api/"
 project_root_markers = [".git"]
+# Elpis: Elpis ships its own updater; never ask upstream for releases.
+check_for_update_on_startup = false
 
 [history]
 persistence = "save-all"
+
+# Elpis: product defaults. This is the lowest-precedence layer, so a user's own
+# config.toml still wins. Keep config/src/loader/elpis_defaults_tests.rs in step.
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[otel]
+metrics_exporter = "none"
+
+[features]
+plugins = false
+apps = false
+tool_suggest = false
+image_generation = false
+daemon_auto_start = false
+memories = false
+
+[skills.bundled]
+enabled = false
+
+[shell_environment_policy]
+exclude = ["CODEX_HOME"]
+
+[tui]
+fullscreen_transcript = false
