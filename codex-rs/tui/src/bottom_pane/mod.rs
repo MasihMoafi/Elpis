@@ -282,6 +282,8 @@ pub(crate) struct BottomPane {
     /// Stack of views displayed instead of the composer (e.g. popups/modals).
     view_stack: Vec<Box<dyn BottomPaneView>>,
     warnings_view: Option<warnings_view::WarningsView>,
+    /// A keep press can close the viewer; its remaining repeats must not edit the draft.
+    pub(crate) suppress_warning_keep_repeat: bool,
     pub(crate) questions: Option<Box<AsyncQuestions>>,
     delayed_approval_requests: VecDeque<DelayedApprovalRequest>,
     last_composer_activity_at: Option<Instant>,
@@ -368,6 +370,7 @@ impl BottomPane {
             composer,
             view_stack: Vec::new(),
             warnings_view: None,
+            suppress_warning_keep_repeat: false,
             questions: None,
             delayed_approval_requests: VecDeque::new(),
             last_composer_activity_at: None,
@@ -818,8 +821,11 @@ impl BottomPane {
                 .warnings_view
                 .as_mut()
                 .is_some_and(|view| view.handle_key(key_event))
+                && let Some(view) = self.warnings_view.take()
             {
-                self.warnings_view = None;
+                self.suppress_warning_keep_repeat =
+                    key_hint::plain(KeyCode::Char('k')).is_press(key_event);
+                view.close();
             }
             self.request_redraw();
             return InputResult::None;
@@ -941,7 +947,9 @@ impl BottomPane {
     /// quit/interrupt state machine and uses the result to decide what happens next.
     pub(crate) fn on_ctrl_c(&mut self) -> CancellationEvent {
         if self.warnings_active() {
-            self.warnings_view = None;
+            if let Some(view) = self.warnings_view.take() {
+                view.close();
+            }
             self.request_redraw();
             return CancellationEvent::Handled;
         }
@@ -2833,14 +2841,14 @@ mod tests {
         ] {
             let mut pane = test_pane(tx.clone());
             match source {
-                "warning open" => pane.show_warnings(Vec::new()),
+                "warning open" => pane.show_warnings(Vec::new(), Default::default()),
                 "warning navigation" => {
-                    pane.show_warnings(Vec::new());
+                    pane.show_warnings(Vec::new(), Default::default());
                     pane.last_composer_activity_at = None;
                     pane.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
                 }
                 "warning paste" => {
-                    pane.show_warnings(Vec::new());
+                    pane.show_warnings(Vec::new(), Default::default());
                     pane.last_composer_activity_at = None;
                     pane.handle_paste("query".into());
                 }

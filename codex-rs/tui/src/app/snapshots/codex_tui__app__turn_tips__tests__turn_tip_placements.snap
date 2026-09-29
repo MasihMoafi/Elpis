@@ -1,6 +1,5 @@
 ---
 source: tui/src/app/turn_tips_tests.rs
-assertion_line: 337
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(screens.join(\"\\n\\n\"))"
 ---
 working=true, response rows=1, 80x12
@@ -26,12 +25,12 @@ working=true, response rows=1, 80x6
   ? for shortcuts
 
 working=false, response rows=1, 80x12
-Show a response.
+› Show a response.
 
 • Done.
   └ Tip: Try /help.
 
-  [completion time]
+  Worked for [duration] • [completion time]
 
 
 › Ask Codex to do anything
@@ -40,12 +39,12 @@ Show a response.
   ? for shortcuts
 
 working=false, response rows=30, 80x12
-Show a response.
+› Show a response.
 
 • Done.
   └ Tip: Try /help.
 
-  [completion time]
+  Worked for [duration] • [completion time]
 
 
 › Ask Codex to do anything
@@ -56,7 +55,7 @@ Show a response.
 working=false, response rows=1, 80x9
 • Done.
 
-  [completion time]
+  Worked for [duration] • [completion time]
 
 
 › Ask Codex to do anything
@@ -65,10 +64,10 @@ working=false, response rows=1, 80x9
   ? for shortcuts
 
 working=false, response rows=1, 80x10
-Show a response.
+› Show a response.
 • Done.
 
-  [completion time]
+  Worked for [duration] • [completion time]
 
 
 › Ask Codex to do anything
@@ -77,11 +76,11 @@ Show a response.
   ? for shortcuts
 
 working=false, response rows=1, 80x11
-Show a response.
+› Show a response.
 • Done.
   └ Tip: Try /help.
 
-  [completion time]
+  Worked for [duration] • [completion time]
 
 
 › Ask Codex to do anything
@@ -90,11 +89,11 @@ Show a response.
   ? for shortcuts
 
 working=false, response rows=1, 12x12
-Response row
-0
 
 • Done.
 
+  Worked
+  for <1s •
   [completion time]
 
 
