@@ -81,6 +81,8 @@ mod command_canonicalization;
 pub mod config;
 pub mod connectors;
 pub mod context;
+// Elpis: the Context Ledger's admission and continuity sources.
+pub mod elpis_context;
 mod context_manager;
 mod current_time;
 mod cyber_access_program;

@@ -81,6 +81,11 @@ pub mod legacy_core {
             pub use codex_core::config::edit::*;
         }
     }
+
+    // Elpis: the Context Ledger reads its sources through core.
+    pub mod elpis_context {
+        pub use codex_core::elpis_context::*;
+    }
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
