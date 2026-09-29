@@ -524,7 +524,8 @@ fn startup_draft_bottom_pane(
             frame_requester,
             has_input_focus: true,
             enhanced_keys_supported,
-            placeholder_text: "Ask Codex to do anything".to_string(),
+            // Elpis: product name in the composer placeholder.
+            placeholder_text: "Ask Elpis to do anything".to_string(),
             disable_paste_burst: false,
             animations_enabled: crate::system_motion::mode() == crate::motion::MotionMode::Animated,
             effects: Default::default(),

@@ -6,7 +6,6 @@ use crossterm::event::KeyEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
@@ -126,8 +125,12 @@ impl WidgetRef for &WelcomeWidget {
         lines.push(Line::from(vec![
             "  ".into(),
             "Welcome to ".into(),
-            "Codex".bold(),
-            ", OpenAI's command-line coding agent".into(),
+            // Elpis: the v0.3.0 welcome line.
+            ratatui::style::Styled::set_style(
+                crate::branding::PRODUCT_NAME,
+                crate::style::brand_style(),
+            ),
+            ", with Elpis as the active runtime".into(),
         ]));
 
         Paragraph::new(lines)
