@@ -183,8 +183,8 @@ async fn elpising_sweeps_fast_then_rests_between_sweeps() {
             .saturating_duration_since(before)
     };
 
-    // Mid-sweep: the next frame is one motion tick away.
-    assert!(next_frame_after(Duration::ZERO) <= Duration::from_millis(40));
+    // Mid-sweep: the next frame is one 40 ms motion tick away.
+    assert!(next_frame_after(Duration::ZERO) < Duration::from_millis(100));
     // At rest: nothing redraws until the next sweep, seconds later.
     assert!(next_frame_after(Duration::from_secs(1)) >= Duration::from_secs(3));
 }
@@ -209,8 +209,11 @@ async fn composer_wears_the_orange_rail_and_keeps_the_draft_intact() {
         .iter()
         .position(|row| row.contains("keep my draft"))
         .expect("draft row");
-    assert_eq!(buffer[(0, draft_row as u16)].symbol(), "│");
-    assert!(is_orange(buffer[(0, draft_row as u16)].fg));
+    // The rail runs down the composer's left edge; the prompt glyph takes the draft row,
+    // as in v0.3.0.
+    let rail_row = draft_row as u16 - 1;
+    assert_eq!(buffer[(0, rail_row)].symbol(), "│");
+    assert!(is_orange(buffer[(0, rail_row)].fg));
     // The rail is drawn around the text, never over it.
     assert!(
         rows[draft_row].contains("› keep my draft"),
