@@ -101,3 +101,23 @@ fullscreen_transcript = true
     assert_eq!(typed.check_for_update_on_startup, Some(false));
     Ok(())
 }
+
+#[tokio::test]
+async fn elpis_defaults_hide_upstream_codex_tips_unless_the_user_asks() -> anyhow::Result<()> {
+    // v0.3.0 showed no startup tips; the upstream ones advertise the Codex apps.
+    let defaults: ConfigToml = effective_config(/*user_config*/ None).await?.try_into()?;
+    assert_eq!(defaults.tui.map(|t| t.show_tooltips), Some(false));
+
+    // A user who touches another [tui] key keeps the Elpis default.
+    let other_key: ConfigToml = effective_config(Some("[tui]\nfullscreen_transcript = true\n"))
+        .await?
+        .try_into()?;
+    assert_eq!(other_key.tui.map(|t| t.show_tooltips), Some(false));
+
+    // A user who asks for tips gets them.
+    let opted_in: ConfigToml = effective_config(Some("[tui]\nshow_tooltips = true\n"))
+        .await?
+        .try_into()?;
+    assert_eq!(opted_in.tui.map(|t| t.show_tooltips), Some(true));
+    Ok(())
+}
