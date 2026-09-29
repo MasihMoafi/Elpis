@@ -1678,7 +1678,8 @@ impl RuntimeKeymap {
             },
             composer: ComposerKeymap {
                 submit: default_bindings![plain(KeyCode::Enter)],
-                queue: default_bindings![plain(KeyCode::Tab)],
+                // Elpis: Tab belongs to the Context Ledger, as in v0.3.0.
+                queue: Vec::new(),
                 toggle_shortcuts: default_bindings![
                     plain(KeyCode::Char('?')),
                     shift(KeyCode::Char('?'))

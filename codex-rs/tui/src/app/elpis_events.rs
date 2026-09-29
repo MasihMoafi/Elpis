@@ -8,12 +8,15 @@ use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 impl App {
     pub(super) async fn handle_elpis_event(
         &mut self,
+        tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
         event: ElpisAppEvent,
-    ) {
+    ) -> Result<()> {
         match event {
             ElpisAppEvent::EnableYolo => self.enable_yolo(app_server).await,
+            ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }
+        Ok(())
     }
 
     /// `/yolo`: Full Access (no sandbox, never ask) for this chat, saved as the default for

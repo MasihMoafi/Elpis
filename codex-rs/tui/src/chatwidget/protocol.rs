@@ -45,6 +45,8 @@ impl ChatWidget {
         }
         match notification {
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
+                // Elpis: a measured turn replaces the ledger's projected admission delta.
+                self.reconcile_context_projection_for_turn(&notification.turn_id);
                 self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));
@@ -92,6 +94,10 @@ impl ChatWidget {
                 }
             }
             ServerNotification::TurnCompleted(notification) => {
+                // Elpis: admission changes made during a turn are written once it ends.
+                if replay_kind.is_none() && notification.turn.status != TurnStatus::InProgress {
+                    self.commit_staged_context_admissions(&notification.turn.id);
+                }
                 self.restore_realtime_transcripts_before_turn(&notification.turn.id);
                 self.handle_turn_completed_notification(notification, replay_kind);
             }

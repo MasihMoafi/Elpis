@@ -310,6 +310,12 @@ mod skills;
 mod slash_dispatch;
 // Elpis: Elpis slash commands.
 pub(crate) mod elpis_commands;
+// Elpis: the Context Ledger.
+pub(crate) mod agent_ledger;
+mod context_ledger;
+mod context_usage;
+mod elpis_ledger_glue;
+pub(crate) use elpis_ledger_glue::elpis_memory_dir;
 mod worktree_picker;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;
@@ -521,6 +527,10 @@ pub(crate) struct ChatWidget {
     app_event_tx: AppEventSender,
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
+    // Elpis: Context Ledger state.
+    context_ledger: context_ledger::ContextLedgerState,
+    agent_ledger: Vec<agent_ledger::AgentLedgerEntry>,
+    manual_memory_cache: elpis_ledger_glue::ManualMemoryCache,
     transcript: TranscriptState,
     config: Config,
     pub(crate) local_settings: crate::local_settings::LocalSettings,
@@ -557,6 +567,11 @@ pub(crate) struct ChatWidget {
     #[cfg(any(target_os = "windows", test))]
     pub(crate) windows_sandbox_elevated_setup_complete: bool,
     token_info: Option<TokenUsageInfo>,
+    // Elpis: context attribution and Smart Prune state the Context Ledger shows.
+    context_attribution: Option<codex_app_server_protocol::ThreadContextAttribution>,
+    smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot,
+    smart_prune_synced: bool,
+    last_prune_saved_tokens: Option<u64>,
     token_usage_pending: bool,
     // Status and polling use account usage reads; response streams may identify meters differently.
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,

@@ -29,6 +29,7 @@ pub enum SlashCommand {
     Experimental,
     #[strum(to_string = "approve")]
     AutoReview,
+    Add, // Elpis: Context Ledger
     Memories,
     Skills,
     Import,
@@ -69,6 +70,7 @@ pub enum SlashCommand {
     #[strum(to_string = "pwd", serialize = "cwd")]
     Pwd,
     Usage,
+    Context,   // Elpis: Context Ledger
     Dashboard, // Elpis
     DebugConfig,
     Title,

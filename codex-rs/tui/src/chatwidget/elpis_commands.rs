@@ -4,10 +4,10 @@
 //! decides about them lives here: the descriptions, the dispatch flags and the dispatch itself.
 //! Upstream files reach this module through one-line seams marked `Elpis:`.
 //!
-//! `/yolo` and `/agent` work in this build. The commands that need the Elpis context engine
-//! (`/pruner-model`, `/memory-model`, `/prune`, `/smart-prune`, `/force-prune`, `/dashboard`)
-//! are listed with their v0.3.0 descriptions and, when run, say plainly that they arrive in a
-//! later Elpis build. They send nothing to the model or the app server.
+//! `/yolo`, `/agent`, `/add` and `/context` work in this build. The commands that need the Elpis
+//! context engine (`/pruner-model`, `/memory-model`, `/prune`, `/smart-prune`, `/force-prune`,
+//! `/dashboard`) are listed with their v0.3.0 descriptions and, when run, say plainly that they
+//! arrive in a later Elpis build. They send nothing to the model or the app server.
 
 use super::ChatWidget;
 use super::user_messages::QueueDrain;
@@ -26,6 +26,8 @@ macro_rules! elpis_slash_commands {
             | $crate::slash_command::SlashCommand::ForcePrune
             | $crate::slash_command::SlashCommand::Agent
             | $crate::slash_command::SlashCommand::Dashboard
+            | $crate::slash_command::SlashCommand::Add
+            | $crate::slash_command::SlashCommand::Context
     };
 }
 pub(crate) use elpis_slash_commands;
@@ -49,6 +51,10 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
         SlashCommand::Dashboard => {
             "show the current context window, admitted sources, and pruning evidence"
         }
+        SlashCommand::Add => "add a file to the Context Ledger: /add <path>",
+        SlashCommand::Context => {
+            "show context usage as a grid, by category, with checkpoints and system files"
+        }
         _ => unreachable!("not an Elpis slash command: /{}", cmd.command()),
     }
 }
@@ -60,11 +66,12 @@ pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
             | SlashCommand::MemoryModel
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
+            | SlashCommand::Add
     )
 }
 
 pub(crate) fn available_in_side_conversation(cmd: SlashCommand) -> bool {
-    matches!(cmd, SlashCommand::Dashboard)
+    matches!(cmd, SlashCommand::Dashboard | SlashCommand::Context)
 }
 
 pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
@@ -75,6 +82,7 @@ pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
             | SlashCommand::Yolo
             | SlashCommand::Agent
             | SlashCommand::Dashboard
+            | SlashCommand::Context
     )
 }
 
@@ -84,7 +92,7 @@ pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
 /// commands that only print "not in this build yet" let the queue continue.
 pub(super) fn queued_drain(cmd: SlashCommand) -> QueueDrain {
     match cmd {
-        SlashCommand::Yolo | SlashCommand::Agent => QueueDrain::Stop,
+        SlashCommand::Yolo | SlashCommand::Agent | SlashCommand::Add => QueueDrain::Stop,
         _ => QueueDrain::Continue,
     }
 }
@@ -101,6 +109,10 @@ impl ChatWidget {
             SlashCommand::Agent => {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
             }
+            SlashCommand::Add => {
+                self.add_error_message(super::elpis_ledger_glue::ADD_CONTEXT_USAGE.to_string());
+            }
+            SlashCommand::Context => self.request_fresh_context_usage_report(),
             _ => {
                 self.add_info_message(
                     format!(

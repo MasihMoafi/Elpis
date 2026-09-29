@@ -1053,6 +1053,8 @@ impl ChatWidget {
             SlashCommand::Pets if !trimmed.is_empty() => {
                 self.select_pet_by_id(args);
             }
+            // Elpis: `/add <path>` adds a source to the Context Ledger.
+            SlashCommand::Add if !trimmed.is_empty() => self.add_context_source_command(trimmed),
             _ => self.dispatch_command_from_source(cmd, source),
         }
         if source == SlashCommandDispatchSource::Live && cmd != SlashCommand::Goal {

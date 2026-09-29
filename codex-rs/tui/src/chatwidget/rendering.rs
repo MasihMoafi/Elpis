@@ -262,7 +262,13 @@ impl ChatWidget {
                     RenderableItem::Owned(Box::new(
                         super::elpis_identity::IdentityLineRenderable { chat_widget: self },
                     )),
-                    bottom_pane,
+                    // Elpis: the Context Ledger sits beside the composer, top-aligned with it.
+                    RenderableItem::Owned(Box::new(
+                        super::elpis_ledger_glue::BesideContextLedger {
+                            chat_widget: self,
+                            bottom_pane,
+                        },
+                    )),
                 ],
             )))
         }

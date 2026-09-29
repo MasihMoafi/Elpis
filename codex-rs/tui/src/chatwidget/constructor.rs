@@ -113,6 +113,10 @@ impl ChatWidget {
                 effects: local_settings.tui.effects,
                 skills: None,
             }),
+            // Elpis: Context Ledger state.
+            context_ledger: context_ledger::ContextLedgerState::default(),
+            agent_ledger: Vec::new(),
+            manual_memory_cache: elpis_ledger_glue::ManualMemoryCache::default(),
             transcript: TranscriptState::new(active_cell),
             raw_output_mode: local_settings.tui.raw_output_mode,
             config,
@@ -145,6 +149,10 @@ impl ChatWidget {
             #[cfg(any(target_os = "windows", test))]
             windows_sandbox_elevated_setup_complete: false,
             token_info: None,
+            context_attribution: None, // Elpis
+            smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot::default(),
+            smart_prune_synced: false,
+            last_prune_saved_tokens: None,
             token_usage_pending: false,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),
             refreshing_status_outputs: Vec::new(),
