@@ -504,6 +504,7 @@ fn parent_owned_command_is_allowed(command: SlashCommand, args: &str) -> bool {
                 | SlashCommand::Btw
                 | SlashCommand::Agents
                 | SlashCommand::MultiAgents
+                | SlashCommand::Agent // Elpis: v0.3.0 /agent is the /subagents picker.
                 | SlashCommand::Vim
                 | SlashCommand::Keymap
                 | SlashCommand::ElevateSandbox

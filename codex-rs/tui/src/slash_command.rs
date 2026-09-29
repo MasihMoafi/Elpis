@@ -4,6 +4,9 @@ use strum_macros::EnumIter;
 use strum_macros::EnumString;
 use strum_macros::IntoStaticStr;
 
+// Elpis: Elpis command metadata and dispatch live in chatwidget/elpis_commands.rs.
+use crate::chatwidget::elpis_commands as elpis;
+
 /// Commands that can be invoked by starting a message with a leading slash.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, EnumIter, AsRefStr, IntoStaticStr,
@@ -13,8 +16,12 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    // Elpis: v0.3.0 commands, in their v0.3.0 popup positions.
+    PrunerModel,
+    MemoryModel,
     Ide,
     Permissions,
+    Yolo, // Elpis
     Keymap,
     Vim,
     #[strum(serialize = "setup-default-sandbox")]
@@ -37,10 +44,15 @@ pub enum SlashCommand {
     App,
     Init,
     Compact,
+    // Elpis: v0.3.0 pruning commands.
+    Prune,
+    SmartPrune,
+    ForcePrune,
     Recap,
     Plan,
     Voice,
     Goal,
+    Agent, // Elpis: v0.3.0 /agent
     Agents,
     Side,
     Btw,
@@ -57,6 +69,7 @@ pub enum SlashCommand {
     #[strum(to_string = "pwd", serialize = "cwd")]
     Pwd,
     Usage,
+    Dashboard, // Elpis
     DebugConfig,
     Title,
     Statusline,
@@ -153,6 +166,8 @@ impl SlashCommand {
             SlashCommand::Logout => "log out of Codex",
             SlashCommand::Rollout => "print the rollout file path",
             SlashCommand::TestApproval => "test approval request",
+            // Elpis: descriptions from v0.3.0.
+            elpis::elpis_slash_commands!() => elpis::description(self),
         }
     }
 
@@ -164,6 +179,10 @@ impl SlashCommand {
 
     /// Whether this command supports inline args (for example `/review ...`).
     pub fn supports_inline_args(self) -> bool {
+        // Elpis: Elpis commands decide their own inline args.
+        if elpis::supports_inline_args(self) {
+            return true;
+        }
         matches!(
             self,
             SlashCommand::Review
@@ -191,6 +210,10 @@ impl SlashCommand {
 
     /// Whether this command remains available inside an active side conversation.
     pub fn available_in_side_conversation(self) -> bool {
+        // Elpis: Elpis commands decide their own side-conversation availability.
+        if elpis::available_in_side_conversation(self) {
+            return true;
+        }
         matches!(
             self,
             SlashCommand::Copy
@@ -298,6 +321,8 @@ impl SlashCommand {
             SlashCommand::TestApproval => true,
             SlashCommand::Agents | SlashCommand::MultiAgents => true,
             SlashCommand::Theme | SlashCommand::Pets => false,
+            // Elpis: Elpis commands decide their own availability during a task.
+            elpis::elpis_slash_commands!() => elpis::available_during_task(self),
         }
     }
 

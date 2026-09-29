@@ -308,6 +308,8 @@ mod interaction;
 pub(crate) use interaction::KeyEventAction;
 mod skills;
 mod slash_dispatch;
+// Elpis: Elpis slash commands.
+pub(crate) mod elpis_commands;
 mod worktree_picker;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;

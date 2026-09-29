@@ -618,6 +618,8 @@ impl ChatWidget {
                     },
                 );
             }
+            // Elpis: Elpis commands, bare or with inline args (chatwidget/elpis_commands.rs).
+            elpis_commands::elpis_slash_commands!() => self.dispatch_elpis_command(cmd),
         }
     }
 
@@ -1279,6 +1281,8 @@ impl ChatWidget {
             | SlashCommand::Theme
             | SlashCommand::Tui
             | SlashCommand::Pets => QueueDrain::Stop,
+            // Elpis: Elpis commands decide how the queue continues after them.
+            elpis_commands::elpis_slash_commands!() => elpis_commands::queued_drain(cmd),
         }
     }
 

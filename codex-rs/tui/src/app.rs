@@ -217,6 +217,8 @@ mod composer_hints;
 mod config_persistence;
 mod connector_mentions;
 mod daemon_menu;
+// Elpis: Elpis-owned event handling.
+mod elpis_events;
 mod empty_state_policy;
 mod event_dispatch;
 mod exit_summary;

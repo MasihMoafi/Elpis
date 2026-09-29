@@ -129,6 +129,8 @@ mod color;
 mod config_update;
 pub(crate) mod custom_terminal;
 mod daybreak;
+// Elpis: Elpis-owned app events.
+mod elpis_app_event;
 // Elpis: the Elpis motion palette.
 mod elpis_motion;
 mod experimental_features;
