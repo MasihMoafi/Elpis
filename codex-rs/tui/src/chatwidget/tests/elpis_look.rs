@@ -55,7 +55,6 @@ fn session_header_names_elpis_and_never_openai_codex() {
     let header = SessionHeaderHistoryCell::new(
         "gpt-test".to_string(),
         /*reasoning_effort*/ None,
-        /*show_fast_status*/ false,
         PathBuf::from("/tmp/project"),
         "test",
     );
@@ -71,25 +70,25 @@ fn session_header_names_elpis_and_never_openai_codex() {
     let mut compact = SessionHeaderHistoryCell::new(
         "gpt-test".to_string(),
         /*reasoning_effort*/ None,
-        /*show_fast_status*/ false,
         PathBuf::from("/tmp/project"),
         "test",
     );
     crate::history_cell::set_session_greeting(&mut compact, &greeting);
     let compact = text_of(&compact.display_lines(/*width*/ 80));
 
-    assert!(full[0].starts_with("◆ Elpis (vtest)"), "{full:?}");
+    assert!(
+        full.iter()
+            .any(|row| row.trim_start().starts_with("◆ Elpis (vtest)")),
+        "{full:?}"
+    );
     assert!(compact.iter().any(|row| row.contains("◆ Elpis (vtest)")));
     assert_eq!(raw[0], "Elpis (vtest)");
     for row in full.iter().chain(&compact).chain(&raw) {
         assert!(!row.contains("OpenAI Codex"), "upstream title left: {row}");
         assert!(!row.contains(">_"), "upstream prompt glyph left: {row}");
     }
-    // The v0.3.0 continuity rail replaces the enclosing card.
-    assert!(
-        full[1..].iter().all(|row| row.starts_with("│ ")),
-        "{full:?}"
-    );
+    // Codex 0.159 dropped the enclosing card, so there is no card to replace with the
+    // v0.3.0 rail; the header must still carry no card corners.
     assert!(
         full.iter()
             .all(|row| !row.contains('╭') && !row.contains('╰'))
