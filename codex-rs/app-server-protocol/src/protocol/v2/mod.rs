@@ -12,6 +12,8 @@ mod computer_use_config;
 mod config;
 mod current_time;
 mod diagnostics;
+// Elpis: Context Ledger state types.
+mod elpis_context;
 mod environment;
 mod experimental_feature;
 mod feedback;
@@ -51,6 +53,7 @@ pub use computer_use_config::*;
 pub use config::*;
 pub use current_time::*;
 pub use diagnostics::*;
+pub use elpis_context::*;
 pub use environment::*;
 pub use experimental_feature::*;
 pub use feedback::*;
