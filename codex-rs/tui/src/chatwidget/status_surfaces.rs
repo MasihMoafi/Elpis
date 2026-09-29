@@ -200,7 +200,8 @@ impl ChatWidget {
     }
 
     fn refresh_status_line_from_selections(&mut self, selections: &StatusSurfaceSelections) {
-        let enabled = !selections.status_line_items.is_empty();
+        // Elpis: the identity line above the composer replaces the footer status line.
+        let enabled = false;
         self.bottom_pane.set_status_line_enabled(enabled);
         if !enabled {
             self.set_status_line(/*status_line*/ None);
@@ -426,8 +427,14 @@ impl ChatWidget {
             return Some(TERMINAL_TITLE_ACTION_REQUIRED_INTERVAL);
         }
 
+        // Elpis: the title spinner follows the paced Elpis motion (a sweep, then a rest).
         self.should_animate_terminal_title_spinner_with_selections(selections)
-            .then_some(TERMINAL_TITLE_SPINNER_INTERVAL)
+            .then(|| {
+                crate::elpis_motion::paced_motion(
+                    self.terminal_title_animation_elapsed_at(Instant::now()),
+                )
+                .1
+            })
     }
 
     pub(super) fn request_status_line_branch_refresh(&mut self) {
@@ -491,7 +498,8 @@ impl ChatWidget {
             })
     }
 
-    fn status_line_cwd(&self) -> &Path {
+    // Elpis: visible to the identity line.
+    pub(super) fn status_line_cwd(&self) -> &Path {
         self.current_cwd
             .as_deref()
             .unwrap_or(self.config.cwd.as_path())
@@ -841,7 +849,8 @@ impl ChatWidget {
         item: StatusSurfacePreviewItem,
     ) -> Option<String> {
         let status_line_item = match item {
-            StatusSurfacePreviewItem::AppName => return Some("codex".to_string()),
+            // Elpis: product name.
+            StatusSurfacePreviewItem::AppName => return Some("elpis".to_string()),
             StatusSurfacePreviewItem::ProjectName => return self.terminal_title_project_name(),
             StatusSurfacePreviewItem::ProjectRoot => StatusLineItem::ProjectRoot,
             StatusSurfacePreviewItem::Status => return Some(self.run_state_status_text()),
@@ -886,7 +895,8 @@ impl ChatWidget {
         now: Instant,
     ) -> Option<String> {
         match item {
-            TerminalTitleItem::AppName => Some("codex".to_string()),
+            // Elpis: product name.
+            TerminalTitleItem::AppName => Some("elpis".to_string()),
             TerminalTitleItem::Project => self.terminal_title_project_name(),
             TerminalTitleItem::CurrentDir => Some(Self::truncate_terminal_title_part(
                 format_directory_display(self.status_line_cwd(), /*max_width*/ None),
@@ -1005,7 +1015,8 @@ impl ChatWidget {
             TerminalTitleStatusKind::Thinking if !self.bottom_pane.is_task_running() => {
                 "Ready".to_string()
             }
-            TerminalTitleStatusKind::Working => "Working".to_string(),
+            // Elpis: the working state reads "Elpising…".
+            TerminalTitleStatusKind::Working => "Elpising…".to_string(),
             TerminalTitleStatusKind::WaitingForBackgroundTerminal => "Waiting".to_string(),
             TerminalTitleStatusKind::Thinking => "Thinking".to_string(),
         }
@@ -1027,7 +1038,9 @@ impl ChatWidget {
     }
 
     pub(super) fn terminal_title_spinner_frame_at(&self, now: Instant) -> &'static str {
-        let elapsed = now.saturating_duration_since(self.terminal_title_animation_origin);
+        // Elpis: sample the spinner at the paced motion time, so it rests between sweeps.
+        let (elapsed, _) =
+            crate::elpis_motion::paced_motion(self.terminal_title_animation_elapsed_at(now));
         let frame_index =
             (elapsed.as_millis() / TERMINAL_TITLE_SPINNER_INTERVAL.as_millis()) as usize;
         TERMINAL_TITLE_SPINNER_FRAMES[frame_index % TERMINAL_TITLE_SPINNER_FRAMES.len()]

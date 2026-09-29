@@ -294,9 +294,10 @@ impl ChatWidget {
         } else {
             widget.bottom_pane.set_vim_enabled(/*enabled*/ false);
         }
+        // Elpis: the identity line above the composer replaces the footer status line.
         widget
             .bottom_pane
-            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
+            .set_status_line_enabled(/*enabled*/ false);
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);

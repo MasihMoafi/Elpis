@@ -367,6 +367,8 @@ pub(crate) use realtime::tests::commit_realtime_history_events;
 mod reasoning_shortcuts;
 use self::realtime::RealtimeConversationUiState;
 mod rendering;
+// Elpis: the identity line above the composer.
+mod elpis_identity;
 mod replay;
 mod review;
 mod review_popups;
@@ -2038,7 +2040,8 @@ impl Drop for ChatWidget {
     }
 }
 
-const PLACEHOLDER: &str = "Ask Codex to do anything";
+// Elpis: product name in the composer placeholder.
+const PLACEHOLDER: &str = "Ask Elpis to do anything";
 const SIDE_PLACEHOLDER: &str = "Ask a follow-up question";
 
 // Extract the first bold (Markdown) element in the form **...** from `s`.

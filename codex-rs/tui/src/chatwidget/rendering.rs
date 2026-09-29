@@ -244,8 +244,8 @@ impl ChatWidget {
             } else {
                 self.ambient_pet_wrap_reserved_cols()
             };
-            self.bottom_pane
-                .as_renderable_with_options(crate::bottom_pane::ComposerRenderOptions {
+            let bottom_pane = self.bottom_pane.as_renderable_with_options(
+                crate::bottom_pane::ComposerRenderOptions {
                     composer_gap,
                     working_tip,
                     warning_count: self.warning_display_state.count,
@@ -254,7 +254,17 @@ impl ChatWidget {
                         != crate::bottom_pane::CommandPopupPlacement::AboveComposer,
                     command_popup_placement,
                     footer,
-                })
+                },
+            );
+            // Elpis: the identity line sits directly above the composer.
+            RenderableItem::Owned(Box::new(crate::render::renderable::ColumnRenderable::with(
+                [
+                    RenderableItem::Owned(Box::new(
+                        super::elpis_identity::IdentityLineRenderable { chat_widget: self },
+                    )),
+                    bottom_pane,
+                ],
+            )))
         }
     }
 
