@@ -6,6 +6,8 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const TIMEOUT_MS = 10_000;
+// The default home directory name. The elpis-next trial binary uses .elpis-next.
+const HOME_DIR = process.env.ELPIS_EXPECTED_HOME_DIR || ".elpis";
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 const binaryInput = process.argv[2];
@@ -120,11 +122,11 @@ function run() {
   const defaultCwd = mkdir(path.join(evidenceRoot, "default-cwd"));
   const defaultRun = runCase("default", defaultCwd, defaultHome);
   defaultRun.filesystem = {
-    elpis: snapshot(path.join(defaultHome, ".elpis")),
+    elpis: snapshot(path.join(defaultHome, HOME_DIR)),
     codex: snapshot(path.join(defaultHome, ".codex")),
   };
   assert.equal(defaultRun.status, 0, `default --help failed: ${defaultRun.stderr}`);
-  assert(isDirectory(path.join(defaultHome, ".elpis")), "default startup did not create HOME/.elpis");
+  assert(isDirectory(path.join(defaultHome, HOME_DIR)), `default startup did not create HOME/${HOME_DIR}`);
   assert(!fs.existsSync(path.join(defaultHome, ".codex")), "default startup unexpectedly created HOME/.codex");
 
   const customHome = mkdir(path.join(evidenceRoot, "custom-home"));
