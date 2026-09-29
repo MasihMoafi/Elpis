@@ -116,6 +116,8 @@ mod async_question_reply;
 mod backend_banners;
 mod bottom_pane;
 mod branch_summary;
+// Elpis: product names.
+mod branding;
 mod chatwidget;
 mod cli;
 mod clipboard_copy;
@@ -127,6 +129,8 @@ mod color;
 mod config_update;
 pub(crate) mod custom_terminal;
 mod daybreak;
+// Elpis: the Elpis motion palette.
+mod elpis_motion;
 mod experimental_features;
 mod markdown_copy;
 mod permission_discovery;
